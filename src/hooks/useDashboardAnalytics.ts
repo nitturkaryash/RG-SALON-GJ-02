@@ -5,7 +5,20 @@ import { useAppointments } from './useAppointments'
 import { useServices } from './useServices'
 import { useStylists } from './useStylists'
 import { supabase } from '../utils/supabase/supabaseClient'
-import { format, subDays, isToday, isThisWeek, isThisMonth, parseISO, isSameDay } from 'date-fns'
+import { 
+  format, 
+  subDays, 
+  isToday,
+  isThisWeek,
+  isThisMonth,
+  parseISO, 
+  isSameDay,
+  startOfDay,
+  endOfDay,
+  isWithinInterval,
+  differenceInDays,
+  eachDayOfInterval,
+} from 'date-fns'
 
 // Analytics data types
 export interface DailySales {
@@ -20,10 +33,10 @@ export interface ServiceSales {
 }
 
 export interface AnalyticsSummary {
-  todaySales: number;
-  yesterdaySales: number;
+  periodSales: number;
+  previousPeriodSales: number;
   salesChangePercentage: number;
-  todayAppointments: number;
+  periodAppointments: number;
   topServices: ServiceSales[];
   newCustomers: number;
   repeatCustomers: number;
@@ -63,7 +76,13 @@ export interface DashboardSettings {
   refreshInterval: number; // in milliseconds
 }
 
-export function useDashboardAnalytics() {
+// Add props for date range
+interface UseDashboardAnalyticsProps {
+  startDate: string; // YYYY-MM-DD
+  endDate: string; // YYYY-MM-DD
+}
+
+export function useDashboardAnalytics({ startDate, endDate }: UseDashboardAnalyticsProps) {
   const queryClient = useQueryClient()
   const { orders, isLoading: loadingOrders } = usePOS();
   const { appointments, isLoading: loadingAppointments } = useAppointments();
@@ -162,144 +181,71 @@ export function useDashboardAnalytics() {
     };
   }, [queryClient]);
   
-  // Process analytics data
-  const getAnalyticsSummary = useCallback(async (): Promise<AnalyticsSummary> => {
+  // Process analytics data - Now uses startDate and endDate from queryKey
+  const getAnalyticsSummary = useCallback(async ({ queryKey }: { queryKey: any[] }): Promise<AnalyticsSummary> => {
+    // Destructure dates from the query key
+    const [_key, currentStartDate, currentEndDate] = queryKey;
+    
     try {
-      console.log('Fetching analytics data for dashboard...');
+      console.log(`Fetching analytics data for dashboard from ${currentStartDate} to ${currentEndDate}...`);
       
-      // If loading or data is missing, try direct data fetching
-      if (!orders || !appointments || !services || !stylists || orders.length === 0) {
-        console.log('Some data is missing, fetching directly from Supabase...');
-        
-        // Directly fetch orders
-        const { data: posOrders, error: ordersError } = await supabase
-          .from('pos_orders')
-          .select('*');
-          
-        if (ordersError) {
-          console.error('Error fetching orders:', ordersError);
-          throw ordersError;
-        }
-        
-        // Directly fetch appointments
-        const { data: appointmentsData, error: appointmentsError } = await supabase
-          .from('appointments')
-          .select('*');
-          
-        if (appointmentsError) {
-          console.error('Error fetching appointments:', appointmentsError);
-          throw appointmentsError;
-        }
-        
-        // Directly fetch services
-        const { data: servicesData, error: servicesError } = await supabase
-          .from('services')
-          .select('*');
-          
-        if (servicesError) {
-          console.error('Error fetching services:', servicesError);
-          throw servicesError;
-        }
-        
-        // Directly fetch stylists
-        const { data: stylistsData, error: stylistsError } = await supabase
-          .from('stylists')
-          .select('*');
-          
-        if (stylistsError) {
-          console.error('Error fetching stylists:', stylistsError);
-          throw stylistsError;
-        }
-        
-        console.log('Direct data fetching complete');
-        
-        // Use the directly fetched data
-        const directOrders = posOrders || [];
-        const directAppointments = appointmentsData || [];
-        const directServices = servicesData || [];
-        const directStylists = stylistsData || [];
-        
-        // Process this data using the same logic as below
-        // Filter orders by complete status
-        const completedOrders = directOrders.filter((order: any) => order.status === 'completed');
-        
-        // Today's sales
-        const today = new Date();
-        const yesterday = subDays(today, 1);
-        
-        const todayOrders = completedOrders.filter((order: any) => 
-          isSameDay(parseISO(order.created_at), today)
-        );
-        
-        const yesterdayOrders = completedOrders.filter((order: any) => 
-          isSameDay(parseISO(order.created_at), yesterday)
-        );
-        
-        const todaySales = todayOrders.reduce((sum: number, order: any) => sum + order.total, 0);
-        const yesterdaySales = yesterdayOrders.reduce((sum: number, order: any) => sum + order.total, 0);
-        
-        // Calculate sales change percentage
-        const salesChangePercentage = yesterdaySales === 0 
-          ? 100 
-          : ((todaySales - yesterdaySales) / yesterdaySales) * 100;
-        
-        // Today's appointments
-        const todayAppointmentsCount = directAppointments.filter((appointment: any) => 
-          isToday(parseISO(appointment.start_time))
-        ).length;
-        
-        // Return minimal data for now
-        return {
-          todaySales,
-          yesterdaySales,
-          salesChangePercentage,
-          todayAppointments: todayAppointmentsCount,
-          topServices: [],
-          newCustomers: 0,
-          repeatCustomers: 0,
-          retentionRate: 0,
-          averageTicketPrice: 0,
-          previousAverageTicketPrice: 0,
-          averageTicketChangePercentage: 0,
-          staffUtilization: { average: 0, byStaff: [] },
-          dailySalesTrend: [],
-          stylistRevenue: [],
-        };
+      // Convert string dates to Date objects at the start/end of the day for accurate comparison
+      const start = startOfDay(parseISO(currentStartDate));
+      const end = endOfDay(parseISO(currentEndDate));
+      const interval = { start, end };
+      
+      // Calculate previous period for comparison
+      const durationInDays = differenceInDays(end, start) + 1;
+      const prevStart = startOfDay(subDays(start, durationInDays));
+      const prevEnd = endOfDay(subDays(end, durationInDays));
+      const prevInterval = { start: prevStart, end: prevEnd };
+      
+      console.log(`Current Period: ${format(start, 'yyyy-MM-dd')} - ${format(end, 'yyyy-MM-dd')} (${durationInDays} days)`);
+      console.log(`Previous Period: ${format(prevStart, 'yyyy-MM-dd')} - ${format(prevEnd, 'yyyy-MM-dd')}`);
+
+      // --- Data Fetching/Handling (Simplified - assumes data is available from hooks) ---
+      // In a real scenario, you might pass the date range to the underlying hooks 
+      // or fetch directly within this function if needed.
+      // For now, we filter the data available from usePOS, useAppointments etc.
+      
+      if (loadingOrders || loadingAppointments || loadingServices || loadingStylists) {
+        console.warn('Still loading initial data, analytics might be incomplete.');
+        // Consider returning a loading state or minimal default summary
       }
+
+      const safeOrders = orders || [];
+      const safeAppointments = appointments || [];
+      const safeServices = services || [];
+      const safeStylists = stylists || [];
+
+      // Filter orders by complete status and date range
+      const completedOrders = safeOrders.filter(order => order.status === 'completed');
       
-      // If we have all the data, process it normally
-      // Filter orders by complete status
-      const completedOrders = orders.filter(order => order.status === 'completed');
-      
-      // Today's sales
-      const today = new Date();
-      const yesterday = subDays(today, 1);
-      
-      const todayOrders = completedOrders.filter(order => 
-        isSameDay(parseISO(order.created_at), today)
+      const periodOrders = completedOrders.filter(order => 
+        isWithinInterval(parseISO(order.created_at), interval)
       );
       
-      const yesterdayOrders = completedOrders.filter(order => 
-        isSameDay(parseISO(order.created_at), yesterday)
+      const previousPeriodOrders = completedOrders.filter(order => 
+        isWithinInterval(parseISO(order.created_at), prevInterval)
       );
       
-      const todaySales = todayOrders.reduce((sum, order) => sum + order.total, 0);
-      const yesterdaySales = yesterdayOrders.reduce((sum, order) => sum + order.total, 0);
+      // Sales calculations for the period
+      const periodSales = periodOrders.reduce((sum, order) => sum + order.total, 0);
+      const previousPeriodSales = previousPeriodOrders.reduce((sum, order) => sum + order.total, 0);
       
       // Calculate sales change percentage
-      const salesChangePercentage = yesterdaySales === 0 
-        ? 100 
-        : ((todaySales - yesterdaySales) / yesterdaySales) * 100;
+      const salesChangePercentage = previousPeriodSales === 0 
+        ? (periodSales > 0 ? 100 : 0) // Avoid division by zero, show 100% if sales increased from 0
+        : ((periodSales - previousPeriodSales) / previousPeriodSales) * 100;
       
-      // Today's appointments
-      const todayAppointments = appointments.filter((appointment: any) => 
-        isToday(parseISO(appointment.start_time))
+      // Appointments for the period
+      const periodAppointments = safeAppointments.filter((appointment: any) => 
+        isWithinInterval(parseISO(appointment.start_time), interval)
       ).length;
       
-      // Top services by revenue
+      // Top services by revenue for the period
       const serviceRevenueMap = new Map<string, ServiceSales>();
-      
-      completedOrders.forEach(order => {
+      periodOrders.forEach(order => {
         if (order.services && Array.isArray(order.services)) {
           order.services.forEach(service => {
             if (serviceRevenueMap.has(service.service_id)) {
@@ -324,10 +270,9 @@ export function useDashboardAnalytics() {
         .sort((a, b) => b.revenue - a.revenue)
         .slice(0, 5);
       
-      // Customer retention
+      // Customer retention (Based on orders within the period)
       const customerVisitMap = new Map<string, number>();
-      
-      completedOrders.forEach(order => {
+      periodOrders.forEach(order => {
         if (order.client_name) {
           const customer = order.client_name;
           customerVisitMap.set(customer, (customerVisitMap.get(customer) || 0) + 1);
@@ -339,36 +284,29 @@ export function useDashboardAnalytics() {
       const totalCustomers = newCustomers + repeatCustomers;
       const retentionRate = totalCustomers === 0 ? 0 : (repeatCustomers / totalCustomers) * 100;
       
-      // Average ticket price
-      const thisMonthOrders = completedOrders.filter(order => 
-        isThisMonth(parseISO(order.created_at))
-      );
-      
-      const lastMonthOrders = completedOrders.filter(order => {
-        const date = parseISO(order.created_at);
-        return !isThisMonth(date) && isThisMonth(subDays(date, 30));
-      });
-      
-      const averageTicketPrice = thisMonthOrders.length === 0 
+      // Average ticket price (Using period and previous period orders)
+      const averageTicketPrice = periodOrders.length === 0 
         ? 0 
-        : thisMonthOrders.reduce((sum, order) => sum + order.total, 0) / thisMonthOrders.length;
+        : periodSales / periodOrders.length; // Simpler calculation
       
-      const previousAverageTicketPrice = lastMonthOrders.length === 0 
+      const previousAverageTicketPrice = previousPeriodOrders.length === 0 
         ? 0 
-        : lastMonthOrders.reduce((sum, order) => sum + order.total, 0) / lastMonthOrders.length;
+        : previousPeriodSales / previousPeriodOrders.length; // Simpler calculation
       
       const averageTicketChangePercentage = previousAverageTicketPrice === 0 
-        ? 0 
+        ? (averageTicketPrice > 0 ? 100 : 0) // Avoid division by zero
         : ((averageTicketPrice - previousAverageTicketPrice) / previousAverageTicketPrice) * 100;
       
-      // Staff utilization
+      // Staff utilization (Consider if this should be range-based or current snapshot)
+      // Keeping current logic (based on all appointments) for simplicity, 
+      // but could be filtered by date range if needed.
       const stylistAppointmentMap = new Map<string, number>();
-      stylists.forEach(stylist => {
+      safeStylists.forEach(stylist => {
         stylistAppointmentMap.set(stylist.id, 0);
       });
       
       // Count appointments for each stylist
-      appointments.forEach((appointment: any) => {
+      safeAppointments.forEach((appointment: any) => {
         if (appointment.stylist_id && stylistAppointmentMap.has(appointment.stylist_id)) {
           stylistAppointmentMap.set(
             appointment.stylist_id, 
@@ -379,7 +317,7 @@ export function useDashboardAnalytics() {
       
       // Calculate utilization rates (assuming 8-hour day, 30-minute slots = 16 possible appointments per day)
       const SLOTS_PER_DAY = 16;
-      const staffUtilizationData = stylists.map(stylist => {
+      const staffUtilizationData = safeStylists.map(stylist => {
         const appointmentCount = stylistAppointmentMap.get(stylist.id) || 0;
         const rate = (appointmentCount / SLOTS_PER_DAY) * 100;
         return {
@@ -389,17 +327,17 @@ export function useDashboardAnalytics() {
         };
       });
       
-      const averageUtilization = stylists.length === 0 ? 0 : 
-        staffUtilizationData.reduce((sum, item) => sum + item.rate, 0) / stylists.length;
+      const averageUtilization = safeStylists.length === 0 ? 0 : 
+        staffUtilizationData.reduce((sum, item) => sum + item.rate, 0) / safeStylists.length;
       
-      // Calculate revenue per stylist
+      // Calculate revenue per stylist for the period
       const stylistRevenueMap = new Map<string, number>();
-      stylists.forEach(stylist => {
+      safeStylists.forEach(stylist => {
         stylistRevenueMap.set(stylist.id, 0);
       });
       
-      // Sum revenue for each stylist from completed orders
-      completedOrders.forEach(order => {
+      // Sum revenue for each stylist from completed orders *in the period*
+      periodOrders.forEach(order => {
         if (order.stylist_id && stylistRevenueMap.has(order.stylist_id)) {
           stylistRevenueMap.set(
             order.stylist_id,
@@ -409,7 +347,7 @@ export function useDashboardAnalytics() {
       });
       
       // Format stylist revenue data
-      const stylistRevenue = stylists
+      const stylistRevenue = safeStylists
         .map(stylist => ({
           stylistId: stylist.id,
           stylistName: stylist.name,
@@ -417,11 +355,11 @@ export function useDashboardAnalytics() {
         }))
         .sort((a, b) => b.revenue - a.revenue); // Sort by revenue (highest first)
       
-      // Daily sales trend for last 7 days
-      const last7Days = Array.from({ length: 7 }).map((_, i) => subDays(today, 6 - i));
+      // Daily sales trend *for the selected period*
+      const daysInPeriod = eachDayOfInterval(interval);
       
-      const dailySalesTrend = last7Days.map(date => {
-        const dayOrders = completedOrders.filter(order => isSameDay(parseISO(order.created_at), date));
+      const dailySalesTrend = daysInPeriod.map(date => {
+        const dayOrders = periodOrders.filter(order => isSameDay(parseISO(order.created_at), date));
         const daySales = dayOrders.reduce((sum, order) => sum + order.total, 0);
         return {
           date: format(date, 'MM/dd'),
@@ -429,11 +367,13 @@ export function useDashboardAnalytics() {
         };
       });
       
+      console.log('Analytics calculation complete.');
+      
       return {
-        todaySales,
-        yesterdaySales,
+        periodSales,
+        previousPeriodSales,
         salesChangePercentage,
-        todayAppointments,
+        periodAppointments,
         topServices,
         newCustomers,
         repeatCustomers,
@@ -451,10 +391,10 @@ export function useDashboardAnalytics() {
     } catch (error) {
       console.error('Error in getAnalyticsSummary:', error);
       return {
-        todaySales: 0,
-        yesterdaySales: 0,
+        periodSales: 0,
+        previousPeriodSales: 0,
         salesChangePercentage: 0,
-        todayAppointments: 0,
+        periodAppointments: 0,
         topServices: [],
         newCustomers: 0,
         repeatCustomers: 0,
@@ -467,13 +407,14 @@ export function useDashboardAnalytics() {
         stylistRevenue: [],
       };
     }
-  }, [orders, appointments, services, stylists]);
+  }, [orders, appointments, services, stylists, loadingOrders, loadingAppointments, loadingServices, loadingStylists]);
   
-  // Use query for analytics data
+  // Use query for analytics data - Pass dates in queryKey
   const { data: analyticsSummary, refetch, isLoading: loadingAnalytics } = useQuery({
-    queryKey: ['dashboard-analytics'],
-    queryFn: getAnalyticsSummary,
-    enabled: true, // Always enable the query to ensure data loading
+    // Query key now includes the date range
+    queryKey: ['dashboard-analytics', startDate, endDate], 
+    queryFn: getAnalyticsSummary, // Automatically receives queryKey
+    enabled: !!startDate && !!endDate, // Only run query if dates are valid
     refetchInterval: settings.refreshInterval,
     refetchOnWindowFocus: true,
     refetchOnMount: true,

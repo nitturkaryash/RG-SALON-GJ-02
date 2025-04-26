@@ -40,7 +40,7 @@ import * as React from 'react'
 import * as FramerMotion from 'framer-motion'
 import { styled } from '@mui/material/styles'
 import { alpha } from '@mui/material/styles'
-import { useAuth } from '../hooks/useAuth'
+import { useAuthContext } from '../contexts/AuthContext'
 
 const drawerWidth = 240
 
@@ -93,25 +93,52 @@ export default function Layout({ children }: LayoutProps) {
   const location = useLocation()
   const isMobile = useMediaQuery(theme.breakpoints.down('md'))
   const [mobileOpen, setMobileOpen] = useState(false)
-  const { user, logout } = useAuth()
+  const { session, logout } = useAuthContext()
+  const [isLoggingOut, setIsLoggingOut] = useState(false)
+
+  // Function to get username from localStorage
+  const getUsernameFromLocalStorage = () => {
+    try {
+      const userStr = localStorage.getItem('auth_user')
+      if (userStr) {
+        const user = JSON.parse(userStr)
+        return user.username
+      }
+      return null
+    } catch (error) {
+      console.error('Error reading username from localStorage:', error)
+      return null
+    }
+  }
 
   const handleDrawerToggle = () => {
     setMobileOpen(!mobileOpen)
   }
 
-  const handleLogout = () => {
-    logout()
+  const handleLogout = async () => {
+    try {
+      setIsLoggingOut(true)
+      await logout()
+      // The auth listener in AuthContext will handle redirecting to login
+      // If using React Router, you could add navigation here
+      window.location.href = '/login' // Redirect to login page
+    } catch (error) {
+      console.error('Error during logout:', error)
+      alert('Failed to log out. Please try again.')
+    } finally {
+      setIsLoggingOut(false)
+    }
   }
 
   const userSection = (
     <Box sx={{ p: 2, borderTop: 1, borderColor: 'divider' }}>
       <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
         <Avatar sx={{ bgcolor: 'primary.main', mr: 2 }}>
-          {user?.username.charAt(0).toUpperCase()}
+          {session?.username?.charAt(0)?.toUpperCase() || getUsernameFromLocalStorage()?.charAt(0)?.toUpperCase() || 'U'}
         </Avatar>
         <Box>
           <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
-            {user?.username}
+            {session?.username || getUsernameFromLocalStorage() || 'User'}
           </Typography>
           <Typography variant="body2" color="text.secondary">
             Administrator
@@ -124,6 +151,7 @@ export default function Layout({ children }: LayoutProps) {
         color="primary"
         startIcon={<Logout />}
         onClick={handleLogout}
+        disabled={isLoggingOut}
         sx={{
           justifyContent: 'flex-start',
           px: 2,
@@ -132,7 +160,7 @@ export default function Layout({ children }: LayoutProps) {
           },
         }}
       >
-        Logout
+        {isLoggingOut ? 'Logging out...' : 'Logout'}
       </Button>
     </Box>
   )

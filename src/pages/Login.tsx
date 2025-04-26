@@ -12,7 +12,8 @@ import {
 } from '@mui/material';
 import { styled } from '@mui/material/styles';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { useAuth } from '../hooks/useAuth';
+import { useAuthContext } from '../contexts/AuthContext';
+import { supabase } from '../utils/supabase/supabaseClient.js';
 import { ContentCut, LockPerson } from '@mui/icons-material';
 
 const LoginContainer = styled(Paper)(({ theme }) => ({
@@ -105,26 +106,62 @@ export default function Login() {
   const theme = useTheme();
   const navigate = useNavigate();
   const location = useLocation();
-  const { login, isAuthenticated } = useAuth();
+  const { session } = useAuthContext();
   const [credentials, setCredentials] = useState({ username: '', password: '' });
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  // Redirect if already authenticated
   useEffect(() => {
-    if (isAuthenticated) {
+    if (session) {
       const from = location.state?.from?.pathname || '/dashboard';
       navigate(from, { replace: true });
     }
-  }, [isAuthenticated, navigate, location]);
+  }, [session, navigate, location]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    
+    setLoading(true);
+
     try {
-      await login(credentials);
-    } catch (err) {
-      setError('Invalid username or password');
+      const { data: user, error: queryError } = await supabase
+        .from('auth')
+        .select('id, username, role, password_hash, is_active')
+        .eq('username', credentials.username)
+        .single();
+
+      if (queryError || !user) {
+        console.error('Login query error:', queryError);
+        throw new Error('Invalid username or password');
+      }
+      
+      if (!user.is_active) {
+        throw new Error('Account is inactive.');
+      }
+
+      if (user.password_hash !== credentials.password) {
+        throw new Error('Invalid username or password');
+      }
+
+      const authUser = {
+        id: user.id,
+        username: user.username,
+        role: user.role,
+      };
+      
+      // Set localStorage items for auth
+      localStorage.setItem('auth_token', 'dummy-token-' + Date.now());
+      localStorage.setItem('auth_user', JSON.stringify(authUser));
+      
+      // Force navigation with reload to ensure the protected route picks up the localStorage changes
+      window.location.href = location.state?.from?.pathname || '/dashboard';
+      
+      // No need for navigate() as we're forcing a reload
+
+    } catch (err: any) {
+      setError(err.message || 'Login failed. Please try again.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -229,10 +266,10 @@ export default function Login() {
                   type="submit"
                   fullWidth
                   size="large"
-                  disabled={!credentials.username || !credentials.password}
+                  disabled={loading || !credentials.username || !credentials.password}
                   startIcon={<LockPerson />}
                 >
-                  Sign In to Dashboard
+                  {loading ? 'Signing In...' : 'Sign In to Dashboard'}
                 </LoginButton>
 
                 <Typography 

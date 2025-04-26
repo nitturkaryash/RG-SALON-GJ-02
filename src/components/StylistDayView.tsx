@@ -28,14 +28,19 @@ import {
   TableBody,
   TableRow,
   TableCell,
-  Divider
+  Divider,
+  Autocomplete,
+  CircularProgress,
+  Drawer,
+  Stack,
+  Chip
 } from '@mui/material';
 import { styled } from '@mui/material/styles';
-import { ChevronLeft, ChevronRight, Today, Receipt, CalendarMonth, Delete as DeleteIcon } from '@mui/icons-material';
+import { ChevronLeft, ChevronRight, Today, Receipt, CalendarMonth, Delete as DeleteIcon, Close as CloseIcon, Add as AddIcon } from '@mui/icons-material';
 import { format, addDays, isSameDay } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
-import { useClients } from '../hooks/useClients';
-import { StylistBreak } from '../hooks/useStylists';
+import { useClients, Client } from '../hooks/useClients';
+import { StylistBreak, useStylists } from '../hooks/useStylists';
 import { useServiceCollections } from '../hooks/useServiceCollections';
 import { useCollectionServices } from '../hooks/useCollectionServices';
 import { Search as SearchIcon } from '@mui/icons-material';
@@ -44,6 +49,8 @@ import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import ErrorBoundary from './ErrorBoundary';
+import { toast } from 'react-hot-toast';
+import { createFilterOptions } from '@mui/material/Autocomplete';
 
 // Custom implementations of date-fns functions
 const formatTime = (time: string | Date): string => {
@@ -92,6 +99,11 @@ const ScheduleGrid = styled(Box)(({ theme }) => ({
   display: 'flex',
   flex: 1,
   overflow: 'auto',
+  position: 'relative',
+  '& > *': {  // This affects all direct children
+    height: 'fit-content',  // Allow elements to grow beyond viewport
+    minHeight: '100%'       // But at minimum be full height
+  }
 }));
 
 const TimeColumn = styled(Box)(({ theme }) => ({
@@ -101,21 +113,29 @@ const TimeColumn = styled(Box)(({ theme }) => ({
   position: 'sticky',
   left: 0,
   backgroundColor: theme.palette.background.paper,
-  zIndex: 2,
+  zIndex: 2
 }));
 
 const StylistColumn = styled(Box)(({ theme }) => ({
   flex: 1,
   minWidth: 200, // Increased from 180px to 200px for better spacing
-  borderRight: `1px solid ${theme.palette.divider}`,
   position: 'relative',
   backgroundColor: theme.palette.salon.offWhite,
+  // Remove border-right property completely
+  // borderRight: `1px solid ${theme.palette.divider}`,
+  // "&:last-child": {
+  //   borderRight: "none"
+  // },
+  // Make sure the column always extends to full height of content
+  height: '100%',
+  paddingBottom: '50vh', // Add extra space at the bottom for scrolling
 }));
 
 const StylistHeader = styled(Box)(({ theme }) => ({
   padding: theme.spacing(1.5), // Increased padding for better visibility
   textAlign: 'center',
   borderBottom: `1px solid ${theme.palette.divider}`,
+  borderRight: `1px solid ${theme.palette.divider}`, // Add right border to each header
   backgroundColor: theme.palette.salon.oliveLight,
   position: 'sticky',
   top: 0,
@@ -123,7 +143,7 @@ const StylistHeader = styled(Box)(({ theme }) => ({
   height: 56, // Increased from 48px to 56px for better visibility
   display: 'flex',
   alignItems: 'center',
-  justifyContent: 'center',
+  justifyContent: 'center'
 }));
 
 const TimeSlot = styled(Box)(({ theme }) => ({
@@ -150,6 +170,7 @@ const TimeLabel = styled(Typography)(({ theme }) => ({
 const AppointmentSlot = styled(Box)(({ theme }) => ({
   height: TIME_SLOT_HEIGHT,
   borderBottom: `1px solid ${theme.palette.divider}`,
+  borderRight: `1px solid ${theme.palette.divider}`, // Add right border to every slot
   cursor: 'pointer',
   transition: 'background-color 0.2s',
   '&:hover': {
@@ -165,17 +186,29 @@ const AppointmentSlot = styled(Box)(({ theme }) => ({
 }));
 
 // Update the AppointmentCard component
-const AppointmentCard = styled(Box)<{ duration: number }>(({ theme, duration }) => ({
+const AppointmentCard = styled(Box, {
+  shouldForwardProp: (prop) => prop !== 'isPaid' && prop !== 'duration' && prop !== 'status',
+})<{ duration: number; isPaid: boolean; status: 'scheduled' | 'completed' | 'cancelled' }>(({ theme, duration, isPaid, status }) => ({
   position: 'absolute',
   left: theme.spacing(0.75),
   right: theme.spacing(0.75),
   height: `${duration}px`, // Explicitly set height in pixels
-  backgroundColor: theme.palette.primary.main,
-  color: theme.palette.primary.contrastText,
+  backgroundColor: 
+    status === 'completed' 
+      ? theme.palette.grey[400] // Grey background for completed appointments
+      : isPaid 
+        ? theme.palette.success.light // Green if paid (and not completed)
+        : theme.palette.primary.main, // Default olive if scheduled/cancelled and not paid
+  color: 
+    status === 'completed'
+      ? theme.palette.getContrastText(theme.palette.grey[400]) // Contrast text for grey
+      : isPaid
+        ? theme.palette.success.contrastText // Contrast text for success
+        : theme.palette.primary.contrastText, // Contrast text for primary
   borderRadius: 8,
   padding: theme.spacing(1, 1.5),
   overflow: 'hidden',
-  boxShadow: '0px 4px 12px rgba(107, 142, 35, 0.25)',
+  boxShadow: status === 'completed' ? '0px 2px 6px rgba(0, 0, 0, 0.15)' : '0px 4px 12px rgba(107, 142, 35, 0.25)', // Different shadow for completed
   zIndex: 1,
   fontSize: '0.9rem',
   display: 'flex',
@@ -183,10 +216,12 @@ const AppointmentCard = styled(Box)<{ duration: number }>(({ theme, duration }) 
   justifyContent: 'space-between',
   transition: 'all 0.2s ease-in-out',
   cursor: 'move',
-  border: '1px solid rgba(255, 255, 255, 0.25)',
+  border: status === 'completed' ? `1px solid ${theme.palette.grey[500]}` : '1px solid rgba(255, 255, 255, 0.25)', // Different border
+  opacity: status === 'completed' ? 0.8 : 1, // Slightly faded if completed
   '&:hover': {
-    boxShadow: '0px 6px 16px rgba(107, 142, 35, 0.4)',
-    transform: 'translateY(-2px)',
+    boxShadow: status === 'completed' ? '0px 3px 8px rgba(0, 0, 0, 0.2)' : '0px 6px 16px rgba(107, 142, 35, 0.4)',
+    transform: status === 'completed' ? 'none' : 'translateY(-2px)', // No lift on hover if completed
+    zIndex: status === 'completed' ? 1 : 2, // Ensure non-completed are slightly above on hover
   },
 }));
 
@@ -294,7 +329,11 @@ interface StylistDayViewProps {
   onAddBreak: (stylistId: string, breakData: Break) => Promise<void>;
   onDateChange?: (date: Date) => void;
   onStylistsChange?: (updatedStylists: Stylist[]) => void;
+  onAppointmentClick?: (appointment: any) => void; // Add the missing prop definition (make optional if needed)
 }
+
+// Define filter for freeSolo client options
+const filterClients = createFilterOptions<{ id: string; full_name: string; phone?: string; inputValue?: string }>();
 
 const StylistDayView: React.FC<StylistDayViewProps> = ({
   stylists: initialStylists,
@@ -307,6 +346,7 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
   onAddBreak,
   onDateChange,
   onStylistsChange,
+  onAppointmentClick,
 }) => {
   const theme = useTheme();
   const [stylists, setStylists] = useState<Stylist[]>(initialStylists);
@@ -324,12 +364,16 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
   // Update the editFormData state type
   const [editFormData, setEditFormData] = useState({
     clientName: '',
+    clientId: '',
     serviceId: '',
-    stylistId: '', // Add this field
+    stylistId: '',
     startTime: '',
     endTime: '',
     notes: '',
-    mobileNumber: ''
+    mobileNumber: '',
+    stylistIds: [] as string[],
+    isNewClient: false,
+    clientEntries: [] as { id: string; client: any; selectedCollectionId: string; services: any[] }
   });
   // State for drag and drop
   const [draggedAppointment, setDraggedAppointment] = useState<any | null>(null);
@@ -389,27 +433,20 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
     onSelectTimeSlot(stylistId, selectedTime);
   };
 
-  const { clients, updateClient, updateClientFromAppointment } = useClients();
+  const { clients: allClients, isLoading: isLoadingClients, updateClient, updateClientFromAppointment } = useClients();
 
   const handleAppointmentClick = (appointment: any) => {
-    setSelectedAppointment(appointment);
-    
-    // Format times for the time selectors
-    const startDate = new Date(appointment.start_time);
-    const endDate = new Date(appointment.end_time);
-    
-    // Update form data with all fields including stylistId
-    setEditFormData({
-      clientName: appointment.clients?.full_name || '',
-      serviceId: appointment.service_id || '',
-      stylistId: appointment.stylist_id || '',
-      startTime: `${startDate.getHours()}:${startDate.getMinutes() === 0 ? '00' : startDate.getMinutes().toString().padStart(2, '0')}`,
-      endTime: `${endDate.getHours()}:${endDate.getMinutes() === 0 ? '00' : endDate.getMinutes().toString().padStart(2, '0')}`,
-      notes: appointment.notes || '',
-      mobileNumber: appointment.clients?.phone || ''
-    });
-    
-    setEditDialogOpen(true);
+    console.log("Internal StylistDayView handleAppointmentClick called", appointment); // Debug log
+    // Ensure the prop function is called if it exists
+    if (onAppointmentClick) {
+      console.log("Calling onAppointmentClick prop..."); // Debug log
+      onAppointmentClick(appointment);
+    } else {
+      console.warn("onAppointmentClick prop is missing in StylistDayView"); // Warning if prop not passed
+    }
+    // Set state for the internal edit dialog (if this component still uses one)
+    // setSelectedAppointment(appointment);
+    // setEditDialogOpen(true);
   };
   
   // Drag and drop handlers
@@ -503,60 +540,142 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
   const handleUpdateAppointment = async () => {
     if (!selectedAppointment || !onUpdateAppointment) return;
     
+    // --- Start Edit Validation ---
+    let isValid = true;
+    
+    // Validate client entries
+    if (!editFormData.clientEntries || editFormData.clientEntries.length === 0) {
+      console.error('Validation Error: No client entries');
+      isValid = false;
+    } else {
+      // Validate each client entry
+      editFormData.clientEntries.forEach((entry, idx) => {
+        // Validate client info
+        if (!entry.client || !entry.client.full_name || entry.client.full_name.trim() === '') {
+          console.error(`Validation Error: Client name is missing or empty for entry ${idx + 1}`);
+          isValid = false;
+        }
+        
+        // Check if it's a new client and requires phone
+        if (entry.client && !entry.client.id && !entry.client.phone) {
+          console.error(`Validation Error: Phone number is required for new client in entry ${idx + 1}`);
+          isValid = false;
+        }
+        
+        // Validate collection
+        if (!entry.selectedCollectionId) {
+          console.error(`Validation Error: Service collection not selected for entry ${idx + 1}`);
+          isValid = false;
+        }
+        
+        // Validate services
+        if (!entry.services || entry.services.length === 0) {
+          console.error(`Validation Error: No services selected for entry ${idx + 1}`);
+          isValid = false;
+        }
+        
+        // Validate stylists
+        if (!entry.stylistList || entry.stylistList.length === 0) {
+          console.error(`Validation Error: No stylists selected for entry ${idx + 1}`);
+          isValid = false;
+        }
+      });
+    }
+    
+    // Validate times
+    if (!editFormData.startTime || !editFormData.endTime) {
+      console.error('Validation Error: Start and end times are required');
+      isValid = false;
+    }
+    
+    if (!isValid) {
+      setSnackbarMessage('Please fill in all required fields');
+      setSnackbarOpen(true);
+      return;
+    }
+    // --- End Validation ---
+    
     try {
-      console.log('Starting appointment update with form data:', editFormData);
+      // Process each client entry to create new clients if needed
+      const processedClientDetails = await Promise.all(
+        editFormData.clientEntries.map(async (entry, idx) => {
+          let finalClientId = entry.client?.id || '';
+          
+          // Handle new client creation
+          if (!finalClientId) {
+            try {
+              const clientName = entry.client.full_name.trim();
+              console.log(`Creating new client with name: '${clientName}', phone: '${entry.client.phone || ''}'`);
+              
+              if (!clientName) {
+                throw new Error(`Cannot create client with empty name for entry ${idx + 1}`);
+              }
+              
+              const newClient = await updateClientFromAppointment(
+                clientName,
+                entry.client.phone || '',
+                entry.client.email || '', // Add email if available
+                '' // No notes for now
+              );
+              
+              finalClientId = newClient.id;
+              console.log('Created new client with ID:', finalClientId);
+            } catch (clientError) {
+              console.error('Error creating new client:', clientError);
+              throw new Error(`Failed to create client for entry ${idx + 1}: ${clientError instanceof Error ? clientError.message : 'Unknown error'}`);
+            }
+          }
+          
+          return {
+            clientId: finalClientId,
+            serviceIds: entry.services.map(s => s.id),
+            stylistIds: entry.stylistList.map(st => st.id),
+          };
+        })
+      );
       
-      // Parse the time strings from the form data
+      // Format times for ISO string conversion
+      const selectedDay = new Date(currentDate);
       const [startHour, startMinute] = editFormData.startTime.split(':').map(Number);
       const [endHour, endMinute] = editFormData.endTime.split(':').map(Number);
       
-      // Create Date objects with the current date and selected times
-      const startTime = new Date(
-        currentDate.getFullYear(),
-        currentDate.getMonth(),
-        currentDate.getDate(),
-        startHour,
-        startMinute,
-        0,
-        0
-      );
+      const start = new Date(selectedDay);
+      start.setHours(startHour, startMinute, 0, 0);
       
-      const endTime = new Date(
-        currentDate.getFullYear(),
-        currentDate.getMonth(),
-        currentDate.getDate(),
-        endHour,
-        endMinute,
-        0,
-        0
-      );
+      const end = new Date(selectedDay);
+      end.setHours(endHour, endMinute, 0, 0);
       
-      // If end time is earlier than start time, assume it's the next day
-      if (endTime < startTime) {
-        endTime.setDate(endTime.getDate() + 1);
+      // Handle overnight bookings
+      if (end <= start) {
+        end.setDate(end.getDate() + 1);
       }
       
-      // Format as ISO strings for consistent storage
-      const formattedStartTime = startTime.toISOString();
-      const formattedEndTime = endTime.toISOString();
+      // Format the start and end times as ISO strings for the database
+      const formattedStartTime = start.toISOString();
+      const formattedEndTime = end.toISOString();
       
-      // Check if this appointment would conflict with a break
-      if (checkBreakConflict(editFormData.stylistId, formattedStartTime, formattedEndTime)) {
-        setSnackbarMessage("This appointment conflicts with a stylist's break");
-        setSnackbarOpen(true);
-        return;
-      }
+      // Prepare data for the createAppointment hook
+      const primaryClient = editFormData.clientEntries[0].client;
       
       // Create an update object with only the fields that should be updated
       const appointmentUpdates = {
         id: selectedAppointment.id,
-        stylist_id: editFormData.stylistId,
-        service_id: editFormData.serviceId,
+        // Use the first stylist of the first client as primary (required field)
+        stylist_id: processedClientDetails[0].stylistIds[0],
+        // Collect all stylist IDs across all client entries
+        stylist_ids: Array.from(new Set(processedClientDetails.flatMap(d => d.stylistIds))),
+        // Use the first service from first client as primary (required field)
+        service_id: processedClientDetails[0].serviceIds[0],
+        // Collect all service IDs
+        service_ids: Array.from(new Set(processedClientDetails.flatMap(d => d.serviceIds))),
+        // Collect all client IDs
+        client_ids: processedClientDetails.map(d => d.clientId),
+        // Use first client ID as primary (for backward compatibility)
+        client_id: processedClientDetails[0].clientId,
+        client_name: primaryClient.full_name,
         start_time: formattedStartTime,
         end_time: formattedEndTime,
         notes: editFormData.notes || '',
-        // Preserve other fields from the original appointment
-        client_id: selectedAppointment.client_id,
         status: selectedAppointment.status,
         paid: selectedAppointment.paid
       };
@@ -564,27 +683,8 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
       console.log('Sending appointment updates:', appointmentUpdates);
       
       // Update the appointment with the new data
-      await onUpdateAppointment(selectedAppointment.id, appointmentUpdates);
-      
-      // Also update the client's phone number if it has changed
-      if (editFormData.mobileNumber !== (selectedAppointment.clients?.phone || '') && 
-          editFormData.clientName && editFormData.mobileNumber) {
-        try {
-          // Use the updateClient function if available
-          if (updateClient) {
-            await updateClientFromAppointment(
-              editFormData.clientName,
-              editFormData.mobileNumber,
-              undefined, // No email update
-              undefined, // No notes update
-              formattedStartTime
-            );
-          }
-        } catch (clientError) {
-          console.error('Error updating client phone number:', clientError);
-          // We don't want to block the appointment update if client update fails
-          // so we just log the error and continue
-        }
+      if (onUpdateAppointment) {
+        await onUpdateAppointment(selectedAppointment.id, appointmentUpdates);
       }
       
       // Close the dialog and reset state
@@ -592,16 +692,20 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
       setSelectedAppointment(null);
       setEditFormData({
         clientName: '',
+        clientId: '',
         serviceId: '',
         stylistId: '',
         startTime: '',
         endTime: '',
         notes: '',
-        mobileNumber: ''
+        mobileNumber: '',
+        stylistIds: [],
+        isNewClient: false,
+        clientEntries: []
       });
     } catch (error) {
-      console.error('Error updating appointment:', error);
-      setSnackbarMessage('Failed to update appointment');
+      console.error('Failed to update appointment:', error);
+      setSnackbarMessage(`Update failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
       setSnackbarOpen(true);
     }
   };
@@ -1047,10 +1151,13 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
     </TimeColumn>
   );
 
-  const { serviceCollections } = useServiceCollections();
-  const { services: collectionServices, isLoading: isLoadingCollectionServices } = useCollectionServices();
+  // Declare state for service filtering *before* using it in the hook
   const [selectedServiceCollection, setSelectedServiceCollection] = useState<string>('');
   const [serviceSearchQuery, setServiceSearchQuery] = useState<string>('');
+
+  // Fetch collections and services based on the selected collection
+  const { serviceCollections } = useServiceCollections();
+  const { services: collectionServices, isLoading: isLoadingCollectionServices } = useCollectionServices(selectedServiceCollection);
 
   const getFilteredServices = () => {
     // Use collectionServices if available, otherwise fall back to services
@@ -1061,7 +1168,7 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
     // Filter by collection if one is selected
     if (selectedServiceCollection) {
       filteredServices = filteredServices.filter(service => 
-        service.collection_id === selectedServiceCollection
+        'collection_id' in service && service.collection_id === selectedServiceCollection
       );
     }
     
@@ -1107,6 +1214,8 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
     }
   };
 
+  const { isLoading: loadingStylists } = useStylists();
+
   useEffect(() => {
     setStylists(initialStylists);
   }, [initialStylists]);
@@ -1123,6 +1232,161 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
       setSelectedStylist(foundStylist);
       setBreakDialogOpen(true);
     }
+  };
+
+  const renderAppointmentsForStylist = (stylistId: string) => {
+    const stylistAppointments = appointments
+      .filter(app => app.stylist_id === stylistId)
+      .filter(app => isSameDay(new Date(app.start_time), selectedDate))
+      .sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
+
+    return stylistAppointments.map(appointment => {
+      const top = getAppointmentPosition(appointment.start_time);
+      const durationInPixels = getAppointmentDuration(appointment.start_time, appointment.end_time);
+      const service = services.find(s => s.id === appointment.service_id);
+
+      // Ensure client name is available, fallback gracefully
+      const clientName = appointment.clients?.full_name || appointment.client_name || 'Unknown Client';
+
+      // Check for invalid duration or position
+      if (durationInPixels <= 0 || isNaN(top)) {
+        console.error('Invalid appointment calculation for rendering:', { appointment, top, durationInPixels });
+        return null; // Don't render invalid appointments
+      }
+
+      return (
+        <Tooltip
+          title={
+            <Box sx={{ minWidth: 200 }}>
+              {appointment.stylists && appointment.stylists.length > 0 && (
+                <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                  Stylists: {appointment.stylists.map((s: any) => s?.name).filter(Boolean).join(', ')}
+                </Typography>
+              )}
+              {appointment.clients?.phone && (
+                <Typography variant="body2">Phone: {appointment.clients.phone}</Typography>
+              )}
+              {appointment.services && (
+                <Typography variant="body2">
+                  Service: {appointment.services.name} {appointment.services.price !== undefined ? `(${formatCurrency(appointment.services.price)})` : ''}
+                </Typography>
+              )}
+              <Typography variant="body2">Paid: {appointment.paid ? 'Yes' : 'No'}</Typography>
+              {appointment.notes && (
+                <Typography variant="body2" sx={{ fontStyle: 'italic', color: 'text.secondary' }}>
+                  Notes: {appointment.notes}
+                </Typography>
+              )}
+            </Box>
+          }
+          arrow
+          placement="top"
+          PopperProps={{
+            sx: {
+              '& .MuiTooltip-tooltip': {
+                backgroundColor: 'white',
+                color: 'black',
+                boxShadow: 3,
+                borderRadius: 2,
+                fontSize: '0.95em',
+                p: 1.2,
+              },
+              '& .MuiTooltip-arrow': {
+                color: 'white',
+              },
+            },
+          }}
+        >
+          <AppointmentCard
+            key={appointment.id}
+            sx={{ top: `${top}px` }}
+            duration={durationInPixels}
+            isPaid={appointment.paid || false}
+            status={appointment.status || 'scheduled'} // Pass the status prop
+            onClick={() => handleAppointmentClick(appointment)}
+            draggable
+            onDragStart={(e) => handleDragStart(e, appointment)}
+          >
+            <Box>
+              <Typography variant="subtitle2" fontWeight="bold" noWrap>
+                {clientName}
+              </Typography>
+              <Typography variant="caption" display="block" noWrap>
+                {service ? service.name : 'Unknown Service'}
+              </Typography>
+            </Box>
+            <Typography variant="caption" display="block" sx={{ mt: 0.5 }}>
+              {formatTime(appointment.start_time)} - {formatTime(appointment.end_time)}
+            </Typography>
+          </AppointmentCard>
+        </Tooltip>
+      );
+    });
+  };
+
+  const handleAddClientEntry = () => {
+    setEditFormData(prev => ({
+      ...prev,
+      clientEntries: [...prev.clientEntries, { 
+        id: crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2),
+        client: null, 
+        selectedCollectionId: '', 
+        services: [],
+        stylistList: [] // Initialize stylistList as empty array
+      }]
+    }));
+  };
+
+  const handleRemoveClientEntry = (id: string) => {
+    setEditFormData(prev => ({
+      ...prev,
+      clientEntries: prev.clientEntries.filter(entry => entry.id !== id)
+    }));
+  };
+
+  const handleClientChange = (id: string, newValue: any) => {
+    setEditFormData(prev => ({
+      ...prev,
+      clientEntries: prev.clientEntries.map(entry =>
+        entry.id === id ? { ...entry, client: newValue } : entry
+      )
+    }));
+  };
+
+  const handleClientPhoneChange = (id: string, newValue: string) => {
+    setEditFormData(prev => ({
+      ...prev,
+      clientEntries: prev.clientEntries.map(entry =>
+        entry.id === id ? { ...entry, client: { ...entry.client, phone: newValue } } : entry
+      )
+    }));
+  };
+
+  const handleCollectionChange = (id: string, newValue: any) => {
+    setEditFormData(prev => ({
+      ...prev,
+      clientEntries: prev.clientEntries.map(entry =>
+        entry.id === id ? { ...entry, selectedCollectionId: newValue?.id } : entry
+      )
+    }));
+  };
+
+  const handleServicesChange = (id: string, newValue: any[]) => {
+    setEditFormData(prev => ({
+      ...prev,
+      clientEntries: prev.clientEntries.map(entry =>
+        entry.id === id ? { ...entry, services: newValue } : entry
+      )
+    }));
+  };
+
+  const handleStylistsChange = (id: string, newValue: any[]) => {
+    setEditFormData(prev => ({
+      ...prev,
+      clientEntries: prev.clientEntries.map(entry =>
+        entry.id === id ? { ...entry, stylistList: newValue.map(s => ({ id: s.id, name: s.name })) } : entry
+      )
+    }));
   };
 
   return (
@@ -1214,12 +1478,14 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
         </Box>
       </DayViewHeader>
       
-      <ScheduleGrid>
+      <ScheduleGrid className="schedule-grid">
         {renderTimeColumn()}
         
-        {/* Stylist columns */}
-        {stylists.map(stylist => (
-          <StylistColumn key={stylist.id}>
+        {stylists.map((stylist, index) => (
+          <StylistColumn 
+            key={stylist.id}
+            className="stylist-column"
+          >
             <StylistHeader
               onClick={() => handleBreakDialogOpen(stylist.id)}
               sx={{
@@ -1227,73 +1493,39 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
                 '&:hover': {
                   backgroundColor: theme.palette.salon.oliveLight,
                   opacity: 0.9
-                }
+                },
+                ...(index === stylists.length - 1 && {
+                  borderRight: 'none'
+                })
               }}
             >
               <Typography variant="subtitle2">{stylist.name}</Typography>
             </StylistHeader>
             
-            {/* Time slots for booking */}
             {timeSlots.map(slot => (
               <AppointmentSlot
                 key={`slot-${stylist.id}-${slot.hour}-${slot.minute}`}
                 onClick={() => handleSlotClick(stylist.id, slot.hour, slot.minute)}
                 onDragOver={(e) => handleDragOver(e, stylist.id, slot.hour, slot.minute)}
                 onDrop={(e) => handleDrop(e, stylist.id, slot.hour, slot.minute)}
-                sx={isBreakTime(stylist.id, slot.hour, slot.minute) ? { 
-                  backgroundColor: 'transparent', // Completely transparent
-                  cursor: 'not-allowed',
-                  pointerEvents: 'none', // Prevent mouse events
-                  '&:hover': {
-                    backgroundColor: 'transparent' // No hover effect
-                  }
-                } : undefined}
+                sx={{
+                  ...(index === stylists.length - 1 && {
+                    borderRight: 'none'
+                  }),
+                  ...(isBreakTime(stylist.id, slot.hour, slot.minute) && { 
+                    backgroundColor: 'transparent', // Completely transparent
+                    cursor: 'not-allowed',
+                    pointerEvents: 'none', // Prevent mouse events
+                    '&:hover': {
+                      backgroundColor: 'transparent' // No hover effect
+                    }
+                  })
+                }}
               />
             ))}
             
-            {/* Appointments */}
-            {todayAppointments
-              .filter(appointment => appointment.stylist_id === stylist.id)
-              .map(appointment => {
-                const service = services.find(s => s.id === appointment.service_id);
-                const top = getAppointmentPosition(appointment.start_time);
-                const duration = getAppointmentDuration(appointment.start_time, appointment.end_time);
-                
-                // Create normalized dates for display to ensure correct time formatting
-                const startTimeDate = normalizeDateTime(appointment.start_time);
-                const endTimeDate = normalizeDateTime(appointment.end_time);
-                
-                return (
-                  <AppointmentCard
-                    key={appointment.id}
-                    duration={duration}
-                    style={{ 
-                      top: `${top}px`,
-                      height: `${duration}px`
-                    }}
-                    onClick={(e) => {
-                      // Prevent click when dragging is finished
-                      if (!draggedAppointment) {
-                        handleAppointmentClick(appointment);
-                      }
-                    }}
-                    draggable
-                    onDragStart={(e) => handleDragStart(e, appointment)}
-                  >
-                    <Typography variant="caption" fontWeight="bold">
-                      {appointment.clients?.full_name || 'Unknown'}
-                    </Typography>
-                    <Typography variant="caption">
-                      {service?.name || 'Unknown Service'}
-                    </Typography>
-                    <Typography variant="caption">
-                      {formatTime(startTimeDate)} - {formatTime(endTimeDate)}
-                    </Typography>
-                  </AppointmentCard>
-                );
-              })}
+            {renderAppointmentsForStylist(stylist.id)}
             
-            {/* Stylist Breaks */}
             {getStylistBreaks(stylist.id).map((breakItem: StylistBreak) => {
               const breakDate = new Date(breakItem.startTime);
               // Only show breaks for the current day
@@ -1347,140 +1579,275 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
         ))}
       </ScheduleGrid>
       
-      {/* Edit Appointment Dialog */}
-      <Dialog open={editDialogOpen} onClose={handleEditDialogClose} maxWidth="sm" fullWidth>
-        <DialogTitle>Edit Appointment</DialogTitle>
-        <DialogContent>
-          <Grid container spacing={2} sx={{ mt: 1 }}>
-            <Grid item xs={12}>
-              <TextField
-                label="Client Name"
-                value={editFormData.clientName}
-                onChange={(e) => setEditFormData({ ...editFormData, clientName: e.target.value })}
-                fullWidth
-                required
-              />
-            </Grid>
-            <Grid item xs={12}>
-              <TextField
-                label="Mobile Number"
-                value={editFormData.mobileNumber}
-                onChange={(e) => setEditFormData({ ...editFormData, mobileNumber: e.target.value })}
-                fullWidth
-                placeholder="Enter client's mobile number"
-                InputProps={{
-                  startAdornment: (
-                    <Box component="span" sx={{ color: 'text.secondary', mr: 1 }}>
-                      +
-                    </Box>
-                  ),
-                }}
-              />
-            </Grid>
-            <Grid item xs={12}>
-              <Typography variant="subtitle1" gutterBottom>
-                Service Selection
-              </Typography>
-              <Grid container spacing={2} sx={{ mb: 2 }}>
-                <Grid item xs={12} md={6}>
-                  <FormControl fullWidth variant="outlined">
-                    <InputLabel id="edit-service-collection-label">Service Collection</InputLabel>
-                    <Select
-                      labelId="edit-service-collection-label"
-                      value={selectedServiceCollection}
-                      onChange={(e) => setSelectedServiceCollection(e.target.value as string)}
-                      label="Service Collection"
-                    >
-                      <MenuItem value="">
-                        <em>All Collections</em>
-                      </MenuItem>
-                      {serviceCollections?.map((collection) => (
-                        <MenuItem key={collection.id} value={collection.id}>
-                          {collection.name}
-                        </MenuItem>
-                      ))}
-                    </Select>
-                  </FormControl>
-                </Grid>
-                <Grid item xs={12} md={6}>
-                  <TextField
-                    fullWidth
-                    variant="outlined"
-                    placeholder="Search services..."
-                    value={serviceSearchQuery}
-                    onChange={(e) => setServiceSearchQuery(e.target.value)}
-                    InputProps={{
-                      startAdornment: (
-                        <InputAdornment position="start">
-                          <SearchIcon />
-                        </InputAdornment>
-                      ),
-                    }}
-                  />
-                </Grid>
-              </Grid>
-              
-              {/* Service Cards */}
-              <Box sx={{ maxHeight: '300px', overflow: 'auto', mb: 2 }}>
-                <Grid container spacing={1}>
-                  {getFilteredServices().length > 0 ? (
-                    getFilteredServices().map((service) => (
-                      <Grid item xs={12} sm={6} key={service.id}>
-                        <Paper 
-                          elevation={editFormData.serviceId === service.id ? 4 : 1}
-                          sx={{ 
-                            p: 1.5, 
-                            cursor: 'pointer',
-                            transition: 'all 0.2s',
-                            border: editFormData.serviceId === service.id ? '2px solid' : '1px solid',
-                            borderColor: editFormData.serviceId === service.id ? 'primary.main' : 'divider',
-                            bgcolor: editFormData.serviceId === service.id ? 'rgba(25, 118, 210, 0.12)' : 'background.paper',
-                            transform: editFormData.serviceId === service.id ? 'translateY(-3px)' : 'none',
-                            boxShadow: editFormData.serviceId === service.id ? 3 : 1,
-                            '&:hover': {
-                              bgcolor: editFormData.serviceId === service.id ? 'rgba(25, 118, 210, 0.12)' : 'action.hover',
-                              transform: 'translateY(-2px)',
-                              boxShadow: 2
-                            }
+      {/* Edit Appointment Drawer */}
+      <Drawer anchor="right" variant="persistent" open={editDialogOpen} onClose={handleEditDialogClose}
+              ModalProps={{ keepMounted: true }}
+              PaperProps={{ sx: { width: 500, display: 'flex', flexDirection: 'column' } }}>
+        
+        {/* Header */}
+        <Box sx={{ p: 3, pb: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid', borderColor: 'divider' }}>
+          <Typography variant="h6">Edit Appointment</Typography>
+          <IconButton onClick={handleEditDialogClose}><CloseIcon /></IconButton>
+        </Box>
+        
+        {/* Scrollable content area */}
+        <Box sx={{ flex: 1, overflowY: 'auto', p: 3 }}>
+
+          {/* --- Render Dynamic Client Sections --- */}
+          {editFormData.clientEntries ? editFormData.clientEntries.map((entry, idx) => (
+            <Paper key={entry.id} elevation={2} sx={{ mb: 3, p: 2.5, border: '1px solid', borderColor: 'divider', borderRadius: 2, position: 'relative' }}>
+              <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 2 }}>
+                <Typography variant="subtitle1" component="div" fontWeight="medium">Client {idx + 1}</Typography>
+                {editFormData.clientEntries && editFormData.clientEntries.length > 1 && (
+                  <Tooltip title="Remove Client Entry">
+                     <IconButton
+                        onClick={() => handleRemoveClientEntry(entry.id)}
+                        size="small"
+                        color="error"
+                        sx={{ position: 'absolute', top: 8, right: 8 }}
+                     >
+                       <DeleteIcon fontSize="small" />
+                     </IconButton>
+                  </Tooltip>
+                )}
+              </Stack>
+
+              <Grid container spacing={2}>
+                 {/* 1. Client selector */}
+                 <Grid item xs={12}>
+                    <Autocomplete
+                      freeSolo
+                      filterOptions={(options, params) => {
+                        const filtered = filterClients(options as any, params);
+                        // Suggest the creation of a new value
+                        const { inputValue } = params;
+                        const isExisting = options.some((option) => inputValue === (option as any).full_name);
+                        if (inputValue !== '' && !isExisting) {
+                          filtered.push({
+                            inputValue: `Add "${inputValue}"`, // Presentation for adding new
+                            full_name: inputValue, // Actual value to use
+                            id: '', // Indicate it's new
+                            phone: ''
+                          });
+                        }
+                        return filtered;
+                      }}
+                      options={allClients || []}
+                      loading={isLoadingClients}
+                      getOptionLabel={(option) => {
+                        // value selected with enter, right from the input
+                        if (typeof option === 'string') {
+                          return option;
+                        }
+                        // Add "xxx" option created dynamically
+                        if ((option as any).inputValue) {
+                          return (option as any).inputValue;
+                        }
+                        // Regular option from list
+                        return `${option.full_name}${option.phone ? ` (${option.phone})` : ''}`;
+                      }}
+                      value={entry.client}
+                      onChange={(_, newValue) => handleClientChange(entry.id, newValue)}
+                      isOptionEqualToValue={(option, value) => {
+                        if (!value) return false;
+                        return option.id === value.id;
+                      }}
+                      renderOption={(props, option) => {
+                        // Distinguish between regular options and the "Add..." option
+                        if ((option as any).inputValue) {
+                          return <li {...props} key={(option as any).inputValue}>{(option as any).inputValue}</li>;
+                        }
+                        return <li {...props} key={option.id}>{`${option.full_name}${option.phone ? ` (${option.phone})` : ''}`}</li>;
+                      }}
+                      renderInput={(params) => (
+                        <TextField
+                          {...params}
+                          label="Client *"
+                          required
+                          error={!entry.client || !entry.client.full_name}
+                          helperText={!entry.client || !entry.client.full_name ? "Client name required" : ""}
+                          InputProps={{
+                            ...params.InputProps,
+                            endAdornment: (
+                              <>
+                                {isLoadingClients ? <CircularProgress color="inherit" size={20} /> : null}
+                                {params.InputProps.endAdornment}
+                              </>
+                            ),
                           }}
-                          onClick={() => setEditFormData({ ...editFormData, serviceId: service.id })}
-                        >
-                          <Typography variant="subtitle1" fontWeight={editFormData.serviceId === service.id ? "bold" : "medium"} color={editFormData.serviceId === service.id ? "primary.main" : "text.primary"}>
-                            {editFormData.serviceId === service.id && "✓ "}{service.name}
-                          </Typography>
-                          <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 1 }}>
-                            <Typography variant="body2" color="text.secondary">
-                              {service.duration} min
-                            </Typography>
-                            <Typography variant="body1" fontWeight="bold">
-                              {formatCurrency(service.price)}
-                            </Typography>
-                          </Box>
-                          {service.description && (
-                            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                              {service.description}
-                            </Typography>
-                          )}
-                        </Paper>
-                      </Grid>
-                    ))
-                  ) : (
-                    <Grid item xs={12}>
-                      <Alert severity="info">
-                        No services found. Try adjusting your search or selecting a different collection.
-                      </Alert>
-                    </Grid>
-                  )}
-                </Grid>
-              </Box>
-            </Grid>
+                        />
+                      )}
+                    />
+                 </Grid>
+
+                 {/* Mobile field for new client */}
+                 {entry.client && !entry.client.id && (
+                   <Grid item xs={12}>
+                     <TextField
+                       label="Mobile Number *"
+                       value={entry.client.phone || ''}
+                       onChange={e => handleClientPhoneChange(entry.id, e.target.value)}
+                       fullWidth
+                       size="small"
+                       required
+                       error={!entry.client.phone}
+                       helperText={!entry.client.phone ? "Phone required for new client" : ""}
+                     />
+                   </Grid>
+                 )}
+
+                 {/* 2a. Service Collection Selector */}
+                 <Grid item xs={12}>
+                    <Autocomplete
+                      options={serviceCollections || []}
+                      getOptionLabel={(collection) => collection.name}
+                      value={serviceCollections?.find(c => c.id === entry.selectedCollectionId) || null}
+                      onChange={(_, collection) => handleCollectionChange(entry.id, collection)}
+                      isOptionEqualToValue={(option, value) => option.id === value?.id}
+                      renderOption={(props, option) => (
+                          <li {...props} key={option.id}>
+                            {option.name}
+                          </li>
+                      )}
+                      renderInput={params =>
+                        <TextField {...params}
+                           label="Service Collection *"
+                           required
+                           error={!entry.selectedCollectionId}
+                           helperText={!entry.selectedCollectionId ? "Select a collection" : ""}
+                           InputProps={{
+                            ...params.InputProps,
+                            endAdornment: (
+                              <>
+                                {isLoadingCollectionServices ? <CircularProgress color="inherit" size={20} /> : null}
+                                {params.InputProps.endAdornment}
+                              </>
+                            ),
+                          }}
+                        />
+                      }
+                      fullWidth
+                      size="small"
+                    />
+                 </Grid>
+
+                 {/* 2b. Services multi-select */}
+                 <Grid item xs={12}>
+                    <Autocomplete
+                      multiple
+                      options={services?.filter(s => (s as any).collection_id === entry.selectedCollectionId) || []}
+                      getOptionLabel={s => `${s.name} (${s.duration} min)`}
+                      value={entry.services}
+                      onChange={(_, services) => handleServicesChange(entry.id, services)}
+                      isOptionEqualToValue={(option, value) => option.id === value.id}
+                      disabled={!entry.selectedCollectionId}
+                      renderOption={(props, option) => (
+                        <li {...props} key={option.id}>
+                          {`${option.name} (${option.duration} min)`}
+                        </li>
+                       )}
+                      renderTags={(value, getTagProps) =>
+                        value.map((s, i) =>
+                           <Chip {...getTagProps({ index: i })} key={s.id} label={s.name} size="small" variant="outlined" />
+                        )
+                      }
+                      renderInput={params =>
+                         <TextField {...params}
+                            label="Service(s) *"
+                            required
+                            error={!!entry.selectedCollectionId && entry.services.length === 0}
+                            helperText={
+                              !entry.selectedCollectionId
+                                ? "Select a collection first"
+                                : entry.services.length === 0
+                                ? "Select at least one service"
+                                : ""
+                            }
+                            InputProps={{
+                              ...params.InputProps,
+                              endAdornment: (
+                                <>
+                                  {isLoadingCollectionServices && entry.selectedCollectionId ? <CircularProgress color="inherit" size={20} /> : null}
+                                  {params.InputProps.endAdornment}
+                                </>
+                              ),
+                            }}
+                         />
+                      }
+                      fullWidth
+                      size="small"
+                    />
+                 </Grid>
+
+                 {/* 3. Stylists multi-select */}
+                 <Grid item xs={12}>
+                    <Autocomplete
+                      multiple
+                      options={stylists || []}
+                      getOptionLabel={st => st.name}
+                      value={entry.stylistList || []} // Ensure value is always an array
+                      onChange={(_, stylists) => handleStylistsChange(entry.id, stylists)}
+                      isOptionEqualToValue={(option, value) => option.id === value.id}
+                      renderOption={(props, option) => (
+                        <li {...props} key={option.id}>
+                          {option.name}
+                        </li>
+                       )}
+                      renderTags={(value, getTagProps) =>
+                        value.map((st, i) => {
+                           const { key, ...rest } = getTagProps({ index: i });
+                           return <Chip key={key} {...rest} label={st.name} size="small" variant="outlined" />;
+                        })
+                      }
+                      renderInput={params =>
+                         <TextField {...params}
+                            label="Stylist(s) *"
+                            required
+                            error={!entry.stylistList || entry.stylistList.length === 0} // Added null check
+                            helperText={!entry.stylistList || entry.stylistList.length === 0 ? "Select at least one stylist" : ""}
+                            InputProps={{
+                              ...params.InputProps,
+                              endAdornment: (
+                                <>
+                                  {loadingStylists ? <CircularProgress color="inherit" size={20} /> : null}
+                                  {params.InputProps.endAdornment}
+                                </>
+                              ),
+                            }}
+                        />
+                      }
+                      fullWidth
+                      size="small"
+                    />
+                 </Grid>
+              </Grid>
+            </Paper>
+          )) : null}
+
+          <Button
+             variant="outlined"
+             onClick={handleAddClientEntry}
+             startIcon={<AddIcon />}
+             fullWidth
+             sx={{ mb: 3, mt: 1, py: 1.5, borderColor: 'primary.light', color: 'primary.main', '&:hover': { borderColor: 'primary.main', backgroundColor: 'action.hover' } }}
+          >
+             Add Another Client
+          </Button>
+          {/* --- End Dynamic Client Sections --- */}
+
+          <Divider sx={{ my: 3 }} />
+
+          {/* Step 4: Select Time (Now Global) */}
+          <Typography variant="subtitle1" gutterBottom fontWeight="medium">Select Time</Typography>
+          <Grid container spacing={2}>
             <Grid item xs={6}>
-              <FormControl fullWidth required>
+              <FormControl fullWidth required size="small">
                 <InputLabel>Start Time</InputLabel>
                 <Select
                   value={editFormData.startTime}
                   onChange={(e) => handleTimeChange(e, 'startTime')}
                   label="Start Time"
+                  error={!editFormData.startTime}
                 >
                   {timeOptions.map((option) => (
                     <MenuItem key={`start-${option.value}`} value={option.value}>
@@ -1488,15 +1855,17 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
                     </MenuItem>
                   ))}
                 </Select>
+                {!editFormData.startTime && <Typography variant="caption" color="error" sx={{mt: 0.5}}>Start time required</Typography>}
               </FormControl>
             </Grid>
             <Grid item xs={6}>
-              <FormControl fullWidth required>
+              <FormControl fullWidth required size="small">
                 <InputLabel>End Time</InputLabel>
                 <Select
                   value={editFormData.endTime}
                   onChange={(e) => handleTimeChange(e, 'endTime')}
                   label="End Time"
+                  error={!editFormData.endTime}
                 >
                   {timeOptions.map((option) => (
                     <MenuItem key={`end-${option.value}`} value={option.value}>
@@ -1504,21 +1873,33 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
                     </MenuItem>
                   ))}
                 </Select>
+                {!editFormData.endTime && <Typography variant="caption" color="error" sx={{mt: 0.5}}>End time required</Typography>}
               </FormControl>
             </Grid>
+          </Grid>
+
+          <Divider sx={{ my: 3 }} />
+
+          {/* Step 5: Notes */}
+          <Typography variant="subtitle1" gutterBottom fontWeight="medium">Notes</Typography>
+          <Grid container spacing={2}>
             <Grid item xs={12}>
               <TextField
-                label="Notes"
+                label="Appointment Notes (Optional)"
                 value={editFormData.notes}
-                onChange={(e) => setEditFormData({ ...editFormData, notes: e.target.value })}
+                onChange={(e) => setEditFormData({...editFormData, notes: e.target.value})}
                 multiline
                 rows={3}
                 fullWidth
+                size="small"
+                placeholder="Add any relevant notes for the overall appointment..."
               />
             </Grid>
           </Grid>
-        </DialogContent>
-        <DialogActions>
+        </Box>
+
+        {/* Footer with action buttons */}
+        <Box sx={{ p: 3, pt: 2, display: 'flex', justifyContent: 'flex-end', gap: 2, borderTop: '1px solid', borderColor: 'divider' }}>
           {onDeleteAppointment && (
             <Button onClick={handleDeleteAppointment} color="error" sx={{ mr: 'auto' }}>
               Delete
@@ -1528,6 +1909,7 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
             onClick={handleCreateBill}
             color="success"
             startIcon={<Receipt />}
+            sx={{ mr: 'auto' }}
           >
             Create Bill
           </Button>
@@ -1535,8 +1917,8 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
           <Button onClick={handleUpdateAppointment} variant="contained" color="primary">
             Update
           </Button>
-        </DialogActions>
-      </Dialog>
+        </Box>
+      </Drawer>
 
       {/* Break Dialog */}
       <Dialog open={breakDialogOpen} onClose={handleBreakDialogClose} maxWidth="md" fullWidth>

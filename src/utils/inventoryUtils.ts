@@ -117,57 +117,74 @@ export const addPurchaseTransaction = async (purchaseData: PurchaseFormData) => 
       purchaseRecord.created_at = timestamp;
     }
 
-    // --- Step 3: Insert or Update in purchases table --- 
-    let purchaseInsertError;
+    // --- Step 4: Calculate new stock and update product --- 
+    let newStock = currentStock; // Initialize with current stock
+    let quantityChange = 0;     // Initialize quantity change
     
     if (isUpdate) {
-      // Update existing purchase
-      console.log(`Updating purchase with ID: ${purchaseData.id}`);
-      const { error } = await supabase
-        .from('purchases')
-        .update(purchaseRecord)
-        .eq('id', purchaseData.id);
-      purchaseInsertError = error;
-    } else {
-      // Insert new purchase
-      const { error } = await supabase
-        .from('purchases')
-        .insert(purchaseRecord);
-      purchaseInsertError = error;
-    }
-
-    if (purchaseInsertError) {
-      console.error("Error inserting into purchases:", purchaseInsertError);
-      // Handle error by throwing a new error with a custom message
-      throw new Error(`Failed to record purchase transaction: ${purchaseInsertError.message}`);
-    }
-
-    // --- Step 4: Update product stock quantity --- 
-    // If this is an update, we need to handle stock differently
-    if (isUpdate) {
-      // For updates, we'd need to get the original purchase quantity
-      // and adjust the stock accordingly, but that requires more complex logic
-      // For simplicity, we'll just update the stock to the new quantity for now
-      console.log("Updated purchase record. Stock quantity update logic would go here.");
-      // A more sophisticated approach would involve:
-      // 1. Fetching the old purchase record
-      // 2. Calculating the difference between old and new quantities
-      // 3. Adjusting the stock by that difference
+      // For updates, need to fetch original purchase quantity
+      // This part is simplified for now, assuming we won't adjust stock on simple edits
+      console.warn("Updating purchase: Stock adjustment logic for edits is not fully implemented. Ensure manual stock adjustments if necessary.");
+      // If implementing full stock adjustment on edit:
+      // 1. Fetch the original purchase quantity from the DB using purchaseData.id
+      // 2. quantityChange = purchaseData.purchase_qty - originalPurchaseQty;
+      // 3. newStock = currentStock + quantityChange;
     } else {
       // For new purchases, simply add the quantity
-      const newStock = currentStock + purchaseData.purchase_qty;
-      const { error: stockUpdateError } = await supabase
-        .from('products')
-        .update({ 
-            stock_quantity: newStock,
-            updated_at: timestamp
-        })
-        .eq('id', productId);
+      quantityChange = purchaseData.purchase_qty;
+      newStock = currentStock + quantityChange;
+    }
 
-      if (stockUpdateError) {
-          console.error("Error updating product stock:", stockUpdateError);
-          console.warn(`Purchase recorded for product ID '${productId}', but failed to update stock quantity.`);
+    // Update product stock only if there was a change (prevents unnecessary updates on edit without qty change)
+    if (quantityChange !== 0) {
+        const { error: stockUpdateError } = await supabase
+          .from('products')
+          .update({ 
+              stock_quantity: newStock,
+              updated_at: timestamp
+          })
+          .eq('id', productId);
+
+        if (stockUpdateError) {
+            console.error("Error updating product stock:", stockUpdateError);
+            // Consider rolling back purchase or logging critical error
+            throw new Error(`Failed to update product stock: ${stockUpdateError.message}`);
+        }
+    }
+
+    // --- Step 5: Record the transaction in stock_history ---
+    // Always record history for new purchases, potentially for updates if quantity changed
+    if (!isUpdate || quantityChange !== 0) {
+      const stockHistoryRecord = {
+        product_id: productId,
+        product_name: purchaseData.product_name, // Add product name
+        hsn_code: purchaseData.hsn_code || '',   // Add HSN code
+        units: purchaseData.unit_type || 'pcs', // Add units
+        date: purchaseData.date || timestamp,
+        change_qty: quantityChange,
+        previous_qty: currentStock, // Stock BEFORE the transaction
+        stock_after: newStock,    // Stock AFTER the transaction
+        type: 'purchase',       // Transaction type
+        reference_id: purchaseRecord.id, // Link to the purchase record ID
+        source: `Purchase Invoice: ${purchaseData.invoice_number || purchaseData.purchase_invoice_number || 'N/A'}`, // Source document
+        created_at: timestamp,
+      };
+
+      // --- DEBUGGING: Log the record before insertion ---
+      console.log('Attempting to insert stock history record:', stockHistoryRecord);
+      // --- END DEBUGGING ---
+
+      const { error: historyInsertError } = await supabase
+        .from('stock_history')
+        .insert(stockHistoryRecord);
+
+      if (historyInsertError) {
+        console.error("Error inserting into stock_history:", historyInsertError);
+        // Decide on error handling: maybe log a warning, maybe throw an error?
+        // Throwing an error might be safer to ensure data consistency.
+        throw new Error(`Failed to record stock history: ${historyInsertError.message}`);
       }
+      console.log(`Successfully recorded stock history for product ID: ${productId}`);
     }
     
     return { 

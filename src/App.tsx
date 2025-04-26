@@ -9,7 +9,6 @@ import { theme } from './theme';
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import { CircularProgress, Box } from '@mui/material';
-import { AuthProvider } from './hooks/useAuth'; // Using the hook-based auth from main
 import ProtectedRoute from './components/ProtectedRoute';
 import ErrorBoundary from './components/ErrorBoundary';
 
@@ -42,54 +41,52 @@ function App() {
       <ThemeProvider theme={theme}>
         <CssBaseline />
         <ToastContainer position="top-right" theme="dark" />
-        <AuthProvider>
-          <Routes>
-            <Route path="/login" element={<Login />} />
-            <Route
-              path="/"
-              element={
-                <ProtectedRoute>
-                  <Layout>
-                    <Suspense fallback={<PageLoader />}>
-                      <Outlet />
-                    </Suspense>
-                  </Layout>
-                </ProtectedRoute>
-              }
-            >
-              <Route index element={<Navigate to="/dashboard" replace />} />
-              <Route path="dashboard" element={<Dashboard />} />
-              <Route path="appointments" element={<Appointments />} />
-              <Route path="clients" element={<Clients />} />
-              <Route path="stylists" element={
-                <ErrorBoundary>
-                  <Stylists />
-                </ErrorBoundary>
-              } />
-              <Route path="services" element={<ServiceCollections />} />
-              <Route path="services/:id" element={<ServiceCollectionDetail />} />
-              <Route path="members" element={<Members />} />
-              <Route path="products" element={<Products />} />
-              <Route path="product-master" element={
-                <ErrorBoundary>
-                  <ProductMaster />
-                </ErrorBoundary>
-              } />
-              <Route path="orders" element={
-                <ErrorBoundary>
-                  <Orders />
-                </ErrorBoundary>
-              } />
-              <Route path="pos" element={<POS />} />
-              <Route path="collections/:id" element={
-                <ErrorBoundary>
-                  <CollectionDetail />
-                </ErrorBoundary>
-              } />
-              <Route path="*" element={<Navigate to="/dashboard" replace />} />
-            </Route>
-          </Routes>
-        </AuthProvider>
+        <Routes>
+          <Route path="/login" element={<Login />} />
+          <Route
+            path="/"
+            element={
+              <ProtectedRoute>
+                <Layout>
+                  <Suspense fallback={<PageLoader />}>
+                    <Outlet />
+                  </Suspense>
+                </Layout>
+              </ProtectedRoute>
+            }
+          >
+            <Route index element={<Navigate to="/dashboard" replace />} />
+            <Route path="dashboard" element={<Dashboard />} />
+            <Route path="appointments" element={<Appointments />} />
+            <Route path="clients" element={<Clients />} />
+            <Route path="stylists" element={
+              <ErrorBoundary>
+                <Stylists />
+              </ErrorBoundary>
+            } />
+            <Route path="services" element={<ServiceCollections />} />
+            <Route path="services/:id" element={<ServiceCollectionDetail />} />
+            <Route path="members" element={<Members />} />
+            <Route path="products" element={<Products />} />
+            <Route path="product-master" element={
+              <ErrorBoundary>
+                <ProductMaster />
+              </ErrorBoundary>
+            } />
+            <Route path="orders" element={
+              <ErrorBoundary>
+                <Orders />
+              </ErrorBoundary>
+            } />
+            <Route path="pos" element={<POS />} />
+            <Route path="collections/:id" element={
+              <ErrorBoundary>
+                <CollectionDetail />
+              </ErrorBoundary>
+            } />
+            <Route path="*" element={<Navigate to="/dashboard" replace />} />
+          </Route>
+        </Routes>
         
         {/* Only renders in development */}
         <DevRefresher />

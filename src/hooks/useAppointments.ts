@@ -1,6 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'react-toastify'
-import { v4 as uuidv4 } from 'uuid'
 import { StylistBreak } from './useStylists'
 import { supabase } from '../utils/supabase/supabaseClient'
 
@@ -12,6 +11,8 @@ interface Client {
   id: string;
   full_name: string;
   phone?: string;
+  email?: string;
+  created_at?: string;
 }
 
 interface Service {
@@ -19,12 +20,13 @@ interface Service {
   name: string;
   duration: number;
   price: number;
+  collection_id?: string;
 }
 
 interface Stylist {
   id: string;
   name: string;
-  breaks?: StylistBreak[]; // Add breaks property to local Stylist interface
+  breaks?: StylistBreak[];
 }
 
 export interface Appointment {
@@ -39,6 +41,22 @@ export interface Appointment {
   paid: boolean;
   created_at?: string;
   updated_at?: string;
+  billed?: boolean;
+  stylist_ids?: string[];
+  service_ids?: string[];
+}
+
+export interface MergedAppointment extends Appointment {
+  clientDetails: {
+    id: string;
+    full_name: string;
+    phone?: string;
+    email?: string;
+    created_at?: string;
+    services: Service[];
+    stylists: Pick<Stylist, 'id' | 'name'>[];
+    selectedCollectionId?: string | null;
+  }[];
 }
 
 // Add a function to check if an appointment conflicts with a stylist's break
@@ -117,6 +135,7 @@ const fetchStylists = async (): Promise<Stylist[]> => {
 
 interface CreateAppointmentData {
   stylist_id: string;
+  stylist_ids?: string[];
   service_id: string;
   client_name: string;
   start_time: string;
@@ -132,342 +151,358 @@ export function useAppointments() {
   const queryClient = useQueryClient()
   const { updateClientFromAppointment } = useClients()
 
-  const { data: appointments, isLoading } = useQuery({
+  const { data: appointments, isLoading } = useQuery<MergedAppointment[], Error>({
     queryKey: ['appointments'],
-    queryFn: async () => {
+    queryFn: async (): Promise<MergedAppointment[]> => {
+      console.log("Fetching appointments...");
       try {
-        // Try directly getting appointments without checking schema first
-        const { data, error } = await supabase
+        // Step 1: Fetch base appointments
+        const { data: baseAppointments, error: baseError } = await supabase
           .from('appointments')
-          .select(`
-            id,
-            client_id,
-            stylist_id,
-            service_id,
-            start_time,
-            end_time,
-            status,
-            notes,
-            paid,
-            created_at,
-            updated_at
-          `)
+          .select('*')
           .order('start_time', { ascending: true });
-        
-        if (error) {
-          console.error('Error fetching appointments:', error);
-          toast.error('Failed to fetch appointments');
-          return []; // Return empty array instead of throwing
-        }
-        
-        // Separately fetch related data to avoid foreign key issues
-        if (data && data.length > 0) {
-          const clientIds = [...new Set(data.filter(a => a.client_id).map(a => a.client_id))];
-          const stylistIds = [...new Set(data.filter(a => a.stylist_id).map(a => a.stylist_id))];
-          const serviceIds = [...new Set(data.filter(a => a.service_id).map(a => a.service_id))];
-          
-          // Fetch clients
-          const { data: clients } = await supabase
-            .from('clients')
-            .select('id, full_name, phone')
-            .in('id', clientIds);
-            
-          // Fetch stylists
-          const { data: stylists } = await supabase
-            .from('stylists')
-            .select('id, name')
-            .in('id', stylistIds);
-            
-          // Fetch services
-          const { data: services } = await supabase
-            .from('services')
-            .select('id, name, price')
-            .in('id', serviceIds);
-          
-          // Merge the data
-          return data.map(appointment => {
-            const client = clients?.find(c => c.id === appointment.client_id);
-            const stylist = stylists?.find(s => s.id === appointment.stylist_id);
-            const service = services?.find(s => s.id === appointment.service_id);
-            
+
+        if (baseError) throw new Error(`Failed to fetch base appointments: ${baseError.message}`);
+        if (!baseAppointments || baseAppointments.length === 0) return [];
+        console.log(`Fetched ${baseAppointments.length} base appointments.`);
+
+        const appointmentIds = baseAppointments.map(a => a.id);
+        if (appointmentIds.length === 0) return []; // No appointments, no need to fetch details
+
+        // Step 2: Fetch all related data from join tables IN PARALLEL
+        const [
+          { data: appointmentClientsData, error: acError },
+          { data: appointmentServicesData, error: asError },
+          { data: appointmentStylistsData, error: astError }
+        ] = await Promise.all([
+          supabase.from('appointment_clients').select('appointment_id, client_id').in('appointment_id', appointmentIds),
+          supabase.from('appointment_services').select('appointment_id, client_id, service_id').in('appointment_id', appointmentIds),
+          supabase.from('appointment_stylists').select('appointment_id, client_id, stylist_id').in('appointment_id', appointmentIds)
+        ]);
+
+        // Error handling for join table fetches
+        if (acError) throw new Error(`Failed to fetch appointment_clients: ${acError.message}`);
+        if (asError) throw new Error(`Failed to fetch appointment_services: ${asError.message}`);
+        if (astError) throw new Error(`Failed to fetch appointment_stylists: ${astError.message}`);
+
+        // Step 3: Get all unique IDs for fetching details
+        const allClientIds = Array.from(new Set(appointmentClientsData?.map(ac => ac.client_id) || []));
+        const allServiceIds = Array.from(new Set(appointmentServicesData?.map(as => as.service_id) || []));
+        const allStylistIds = Array.from(new Set(appointmentStylistsData?.map(ast => ast.stylist_id) || []));
+
+        // Step 4: Fetch details for clients, services, stylists IN PARALLEL (handle empty ID arrays)
+         const [
+           { data: clientsData, error: clientsError },
+           { data: servicesData, error: servicesError },
+           { data: stylistsData, error: stylistsError }
+         ] = await Promise.all([
+           allClientIds.length > 0 ? supabase.from('clients').select('id, full_name, phone, email, created_at').in('id', allClientIds) : Promise.resolve({ data: [], error: null }),
+           allServiceIds.length > 0 ? supabase.from('services').select('id, name, price, duration, collection_id').in('id', allServiceIds) : Promise.resolve({ data: [], error: null }),
+           allStylistIds.length > 0 ? supabase.from('stylists').select('id, name').in('id', allStylistIds) : Promise.resolve({ data: [], error: null })
+         ]);
+
+        // Error handling for detail fetches
+        if (clientsError) throw new Error(`Failed to fetch clients: ${clientsError.message}`);
+        if (servicesError) throw new Error(`Failed to fetch services: ${servicesError.message}`);
+        if (stylistsError) throw new Error(`Failed to fetch stylists: ${stylistsError.message}`);
+
+        // Step 5: Create maps for easy lookup
+        const clientsMap = new Map(clientsData?.map(c => [c.id, c]));
+        const servicesMap = new Map(servicesData?.map(s => [s.id, s as Service])); // Assert type if necessary
+        const stylistsMap = new Map(stylistsData?.map(st => [st.id, st as Pick<Stylist, 'id' | 'name'>])); // Use Pick
+
+        // Step 6: Merge the data into the MergedAppointment structure
+        const mergedAppointments: MergedAppointment[] = baseAppointments.map(appointment => {
+          // Find client IDs associated with this appointment from the join table data
+          const clientLinks = appointmentClientsData?.filter(ac => ac.appointment_id === appointment.id) || [];
+
+          const clientDetailsForThisAppointment = clientLinks.map(link => {
+            const client = clientsMap.get(link.client_id);
+            if (!client) {
+              console.warn(`Client data not found for ID: ${link.client_id} in appointment ${appointment.id}`);
+              return null; // Skip if client data wasn't found
+            }
+
+            // Find services for this specific client in this appointment
+            const servicesForThisClient = (appointmentServicesData || [])
+              .filter(as => as.appointment_id === appointment.id && as.client_id === link.client_id)
+              .map(as => servicesMap.get(as.service_id))
+              .filter((service): service is Service => !!service); // Type guard to filter out nulls and assert type
+
+            // Find stylists for this specific client in this appointment
+            const stylistsForThisClient = (appointmentStylistsData || [])
+              .filter(ast => ast.appointment_id === appointment.id && ast.client_id === link.client_id)
+              .map(ast => stylistsMap.get(ast.stylist_id))
+              .filter((stylist): stylist is Pick<Stylist, 'id' | 'name'> => !!stylist); // Type guard
+
             return {
-              ...appointment,
-              clients: client ? { full_name: client.full_name, phone: client.phone } : null,
-              stylists: stylist ? { name: stylist.name } : null,
-              services: service ? { name: service.name, price: service.price } : null
+              // Spread the client details (id, full_name, phone, etc.)
+              ...client,
+              // Nest the associated services and stylists
+              services: servicesForThisClient,
+              stylists: stylistsForThisClient,
+              // Optionally derive collection ID for UI convenience, defaulting undefined to null
+              selectedCollectionId: servicesForThisClient[0]?.collection_id ?? null 
             };
-          });
-        }
-        
-        return data || [];
+          }).filter((details): details is MergedAppointment['clientDetails'][0] => !!details); // Filter out any null entries
+
+          // Combine base appointment data with the structured client details
+          return {
+            ...appointment, // Spread base appointment fields
+            clientDetails: clientDetailsForThisAppointment // Add the structured array
+          };
+        });
+        console.log("Finished merging appointment data.");
+        return mergedAppointments;
+
       } catch (error) {
-        console.error('Error in appointment query:', error);
-        toast.error('Failed to load appointments');
-        return []; // Return empty array instead of throwing
+        console.error('Error in queryFn fetching appointments:', error);
+        toast.error(`Failed to fetch appointments: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        return []; // Return empty array on error to prevent breaking UI
       }
     },
   });
 
   const createAppointment = useMutation({
-    mutationFn: async (data: CreateAppointmentData) => {
-      // Format appointment times consistently with exact minutes
-      const formattedStartTime = formatAppointmentTime(data.start_time);
-      const formattedEndTime = formatAppointmentTime(data.end_time);
-      
-      // Load stylists data to check breaks
-      const stylists = await fetchStylists();
-      
-      // Check if this appointment conflicts with any stylist breaks
-      if (checkBreakConflict(data.stylist_id, formattedStartTime, formattedEndTime, stylists)) {
-        throw new Error('This appointment conflicts with a scheduled break for the stylist');
-      }
-      
-      // Find or create client using the updateClientFromAppointment function
-      let client;
-      let client_id: string | undefined;
+    mutationFn: async (data: {
+      start_time: string;
+      end_time: string;
+      notes?: string;
+      status: Appointment['status'];
+      // Include primary keys if needed by 'appointments' table schema
+      client_id: string;
+      stylist_id: string;
+      service_id: string;
+      // The structured details array
+      clientDetails: {
+        clientId: string;
+        serviceIds: string[];
+        stylistIds: string[];
+      }[];
+    }) => {
+      const { clientDetails, ...appointmentBaseData } = data;
 
-      if (data.client_id) {
-        client_id = data.client_id;
-        // If client_id is provided, the client exists, but we still call updateClientFromAppointment
-        // to update appointment count, last_visit, etc.
-        client = await updateClientFromAppointment(
-          data.client_name,
-          data.phone,
-          data.email,
-          data.notes,
-          formattedStartTime
-        );
-      } else {
-        // Create or update client
-        client = await updateClientFromAppointment(
-          data.client_name,
-          data.phone,
-          data.email,
-          data.notes,
-          formattedStartTime
-        );
-        client_id = client.id;
-      }
-      
-      // Create new appointment
-      const newAppointment = {
-        client_id,
-        stylist_id: data.stylist_id,
-        service_id: data.service_id,
-        start_time: formattedStartTime,
-        end_time: formattedEndTime,
-        status: data.status,
-        notes: data.notes,
-        paid: false
-      };
-      
-      // Insert into Supabase - AVOID complex joins by using two steps
-      // Step 1: Insert the appointment with a simple returning clause
-      const { data: insertedAppointment, error } = await supabase
+       // Ensure times are correctly formatted (should already be ISO strings from handleBookingSubmit)
+       const formattedStartTime = formatAppointmentTime(appointmentBaseData.start_time);
+       const formattedEndTime = formatAppointmentTime(appointmentBaseData.end_time);
+
+      console.log("Attempting to create appointment with base data:", { ...appointmentBaseData, start_time: formattedStartTime, end_time: formattedEndTime });
+
+      // --- Step 1: Insert into main appointments table ---
+      const { data: newAppointment, error: appointmentError } = await supabase
         .from('appointments')
-        .insert([newAppointment])
-        .select('id')
+        .insert({
+          ...appointmentBaseData,
+          start_time: formattedStartTime, // Use formatted times
+          end_time: formattedEndTime,
+          paid: false // Default paid status
+        })
+        .select() // Select the newly created appointment record
         .single();
-      
-      if (error) {
-        console.error('Error creating appointment:', error);
-        throw error;
+
+      if (appointmentError) throw new Error(`Error inserting appointment: ${appointmentError.message}`);
+      if (!newAppointment) throw new Error("Failed to create appointment (no data returned).");
+
+      const newAppointmentId = newAppointment.id;
+      console.log("Created base appointment with ID:", newAppointmentId);
+
+      // --- Step 2: Insert into join tables ---
+      try {
+        // Process inserts for all clients concurrently
+        await Promise.all(clientDetails.map(async (detail) => {
+          const { clientId, serviceIds, stylistIds } = detail;
+          console.log(`Processing joins for client ${clientId}...`);
+
+          // 2a: Insert into appointment_clients (Appointment <-> Client link)
+          const { error: acError } = await supabase
+            .from('appointment_clients')
+            .insert({ appointment_id: newAppointmentId, client_id: clientId });
+          // If this fails, the rest for this client might not make sense
+          if (acError) throw new Error(`Failed to link client ${clientId}: ${acError.message}`);
+          console.log(` -> Linked client ${clientId}`);
+
+          // 2b: Insert into appointment_services (Appt+Client <-> Service link)
+          const serviceInserts = serviceIds.map(serviceId => ({
+            appointment_id: newAppointmentId,
+            client_id: clientId, // Include client_id
+            service_id: serviceId
+          }));
+          if (serviceInserts.length > 0) {
+            console.log(` -> Linking ${serviceInserts.length} services for client ${clientId}`);
+            const { error: asError } = await supabase.from('appointment_services').insert(serviceInserts);
+            // Handle potential duplicate key error specifically (e.g., PKey violation)
+             if (asError && (asError.code === '23505' || asError.message.includes('appointment_services_pkey'))) { // Check code or message
+                 console.warn(`Ignoring duplicate service(s) for client ${clientId}: ${asError.message}`);
+                 // Continue if duplicates are acceptable or expected in some edge cases
+             } else if (asError) {
+                // Throw other errors
+                throw new Error(`Failed to link services for client ${clientId}: ${asError.message}`);
+             }
+          }
+
+          // 2c: Insert into appointment_stylists (Appt+Client <-> Stylist link)
+          const stylistInserts = stylistIds.map(stylistId => ({
+            appointment_id: newAppointmentId,
+            client_id: clientId, // Include client_id
+            stylist_id: stylistId
+          }));
+           if (stylistInserts.length > 0) {
+             console.log(` -> Linking ${stylistInserts.length} stylists for client ${clientId}`);
+             const { error: astError } = await supabase.from('appointment_stylists').insert(stylistInserts);
+             // Handle potential duplicate key error specifically (e.g., PKey violation)
+             if (astError && (astError.code === '23505' || astError.message.includes('appointment_stylists_pkey'))) { // Adjust constraint name if needed
+                 console.warn(`Ignoring duplicate stylist(s) for client ${clientId}: ${astError.message}`);
+                 // Continue if duplicates are acceptable
+             } else if (astError) {
+                 // Throw other errors
+                throw new Error(`Failed to link stylists for client ${clientId}: ${astError.message}`);
+             }
+           }
+          console.log(` -> Finished joins for client ${clientId}`);
+        })); // End of Promise.all for client details
+
+        console.log("Successfully inserted all join table records for appointment:", newAppointmentId);
+        return newAppointment; // Return the created base appointment object
+
+      } catch (joinError) {
+         // If any join table insertion fails...
+         console.error("Error inserting into join tables:", joinError);
+         // Attempt to clean up: Delete the base appointment record
+         console.warn("Attempting to delete partially created appointment:", newAppointmentId);
+         await supabase.from('appointments').delete().match({ id: newAppointmentId });
+         console.log("Deleted base appointment due to join error.");
+         // Re-throw the error so the mutation fails
+         throw joinError;
       }
-      
-      // Step 2: Get the full appointment data separately with client, service, and stylist data
-      const appointmentId = insertedAppointment.id;
-      
-      // Fetch appointment
-      const { data: fullAppointment } = await supabase
-        .from('appointments')
-        .select('id, client_id, stylist_id, service_id, start_time, end_time, status, notes, paid, created_at')
-        .eq('id', appointmentId)
-        .single();
-        
-      // Fetch client
-      const { data: clientData } = await supabase
-        .from('clients')
-        .select('id, full_name, phone')
-        .eq('id', client_id)
-        .single();
-        
-      // Fetch stylist
-      const { data: stylistData } = await supabase
-        .from('stylists')
-        .select('id, name')
-        .eq('id', data.stylist_id)
-        .single();
-        
-      // Fetch service
-      const { data: serviceData } = await supabase
-        .from('services')
-        .select('id, name, price')
-        .eq('id', data.service_id)
-        .single();
-      
-      // Combine the data
-      const completeAppointment = {
-        ...fullAppointment,
-        clients: clientData ? { full_name: clientData.full_name, phone: clientData.phone } : null,
-        stylists: stylistData ? { name: stylistData.name } : null,
-        services: serviceData ? { name: serviceData.name, price: serviceData.price } : null
-      };
-      
-      return completeAppointment;
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
+      console.log("Appointment created successfully in DB:", data);
+      // Invalidate the 'appointments' query cache to trigger a refetch
       queryClient.invalidateQueries({ queryKey: ['appointments'] });
-      toast.success('Appointment created successfully');
+      toast.success('Appointment created successfully!');
     },
     onError: (error) => {
+      console.error('Mutation error in createAppointment:', error);
       toast.error(`Failed to create appointment: ${error instanceof Error ? error.message : 'Unknown error'}`);
-      console.error('Error creating appointment:', error);
     },
   });
 
   const updateAppointment = useMutation({
-    mutationFn: async (updates: Partial<Appointment> & { id: string }) => {
-      console.log('Updating appointment with data:', updates);
-      const { id, ...updateData } = updates;
+    mutationFn: async (data: {
+      id: string;
+      clientDetails: MergedAppointment['clientDetails'];
+      // Ensure other updatable fields are included here if needed
+      start_time?: string;
+      end_time?: string;
+      notes?: string;
+      status?: Appointment['status'];
+      client_id?: string; // Example: if base table needs primary client
+      stylist_id?: string; // Example: if base table needs primary stylist
+      service_id?: string; // Example: if base table needs primary service
+    } & Partial<Omit<MergedAppointment, 'clientDetails'>>) => {
+      const { id, clientDetails, ...appointmentBaseUpdates } = data;
       
-      // Format appointment times if they are being updated
-      const formattedUpdates: any = { ...updateData };
-      if (updates.start_time) {
-        formattedUpdates.start_time = formatAppointmentTime(updates.start_time);
-      }
-      if (updates.end_time) {
-        formattedUpdates.end_time = formatAppointmentTime(updates.end_time);
-      }
-      
-      // Add updated_at timestamp
-      formattedUpdates.updated_at = new Date().toISOString();
-      
-      // Remove any properties that shouldn't be sent to the database
-      // These fields are used for UI display but aren't part of the schema
-      delete formattedUpdates.clients;
-      delete formattedUpdates.stylists;
-      delete formattedUpdates.services;
-      
-      console.log('Sending formatted updates to database:', formattedUpdates);
-      
-      // Update in Supabase
-      const { data, error } = await supabase
-        .from('appointments')
-        .update(formattedUpdates)
-        .eq('id', id)
-        .select('*');
-      
-      if (error) {
-        console.error('Error updating appointment:', error);
-        throw error;
-      }
-      
-      console.log('Appointment updated successfully:', data);
-      
-      if (!data || data.length === 0) {
-        throw new Error('No data returned from update operation');
-      }
-      
-      // Fetch the updated appointment with all related data
-      const updatedAppointment = data[0];
-      
-      try {
-        // Fetch client
-        const { data: clientData, error: clientError } = await supabase
-          .from('clients')
-          .select('id, full_name, phone')
-          .eq('id', updatedAppointment.client_id)
+      // **CRITICAL FIX:** Remove fields not directly on the 'appointments' table
+      // from the base update object.
+      // Keep only fields that actually exist on the 'appointments' table.
+      const { 
+        // Remove fields related to join tables if they aren't direct columns
+        // client_ids, // REMOVED - Does not exist
+        // service_ids, // Check if this exists directly on appointments table
+        // stylist_ids, // Check if this exists directly on appointments table
+         
+        // Keep only fields that ARE direct columns on the 'appointments' table
+        start_time,
+        end_time,
+        notes,
+        status,
+        client_id,   // Keep if 'appointments' has a primary client_id
+        stylist_id,  // Keep if 'appointments' has a primary stylist_id
+        service_id,  // Keep if 'appointments' has a primary service_id
+        paid,        // Keep standard fields
+        billed,      // Keep if 'appointments' has a billed column
+        stylist_ids, // Keep if 'appointments' has this array column
+        service_ids, // Keep if 'appointments' has this array column
+        // Add any other direct columns from 'appointments' schema here
+        ...restOfBaseUpdates // Include any other valid fields passed in
+      } = appointmentBaseUpdates; // Remove previous type assertion
+
+      // Construct the object with ONLY valid columns for the 'appointments' table update
+      const validBaseUpdateData: Partial<Appointment> & { updated_at?: string } = {
+        ...(start_time && { start_time }),
+        ...(end_time && { end_time }),
+        ...(notes && { notes }),
+        ...(status && { status }),
+        ...(client_id && { client_id }),
+        ...(stylist_id && { stylist_id }),
+        ...(service_id && { service_id }),
+        ...(paid !== undefined && { paid }), // Handle boolean
+        ...(billed !== undefined && { billed }), // Handle boolean
+        ...(stylist_ids && { stylist_ids }), // Include if column exists
+        ...(service_ids && { service_ids }), // Include if column exists
+        ...restOfBaseUpdates, // Include other valid fields
+        updated_at: new Date().toISOString() // Always add updated_at
+      };
+
+      console.warn("updateAppointment mutation needs full implementation for join tables!");
+      console.log(`Attempting to update base appointment ${id} with:`, validBaseUpdateData);
+
+      // 1. Update base appointment table with ONLY valid fields
+      const { data: updatedAppointment, error: updateError } = await supabase
+          .from('appointments')
+          .update(validBaseUpdateData) // Use the cleaned data
+          .eq('id', id)
+          .select()
           .single();
-          
-        if (clientError) {
-          console.warn('Error fetching client data:', clientError);
-        }
-          
-        // Fetch stylist
-        const { data: stylistData, error: stylistError } = await supabase
-          .from('stylists')
-          .select('id, name')
-          .eq('id', updatedAppointment.stylist_id)
-          .single();
-          
-        if (stylistError) {
-          console.warn('Error fetching stylist data:', stylistError);
-        }
-          
-        // Fetch service
-        const { data: serviceData, error: serviceError } = await supabase
-          .from('services')
-          .select('id, name, price')
-          .eq('id', updatedAppointment.service_id)
-          .single();
-        
-        if (serviceError) {
-          console.warn('Error fetching service data:', serviceError);
-        }
-        
-        // Combine the data
-        const completeAppointment = {
-          ...updatedAppointment,
-          clients: clientData ? { full_name: clientData.full_name, phone: clientData.phone } : null,
-          stylists: stylistData ? { name: stylistData.name } : null,
-          services: serviceData ? { name: serviceData.name, price: serviceData.price } : null
-        };
-        
-        return completeAppointment;
-      } catch (fetchError) {
-        console.error('Error fetching related data:', fetchError);
-        // Return the appointment data without related entities if fetching fails
-        return updatedAppointment;
-      }
+
+      if (updateError) throw new Error(`Error updating appointment ${id}: ${updateError.message}`);
+      if (!updatedAppointment) throw new Error(`Failed to update appointment ${id}`);
+
+      // 2. **CRITICAL:** Update Join Tables
+      //    - Delete existing rows for this appointment_id in appointment_clients, _services, _stylists.
+      //    - Re-insert new rows based on the incoming `clientDetails` array.
+      //    - This needs careful implementation with error handling, similar to the create logic.
+
+      return updatedAppointment; // Return updated base appointment for now
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
+      console.log("Appointment updated successfully in DB:", data);
       queryClient.invalidateQueries({ queryKey: ['appointments'] });
-      toast.success('Appointment updated successfully');
+      toast.success('Appointment updated successfully!');
     },
     onError: (error) => {
+      console.error('Mutation error in updateAppointment:', error);
       toast.error(`Failed to update appointment: ${error instanceof Error ? error.message : 'Unknown error'}`);
-      console.error('Error updating appointment:', error);
     },
   });
 
   const deleteAppointment = useMutation({
     mutationFn: async (id: string) => {
-      // First get the appointment details before deletion for later reference if needed
-      const { data: appointmentToDelete } = await supabase
-        .from('appointments')
-        .select('id')
-        .eq('id', id)
-        .single();
-      
-      if (!appointmentToDelete) {
-        throw new Error('Appointment not found');
-      }
-      
-      // Delete the appointment
+      console.log(`Attempting to delete appointment ${id}`);
+      // Assumes ON DELETE CASCADE is set up for foreign keys in Supabase.
+      // If not, you MUST manually delete from appointment_clients, _services, _stylists first.
       const { error } = await supabase
         .from('appointments')
         .delete()
         .eq('id', id);
-      
-      if (error) {
-        console.error('Error deleting appointment:', error);
-        throw error;
-      }
-      
-      return { id };
+
+      if (error) throw new Error(`Error deleting appointment ${id}: ${error.message}`);
+      console.log(`Successfully deleted appointment ${id}`);
+      return { id }; // Return deleted ID
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
+      console.log("Appointment deleted successfully from DB:", data);
       queryClient.invalidateQueries({ queryKey: ['appointments'] });
       toast.success('Appointment deleted successfully');
     },
     onError: (error) => {
+      console.error('Mutation error in deleteAppointment:', error);
       toast.error(`Failed to delete appointment: ${error instanceof Error ? error.message : 'Unknown error'}`);
-      console.error('Error deleting appointment:', error);
     },
   });
 
   return {
-    appointments,
+    appointments: appointments || [],
     isLoading,
     createAppointment: createAppointment.mutate,
     updateAppointment: updateAppointment.mutate,

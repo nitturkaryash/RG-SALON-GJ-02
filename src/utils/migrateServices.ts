@@ -1,4 +1,4 @@
-import { supabase } from '../lib/supabase';
+import { supabase } from '../utils/supabase/supabaseClient.js';
 import { toast } from 'react-toastify';
 
 /**

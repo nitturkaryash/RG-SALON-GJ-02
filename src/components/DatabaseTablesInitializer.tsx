@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Box, Alert, AlertTitle, Typography, Collapse, Button, Link } from '@mui/material';
-import { createSalesProductsTable } from '../utils/createTablesIfNotExist';
+import { Box, Alert, AlertTitle, Typography, Collapse, Button } from '@mui/material';
 
 interface DatabaseTablesInitializerProps {
   onComplete?: (success: boolean) => void;
@@ -18,18 +17,13 @@ const DatabaseTablesInitializer: React.FC<DatabaseTablesInitializerProps> = ({
       try {
         console.log('DatabaseTablesInitializer: Initializing required tables...');
         
-        // Initialize sales_products table
-        const salesTableCreated = await createSalesProductsTable();
+        // All tables initialization was removed
+        // No sales_products table initialization anymore
         
-        if (salesTableCreated) {
-          console.log('DatabaseTablesInitializer: Sales products table initialized successfully');
-          setInitialized(true);
-          if (onComplete) onComplete(true);
-        } else {
-          console.error('DatabaseTablesInitializer: Failed to initialize sales products table');
-          setError('Failed to initialize sales_products table');
-          if (onComplete) onComplete(false);
-        }
+        console.log('DatabaseTablesInitializer: Database tables check completed');
+        setInitialized(true);
+        if (onComplete) onComplete(true);
+        
       } catch (err) {
         console.error('DatabaseTablesInitializer: Error initializing tables', err);
         setError(`Error initializing database tables: ${err instanceof Error ? err.message : String(err)}`);
@@ -74,43 +68,7 @@ const DatabaseTablesInitializer: React.FC<DatabaseTablesInitializerProps> = ({
                 <ol>
                   <li>Check if your Supabase server is running and accessible</li>
                   <li>Go to the Supabase dashboard SQL Editor</li>
-                  <li>Run the following SQL to create the required table:
-                    <Box 
-                      component="pre" 
-                      sx={{ 
-                        mt: 1, 
-                        p: 2, 
-                        backgroundColor: 'background.paper', 
-                        borderRadius: 1,
-                        overflow: 'auto',
-                        fontSize: '0.8rem'
-                      }}
-                    >
-                      {`CREATE TABLE IF NOT EXISTS public.sales_products (
-  serial_no TEXT PRIMARY KEY,
-  order_id TEXT,
-  date TEXT,
-  product_name TEXT,
-  quantity TEXT,
-  unit_price_ex_gst TEXT,
-  gst_percentage TEXT,
-  taxable_value TEXT,
-  cgst_amount TEXT,
-  sgst_amount TEXT,
-  total_purchase_cost TEXT,
-  discount TEXT,
-  tax TEXT,
-  payment_amount TEXT,
-  payment_method TEXT,
-  payment_date TEXT
-);`}
-                    </Box>
-                  </li>
-                  <li>
-                    <Link href="/schema.sql" download>
-                      Click here to download the complete SQL schema
-                    </Link>
-                  </li>
+                  <li>Make sure required tables exist in your database</li>
                 </ol>
               </Typography>
               

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { supabase } from '../supabaseClient';
+import { supabase } from '../utils/supabase/supabaseClient.js';
 import { v4 as uuidv4 } from 'uuid';
 import * as XLSX from 'xlsx';
 import { toast } from 'react-toastify';

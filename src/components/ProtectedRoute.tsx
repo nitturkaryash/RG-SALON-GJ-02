@@ -1,5 +1,5 @@
 import { Navigate, useLocation } from 'react-router-dom';
-import { useAuth } from '../hooks/useAuth';
+import { useAuthContext } from '../contexts/AuthContext';
 import { useEffect, useState } from 'react';
 import { Box, CircularProgress } from '@mui/material';
 
@@ -8,14 +8,18 @@ interface ProtectedRouteProps {
 }
 
 export default function ProtectedRoute({ children }: ProtectedRouteProps) {
-  const { isAuthenticated } = useAuth();
+  const { session } = useAuthContext();
   const location = useLocation();
   const [isChecking, setIsChecking] = useState(true);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   useEffect(() => {
     // Check if we have auth data in localStorage
     const token = localStorage.getItem('auth_token');
     const user = localStorage.getItem('auth_user');
+    
+    // Consider authenticated if either session exists or localStorage has auth data
+    setIsAuthenticated(!!session || (!!token && !!user));
     
     // Short timeout to ensure smooth transition
     const timer = setTimeout(() => {
@@ -23,7 +27,7 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
     }, 500);
 
     return () => clearTimeout(timer);
-  }, []);
+  }, [session]);
 
   if (isChecking) {
     return (

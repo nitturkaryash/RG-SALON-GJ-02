@@ -45,6 +45,9 @@ interface InventoryTableProps {
   noDeleteColumn?: boolean;
   deleteIdField?: string;
   showDelete?: boolean;
+  renderFooter?: () => React.ReactNode;
+  totalQuantityLabel?: string;
+  totalQuantityValue?: number | string;
 }
 
 /**
@@ -62,7 +65,10 @@ const InventoryTable: React.FC<InventoryTableProps> = ({
   getItemName,
   noDeleteColumn = false,
   deleteIdField = 'id',
-  showDelete = true
+  showDelete = true,
+  renderFooter,
+  totalQuantityLabel,
+  totalQuantityValue
 }) => {
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
@@ -205,6 +211,7 @@ const InventoryTable: React.FC<InventoryTableProps> = ({
               })
             )}
           </TableBody>
+          {renderFooter && renderFooter()}
         </Table>
       </TableContainer>
 
@@ -217,6 +224,23 @@ const InventoryTable: React.FC<InventoryTableProps> = ({
         page={page}
         onPageChange={handleChangePage}
         onRowsPerPageChange={handleChangeRowsPerPage}
+        labelDisplayedRows={({ from, to, count }) => {
+          const standardLabel = `${from}–${to} of ${count !== -1 ? count : `more than ${to}`}`;
+          if (totalQuantityLabel && totalQuantityValue !== undefined) {
+            const formattedValue = typeof totalQuantityValue === 'number'
+              ? totalQuantityValue.toLocaleString()
+              : totalQuantityValue;
+            return (
+              <>
+                {`${standardLabel} | ${totalQuantityLabel} `}
+                <Box component="span" sx={{ fontWeight: 'bold' }}>
+                  {formattedValue}
+                </Box>
+              </>
+            );
+          }
+          return standardLabel;
+        }}
       />
     </Paper>
   );

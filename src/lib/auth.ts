@@ -1,4 +1,4 @@
-import { supabase } from '../supabaseClient'
+import { supabase } from '../utils/supabase/supabaseClient.js'
 import { toast } from 'react-toastify'
 
 export async function signInWithEmail(email: string, password: string) {

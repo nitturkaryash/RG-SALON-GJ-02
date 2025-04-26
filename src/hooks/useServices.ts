@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'react-toastify'
 import { v4 as uuidv4 } from 'uuid'
-import { supabase } from '../lib/supabase'
+import { supabase } from '../utils/supabase/supabaseClient.js'
 
 export interface Service {
   id: string;
@@ -11,6 +11,7 @@ export interface Service {
   price: number;
   category?: string;
   active?: boolean;
+  collection_id?: string;
 }
 
 export function useServices() {
@@ -40,6 +41,7 @@ export function useServices() {
             description: service.description || '',
             duration: service.duration || 30,
             price: service.price || 0,
+            collection_id: service.collection_id,
             // Only include category if it exists in the database response
             ...(service.hasOwnProperty('category') ? { category: service.category } : {})
           })) as Service[];
@@ -65,7 +67,8 @@ export function useServices() {
         description: newService.description || '',
         duration: newService.duration,
         price: newService.price,
-        category: newService.category || ''
+        category: newService.category || '',
+        collection_id: newService.collection_id,
         // Omit active field to avoid schema conflicts
       };
       

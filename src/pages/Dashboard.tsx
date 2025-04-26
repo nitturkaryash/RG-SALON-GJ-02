@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { 
   Box, 
   Typography, 
@@ -14,7 +14,8 @@ import {
   Skeleton,
   Container,
   IconButton,
-  Tooltip
+  Tooltip,
+  TextField
 } from '@mui/material'
 import { 
   AttachMoney as MoneyIcon,
@@ -26,6 +27,7 @@ import {
   EmojiPeople as StylistIcon,
   Refresh as RefreshIcon
 } from '@mui/icons-material'
+import { format } from 'date-fns'
 import { useDashboardAnalytics } from '../hooks/useDashboardAnalytics'
 import { formatCurrency } from '../utils/format'
 import KPICard from '../components/dashboard/KPICard'
@@ -36,39 +38,23 @@ import GaugeChart from '../components/charts/GaugeChart'
 import DashboardSettings from '../components/dashboard/DashboardSettings'
 
 export default function Dashboard() {
+  const [endDate, setEndDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [startDate, setStartDate] = useState<string>(() => {
+    const date = new Date();
+    date.setDate(date.getDate() - 7); // Default to 7 days ago
+    return date.toISOString().split('T')[0];
+  });
+
   const { 
     analyticsSummary, 
     isLoading, 
     refetchAnalytics,
     settings,
     updateSettings
-  } = useDashboardAnalytics();
+  } = useDashboardAnalytics({ startDate, endDate });
   
   // Reference to track if dashboard is mounted
   const isMounted = useRef(true);
-  
-  // Refresh data on initial load and set up auto-refresh
-  useEffect(() => {
-    console.log('Dashboard mounted - initializing data...');
-    
-    // Initial data load
-    refetchAnalytics();
-    
-    // Set up auto-refresh interval based on settings
-    const intervalId = setInterval(() => {
-      if (isMounted.current) {
-        console.log('Auto-refreshing dashboard data');
-        refetchAnalytics();
-      }
-    }, settings.refreshInterval);
-    
-    // Cleanup on unmount
-    return () => {
-      console.log('Dashboard unmounting - cleaning up...');
-      isMounted.current = false;
-      clearInterval(intervalId);
-    };
-  }, [refetchAnalytics, settings.refreshInterval]);
   
   // Prepare chart data
   const salesTrendData = analyticsSummary ? {
@@ -128,6 +114,24 @@ export default function Dashboard() {
     refetchAnalytics();
   };
   
+  // Handle start date change
+  const handleStartDateChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const newStartDate = event.target.value;
+    console.log('Start Date selected:', newStartDate);
+    setStartDate(newStartDate);
+    // TODO: Add validation (start date <= end date)
+    // React Query handles the refetch via queryKey change
+  };
+
+  // Handle end date change
+  const handleEndDateChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const newEndDate = event.target.value;
+    console.log('End Date selected:', newEndDate);
+    setEndDate(newEndDate);
+    // TODO: Add validation (start date <= end date)
+    // React Query handles the refetch via queryKey change
+  };
+  
   console.log('Dashboard render - Analytics summary:', analyticsSummary);
   console.log('Dashboard loading state:', isLoading);
   
@@ -140,6 +144,25 @@ export default function Dashboard() {
           </Typography>
           
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+            {/* Date Range Pickers */}
+            <TextField
+              type="date"
+              label="Start Date"
+              value={startDate}
+              onChange={handleStartDateChange}
+              InputLabelProps={{ shrink: true }}
+              size="small"
+              sx={{ width: 150 }} // Adjust width as needed
+            />
+            <TextField
+              type="date"
+              label="End Date"
+              value={endDate}
+              onChange={handleEndDateChange}
+              InputLabelProps={{ shrink: true }}
+              size="small"
+              sx={{ width: 150 }} // Adjust width as needed
+            />
             <Chip 
               label="Real-time Analytics" 
               color="primary" 
@@ -189,12 +212,12 @@ export default function Dashboard() {
                 {settings.visibleMetrics.dailySales && (
                   <Grid item xs={12} sm={6} md={4}>
                     <KPICard
-                      title="Today's Sales"
-                      value={analyticsSummary.todaySales}
+                      title="Sales in Period"
+                      value={analyticsSummary.periodSales}
                       changeValue={analyticsSummary.salesChangePercentage}
                       icon={<MoneyIcon />}
                       isCurrency={true}
-                      tooltipText="Total sales for today, compared to yesterday"
+                      tooltipText="Total sales for the selected period, compared to the previous period"
                     />
                   </Grid>
                 )}
@@ -202,10 +225,10 @@ export default function Dashboard() {
                 {settings.visibleMetrics.appointments && (
                   <Grid item xs={12} sm={6} md={4}>
                     <KPICard
-                      title="Today's Appointments"
-                      value={analyticsSummary.todayAppointments}
+                      title="Appointments in Period"
+                      value={analyticsSummary.periodAppointments}
                       icon={<CalendarIcon />}
-                      tooltipText="Total appointments scheduled for today"
+                      tooltipText="Total appointments scheduled for the selected period"
                     />
                   </Grid>
                 )}
@@ -240,7 +263,7 @@ export default function Dashboard() {
                       }}
                     >
                       <Typography variant="h6" gutterBottom>
-                        Sales Trend (Last 7 Days)
+                        Sales Trend ({startDate ? format(new Date(startDate), 'MMM d') : '...'} - {endDate ? format(new Date(endDate), 'MMM d, yyyy') : '...'})
                       </Typography>
                       {settings.chartTypes.salesTrend === 'line' ? (
                         <LineChart data={salesTrendData} height={330} />

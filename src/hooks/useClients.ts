@@ -4,17 +4,17 @@ import { v4 as uuidv4 } from 'uuid'
 import { supabase } from '../utils/supabase/supabaseClient'
 
 export interface Client {
-  id: string
-  full_name: string
-  phone: string
-  email: string
-  created_at: string
-  total_spent?: number
-  pending_payment?: number
-  last_visit?: string | null
-  notes?: string
-  appointment_count?: number
-  updated_at?: string
+  id: string;
+  full_name: string; // Required field
+  phone: string;
+  email: string;
+  created_at: string;
+  total_spent?: number;
+  pending_payment?: number;
+  last_visit?: string | null;
+  notes?: string;
+  appointment_count?: number;
+  updated_at?: string;
 }
 
 export function useClients() {
@@ -192,11 +192,40 @@ export function useClients() {
     notes?: string,
     appointmentDate: string = new Date().toISOString()
   ) => {
+    // Log the exact input received to debug
+    console.log(`updateClientFromAppointment input:`, {
+      clientName: clientName,
+      clientNameType: typeof clientName,
+      phone,
+      email,
+      appointmentDate
+    });
+
+    // Validate client name more strictly
+    if (!clientName || typeof clientName !== 'string') {
+      console.error(`Invalid client name: '${clientName}' (type: ${typeof clientName})`);
+      toast.error('Client name is required');
+      throw new Error('Client name cannot be empty');
+    }
+
+    // Trim the name to remove any leading/trailing whitespace
+    const trimmedName = clientName.trim();
+    
+    // Check again after trimming
+    if (trimmedName === '') {
+      console.error('Client name is empty after trimming');
+      toast.error('Client name cannot be blank');
+      throw new Error('Client name cannot be empty after trimming');
+    }
+    
+    // Log received name
+    console.log(`updateClientFromAppointment received name: '${trimmedName}'`);
+
     // Find client by name (case insensitive)
     const { data: existingClients, error: findError } = await supabase
       .from('clients')
       .select('*')
-      .ilike('full_name', clientName);
+      .ilike('full_name', trimmedName);
     
     if (findError) {
       console.error('Error finding client:', findError);
@@ -240,9 +269,18 @@ export function useClients() {
         queryClient.invalidateQueries({ queryKey: ['clients'] });
         return data;
       } else {
-        // Create new client
+        // Create new client - ensure all required fields are present and validated
+        if (!trimmedName) {
+          throw new Error('Client name is required for new client creation');
+        }
+        
+        // Double check for empty string again, even though we checked above
+        if (trimmedName === '') {
+          throw new Error('Cannot create client with empty name after trimming');
+        }
+        
         const newClient = {
-          full_name: clientName,
+          full_name: trimmedName, // Use trimmed name
           phone: phone || '',
           email: email || '',
           notes: notes || 'Created from appointment booking',
@@ -252,6 +290,8 @@ export function useClients() {
           // We'll omit appointment_count if the column doesn't exist yet
         };
         
+        console.log('Attempting to insert new client object:', JSON.stringify(newClient)); // Log before insert
+
         const { data, error } = await supabase
           .from('clients')
           .insert([newClient])
@@ -260,7 +300,7 @@ export function useClients() {
         
         if (error) {
           console.error('Error creating client from appointment:', error);
-          toast.error('Failed to create client');
+          toast.error(`Failed to create client: ${error.message}`);
           throw error;
         }
         
@@ -269,30 +309,7 @@ export function useClients() {
       }
     } catch (error) {
       console.error('Error in updateClientFromAppointment:', error);
-      
-      // Fallback behavior - create a basic client record without appointment_count
-      // This is a last resort if there are schema issues
-      const basicClient = {
-        full_name: clientName,
-        phone: phone || '',
-        email: email || '',
-        notes: notes || 'Created from appointment booking (fallback)',
-        last_visit: appointmentDate
-      };
-      
-      const { data, error: insertError } = await supabase
-        .from('clients')
-        .insert([basicClient])
-        .select()
-        .single();
-      
-      if (insertError) {
-        console.error('Error in fallback client creation:', insertError);
-        throw insertError;
-      }
-      
-      queryClient.invalidateQueries({ queryKey: ['clients'] });
-      return data;
+      throw error; // Remove the fallback behavior to prevent creating clients with potential issues
     }
   };
 

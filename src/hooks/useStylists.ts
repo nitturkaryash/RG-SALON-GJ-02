@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'react-toastify'
 import { v4 as uuidv4 } from 'uuid'
-import { supabase } from '../lib/supabase'
+import { supabase } from '../utils/supabase/supabaseClient.js'
 
 // Define break interface
 export interface StylistBreak {

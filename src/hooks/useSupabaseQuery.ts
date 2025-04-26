@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
-import { supabase } from '../supabaseClient'
-import type { Tables } from '../supabaseClient'
+import { supabase } from '../utils/supabase/supabaseClient.js'
+import type { Tables } from '../utils/supabase/types'
 
 type TableNames = keyof Tables
 

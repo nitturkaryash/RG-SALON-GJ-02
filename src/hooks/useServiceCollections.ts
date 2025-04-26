@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'react-toastify'
 import { v4 as uuidv4 } from 'uuid'
 import type { ServiceCollection } from '../models/serviceTypes'
-import { supabase } from '../lib/supabase'
+import { supabase } from '../utils/supabase/supabaseClient.js'
 
 export function useServiceCollections() {
   const queryClient = useQueryClient()

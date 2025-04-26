@@ -5,8 +5,9 @@ import { updateProductInventory } from './useProducts'
 import { useClients } from './useClients'
 import { supabase, TABLES } from '../utils/supabase/supabaseClient'
 import { generateInvoiceNumber } from '../lib/invoice'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { recordSaleTransaction, syncToSalesHistory } from '../utils/salesUtils'
+import { calculateTotal } from '../utils/orderHelpers'
 
 // Add window interface augmentation at the top of the file
 declare global {
@@ -18,6 +19,10 @@ declare global {
 // Extended payment method types to include BNPL
 export const PAYMENT_METHODS = ['cash', 'credit_card', 'debit_card', 'upi', 'bnpl'] as const
 export type PaymentMethod = typeof PAYMENT_METHODS[number]
+
+// Add split to payment methods where needed
+export const PAYMENT_METHODS_WITH_SPLIT = [...PAYMENT_METHODS, 'split'] as const
+export type PaymentMethodWithSplit = typeof PAYMENT_METHODS_WITH_SPLIT[number]
 
 export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
   cash: 'Cash',
@@ -31,32 +36,91 @@ export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
 export interface PaymentDetail {
   id: string;
   amount: number;
-  payment_method: PaymentMethod;
+  payment_method: PaymentMethodWithSplit;
   payment_date: string;
   payment_note?: string;
 }
 
-interface CreateOrderData {
-  appointment_id?: string
-  client_name: string
-  stylist_id: string
-  services: Array<{
-    service_id: string;
-    service_name: string;
-    price: number;
-    quantity?: number;
-    gst_percentage?: number;
-    type?: 'service' | 'product';
-  }>
-  total: number
-  payment_method: PaymentMethod
-  subtotal: number
-  tax: number
-  discount: number
-  appointment_time?: string
-  is_walk_in: boolean
-  payments?: PaymentDetail[]
-  pending_amount?: number
+// Define Order interface for type reference
+export interface Order {
+  id: string;
+  client_id?: string;
+  client_name?: string;
+  customer_name?: string;
+  stylist_id?: string;
+  stylist_name?: string;
+  services?: any[];
+  total: number;
+  subtotal: number;
+  tax: number;
+  discount: number;
+  payment_method: PaymentMethod | 'split';
+  status: 'completed' | 'pending' | 'cancelled';
+  created_at?: string;
+  appointment_id?: string;
+  is_walk_in?: boolean;
+  payments?: PaymentDetail[];
+  pending_amount?: number;
+  is_split_payment?: boolean;
+  invoice_number?: string;
+  is_salon_consumption?: boolean;
+}
+
+// Type for creating an order
+export interface CreateOrderData {
+	order_id: string;
+	client_id: string;
+	client_name: string;
+	stylist_id: string;
+	stylist_name?: string; // Optional stylist name
+	items: CreateOrderItemData[]; // Use specific type for items
+	services?: CreateServiceData[]; // Optional services array
+	payment_method: PaymentMethod | 'split';
+	split_payments?: PaymentDetail[];
+	discount?: number;
+	notes?: string;
+	subtotal: number;
+	tax: number;
+	total: number;
+	gst_amount?: number; // Optional gst amount
+	total_amount: number;
+	status: Order['status'];
+	order_date: string;
+	is_walk_in: boolean;
+	consumption_purpose?: string;
+	consumption_notes?: string;
+	is_salon_consumption?: boolean;
+  appointment_id?: string;
+  pending_amount?: number;
+  appointment_time?: string;
+  payments?: PaymentDetail[];
+}
+
+// Type for items within CreateOrderData
+export interface CreateOrderItemData {
+	id: string;
+	item_id: string;
+	item_name: string;
+	quantity: number;
+	price: number;
+	total: number;
+	type: 'product' | 'service';
+	hsn_code?: string;
+	units?: string;
+	category?: string;
+	gst_percentage?: number;
+	discount?: number;
+	for_salon_use?: boolean;
+}
+
+// Type for services within CreateOrderData (if needed explicitly)
+export interface CreateServiceData {
+	service_id: string;
+	service_name: string;
+	quantity: number;
+	price: number;
+  type?: 'service' | 'product';
+  gst_percentage?: number;
 }
 
 // Define a more accurate type for the data structure used in pos_orders table
@@ -87,7 +151,7 @@ interface PosOrder {
   subtotal: number;
   tax: number;
   discount: number;
-  payment_method: PaymentMethod;
+  payment_method: PaymentMethod | 'split';
   status: 'completed' | 'pending' | 'cancelled';
   appointment_time?: string;
   appointment_id?: string;
@@ -135,6 +199,97 @@ export interface ProductItem {
   purpose?: string;
 }
 
+// Define the OrderResult interface for the createWalkInOrder function
+interface OrderResult {
+  success: boolean;
+  order?: PosOrder;
+  error?: Error;
+  message?: string;
+}
+
+// Define Type for updating product stock
+interface ProductStockUpdate {
+  productId: string;
+  quantity: number;
+}
+
+// Function to update product stock quantities
+async function updateProductStockQuantities(updates: ProductStockUpdate[]) {
+  try {
+    const validUpdates = updates.filter((update: ProductStockUpdate) => {
+      return update.productId && 
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(update.productId);
+    });
+    
+    if (validUpdates.length === 0) {
+      console.warn('No valid product IDs found for stock update');
+      return { success: false, message: 'No valid product IDs' };
+    }
+    
+    const results = await Promise.all(
+      validUpdates.map(async (update: ProductStockUpdate) => {
+        const { data, error } = await supabase.rpc('decrement_product_stock', {
+          product_id: update.productId,
+          decrement_quantity: update.quantity
+        });
+        
+        return { 
+          productId: update.productId, 
+          success: !error, 
+          result: data, 
+          error 
+        };
+      })
+    );
+    
+    return {
+      success: results.every(r => r.success),
+      results
+    };
+  } catch (error) {
+    console.error('Error updating product stock quantities:', error);
+    return { success: false, error };
+  }
+}
+
+// Interface for the complete order data returned from createWalkInOrder
+interface OrderFunctionResult {
+  success: boolean;
+  order?: PosOrder;
+  error?: Error;
+  message?: string;
+}
+
+// Type for creating an order
+export type StandalonePosOrderInsert = {
+  order_id: string;
+  client_id: string;
+  client_name: string;
+  stylist_id: string;
+  stylist_name?: string;
+  items: CreateOrderItemData[];
+  services?: CreateServiceData[];
+  payment_method: PaymentMethod | 'split';
+  split_payments?: PaymentDetail[];
+  discount?: number;
+  notes?: string;
+  subtotal: number;
+  tax: number;
+  total: number;
+  gst_amount?: number;
+  total_amount: number;
+  status: Order['status'];
+  order_date: string;
+  is_walk_in: boolean;
+  consumption_purpose?: string;
+  consumption_notes?: string;
+  is_salon_consumption?: boolean;
+  appointment_id?: string;
+  pending_amount?: number;
+  appointment_time?: string;
+  payments?: PaymentDetail[];
+}
+
 // Define product type interface
 interface ProductWithStock {
   id: string;
@@ -175,6 +330,225 @@ interface PosOrderItem {
   hsn_code?: string;
   gst_percentage?: number;
   product_id?: string;
+}
+
+// Add a standalone deleteOrder function outside of usePOS
+export async function deleteOrder(orderId: string): Promise<{ success: boolean, message: string }> {
+  try {
+    console.log('Deleting order with ID:', orderId);
+    
+    // First fetch the order to check if it exists
+    const { data: orderData, error: fetchError } = await supabase
+      .from('pos_orders')
+      .select('*')
+      .eq('id', orderId)
+      .single();
+      
+    if (fetchError) {
+      console.error('Error fetching order for deletion:', fetchError);
+      return { success: false, message: 'Order not found or could not be fetched' };
+    }
+    
+    // Delete the order
+    const { error: deleteError } = await supabase
+      .from('pos_orders')
+      .delete()
+      .eq('id', orderId);
+      
+    if (deleteError) {
+      console.error('Error deleting order:', deleteError);
+      return { success: false, message: 'Failed to delete order: ' + deleteError.message };
+    }
+    
+    // Show success toast
+    try {
+      toast.success('Order deleted successfully');
+    } catch (e) {
+      console.warn('Toast notification failed:', e);
+    }
+    
+    return { success: true, message: 'Order deleted successfully' };
+  } catch (error) {
+    console.error('Unexpected error deleting order:', error);
+    
+    // Show error toast
+    try {
+      toast.error('Failed to delete order: ' + (error instanceof Error ? error.message : String(error)));
+    } catch (e) {
+      console.warn('Toast notification failed:', e);
+    }
+    
+    return { 
+      success: false, 
+      message: 'An unexpected error occurred: ' + (error instanceof Error ? error.message : String(error)) 
+    };
+  }
+}
+
+// Add standalone createWalkInOrder function for direct import
+export async function createWalkInOrder(
+  customerName: string,
+  products: Array<{
+    id: string;
+    name: string;
+    price: number;
+    quantity: number;
+    type: 'product';
+    gst_percentage?: number;
+    hsn_code?: string;
+  }>,
+  services: Array<{
+    id: string;
+    name: string;
+    price: number;
+    quantity: number;
+    type: 'service';
+    gst_percentage?: number;
+  }>,
+  paymentMethod: PaymentMethod = 'cash',
+  staffInfo: { id: string; name: string } | null = null,
+  invoiceNumber?: string,
+  orderDate?: string,
+  isSalonConsumption: boolean = false,
+  consumptionPurpose?: string
+): Promise<OrderFunctionResult> {
+  try {
+    console.log('Creating walk-in order with staffInfo:', staffInfo);
+    
+    // Create services array for the order data
+    const orderServices = [
+      ...products.map(product => ({
+        service_id: product.id,
+        service_name: product.name,
+        product_id: product.id, // Add product_id for reference
+        product_name: product.name, // Add product_name for display
+        price: product.price,
+        quantity: product.quantity,
+        type: 'product' as const,
+        gst_percentage: product.gst_percentage,
+        hsn_code: product.hsn_code
+      })),
+      ...services.map(service => ({
+        service_id: service.id,
+        service_name: service.name,
+        price: service.price,
+        quantity: service.quantity,
+        type: 'service' as const,
+        gst_percentage: service.gst_percentage
+      }))
+    ];
+    
+    // Calculate subtotal from products and services
+    const subtotal = [
+      ...products.map(p => p.price * p.quantity),
+      ...services.map(s => s.price * s.quantity)
+    ].reduce((sum, price) => sum + price, 0);
+    
+    // Calculate tax (simple calculation - can be enhanced)
+    const tax = Math.round(subtotal * 0.18); // 18% GST
+    
+    // Prepare order data without invoice_number field
+    const orderData: any = {
+      order_id: uuidv4(),
+      client_id: '',
+      client_name: customerName,
+      stylist_id: staffInfo?.id || '',
+      stylist_name: staffInfo?.name,
+      items: [],
+      services: orderServices,
+      payment_method: paymentMethod,
+      subtotal: subtotal,
+      tax: tax,
+      total: subtotal + tax,
+      total_amount: subtotal + tax,
+      status: 'completed',
+      order_date: orderDate || new Date().toISOString(),
+      is_walk_in: true,
+      is_salon_consumption: isSalonConsumption,
+      consumption_purpose: consumptionPurpose,
+      pending_amount: 0,
+      payments: [{
+        id: uuidv4(),
+        amount: subtotal + tax,
+        payment_method: paymentMethod,
+        payment_date: new Date().toISOString()
+      }]
+    };
+    
+    // Prepare order data without invoice_number if not supported
+    const orderInsertData: any = {
+      id: orderData.order_id,
+      client_name: orderData.client_name,
+      customer_name: orderData.client_name, // Ensure both fields are set
+      stylist_id: orderData.stylist_id,
+      stylist_name: orderData.stylist_name,
+      services: orderServices, // Use the fully populated services array
+      total: orderData.total,
+      total_amount: orderData.total, // Ensure both fields are set
+      subtotal: orderData.subtotal,
+      tax: orderData.tax,
+      discount: 0,
+      payment_method: orderData.payment_method,
+      status: orderData.status,
+      is_walk_in: orderData.is_walk_in,
+      payments: orderData.payments,
+      pending_amount: orderData.pending_amount,
+      is_split_payment: false,
+      created_at: new Date().toISOString(),
+      is_salon_consumption: orderData.is_salon_consumption,
+      consumption_purpose: orderData.consumption_purpose,
+      type: isSalonConsumption ? 'salon_consumption' : 'sale'
+    };
+
+    // Add invoice_number if provided
+    if (invoiceNumber) {
+      orderInsertData.invoice_number = invoiceNumber;
+    }
+
+    // Submit to Supabase
+    const { data: orderResult, error } = await supabase
+      .from('pos_orders')
+      .insert(orderInsertData)
+      .select()
+      .single();
+      
+    if (error) {
+      console.error('Error creating walk-in order:', error);
+      return {
+        success: false,
+        message: 'Failed to create order: ' + error.message,
+        error: new Error(error.message)
+      };
+    }
+    
+    // Handle product stock updates
+    if (products.length > 0) {
+      try {
+        const stockUpdates = products.map(product => ({
+          productId: product.id,
+          quantity: product.quantity
+        }));
+        
+        await updateProductStockQuantities(stockUpdates);
+      } catch (stockError) {
+        console.warn('Warning: Failed to update some product stock quantities:', stockError);
+        // Continue anyway since the order was created
+      }
+    }
+    
+    return {
+      success: true,
+      order: orderResult,
+      message: 'Order created successfully'
+    };
+  } catch (error) {
+    console.error('Unexpected error in standalone createWalkInOrder:', error);
+    return {
+      success: false,
+      message: 'An unexpected error occurred',
+      error: error instanceof Error ? error : new Error(String(error))
+    };
+  }
 }
 
 export function usePOS() {
@@ -382,7 +756,7 @@ export function usePOS() {
           tax: data.tax || 0,
           discount: data.discount || 0,
           payment_method: data.payment_method,
-          status: isSplitPayment ? 'pending' : 'completed',
+          status: 'completed',
           appointment_id: data.appointment_id,
           appointment_time: appointment.start_time,
           is_walk_in: false,
@@ -445,22 +819,8 @@ export function usePOS() {
   })
 
   // Create a walk-in order with split payment support
-  const createWalkInOrder = useMutation<{
-        success: boolean;
-        order: PosOrder;
-        error?: undefined;
-    } | {
-        success: boolean;
-        error: Error;
-        order?: undefined;
-    }, Error, CreateOrderData>({
-    mutationFn: async (data: CreateOrderData): Promise<{
-            success: boolean;
-            order: PosOrder;
-        } | {
-            success: boolean;
-            error: Error;
-        }> => {
+  const createWalkInOrder = useMutation<OrderFunctionResult, Error, CreateOrderData>({
+    mutationFn: async (data: CreateOrderData): Promise<OrderFunctionResult> => {
       await new Promise(resolve => setTimeout(resolve, 500))
       console.log('🔍 usePOS - Received order data for processing:', data);
       data = JSON.parse(JSON.stringify(data));
@@ -487,25 +847,45 @@ export function usePOS() {
       const pendingAmount = Math.round(pendingAmountInPaise) / 100;
       const isSplitPayment = payments.length > 0;
       let orderStatus: 'completed' | 'pending' | 'cancelled' = 'completed';
-      if (pendingAmount > 0 || data.payment_method === 'bnpl') { orderStatus = 'pending'; }
-      if (!isSplitPayment) {
-        payments.push({ id: uuidv4(), amount: total, payment_method: data.payment_method, payment_date: new Date().toISOString() });
-      }
+      
+      // Ensure all services have proper data fields
+      const enhancedServices = data.services?.map(s => {
+        // Common fields for both product and service
+        const baseFields = {
+          service_id: s.service_id,
+          service_name: s.service_name || 'Unknown Item',
+          price: s.price || 0,
+          quantity: s.quantity || 1,
+          gst_percentage: s.gst_percentage || 0
+        };
+
+        // Add type-specific fields
+        if (s.type === 'product') {
+          return {
+            ...baseFields,
+            product_id: s.service_id, // Add product_id reference
+            product_name: s.service_name, // Add product_name for display
+            type: 'product' as const, // Use const assertion for correct type
+            hsn_code: s.hsn_code || ''
+          };
+        } else {
+          return {
+            ...baseFields,
+            type: 'service' as const // Use const assertion for correct type
+          };
+        }
+      }) || [];
+
       const order: PosOrder = {
         id: uuidv4(),
         created_at: new Date().toISOString(),
         client_name: data.client_name,
+        customer_name: data.client_name, // Add customer_name for consistency
         stylist_id: data.stylist_id,
         stylist_name: stylistName,
-        services: data.services.map(s => ({
-          service_id: s.service_id,
-          service_name: s.service_name,
-          price: s.price || 0,
-          quantity: s.quantity,
-          gst_percentage: s.gst_percentage,
-          type: s.type || (s.service_id?.startsWith('serv') ? 'service' : 'product')
-        })),
+        services: enhancedServices, // Use the enhanced services array
         total: total,
+        total_amount: total, // Add total_amount for consistency
         subtotal: subtotal,
         tax: tax,
         discount: discount,
@@ -517,100 +897,122 @@ export function usePOS() {
         pending_amount: pendingAmount,
         is_split_payment: isSplitPayment
       };
-      const { appointment_time, ...orderForDb } = order;
+      
+      // Rest of the function implementation
+      console.log('🔍 usePOS - Prepared order for submission:', order);
+      
       try {
-        console.log('🔍 usePOS - Saving POS order to database');
-        const { data: createdOrderResult, error } = await supabase
-          .from('pos_orders')
-          .insert([orderForDb])
-          .select('*')
-          .single();
-        const createdOrder = createdOrderResult as PosOrder;
-        if (error) {
-          console.error('Error creating walk-in order in database:', error);
-          if (error.code === '42P01') {
-            console.warn('pos_orders table does not exist');
-            return { success: false, error: new Error(error.message) };
-          }
-          throw error;
-        }
-        console.log('🔍 usePOS - POS order saved successfully, now triggering sales history sync');
-        try {
-          const servicesForSync: ServiceItem[] = data.services
-            .filter(item => item.type === 'service')
-            .map(item => ({
-              id: item.service_id,
-              service_name: item.service_name,
-              name: item.service_name,
-              price: item.price || 0,
-              type: 'service',
-              gst_percentage: item.gst_percentage || 0
+        // Handle product stock updates if services contain product items
+        if (data.services && data.services.length > 0) {
+          const productItems = data.services.filter(item => 
+            item.type === 'product' || 
+            (item.type === undefined && item.service_id && !item.service_id.startsWith('serv'))
+          );
+          
+          if (productItems.length > 0) {
+            console.log('🔍 usePOS - Updating product stock for items:', productItems);
+            
+            const stockUpdates = productItems.map(item => ({
+              productId: item.service_id,
+              quantity: item.quantity || 1
             }));
-          const productsForSync: ProductItem[] = data.services
-            .filter(item => item.type === 'product')
-            .map(item => ({
-              id: item.service_id,
-              product_name: item.service_name,
-              name: item.service_name,
-              price: item.price || 0,
-              quantity: item.quantity || 1,
-              type: 'product',
-              gst_percentage: item.gst_percentage || 0
-            }));
-          console.log(`🔍 usePOS - Formatted order data: ${servicesForSync.length} services, ${productsForSync.length} products`);
-          if (productsForSync.length > 0) {
-            const syncResult = await syncToSalesHistory({
-              products: productsForSync.map(item => ({
-                id: item.id,
-                name: item.name,
-                quantity: item.quantity || 1,
-                price: item.price,
-                gst_percentage: item.gst_percentage || 0,
-                type: 'product'
-              })),
-              customer_name: data.client_name || 'Walk-in Customer',
-              stylist_name: stylistName || 'Self Service',
-              payment_method: (data.payment_method || 'Cash').toString(),
-              discount: data.discount || 0,
-              invoice_number: createdOrder?.invoice_number || order.id,
-              order_id: order.id
-            });
-            if (syncResult.success) {
-              console.log('🔍 usePOS - Sales history sync completed successfully');
-            } else {
-              console.warn('🔍 usePOS - Sales history sync completed with warnings:', syncResult.message || syncResult.error);
+            
+            const updateResult = await updateProductStockQuantities(stockUpdates);
+            console.log('🔍 usePOS - Stock update result:', updateResult);
+            
+            if (!updateResult.success) {
+              console.warn('⚠️ usePOS - Some product stock updates failed');
             }
           }
-        } catch (salesError) {
-          console.error('Error syncing with sales history:', salesError);
         }
-        const productUpdates = data.services && Array.isArray(data.services)
-          ? data.services
-              .filter(service => service.type === 'product' && service.service_id)
-              .map(item => ({
-                productId: item.service_id!,
-                quantity: item.quantity || 1
-              }))
-          : [];
         
-        // Log inventory update but don't actually perform it to prevent double reduction
-        if (productUpdates.length > 0) {
-          console.log(`Preventing double inventory reduction for ${productUpdates.length} products in order`);
-          // We track that we processed these items, but we don't actually update inventory
+        // Insert the order record
+        const { data: insertedOrder, error } = await supabase
+          .from('pos_orders')
+          .insert(order)
+          .select()
+          .single();
+          
+        if (error) {
+          console.error('❌ usePOS - Order creation failed:', error);
+          return { 
+            success: false, 
+            message: 'Failed to create order',
+            error: error 
+          };
         }
-        if (data.client_name && data.client_name !== 'Walk-in') {
-          await updateClientFromOrder(
-            data.client_name,
-            payments.reduce((sum, payment) => sum + payment.amount, 0),
-            payments.length === 1 ? payments[0].payment_method : 'bnpl',
-            order.created_at
-          );
+        
+        console.log('✅ usePOS - Order created successfully:', insertedOrder);
+        
+        // *** START: Insert Order Items ***
+        if (insertedOrder && data.services && data.services.length > 0) {
+          const itemsToInsert = data.services.map(item => {
+            const quantity = item.quantity || 1;
+            const unit_price = item.price || 0; // Assuming item.price passed from POS IS the unit price
+            const total_price = quantity * unit_price;
+            const itemType = item.type || 'unknown';
+
+            return {
+              pos_order_id: insertedOrder.id, // Link to the created order (Correct: UUID)
+              service_id: itemType === 'service' ? item.service_id : null, // Correct: UUID
+              product_id: itemType === 'product' ? item.service_id : null, // Correct: TEXT - Assuming service_id holds the product UUID string 
+              service_name: item.service_name, // Correct: TEXT - Use service_name for the item name
+              quantity: quantity,             // Correct: integer
+              unit_price: unit_price,         // Add unit_price (assuming item.price is unit price)
+              total_price: total_price,       // Add total_price
+              price: total_price,             // Keep original 'price' field if schema has it (seems it might based on query output)
+              type: itemType,                 // Correct: text
+              service_type: itemType,         // Add service_type if schema has it
+              hsn_code: item.hsn_code,        // Correct: text
+              gst_percentage: item.gst_percentage // Correct: numeric
+              // REMOVED item_name
+              // Add other columns if needed based on actual schema
+            };
+          });
+
+          console.log('🔍 usePOS - Inserting order items (v2):', itemsToInsert);
+
+          const { error: itemsError } = await supabase
+            .from('pos_order_items') 
+            .insert(itemsToInsert);
+
+          if (itemsError) {
+            console.error('❌ usePOS - Failed to insert order items:', itemsError);
+            // Optionally rollback order or log error, but proceed for now
+            toast.error(`Order created, but failed to save items: ${itemsError.message}`);
+          } else {
+            console.log('✅ usePOS - Successfully inserted order items');
+          }
         }
-        const completeOrderResult = { ...createdOrder, items: createdOrder.services };
-        return { success: true, order: completeOrderResult };
-      } catch (error) {
-        console.error('Error in createWalkInOrder mutationFn (inner try):', error);
-        return { success: false, error: error instanceof Error ? error : new Error(String(error)) };
+        // *** END: Insert Order Items ***
+
+        // Update sales history
+        try {
+          await syncToSalesHistory(insertedOrder);
+        } catch (historyError) {
+          console.error('❌ usePOS - Error updating sales history:', historyError);
+        }
+        
+        // Record transaction in accounting
+        try {
+          await recordSaleTransaction(insertedOrder);
+        } catch (accountingError) {
+          console.error('❌ usePOS - Error recording sale transaction:', accountingError);
+        }
+        
+        return {
+          success: true,
+          order: insertedOrder,
+          message: 'Order created successfully'
+        };
+        
+      } catch (orderError) {
+        console.error('❌ usePOS - Unexpected error creating order:', orderError);
+        return {
+          success: false,
+          message: 'An unexpected error occurred',
+          error: orderError instanceof Error ? orderError : new Error(String(orderError))
+        };
       }
     },
     onSuccess: () => {
@@ -675,7 +1077,7 @@ export function usePOS() {
       const wasIncomplete = safeOrder.status === 'pending';
       const isNowComplete = pendingAmount <= 0;
       const paymentStatusChanged = wasIncomplete && isNowComplete;
-      const newOrderStatus = pendingAmount <= 0 ? 'completed' : safeOrder.status;
+      const newOrderStatus = 'completed';
       const updatedOrderData = {
         payments: updatedPayments,
         pending_amount: pendingAmount,
@@ -715,7 +1117,10 @@ export function usePOS() {
             if (productsForStockUpdate.length > 0) {
               const validUpdates = productsForStockUpdate
                 .filter((update: { productId: string | undefined; quantity: number }) => typeof update.productId === 'string' && update.productId.length > 0)
-                .map(update => ({ productId: update.productId as string, quantity: update.quantity }));
+                .map((update: { productId: string | undefined; quantity: number }) => ({ 
+                  productId: update.productId as string, 
+                  quantity: update.quantity 
+                }));
               await updateProductStockQuantities(validUpdates);
             }
           } catch (error) {
@@ -766,732 +1171,71 @@ export function usePOS() {
 
   // This createOrder seems redundant given createWalkInOrder and processAppointmentPayment
   // Consider removing or clarifying its purpose if it's still needed.
-  const createOrder = useMutation<PosOrder, Error, Partial<PosOrder>>({
-    mutationFn: async (data: Partial<PosOrder>): Promise<PosOrder> => {
-      await new Promise(resolve => setTimeout(resolve, 1000))
-      const orderId = uuidv4()
-      const newOrder: Partial<PosOrder> = {
-        id: orderId,
-        ...data,
-        created_at: new Date().toISOString(),
-        status: data.status || 'completed',
-      }
+  const createOrder = useMutation<OrderFunctionResult, Error, Partial<CreateOrderData>>({
+    mutationFn: async (data: Partial<CreateOrderData>): Promise<OrderFunctionResult> => {
       try {
-        const { data: createdOrderResult, error } = await supabase
-          .from('pos_orders')
-          .insert([newOrder])
-          .select('*')
-          .single();
-        if (error) { throw error; }
-        const createdOrder = createdOrderResult as PosOrder;
-        if (!data.is_salon_purchase && data.client_name && data.total && newOrder.created_at) {
-          try {
-            const paymentMethod = data.payment_method || 'cash';
-            await updateClientFromOrder(
-              data.client_name,
-              data.total ?? 0,
-              paymentMethod,
-              newOrder.created_at!
-            );
-            console.log('Client data updated from order:', data.client_name);
-          } catch (clientError) {
-            console.error('Error updating client data:', clientError);
-          }
-        }
-        return createdOrder || (newOrder as PosOrder);
+        // Convert partial data to full data
+        const fullData: CreateOrderData = {
+          order_id: data.order_id || uuidv4(),
+          client_id: data.client_id || '',
+          client_name: data.client_name || 'Walk-in Customer',
+          stylist_id: data.stylist_id || '',
+          items: data.items || [],
+          services: data.services || [],
+          payment_method: data.payment_method || 'cash',
+          subtotal: data.subtotal || 0,
+          tax: data.tax || 0,
+          total: data.total || 0,
+          total_amount: data.total_amount || data.total || 0,
+          status: data.status || 'completed',
+          order_date: data.order_date || new Date().toISOString(),
+          is_walk_in: data.is_walk_in !== undefined ? data.is_walk_in : true,
+          pending_amount: data.pending_amount || 0,
+          payments: data.payments || []
+        };
+        
+        // Use the existing walkInOrder mutation to process the order
+        return await createWalkInOrder.mutateAsync(fullData);
       } catch (error) {
         console.error('Error in createOrder:', error);
-        throw error instanceof Error ? error : new Error(String(error));
+        return {
+          success: false,
+          message: 'Order creation failed',
+          error: error instanceof Error ? error : new Error(String(error))
+        };
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['orders'] })
-      toast.success('Order created successfully')
-    },
-    onError: () => {
-      toast.error('Failed to create order')
-    },
-  })
-
-  // Fetch products with available stock
-  const fetchProducts = async (): Promise<ProductWithStock[]> => {
-    setLoading(true);
-    setError(null);
-    try {
-      console.log('Fetching products with stock information...');
-      const { data, error } = await supabase
-        .from('products')
-        .select('id, name, mrp_incl_gst, price, stock_quantity, hsn_code, units, gst_percentage');
-      if (error) { throw error; }
-      console.log(`Fetched ${data?.length || 0} products from database`);
-      const productsWithStock: ProductWithStock[] = (data || []).map(item => {
-        const stockQty = Number(item.stock_quantity) || 0;
-        return {
-          id: item.id,
-          name: item.name,
-          price: Number(item.mrp_incl_gst) || Number(item.price) || 0,
-          stock_quantity: stockQty,
-          hsn_code: item.hsn_code,
-          units: item.units,
-          gst_percentage: Number(item.gst_percentage) || 0,
-          type: 'Product',
-          stock_status: (stockQty > 0 ? 'In Stock' : 'Out of Stock') as 'In Stock' | 'Out of Stock'
-        };
-      });
-      console.log('Products with stock data:', productsWithStock);
-      setProducts(productsWithStock);
-      return productsWithStock;
-    } catch (err) {
-      console.error('Error fetching products:', err);
-      setError('Failed to load products with stock information');
-      setProducts([]);
-      return [];
-    } finally {
-      setLoading(false);
+      queryClient.invalidateQueries({ queryKey: ['orders'] });
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+      queryClient.invalidateQueries({ queryKey: ['clients'] });
     }
-  };
+  });
 
-  // Add item to cart with stock validation
-  const addToCart = async (product: ProductWithStock | any, quantity = 1): Promise<{ success: boolean, message?: string }> => {
-    if (product.type && product.type !== 'Product') {
-      const newItem: CartItem = {
-        id: uuidv4(),
-        product_name: product.name,
-        quantity,
-        unit_price: product.price || 0,
-        total_price: (product.price || 0) * quantity,
-        type: product.type || 'Service'
-      };
-      setCartItems(prev => [...prev, newItem]);
-      return { success: true };
+  // Add a delete order mutation (keep this for hook usage)
+  const deleteOrderMutation = useMutation<{ success: boolean, message: string }, Error, string>({
+    mutationFn: deleteOrder,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['orders'] });
     }
-    try {
-      const productDetails = products.find(p => p.id === product.id);
-      const availableStock = productDetails?.stock_quantity ?? product.stock_quantity ?? 0;
-      if (availableStock < quantity) {
-         return { success: false, message: `Not enough stock for ${product.name}. Only ${availableStock} available.` };
-       }
-      const newItem: CartItem = {
-        id: uuidv4(),
-        product_id: product.id,
-        product_name: product.name,
-        quantity,
-        unit_price: product.price || 0,
-        total_price: (product.price || 0) * quantity,
-        type: 'Product',
-        hsn_code: product.hsn_code,
-        units: product.units,
-        gst_percentage: product.gst_percentage
-      };
-      setCartItems(prev => [...prev, newItem]);
-      return { success: true };
-    } catch (err) {
-      console.error('Error adding to cart:', err);
-      return { success: false, message: 'Failed to validate product stock' };
-    }
-  };
+  });
 
-  // Remove item from cart
-  const removeFromCart = (itemId: string) => {
-    setCartItems(prev => prev.filter(item => item.id !== itemId));
-  };
-
-  // Calculate total
-  const calculateCartTotal = () => {
-    return cartItems.reduce((total, item) => total + item.total_price, 0);
-  };
-
-  // Validate stock for cart items
-  const validateStockForItems = async (items: CartItem[]): Promise<{
-    success: boolean;
-    invalid?: Array<{ product_name: string; quantity: number; available: number }>;
-  }> => {
-    try {
-      const productItems = items.filter(item => item.type === 'Product' && item.product_id);
-      if (productItems.length === 0) return { success: true };
-      const invalid: Array<{ product_name: string; quantity: number; available: number }> = [];
-      const productIds = productItems.map(item => item.product_id).filter((id): id is string => !!id);
-      if(productIds.length === 0) return { success: true };
-      const { data: stockData, error: stockError } = await supabase
-        .from('products')
-        .select('id, stock_quantity')
-        .in('id', productIds);
-      if (stockError) {
-        console.error(`Error checking stock for multiple products:`, stockError);
-         productItems.forEach(item => invalid.push({ product_name: item.product_name, quantity: item.quantity, available: 0 }));
-         return { success: false, invalid };
-      }
-       const stockMap = new Map(stockData?.map(p => [p.id, p.stock_quantity ?? 0]) || []);
-      for (const item of productItems) {
-        const available = stockMap.get(item.product_id!) ?? 0;
-        if (available < item.quantity) {
-          invalid.push({ product_name: item.product_name, quantity: item.quantity, available });
-        }
-      }
-      return { success: invalid.length === 0, invalid: invalid.length > 0 ? invalid : undefined };
-    } catch (error) {
-      console.error('Error validating stock:', error);
-      return { success: false };
-    }
-  };
-
-  // Complete order and update inventory
-  const completeOrder = async (orderDetails: any): Promise<{ success: boolean; order?: PosOrder; message?: string }> => {
-    setLoading(true);
-    setError(null);
-    try {
-      const productItems = cartItems.filter(item =>
-        item.type && item.type.toLowerCase() === 'product' && item.product_id
-      );
-      console.log(`📦 Order has ${productItems.length} product items (out of ${cartItems.length} total items)`);
-      if (productItems.length > 0) {
-        const stockValidation = await validateStockForItems(productItems);
-        if (!stockValidation.success) {
-          const invalidItems = stockValidation.invalid?.map(item => `${item.product_name} (requested: ${item.quantity}, available: ${item.available})`).join(', ') || '';
-          setError(`Insufficient stock for: ${invalidItems}`);
-          setLoading(false);
-          return { success: false, message: `Insufficient stock for some products` };
-        }
-      }
-      const orderId = uuidv4();
-      const orderDataForDb: Partial<PosOrder> = {
-        id: orderId,
-        created_at: new Date().toISOString(),
-        client_name: orderDetails.customer_name || 'Salon Internal',
-        stylist_name: orderDetails.stylist_name || undefined,
-        stylist_id: orderDetails.stylist_id || undefined,
-        purchase_type: orderDetails.purchase_type || 'regular',
-        payment_method: orderDetails.payment_method || 'Cash',
-        status: 'completed',
-        total: calculateCartTotal(),
-        subtotal: orderDetails.subtotal || calculateCartTotal(),
-        tax: orderDetails.tax || 0,
-        discount: orderDetails.discount || 0,
-        is_walk_in: true,
-        payments: [{ id: uuidv4(), amount: calculateCartTotal(), payment_method: orderDetails.payment_method || 'Cash', payment_date: new Date().toISOString() }],
-        pending_amount: 0,
-        is_split_payment: false,
-        services: cartItems.map(item => ({
-          type: item.type.toLowerCase(),
-          price: item.unit_price || 0,
-          quantity: item.quantity || 1,
-          service_id: item.type === 'Service' ? item.id : item.product_id,
-          service_name: item.product_name || 'Unknown Item',
-          gst_percentage: item.gst_percentage || 0
-        })),
-      };
-      const { data: insertedOrderResult, error: orderError } = await supabase
-        .from('pos_orders')
-        .insert(orderDataForDb)
-        .select()
-        .single();
-      if (orderError) { console.error("Error inserting order:", orderError); throw orderError; }
-       const insertedOrder = insertedOrderResult as PosOrder;
-      const orderItemsForDb: PosOrderItem[] = cartItems.map(item => ({
-        order_id: orderId,
-        item_id: item.product_id || item.id,
-        item_name: item.product_name,
-        product_name: item.type === 'Product' ? item.product_name : undefined,
-        quantity: item.quantity,
-        unit_price: item.unit_price,
-        total_price: item.total_price,
-        type: item.type.toLowerCase() as 'product' | 'service',
-        hsn_code: item.hsn_code,
-        gst_percentage: item.gst_percentage,
-        product_id: item.type === 'Product' ? item.product_id : undefined,
-        service_id: item.type === 'Service' ? item.id : undefined,
-      }));
-      const { error: itemsError } = await supabase.from('pos_order_items').insert(orderItemsForDb);
-      if (itemsError) { console.error("Error inserting order items:", itemsError); throw itemsError; }
-      if (productItems.length > 0) {
-        try {
-          console.log(`📦 Processing ${productItems.length} product items for sales history sync`);
-          const productsForSync = productItems
-            .filter(item => item.type && item.type.toLowerCase() === 'product' && item.product_id)
-            .map(item => ({
-              id: item.product_id!,
-              name: item.product_name,
-              quantity: item.quantity,
-              price: item.unit_price,
-              gst_percentage: item.gst_percentage,
-              type: 'product'
-            }));
-          if (productsForSync.length === 0) {
-            console.log('No valid products with IDs found for sales history sync after final filter');
-          } else {
-             const syncResult = await syncToSalesHistory({
-               products: productsForSync,
-               customer_name: orderDetails.customer_name || 'Walk-in Customer',
-               stylist_name: orderDetails.stylist_name || 'Self Service',
-               payment_method: (orderDetails.payment_method || 'Cash').toString(),
-               discount: orderDetails.discount || 0,
-               invoice_number: insertedOrder.invoice_number || orderId,
-               order_id: orderId
-             });
-            if (!syncResult.success) {
-              console.warn('Warning: Failed to sync sales:', syncResult.message || syncResult.error);
-            } else {
-              console.log(`📦 Successfully synced ${productsForSync.length} product sales to Sales History`);
-            }
-          }
-        } catch (salesError) {
-          console.error('Error recording sales transactions:', salesError);
-        }
-      } else {
-        console.log('📦 No product items in order - skipping sales history sync');
-      }
-      if (productItems.length > 0) {
-        try {
-          const productUpdates = productItems
-             .map(item => ({
-               productId: item.product_id!,
-               quantity: item.quantity
-             }));
-          if (productUpdates.length > 0) {
-            console.log(`📦 Updating stock for ${productUpdates.length} products`);
-            await updateProductStockQuantities(productUpdates);
-          } else {
-            console.log('No valid products with IDs found for stock updates');
-          }
-        } catch (err) {
-          console.warn('Inventory update warning:', err);
-        }
-      }
-      setCartItems([]);
-      const finalOrderResult = { ...insertedOrder, items: orderItemsForDb };
-      return { success: true, order: finalOrderResult, message: 'Order created successfully' };
-    } catch (err) {
-      const error = err as Error;
-      console.error('Error completing order:', error);
-      setError('Failed to complete order');
-      const message = (error as any)?.message || 'Failed to complete order';
-      return { success: false, message };
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Load products on mount
-  useEffect(() => {
-    fetchProducts();
-  }, []);
-
-  // Instead of creating inventory sales, update product stock quantities
-  const updateProductStockQuantities = async (productsToUpdate: { productId: string; quantity: number }[]): Promise<{ success: boolean, error?: any }> => {
-    if (!productsToUpdate || productsToUpdate.length === 0) return { success: true };
-    try {
-      // Log that we're skipping actual inventory reduction to prevent double reduction
-      console.log('Preventing double inventory reduction for products:', productsToUpdate);
-      
-      // Return success structure without actually updating inventory
       return { 
-        success: true, 
-        skippedUpdate: true,
-        products: productsToUpdate.map(p => ({...p}))
-      };
-    } catch (err) {
-      console.error('Error in updateProductStockQuantities:', err);
-      return { success: false, error: err };
-    }
-  };
-
-  return {
-    unpaidAppointments,
-    orders,
-    isLoading: loadingAppointments || loadingOrders,
-    processAppointmentPayment: processAppointmentPayment.mutate,
-    createWalkInOrder: createWalkInOrder.mutate,
-    updateOrderPayment: updateOrderPayment.mutate,
-    calculateTotal,
-    createOrder: createOrder.mutate,
     loading,
     error,
     products,
+    setProducts,
     cartItems,
-    fetchProducts,
-    addToCart,
-    removeFromCart,
-    calculateCartTotal,
-    completeOrder,
-    refreshDataAfterOrder
+    setCartItems,
+    unpaidAppointments,
+    loadingAppointments,
+    orders,
+    loadingOrders,
+    processAppointmentPayment,
+    createWalkInOrder,
+    updateOrderPayment,
+    calculateTotal,
+    createOrder,
+    deleteOrder: deleteOrderMutation  // Rename to avoid confusion with the standalone function
   }
 }
-
-// Function to refresh data after order creation
-export const refreshDataAfterOrder = async (isSalonConsumption = false) => {
-  try {
-    console.log(`Refreshing data after order, isSalonConsumption: ${isSalonConsumption}`);
-    
-    // Always refresh orders
-    window.dispatchEvent(new CustomEvent('refresh-orders'));
-    
-    // Add special handling for salon consumption
-    if (isSalonConsumption) {
-      console.log('Refreshing inventory data for salon consumption order');
-      
-      // Trigger inventory refresh event
-      window.dispatchEvent(new CustomEvent('refresh-inventory'));
-      
-      // Add a delay to ensure inventory state is updated
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      // Call the inventory consumption refresh function if available
-      if (typeof window.refreshInventoryConsumption === 'function') {
-        console.log('Calling window.refreshInventoryConsumption function');
-        window.refreshInventoryConsumption();
-      } else {
-        console.warn('window.refreshInventoryConsumption function not found, using custom sync');
-        
-        // Manually trigger sync if the function isn't available
-        try {
-          // Import the inventory hook dynamically
-          import('./useInventory').then(module => {
-            if (module && module.useInventory) {
-              const { syncConsumptionFromPos } = module.useInventory();
-              if (syncConsumptionFromPos) {
-                console.log('Manually triggering syncConsumptionFromPos');
-                // Get last 24 hours for sync
-                const endDate = new Date().toISOString();
-                const startDate = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-                syncConsumptionFromPos(startDate, endDate, 'salon');
-              }
-            }
-          }).catch(err => {
-            console.error('Error importing useInventory hook:', err);
-          });
-        } catch (syncError) {
-          console.error('Error during manual sync:', syncError);
-        }
-      }
-    }
-    
-    return { success: true };
-  } catch (error) {
-    console.error('Error refreshing data after order:', error);
-    return { success: false, error: error instanceof Error ? error : new Error(String(error)) };
-  }
-};
-
-// Standalone createWalkInOrder function (outside the hook)
-// Define a type for the order object inserted by the standalone createWalkInOrder
-// This should closely match the actual 'pos_orders' table schema
-type StandalonePosOrderInsert = Partial<PosOrder> & {
-  id: string;
-  created_at: string;
-  client_name: string;
-  stylist_id: string | null;
-  stylist_name?: string;
-  total: number;
-  payment_method: PaymentMethod;
-  status: 'completed' | 'pending' | 'cancelled';
-  is_walk_in: boolean;
-  payments: PaymentDetail[];
-  pending_amount: number;
-  is_split_payment: boolean;
-  invoice_number?: string;
-  is_salon_consumption?: boolean;
-  consumption_purpose?: string | null;
-  purchase_type?: string;
-  order_type?: string;
-  category?: string;
-  salon_use?: boolean;
-};
-
-export const createWalkInOrder = async (
-  customerName: string,
-  products: ProductItem[],
-  services: ServiceItem[],
-  paymentMethod: PaymentMethod,
-  staff: { id: string; name: string } | null,
-  invoiceNumber: string,
-  orderDate: string,
-  isSalonConsumption: boolean = false,
-  consumptionPurpose?: string
-): Promise<OrderResult> => {
-  try {
-    console.log('Creating walk-in order with:', {
-      customerName,
-      products: products.length,
-      services: services.length,
-      paymentMethod,
-      staff,
-      invoiceNumber,
-      orderDate,
-      isSalonConsumption,
-      consumptionPurpose
-    });
-
-    if (isSalonConsumption) { console.log('This is a salon consumption order with purpose:', consumptionPurpose); }
-
-    // Calculate total amount
-    const totalAmount = calculateTotal(products, services);
-    console.log(`Total order amount: ${totalAmount}`);
-
-    // Create a unique ID for the order
-    const orderId = uuidv4();
-    console.log(`Generated order ID: ${orderId}`);
-
-    const orderData: StandalonePosOrderInsert = {
-      id: orderId,
-      created_at: orderDate || new Date().toISOString(),
-      customer_name: customerName,
-      client_name: customerName,
-      stylist_id: staff?.id || null,
-      stylist_name: staff?.name || 'Unknown Stylist',
-      total: totalAmount,
-      subtotal: totalAmount,
-      tax: 0,
-      discount: 0,
-      payment_method: paymentMethod,
-      status: isSalonConsumption ? 'completed' : 'completed',
-      is_walk_in: true,
-      payments: [{
-        id: uuidv4(),
-        amount: totalAmount,
-        payment_method: paymentMethod,
-        payment_date: orderDate
-      }],
-      pending_amount: 0,
-      is_split_payment: false,
-      invoice_number: invoiceNumber,
-      is_salon_consumption: isSalonConsumption,
-      consumption_purpose: isSalonConsumption ? consumptionPurpose : null,
-      purchase_type: isSalonConsumption ? 'salon_consumption' : 'regular_purchase',
-      order_type: isSalonConsumption ? 'salon_consumption' : 'walk_in',
-      category: isSalonConsumption ? 'Salon Consumption' : 'Customer Purchase',
-      salon_use: isSalonConsumption,
-      services: services.map(service => ({
-        type: 'service',
-        price: service.price || 0,
-        quantity: 1,
-        service_id: service.id,
-        service_name: service.service_name || service.name || 'Unknown Service',
-        gst_percentage: service.gst_percentage || 0
-      })).concat(products.map(product => ({
-        type: 'product',
-        price: product.price || 0,
-        quantity: product.quantity || 1,
-        service_id: product.id,
-        service_name: product.product_name || product.name || 'Unknown Product',
-        gst_percentage: product.gst_percentage || 0
-      })))
-    };
-
-    let orderItemsForDb: PosOrderItem[] = [];
-    services.forEach((service) => {
-      orderItemsForDb.push({
-        order_id: orderId,
-        item_id: service.id,
-        item_name: service.service_name || service.name || 'Unknown Service',
-        quantity: 1,
-        unit_price: service.price || 0,
-        total_price: service.price || 0,
-        type: 'service',
-        hsn_code: service.hsn_code || '',
-        gst_percentage: service.gst_percentage || 0,
-        service_id: service.id
-      });
-    });
-    products.forEach((product) => {
-      orderItemsForDb.push({
-        order_id: orderId,
-        item_id: product.id,
-        item_name: product.product_name || product.name || 'Unknown Product',
-        product_name: product.product_name || product.name,
-        quantity: product.quantity || 1,
-        unit_price: product.price || 0,
-        total_price: (product.quantity || 1) * (product.price || 0),
-        type: 'product',
-        hsn_code: product.hsn_code || '',
-        gst_percentage: product.gst_percentage || 0,
-        is_salon_consumption: isSalonConsumption,
-        for_salon_use: isSalonConsumption,
-        category: isSalonConsumption ? 'Salon Consumption' : 'Customer Purchase',
-        purpose: isSalonConsumption ? consumptionPurpose : null,
-        product_id: product.id
-      });
-    });
-
-    const { data: insertedOrderResult, error: orderError } = await supabase
-       .from(TABLES.POS_ORDERS || 'pos_orders')
-       .insert(orderData)
-       .select()
-       .single();
-    if (orderError) {
-      console.error('Error creating order:', orderError);
-      return { success: false, error: new Error(orderError.message) };
-    }
-    const insertedOrder = insertedOrderResult as PosOrder;
-
-    const { error: itemsError } = await supabase.from(TABLES.POS_ORDER_ITEMS || 'pos_order_items').insert(orderItemsForDb);
-    if (itemsError) {
-      console.error('Error creating order items:', itemsError);
-      return { success: false, error: new Error(itemsError.message) };
-    }
-
-    if (products.length > 0 && !isSalonConsumption) {
-      try {
-        const validProductUpdates = products
-          .filter(product => product.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(product.id))
-          .map(product => ({ productId: product.id, quantity: product.quantity || 1 }));
-        
-        if (validProductUpdates.length > 0) {
-          console.log(`Preventing double inventory reduction for ${validProductUpdates.length} products`);
-          // We'll preserve the structure but not actually update inventory
-          // This ensures any code expecting the data will still function properly
-        }
-      } catch (inventoryError) {
-        console.error('Error processing inventory data:', inventoryError);
-      }
-    }
-
-    const finalOrderResult = { ...insertedOrder, items: orderItemsForDb };
-    return { success: true, order: finalOrderResult, message: 'Order created successfully' };
-
-  } catch (error) {
-    console.error('Error in createWalkInOrder:', error);
-    return { success: false, error: error instanceof Error ? error : new Error('Unknown error in createWalkInOrder') };
-  }
-};
-
-// Fix: updateInventoryForSalonConsumption target table and key assumptions
-export const updateInventoryForSalonConsumption = async (products: ProductItem[]) => {
-  try {
-    if (!products || products.length === 0) {
-      console.warn('No products provided for salon consumption');
-      return { success: false, error: 'No products provided' };
-    }
-
-    // Assume stock is tracked in the main 'products' table using 'id' as PK
-    const targetInventoryTable = 'products';
-    console.log(`Updating stock in table: ${targetInventoryTable}`);
-
-    let allSucceeded = true;
-    const errors: string[] = [];
-
-    for (const product of products) {
-      if (!product.id || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(product.id)) {
-        const errorMsg = `Invalid product object or ID passed to updateInventoryForSalonConsumption: ID=${product.id}`;
-        console.error(errorMsg);
-        errors.push(errorMsg);
-        allSucceeded = false;
-        continue; // Skip this invalid product
-      }
-
-      try {
-         const quantity = product.quantity || 1;
-         // Use RPC call for atomic update (safer)
-         const { error: rpcError } = await supabase.rpc('decrement_product_stock', {
-           p_product_id: product.id,
-           p_decrement_quantity: quantity
-         });
-
-         if (rpcError) {
-           console.error(`Error updating stock via RPC for product ${product.id}:`, rpcError);
-           errors.push(`Failed stock update for ${product.id}: ${rpcError.message}`);
-           allSucceeded = false;
-         } else {
-           console.log(`Decremented stock for ${product.name || product.id} by ${quantity}`);
-           
-           // Add entry to inventory_salon_consumption table
-           const salonConsumptionEntry = {
-             id: uuidv4(),
-             date: new Date().toISOString(),
-             product_name: product.product_name || product.name,
-             hsn_code: product.hsn_code || '',
-             quantity: quantity,
-             purpose: product.purpose || 'Salon Use',
-             price_per_unit: product.price?.toString() || '0',
-             gst_percentage: product.gst_percentage?.toString() || '0'
-           };
-           
-           const { error: insertError } = await supabase
-             .from('inventory_salon_consumption')
-             .insert(salonConsumptionEntry);
-           
-           if (insertError) {
-             console.error(`Error inserting salon consumption record for ${product.id}:`, insertError);
-             errors.push(`Failed to record salon consumption for ${product.id}: ${insertError.message}`);
-             allSucceeded = false;
-           } else {
-             console.log(`Added salon consumption record for ${product.name || product.id}`);
-           }
-         }
-       } catch (updateError) {
-         const errorMsg = `Exception updating stock for product ${product.id}: ${updateError instanceof Error ? updateError.message : String(updateError)}`;
-         console.error(errorMsg);
-         errors.push(errorMsg);
-         allSucceeded = false;
-       }
-    }
-
-    return { success: allSucceeded, error: errors.length > 0 ? new Error(errors.join('; ')) : undefined };
-  } catch (error) {
-    console.error('Exception in updateInventoryForSalonConsumption:', error);
-    return { success: false, error: error instanceof Error ? error : new Error(String(error)) };
-  }
-};
-
-// Add a function to delete an order
-// Ensure the primary key for pos_orders is 'id' or 'order_id' consistently
-export const deleteOrder = async (orderId: string): Promise<{ success: boolean; error?: Error }> => {
-  try {
-    if (!orderId) {
-      console.error('Order ID is required for deletion');
-      return { success: false, error: new Error('Order ID is required') };
-    }
-
-    console.log(`Deleting order with ID "${orderId}" and all related items...`);
-    
-    // Define the primary key column name for pos_orders
-    const orderTablePrimaryKey = 'id'; // Change to 'order_id' if that's the actual primary key
-
-    // First delete the order items (assuming 'order_id' is the FK in pos_order_items)
-    try {
-      const { error: itemsError } = await supabase
-        .from('pos_order_items')
-        .delete()
-        .eq('order_id', orderId); // Match on the foreign key
-
-      if (itemsError) {
-        console.error('Error deleting order items:', itemsError);
-         // Decide if we should stop or continue
-       } else {
-        console.log(`Deleted items for order "${orderId}"`);
-      }
-    } catch (error) {
-      console.error('Exception deleting order items:', error);
-     }
-
-    // Then delete the order itself
-    try {
-      const { error: orderError } = await supabase
-        .from('pos_orders')
-        .delete()
-        .eq(orderTablePrimaryKey, orderId); // Match on the primary key
-
-      if (orderError) {
-        console.error('Error deleting order:', orderError);
-         // Decide if the deletion was actually successful despite the error (e.g., if already deleted)
-         throw orderError; // Throw error to indicate failure
-       } else {
-        console.log(`Deleted order "${orderId}"`);
-      }
-    } catch (error) {
-      console.error('Exception deleting order:', error);
-       throw error; // Throw error to indicate failure
-     }
-
-    // Dispatch event for real-time updates
-    window.dispatchEvent(new CustomEvent('order-deleted', { 
-      detail: { orderId } 
-    }));
-
-    console.log(`Successfully deleted order "${orderId}" and all related data`);
-    return { success: true };
-  } catch (error) {
-    console.error('Error deleting order:', error);
-    // Return error details
-    return { success: false, error: error instanceof Error ? error : new Error('Failed to delete order') };
-  }
-}; 

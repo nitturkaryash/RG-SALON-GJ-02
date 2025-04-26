@@ -1,4 +1,4 @@
-import { supabase } from './lib/supabase.ts';
+import { supabase } from './utils/supabase/supabaseClient.js';
 
 // Main function to create the distinct_products view
 async function createDistinctProductsView() {

@@ -22,7 +22,7 @@ import { ToastContainer } from 'react-toastify'
 import CssBaseline from '@mui/material/CssBaseline'
 import { theme } from './theme'
 import { queryClient } from './lib/query-client'
-import { AuthProvider } from './contexts/AuthContext'
+import { AuthContextProvider } from './contexts/AuthContext'
 import App from './App.tsx'
 import './index.css'
 import 'react-toastify/dist/ReactToastify.css'
@@ -34,7 +34,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
         <QueryClientProvider client={queryClient}>
           <ThemeProvider theme={theme}>
             <CssBaseline />
-            <AuthProvider>
+            <AuthContextProvider>
               <BrowserRouter>
                 <App />
                 <ToastContainer
@@ -50,7 +50,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
                   theme="light"
                 />
               </BrowserRouter>
-            </AuthProvider>
+            </AuthContextProvider>
           </ThemeProvider>
         </QueryClientProvider>
       </MotionConfig>

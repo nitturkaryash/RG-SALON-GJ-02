@@ -1,11 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-// Global variable to track connection status and error for diagnostics - initialize first
-export let connectionStatus = 'initializing';
-export let connectionError: Error | null = null;
-
-// Declare tables before they're used
+// Define TABLES immediately after imports
 export const TABLES = {
   PURCHASES: 'inventory_purchases',
   SALES: 'inventory_sales_new',
@@ -17,6 +13,10 @@ export const TABLES = {
   SALON_CONSUMPTION: 'inventory_consumption',
   SALON_CONSUMPTION_PRODUCTS: 'salon_consumption_products'
 };
+
+// Global variable to track connection status and error for diagnostics - initialize first
+export let connectionStatus = 'initializing';
+export let connectionError: Error | null = null;
 
 // Function to validate JWT token format
 const validateJwtFormat = (token: string): boolean => {

@@ -1,397 +1,420 @@
-import React, { useState, useEffect } from 'react';
-import { supabase } from '../../utils/supabase/supabaseClient';
-import { Card, Text, Group, Button, Select, TextInput, Modal, Badge, Table, Center, Loader } from '@mantine/core';
-import { DateRangePicker } from '@mantine/dates';
-import { showNotification } from '@mantine/notifications';
-import { IconCalendar, IconSearch, IconFilter } from '@tabler/icons-react';
-import dayjs from 'dayjs';
-import { useSalesHistory } from '../../hooks/useSalesHistory';
+import React, { useEffect, useState } from 'react';
+import { supabase } from '../../lib/supabase-client';
+import { useTheme } from '@mui/material/styles';
+import { 
+  Box, 
+  CircularProgress, 
+  Container,
+  FormControl,
+  Grid,
+  InputLabel,
+  MenuItem,
+  Paper,
+  Select,
+  TextField,
+  Typography,
+} from '@mui/material';
+import { DatePicker } from '@mui/x-date-pickers/DatePicker';
+import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
+import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
+import moment from 'moment';
+import SalesHistoryTable from './SalesHistoryTable';
 
-export function SalesHistory() {
+// Define the type for sales history items
+interface SalesItem {
+  serial_no: string;
+  order_id: string;
+  date: string;
+  product_name: string;
+  quantity: string;
+  unit_price_ex_gst: string;
+  gst_percentage: string | null;
+  taxable_value: string;
+  cgst_amount: string | null;
+  sgst_amount: string | null;
+  total_purchase_cost: string | null;
+  discount: string;
+  tax: string;
+  payment_amount: string;
+  payment_method: string | null;
+  current_stock?: number | null;
+  current_stock_amount?: number | null;
+  c_sgst?: number | null;
+  c_cgst?: number | null;
+  c_tax?: number | null;
+  payment_date?: string | null;
+  product_id?: string;
+  // New fields
+  hsn_code?: string | null;
+  product_type?: string | null;
+  mrp_incl_gst?: string | null;
+  discounted_sales_rate_ex_gst?: string | null;
+  invoice_value?: string | null;
+  igst_amount?: string | null;
+  // Added from database view
+  remaining_stock?: number | null;
+}
+
+export default function SalesHistory() {
+  const theme = useTheme();
   const [loading, setLoading] = useState(true);
-  const [salesData, setSalesData] = useState<any[]>([]);
-  const [totalSales, setTotalSales] = useState(0);
-  const [totalTax, setTotalTax] = useState(0);
-  const [dateRange, setDateRange] = useState<[Date | null, Date | null]>([
-    dayjs().subtract(30, 'days').toDate(),
-    new Date(),
-  ]);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [paymentFilter, setPaymentFilter] = useState<string | null>(null);
-  
-  // Use the hook for data fetching 
-  const { salesHistory, isLoading: hookLoading, error: hookError, fetchSalesHistory } = useSalesHistory();
+  const [salesData, setSalesData] = useState<SalesItem[]>([]);
+  const [filteredData, setFilteredData] = useState<SalesItem[]>([]);
+  const [startDate, setStartDate] = useState<Date | null>(new Date(new Date().setDate(new Date().getDate() - 30))); // Last 30 days
+  const [endDate, setEndDate] = useState<Date | null>(new Date());
+  const [searchTerm, setSearchTerm] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState('all');
+  const [productType, setProductType] = useState('all');
+
+  // Calculate totals
+  const totalSales = filteredData.reduce((sum, item) => sum + Number(item.payment_amount), 0);
+  const totalTax = filteredData.reduce((sum, item) => sum + Number(item.tax), 0);
 
   useEffect(() => {
-    console.log('================================');
-    console.log('SALES HISTORY COMPONENT MOUNTED');
-    console.log('Date Range:', dateRange);
-    console.log('================================');
-    
-    // Remove date range filtering initially to ensure data loads
-    const initialLoad = async () => {
-      try {
-        // Set date range to null to show all data
-        setDateRange([null, null]);
-        
-        // Use the hook data if available
-        if (salesHistory && salesHistory.length > 0) {
-          console.log('[UI DEBUG] Using hook data:', { count: salesHistory.length });
-          processSalesData(salesHistory);
-        } else {
-          // Fetch directly otherwise
-          fetchSalesHistoryData();
-        }
-      } catch (e) {
-        console.error('[UI DEBUG] Setup error:', e);
-      }
-    };
-    
-    initialLoad();
-    
-    // Dispatch event that component is mounted
-    const mountedEvent = new CustomEvent('sales-history-mounted');
-    window.dispatchEvent(mountedEvent);
-    
-    // Listen for data loaded events
-    const handleDataLoaded = (event: CustomEvent) => {
-      console.log('[UI DEBUG] Received sales data loaded event:', event.detail);
-      if (salesHistory && salesHistory.length > 0) {
-        processSalesData(salesHistory);
-      }
-    };
-    
-    window.addEventListener('sales-history-loaded', handleDataLoaded as EventListener);
-    
-    return () => {
-      window.removeEventListener('sales-history-loaded', handleDataLoaded as EventListener);
-    };
-  }, [salesHistory]);
-  
-  // Process sales data from hook or direct query
-  const processSalesData = (data: any[]) => {
-    console.log('[UI DEBUG] Processing sales data:', { count: data.length });
-    
-    // Apply search filter if needed
-    let filteredData = data;
-    if (searchQuery) {
-      const lowercaseQuery = searchQuery.toLowerCase();
-      filteredData = filteredData.filter(sale => {
-        const productName = (sale.product_name || '').toLowerCase();
-        const customerName = (sale.customer_name || '').toLowerCase();
-        const invoiceNumber = (sale.invoice_number || '').toLowerCase();
-        
-        return productName.includes(lowercaseQuery) || 
-               customerName.includes(lowercaseQuery) ||
-               invoiceNumber.includes(lowercaseQuery);
-      });
+    fetchSalesData();
+  }, []);
+
+  useEffect(() => {
+    if (salesData.length > 0) {
+      filterData();
     }
-    
-    // Calculate totals
-    let salesTotal = 0;
-    let taxTotal = 0;
-    
-    filteredData.forEach(sale => {
-      salesTotal += Number(sale.total_value || sale.total_amount) || 0;
-      const tax = Number(sale.tax_amount) || 
-                  ((Number(sale.cgst) || 0) + (Number(sale.sgst) || 0) + (Number(sale.igst) || 0));
-      taxTotal += tax;
-    });
-    
-    setTotalSales(salesTotal);
-    setTotalTax(taxTotal);
-    setSalesData(filteredData);
-    setLoading(false);
-  };
-  
-  // Add separate effect for filters
-  useEffect(() => {
-    // Skip on first render
-    if (loading) return;
-    
-    console.log('[UI DEBUG] Filter changed, refreshing data');
-    fetchSalesHistoryData();
-  }, [dateRange, paymentFilter]);
+  }, [salesData, startDate, endDate, searchTerm, paymentMethod, productType]);
 
-  const fetchSalesHistoryData = async () => {
+  const fetchSalesData = async () => {
     try {
       setLoading(true);
-      
-      console.log('[UI DEBUG] Fetching Sales History - Start', { time: new Date().toISOString() });
-      console.log('[UI DEBUG] Query Filters:', { dateRange, paymentFilter, searchQuery });
-      
-      // Trigger hook refresh
-      fetchSalesHistory();
-      
-      // Set a timeout to prevent infinite loading if hook doesn't respond
-      setTimeout(() => {
-        if (loading) {
-          setLoading(false);
-        }
-      }, 5000);
+      const { data, error } = await supabase
+        .from('sales_product_new_view')
+        .select(`
+          serial_no,
+          order_id,
+          date,
+          product_name,
+          quantity,
+          unit_price_ex_gst,
+          gst_percentage,
+          taxable_value,
+          cgst_amount,
+          sgst_amount,
+          total_purchase_cost,
+          discount,
+          tax,
+          payment_amount,
+          payment_method,
+          payment_date,
+          current_stock,
+          current_stock_amount,
+          c_sgst,
+          c_cgst,
+          c_tax,
+          hsn_code,
+          product_type,
+          mrp_incl_gst,
+          discounted_sales_rate_ex_gst,
+          invoice_value,
+          igst_amount,
+          product_id,
+          remaining_stock
+        `)
+        .order('date', { ascending: false });
+
+      if (error) {
+        console.error('Error fetching sales data:', error);
+      } else if (data) {
+        setSalesData(data);
+      }
     } catch (error) {
-      console.error('[UI DEBUG] Error:', error);
-      showNotification({
-        title: 'Error',
-        message: 'Failed to load sales history. Please try again.',
-        color: 'red',
-      });
+      console.error('Error:', error);
+    } finally {
       setLoading(false);
     }
   };
 
-  const handleSearch = () => {
-    fetchSalesHistoryData();
-  };
+  // Enrich sales data with current stock information
+  const enrichSalesDataWithStock = async (salesData: any[]) => {
+    try {
+      // Extract unique product IDs
+      const productIds = [...new Set(salesData
+        .filter(item => item.product_id)
+        .map(item => item.product_id))];
+      
+      if (productIds.length === 0) return salesData;
 
-  const getPaymentMethodColor = (method: string) => {
-    switch (method) {
-      case 'Cash':
-        return 'green';
-      case 'Card':
-        return 'blue';
-      case 'UPI':
-        return 'violet';
-      default:
-        return 'gray';
+      // Fetch current stock data for these products
+      const { data: stockData, error } = await supabase
+        .from('products')
+        .select('id, stock_quantity, purchase_price, purchase_price_incl_tax, purchase_tax_rate')
+        .in('id', productIds);
+      
+      if (error) {
+        console.error('Error fetching stock data:', error);
+        return salesData;
+      }
+
+      // Create a map for quick lookups
+      const stockMap = new Map();
+      stockData?.forEach(item => {
+        stockMap.set(item.id, {
+          stock_quantity: item.stock_quantity,
+          purchase_price: item.purchase_price,
+          purchase_price_incl_tax: item.purchase_price_incl_tax,
+          purchase_tax_rate: item.purchase_tax_rate
+        });
+      });
+
+      // Enrich sales data with stock information
+      return salesData.map(item => {
+        if (!item.product_id || !stockMap.has(item.product_id)) {
+          return {
+            ...item,
+            current_stock: null,
+            current_stock_amount: null,
+            c_sgst: null,
+            c_cgst: null,
+            c_tax: null
+          };
+        }
+
+        const stockInfo = stockMap.get(item.product_id);
+        const stockQuantity = stockInfo.stock_quantity || 0;
+        const purchasePrice = stockInfo.purchase_price || 0;
+        const stockAmount = stockQuantity * purchasePrice;
+        
+        // Calculate tax
+        const taxRate = stockInfo.purchase_tax_rate || 0;
+        const cgst = taxRate > 0 ? (stockAmount * (taxRate / 2)) / 100 : 0;
+        const sgst = taxRate > 0 ? (stockAmount * (taxRate / 2)) / 100 : 0;
+        const totalTax = cgst + sgst;
+
+        return {
+          ...item,
+          current_stock: stockQuantity,
+          current_stock_amount: stockAmount,
+          c_sgst: sgst,
+          c_cgst: cgst,
+          c_tax: totalTax
+        };
+      });
+    } catch (error) {
+      console.error('Error enriching sales data:', error);
+      return salesData;
     }
   };
 
-  const columns = [
-    {
-      accessor: 'created_at',
-      title: 'Date',
-      width: 100,
-      render: (row: any) => (
-        <Text size="sm">{dayjs(row.created_at).format('DD/MM/YYYY')}</Text>
-      ),
-    },
-    {
-      accessor: 'product_name',
-      title: 'Product Name',
-      width: 150,
-      render: (row: any) => (
-        <Text size="sm">{row.product_name || 'Unknown Product'}</Text>
-      ),
-    },
-    {
-      accessor: 'hsn_code',
-      title: 'HSN Code',
-      width: 100,
-    },
-    {
-      accessor: 'unit',
-      title: 'Unit',
-      width: 80,
-    },
-    {
-      accessor: 'quantity',
-      title: 'Qty',
-      width: 60,
-      render: (row: any) => (
-        <Text size="sm">{Number(row.quantity).toFixed(0)}</Text>
-      ),
-    },
-    {
-      accessor: 'price',
-      title: 'Price (Excl. GST)',
-      width: 120,
-      render: (row: any) => (
-        <Text size="sm">₹{Number(row.price).toFixed(2)}</Text>
-      ),
-    },
-    {
-      accessor: 'gst_percentage',
-      title: 'GST %',
-      width: 70,
-      render: (row: any) => (
-        <Text size="sm">{Number(row.gst_percentage || 0).toFixed(0)}%</Text>
-      ),
-    },
-    {
-      accessor: 'discount_percentage',
-      title: 'Discount %',
-      width: 80,
-      render: (row: any) => (
-        <Text size="sm">{Number(row.discount_percentage || 0).toFixed(0)}%</Text>
-      ),
-    },
-    {
-      accessor: 'price',
-      title: 'Taxable Value',
-      width: 110,
-      render: (row: any) => (
-        <Text size="sm">₹{Number(row.price).toFixed(2)}</Text>
-      ),
-    },
-    {
-      accessor: 'tax_amount',
-      title: 'CGST',
-      width: 90,
-      render: (row: any) => {
-        // Calculate CGST as half of the total tax amount
-        const cgst = Number(row.tax_amount || 0) / 2;
-        return <Text size="sm">₹{cgst.toFixed(2)}</Text>;
-      },
-    },
-    {
-      accessor: 'tax_amount',
-      title: 'SGST',
-      width: 90,
-      render: (row: any) => {
-        // Calculate SGST as half of the total tax amount
-        const sgst = Number(row.tax_amount || 0) / 2;
-        return <Text size="sm">₹{sgst.toFixed(2)}</Text>;
-      },
-    },
-    {
-      accessor: 'total_amount',
-      title: 'Invoice Value',
-      width: 110,
-      render: (row: any) => (
-        <Text size="sm" weight={600}>₹{Number(row.total_amount).toFixed(2)}</Text>
-      ),
-    },
-    {
-      accessor: 'customer_name',
-      title: 'Customer',
-      width: 130,
-      render: (row: any) => (
-        <Text size="sm">{row.customer_name || 'Walk-in Customer'}</Text>
-      ),
-    },
-    {
-      accessor: 'stylist_name',
-      title: 'Stylist',
-      width: 130,
-      render: (row: any) => (
-        <Text size="sm">{row.stylist_name || '-'}</Text>
-      ),
-    },
-    {
-      accessor: 'payment_method',
-      title: 'Payment Method',
-      width: 120,
-      render: (row: any) => (
-        <Badge color={getPaymentMethodColor(row.payment_method)} size="sm">
-          {row.payment_method}
-        </Badge>
-      ),
-    },
-    {
-      accessor: 'invoice_number',
-      title: 'Invoice #',
-      width: 120,
-    },
-  ];
+  const filterData = () => {
+    let filtered = [...salesData];
+
+    // Date filter
+    if (startDate && endDate) {
+      const start = moment(startDate).startOf('day');
+      const end = moment(endDate).endOf('day');
+      
+      filtered = filtered.filter(item => {
+        const itemDate = moment(item.date);
+        return itemDate.isSameOrAfter(start) && itemDate.isSameOrBefore(end);
+      });
+    }
+
+    // Search term filter
+    if (searchTerm) {
+      const term = searchTerm.toLowerCase();
+      filtered = filtered.filter(item => 
+        item.product_name.toLowerCase().includes(term) ||
+        item.order_id.toLowerCase().includes(term) ||
+        (item.hsn_code && item.hsn_code.toLowerCase().includes(term))
+      );
+    }
+
+    // Payment method filter
+    if (paymentMethod !== 'all') {
+      filtered = filtered.filter(item => 
+        item.payment_method?.toLowerCase() === paymentMethod.toLowerCase()
+      );
+    }
+
+    // Product type filter
+    if (productType !== 'all') {
+      filtered = filtered.filter(item => 
+        item.product_type?.toLowerCase() === productType.toLowerCase()
+      );
+    }
+
+    // Add serial numbers
+    filtered = filtered.map((item, index) => ({
+      ...item,
+      serial_no: (index + 1).toString()
+    }));
+
+    setFilteredData(filtered);
+  };
+
+  const exportToCSV = () => {
+    // Headers for the CSV
+    const headers = [
+      'Serial No',
+      'Date',
+      'Order ID',
+      'Product',
+      'Quantity',
+      'Unit Price (Ex GST)',
+      'GST %',
+      'Taxable Value',
+      'CGST',
+      'SGST',
+      'IGST',
+      'HSN Code',
+      'Product Type',
+      'MRP (Incl GST)',
+      'Discounted Rate (Ex GST)',
+      'Total',
+      'Discount',
+      'Invoice Value',
+      'Remaining Stock',
+      'Current Stock',
+      'Current Stock Value',
+      'Current CGST',
+      'Current SGST',
+      'Current Tax',
+      'Payment Method'
+    ];
+
+    // Convert data to CSV format
+    const csvRows = [];
+    csvRows.push(headers.join(','));
+
+    for (const item of filteredData) {
+      const row = [
+        item.serial_no,
+        new Date(item.date).toLocaleDateString(),
+        `"${item.order_id}"`,
+        `"${item.product_name}"`,
+        item.quantity,
+        item.unit_price_ex_gst,
+        item.gst_percentage || '',
+        item.taxable_value,
+        item.cgst_amount || '',
+        item.sgst_amount || '',
+        item.igst_amount || '',
+        item.hsn_code || '',
+        `"${item.product_type || ''}"`,
+        item.mrp_incl_gst || '',
+        item.discounted_sales_rate_ex_gst || '',
+        item.payment_amount,
+        item.discount,
+        item.invoice_value || '',
+        item.remaining_stock || '',
+        item.current_stock || '',
+        item.current_stock_amount || '',
+        item.c_cgst || '',
+        item.c_sgst || '',
+        item.c_tax || '',
+        `"${item.payment_method || ''}"`
+      ];
+      csvRows.push(row.join(','));
+    }
+
+    // Create a CSV file and trigger download
+    const csvString = csvRows.join('\n');
+    const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `sales_history_${new Date().toISOString().slice(0, 10)}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   return (
-    <Card shadow="sm" p="lg" radius="md" withBorder>
-      <Card.Section withBorder inheritPadding py="xs">
-        <Group position="apart">
-          <Text weight={500}>Sales History</Text>
-          <Group spacing="xs">
-            <Button 
-              size="xs" 
-              variant="light"
-              onClick={() => fetchSalesHistoryData()}
-            >
-              Refresh
-            </Button>
-          </Group>
-        </Group>
-      </Card.Section>
-
-      <Group mt="md" mb="md" position="apart">
-        <Group>
-          <DateRangePicker
-            label="Date Range"
-            placeholder="Pick date range"
-            value={dateRange}
-            onChange={setDateRange}
-            icon={<IconCalendar size={16} />}
-            clearable={false}
-          />
-          <Select
-            label="Payment Method"
-            placeholder="All methods"
-            value={paymentFilter}
-            onChange={setPaymentFilter}
-            data={[
-              { value: 'Cash', label: 'Cash' },
-              { value: 'Card', label: 'Card' },
-              { value: 'UPI', label: 'UPI' },
-              { value: 'Other', label: 'Other' },
-            ]}
-            icon={<IconFilter size={16} />}
-            clearable
-          />
-        </Group>
-        <Group>
-          <TextInput
-            placeholder="Search products, customers..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            icon={<IconSearch size={16} />}
-            rightSection={
-              <Button 
-                compact 
-                variant="subtle" 
-                onClick={handleSearch}
+    <Container maxWidth="xl">
+      <Paper sx={{ p: 3, mb: 3 }}>
+        <Typography variant="h5" gutterBottom>Sales History</Typography>
+        
+        <Grid container spacing={3} sx={{ mb: 3 }}>
+          {/* Date filters */}
+          <Grid item xs={12} sm={6} md={3}>
+            <LocalizationProvider dateAdapter={AdapterDateFns}>
+              <DatePicker
+                label="Start Date"
+                value={startDate}
+                onChange={setStartDate}
+                slotProps={{ textField: { fullWidth: true, size: 'small' } }}
+              />
+            </LocalizationProvider>
+          </Grid>
+          <Grid item xs={12} sm={6} md={3}>
+            <LocalizationProvider dateAdapter={AdapterDateFns}>
+              <DatePicker
+                label="End Date"
+                value={endDate}
+                onChange={setEndDate}
+                slotProps={{ textField: { fullWidth: true, size: 'small' } }}
+              />
+            </LocalizationProvider>
+          </Grid>
+          
+          {/* Search field */}
+          <Grid item xs={12} sm={6} md={3}>
+            <TextField
+              fullWidth
+              label="Search Products"
+              variant="outlined"
+              size="small"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </Grid>
+          
+          {/* Payment method filter */}
+          <Grid item xs={12} sm={6} md={1.5}>
+            <FormControl fullWidth size="small">
+              <InputLabel>Payment Method</InputLabel>
+              <Select
+                value={paymentMethod}
+                label="Payment Method"
+                onChange={(e) => setPaymentMethod(e.target.value)}
               >
-                Search
-              </Button>
-            }
+                <MenuItem value="all">All Methods</MenuItem>
+                <MenuItem value="cash">Cash</MenuItem>
+                <MenuItem value="card">Card</MenuItem>
+                <MenuItem value="upi">UPI</MenuItem>
+                <MenuItem value="split">Split</MenuItem>
+              </Select>
+            </FormControl>
+          </Grid>
+          
+          {/* Product type filter */}
+          <Grid item xs={12} sm={6} md={1.5}>
+            <FormControl fullWidth size="small">
+              <InputLabel>Product Type</InputLabel>
+              <Select
+                value={productType}
+                label="Product Type"
+                onChange={(e) => setProductType(e.target.value)}
+              >
+                <MenuItem value="all">All Types</MenuItem>
+                <MenuItem value="product">Product</MenuItem>
+                <MenuItem value="service">Service</MenuItem>
+              </Select>
+            </FormControl>
+          </Grid>
+        </Grid>
+        
+        {loading ? (
+          <Box sx={{ display: 'flex', justifyContent: 'center', p: 3 }}>
+            <CircularProgress />
+          </Box>
+        ) : (
+          <SalesHistoryTable 
+            salesData={filteredData} 
+            totalSales={totalSales} 
+            totalTax={totalTax}
+            loading={loading}
+            onExportCsv={exportToCSV}
           />
-        </Group>
-      </Group>
-
-      <Group position="apart" mb="sm">
-        <Text color="dimmed" size="sm">
-          Showing {salesData.length} transactions
-        </Text>
-        <Group spacing="xl">
-          <Text size="sm" weight={500}>
-            Total Tax: <Text component="span" weight={700}>₹{totalTax.toFixed(2)}</Text>
-          </Text>
-          <Text size="sm" weight={500}>
-            Total Sales: <Text component="span" weight={700}>₹{totalSales.toFixed(2)}</Text>
-          </Text>
-        </Group>
-      </Group>
-
-      {loading ? (
-        <Center p="xl">
-          <Loader size="md" />
-        </Center>
-      ) : salesData.length === 0 ? (
-        <Center p="xl">
-          <Text color="dimmed">No sales records found. Sales data will appear here when available.</Text>
-        </Center>
-      ) : (
-        <Table striped highlightOnHover>
-          <thead>
-            <tr>
-              {columns.map((column) => (
-                <th key={column.accessor} style={{ width: column.width }}>
-                  {column.title}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {salesData.map((row, index) => (
-              <tr key={row.id || index}>
-                {columns.map((column) => (
-                  <td key={`${row.id || index}-${column.accessor}`}>
-                    {column.render ? column.render(row) : row[column.accessor]}
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </Table>
-      )}
-    </Card>
+        )}
+      </Paper>
+    </Container>
   );
-} 
+}

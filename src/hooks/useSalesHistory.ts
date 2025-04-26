@@ -1,11 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
-import { supabase, handleSupabaseError } from '../utils/supabase/supabaseClient';
+import { supabase } from '../utils/supabase/supabaseClient';
+import { showNotification } from '@mantine/notifications';
+import dayjs from 'dayjs';
 
-// Interface for sales history data
-export interface SalesHistoryItem {
+interface SalesHistoryItem {
   id: string;
   created_at: string;
-  product_id: string;
   product_name: string;
   hsn_code: string;
   unit: string;
@@ -14,16 +14,49 @@ export interface SalesHistoryItem {
   gst_percentage: number;
   discount_percentage: number;
   taxable_value: number;
-  cgst: number;
-  sgst: number;
-  igst: number;
-  total_value: number;
+  tax_amount: number;
+  total_amount: number;
   customer_name: string;
   stylist_name: string;
   payment_method: string;
   invoice_number: string;
-  is_salon_consumption: boolean;
-  notes?: string;
+}
+
+// Define the type for the sales_product_new view
+interface SalesProductNew {
+  serial_no: string;
+  order_id: string;
+  date: string;
+  product_name: string;
+  quantity: number;
+  unit_price_ex_gst: number;
+  gst_percentage: number | null;
+  taxable_value: number;
+  cgst_amount: number | null;
+  sgst_amount: number | null;
+  total_purchase_cost: number | null;
+  discount: number | null;
+  tax: number | null;
+  payment_amount: number | null;
+  payment_method: string | null;
+  payment_date: string | null;
+}
+
+// Define the type for the simplified view
+interface SimplifiedSalesHistoryItem {
+  order_id: string;
+  order_date: string;
+  total_amount: number;
+  customer_name: string;
+  payment_method: string;
+  stylist_name: string;
+  is_walk_in: boolean;
+  consumption_purpose: string | null;
+  // Add discount_percentage here if the view includes it
+  discount_percentage: number | null;
+  // Add item type if the view provides it
+  item_type?: string;
+  item_name?: string; // Add item_name if view provides it
 }
 
 export const useSalesHistory = () => {
@@ -34,135 +67,95 @@ export const useSalesHistory = () => {
   const fetchSalesHistory = useCallback(async () => {
     setIsLoading(true);
     setError(null);
+
     try {
-      // First check if simplified_sales_history exists
-      const { count: checkCount, error: checkError } = await supabase
-        .from('simplified_sales_history')
-        .select('*', { count: 'exact', head: true });
+      // Only fetch from the sales_product_new view - no fallbacks
+      const { data: salesProductData, error: salesProductError } = await supabase
+        .from('sales_product_new')
+        .select('*')
+        .order('date', { ascending: false });
 
-      console.log('[HOOK DEBUG] Table check:', { count: checkCount, error: checkError });
-
-      if (checkError) {
-        console.log('[HOOK DEBUG] Falling back to direct sales query');
-        // Fallback to sales table
-        const { data: salesData, error: salesError } = await supabase
-          .from('sales')
-          .select(`
-            *,
-            products(*)
-          `)
-          .order('created_at', { ascending: false });
-
-        if (salesError) {
-          throw handleSupabaseError(salesError);
-        }
-
-        // Transform data to match our SalesHistoryItem interface
-        const transformedData: SalesHistoryItem[] = (salesData || []).map(item => {
-          return {
-            id: item.id,
-            created_at: item.created_at,
-            product_id: item.product_id,
-            product_name: item.products?.name || 'Unknown Product',
-            hsn_code: item.products?.hsn_code || '',
-            unit: item.products?.units || '',
-            quantity: item.quantity || 0,
-            price_excl_gst: item.price_excl_gst || 0,
-            gst_percentage: item.gst_percentage || 0,
-            discount_percentage: item.discount_percentage || 0,
-            taxable_value: item.taxable_value || 0,
-            cgst: item.cgst || 0,
-            sgst: item.sgst || 0,
-            igst: item.igst || 0,
-            total_value: item.total_value || 0,
-            customer_name: item.customer_name || 'Walk-in Customer',
-            stylist_name: item.stylist_name || 'Self Service',
-            payment_method: item.payment_method || 'Cash',
-            invoice_number: item.invoice_number || '',
-            is_salon_consumption: item.is_salon_consumption || false,
-            notes: item.notes
-          };
+      if (salesProductError) {
+        console.error('[useSalesHistory] Error fetching from sales_product_new view:', salesProductError);
+        setError('Failed to fetch sales history. Please check if the view exists.');
+        showNotification({
+          title: 'Error',
+          message: 'Failed to load sales history from the new view.',
+          color: 'red',
         });
-
-        setSalesHistory(transformedData);
-        return transformedData;
-      } else {
-        // Use simplified_sales_history table
-        const { data, error: fetchError } = await supabase
-          .from('simplified_sales_history')
-          .select('*')
-          .order('created_at', { ascending: false });
-
-        if (fetchError) {
-          throw handleSupabaseError(fetchError);
-        }
-
-        // Create event to notify about sales data being loaded
-        const dataLoadedEvent = new CustomEvent('sales-history-loaded', { 
-          detail: { count: data?.length || 0 } 
-        });
-        window.dispatchEvent(dataLoadedEvent);
-
-        // Map fields to match our interface
-        const transformedData: SalesHistoryItem[] = (data || []).map(item => ({
-          id: item.id,
-          created_at: item.created_at,
-          product_id: item.product_id || '',
-          product_name: item.product_name,
-          hsn_code: item.hsn_code || '',
-          unit: item.unit || '',
-          quantity: item.quantity || 0,
-          price_excl_gst: item.price || 0,
-          gst_percentage: item.gst_percentage || 0,
-          discount_percentage: item.discount_percentage || 0,
-          taxable_value: item.price || 0,
-          cgst: (item.tax_amount || 0) / 2,
-          sgst: (item.tax_amount || 0) / 2,
-          igst: 0,
-          total_value: item.total_amount || 0,
-          customer_name: item.customer_name || 'Walk-in Customer',
-          stylist_name: item.stylist_name || '',
-          payment_method: item.payment_method || 'Cash',
-          invoice_number: item.invoice_number || '',
-          is_salon_consumption: false,
-          notes: item.notes
-        }));
-
-        setSalesHistory(transformedData);
-        return transformedData;
+        setSalesHistory([]);
+        setIsLoading(false);
+        return;
       }
+
+      if (!salesProductData || salesProductData.length === 0) {
+        console.log('[useSalesHistory] No data found in sales_product_new view.');
+        setSalesHistory([]);
+        setIsLoading(false);
+        return;
+      }
+
+      console.log('[useSalesHistory] Fetched from sales_product_new view:', salesProductData.length);
+
+      const processedData: SalesHistoryItem[] = salesProductData.map((item: SalesProductNew) => {
+        // Calculate tax amount from cgst and sgst, falling back to tax field if needed
+        const taxAmount = 
+          (item.cgst_amount !== null && item.sgst_amount !== null) 
+            ? (item.cgst_amount + item.sgst_amount) 
+            : item.tax || 0;
+        
+        // Calculate total amount if total_purchase_cost is null
+        const totalAmount = 
+          item.total_purchase_cost !== null 
+            ? item.total_purchase_cost 
+            : item.taxable_value + taxAmount - (item.discount || 0);
+        
+        return {
+          id: item.order_id,
+          created_at: item.date,
+          product_name: item.product_name || 'Unknown Product',
+          hsn_code: '-', // Not available in the new view
+          unit: '-', // Not available in the new view
+          quantity: item.quantity,
+          price_excl_gst: item.unit_price_ex_gst,
+          gst_percentage: item.gst_percentage || 0,
+          discount_percentage: item.discount || 0,
+          taxable_value: item.taxable_value,
+          tax_amount: taxAmount,
+          total_amount: totalAmount,
+          customer_name: 'Customer', // Not available directly in the view
+          stylist_name: '-', // Not available directly in the view
+          payment_method: item.payment_method || 'N/A',
+          invoice_number: item.serial_no, // Use the serial_no as the invoice number
+        };
+      });
+
+      setSalesHistory(processedData);
+      // Dispatch event with fetched data
+      window.dispatchEvent(new CustomEvent('sales-history-loaded', { detail: processedData }));
     } catch (err) {
-      console.error('Error fetching sales history:', err);
-      const errorMessage = err instanceof Error ? err.message : 'Failed to load sales history. Please try again.';
-      setError(errorMessage);
+      console.error('[useSalesHistory] Unexpected error during fetch:', err);
+      setError('An unexpected error occurred while fetching sales history.');
+      showNotification({
+        title: 'Error',
+        message: 'An unexpected error occurred. Please try again.',
+        color: 'red',
+      });
       setSalesHistory([]);
-      return [];
     } finally {
       setIsLoading(false);
     }
   }, []);
 
-  // Fetch sales history when the hook is first used
   useEffect(() => {
     fetchSalesHistory();
+    // Listen for custom event to refetch data
+    window.addEventListener('refresh-orders', fetchSalesHistory);
 
-    // Listen for refresh requests
-    const handleRefreshRequest = () => {
-      console.log('[HOOK] Received refresh request for sales history');
-      fetchSalesHistory();
-    };
-
-    window.addEventListener('refresh-sales-history', handleRefreshRequest);
-    
     return () => {
-      window.removeEventListener('refresh-sales-history', handleRefreshRequest);
+      window.removeEventListener('refresh-orders', fetchSalesHistory);
     };
   }, [fetchSalesHistory]);
 
-  return {
-    salesHistory,
-    isLoading,
-    error,
-    fetchSalesHistory,
-  };
-}; 
+  return { salesHistory, isLoading, error, fetchSalesHistory };
+};

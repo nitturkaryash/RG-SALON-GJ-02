@@ -15,7 +15,7 @@ import {
 } from '@mui/icons-material';
 import * as XLSX from 'xlsx';
 import { useQuery } from '@tanstack/react-query';
-import { supabase } from '../../supabaseClient';
+import { supabase } from '../../utils/supabase/supabaseClient.js';
 
 // Define types for our data
 interface Product {

@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'react-toastify'
 import { v4 as uuidv4 } from 'uuid'
 import type { ProductCollection } from '../models/productTypes'
-import { supabase } from '../lib/supabase'
+import { supabase } from '../utils/supabase/supabaseClient.js'
 
 export function useProductCollections() {
   const queryClient = useQueryClient()

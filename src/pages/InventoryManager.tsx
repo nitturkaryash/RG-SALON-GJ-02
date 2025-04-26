@@ -1,4 +1,4 @@
-import React, { useState, useEffect, ChangeEvent, useCallback } from 'react';
+import React, { useState, useEffect, ChangeEvent, useCallback, useMemo } from 'react';
 import {
   Box,
   Typography,
@@ -26,7 +26,8 @@ import {
   Tab,
   Autocomplete,
   FormControlLabel,
-  Switch
+  Switch,
+  TableFooter
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -34,18 +35,23 @@ import {
   Delete as DeleteIcon,
   Refresh as RefreshIcon,
   Download as DownloadIcon,
+  DateRange as DateRangeIcon,
+  FilterAlt as FilterIcon,
+  FilterAltOff as FilterOffIcon,
+  Speed as SpeedIcon,
+  LocalShipping as LocalShippingIcon
 } from '@mui/icons-material';
 import { styled } from '@mui/material/styles';
 import { useProducts, Product } from '../hooks/useProducts';
 import { usePurchaseHistory, PurchaseTransaction } from '../hooks/usePurchaseHistory';
 import { addPurchaseTransaction } from '../utils/inventoryUtils';
-import { calculatePriceExcludingGST, calculatePriceBreakdown } from '../utils/gstCalculations';
 import { initialFormData, ProductFormData } from '../data/formData';
 import { supabase, handleSupabaseError } from '../utils/supabase/supabaseClient';
 import * as XLSX from 'xlsx';
 import SalonConsumptionTab from './Inventory/SalonConsumptionTab';
 import SalesHistoryTab from './Inventory/SalesHistoryTab';
 import { toast } from 'react-hot-toast';
+import { calculatePriceExcludingGST, calculateGSTAmount } from '../utils/gstCalculations';
 
 const StyledTableCell = styled(TableCell)(({ theme }) => ({
   fontWeight: 'bold',
@@ -53,17 +59,20 @@ const StyledTableCell = styled(TableCell)(({ theme }) => ({
   color: theme.palette.common.white,
 }));
 
-// Define interfaces and initial data locally
-interface BalanceStockItem {
+// Define interface for Stock History items
+interface StockHistoryItem {
   id: string;
+  date: string; // timestamp with time zone
+  product_id: string;
   product_name: string;
   hsn_code: string;
-  unit_type: string;
   units: string;
-  balance_qty: number;
-  mrp_per_unit_excl_gst: number;
-  mrp_incl_gst: number;
-  gst_percentage: number;
+  change_qty: number; // Use qty_change if available, otherwise change_qty
+  stock_after: number; // Use stock_after if available, otherwise current_qty
+  change_type: string; // e.g., 'purchase', 'sale', 'consumption', 'adjustment'
+  source?: string; // e.g., 'Purchase Invoice', 'Order', 'Consumption Voucher'
+  reference_id?: string; // e.g., Invoice No, Order ID, Voucher No
+  created_at: string; // timestamp with time zone
 }
 
 // Define salon consumption interface (used for direct fetching)
@@ -83,15 +92,62 @@ interface SalonConsumptionItem {
   total_purchase_cost: number;
 }
 
-// Extend ProductFormData interface to include vendor
+// Update the ExtendedProductFormData to include all necessary fields
 interface ExtendedProductFormData extends ProductFormData {
-  // No additional fields needed anymore as they've been added to the base interface
+  product_id: string;
+  purchase_id?: string;
+  date: string;
+  product_name: string;
+  hsn_code: string;
+  units: string;
+  purchase_invoice_number: string;
+  purchase_qty: number;
+  mrp_incl_gst: number;
+  mrp_excl_gst: number;
+  discount_on_purchase_percentage: number;
+  purchase_excl_gst: number;
+  gst_percentage: number;
+  purchase_cost_taxable_value: number;
+  purchase_igst: number;
+  purchase_cgst: number;
+  purchase_sgst: number;
+  purchase_invoice_value: number;
+  vendor: string;
+  supplier: string;
+  stock_after_purchase?: number;
+  total_value?: number;
+  total_tax?: number;
+  is_interstate: boolean;
+  mrp_per_unit_excl_gst: number;
+  unit_type: string;
 }
 
-// Extend initialFormData with new fields - no changes needed now
+// Update the extendedInitialFormData with all required fields
 const extendedInitialFormData: ExtendedProductFormData = {
   ...initialFormData,
-  // No need to override values as they're already in initialFormData
+  product_id: '',
+  purchase_id: '',
+  date: new Date().toISOString().split('T')[0],
+  product_name: '',
+  hsn_code: '',
+  units: '',
+  purchase_invoice_number: '',
+  purchase_qty: 1,
+  mrp_incl_gst: 0,
+  mrp_excl_gst: 0,
+  discount_on_purchase_percentage: 0,
+  purchase_excl_gst: 0,
+  gst_percentage: 18,
+  purchase_cost_taxable_value: 0,
+  purchase_igst: 0,
+  purchase_cgst: 0,
+  purchase_sgst: 0,
+  purchase_invoice_value: 0,
+  vendor: '',
+  supplier: '',
+  is_interstate: false,
+  mrp_per_unit_excl_gst: 0,
+  unit_type: ''
 };
 
 export default function InventoryManager() {
@@ -108,25 +164,40 @@ export default function InventoryManager() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
-  const [activeTab, setActiveTab] = useState<'purchaseHistory' | 'balanceStock' | 'salonConsumption' | 'salesHistory'>('purchaseHistory');
+  const [activeTab, setActiveTab] = useState<'purchaseHistory' | 'stockHistory' | 'salonConsumption' | 'salesHistory'>('purchaseHistory');
 
-  const [balanceStock, setBalanceStock] = useState<BalanceStockItem[]>([]);
-  const [balanceLoading, setBalanceLoading] = useState<boolean>(false);
+  // Add state for Stock History
+  const [stockHistory, setStockHistory] = useState<StockHistoryItem[]>([]);
+  const [stockHistoryLoading, setStockHistoryLoading] = useState<boolean>(false);
+  const [stockHistoryError, setStockHistoryError] = useState<string | null>(null);
 
   // State for directly fetched salon consumption data
   const [salonConsumptionData, setSalonConsumptionData] = useState<SalonConsumptionItem[]>([]);
   const [isLoadingConsumption, setIsLoadingConsumption] = useState<boolean>(true);
   const [errorConsumption, setErrorConsumption] = useState<string | null>(null);
 
+  // State for consumption data
+  const [consumptionData, setConsumptionData] = useState<any[]>([]);
+  
+  // Add date filter state
+  const [dateFilter, setDateFilter] = useState<{
+    startDate: string;
+    endDate: string;
+    isActive: boolean;
+  }>({
+    startDate: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0], // First day of current month
+    endDate: new Date().toISOString().split('T')[0], // Today
+    isActive: false
+  });
+
+  // State for export functionality
   const [isExporting, setIsExporting] = useState(false);
 
   // Function to initialize database tables
   const initializeDatabaseTables = useCallback(async () => {
     try {
       console.log('Initializing database tables...');
-      // Remove the sales products table initialization since we're removing the sales history tab
-      // const salesTableCreated = await createSalesProductsTable();
-      // console.log(`Sales products table initialization: ${salesTableCreated ? 'SUCCESS' : 'FAILED'}`);
+      // Database initialization tasks could go here if needed
     } catch (error) {
       console.error('Error initializing database tables:', error);
     }
@@ -134,58 +205,207 @@ export default function InventoryManager() {
 
   // Initialize tables when component loads
   useEffect(() => {
+    // Initialize database tables
     initializeDatabaseTables();
-  }, [initializeDatabaseTables]);
+    
+    // Fetch all data regardless of active tab
+    fetchPurchases();
+    fetchStockHistory();
+    fetchSalonConsumptionDirect();
+  }, []);  // Empty dependency array since these functions don't change
 
   // Function to handle exporting data based on the active tab
   const handleExport = async () => {
     try {
       setIsExporting(true);
-      let dataToExport: Array<PurchaseTransaction | BalanceStockItem | SalonConsumptionItem> = [];
-      let fileName = "inventory_export";
+      console.log('Exporting data to Excel file...');
 
-      // Export different data based on active tab
-      if (activeTab === 'purchaseHistory') {
-        dataToExport = purchases;
-        fileName = "purchase_history";
-      } else if (activeTab === 'balanceStock') {
-        dataToExport = balanceStock.map(item => {
-          const values = calculateBalanceValues(item);
-          return {
-            ...item,
-            taxable_value: values.taxableValue,
-            igst: values.igst,
-            cgst: values.cgst,
-            sgst: values.sgst,
-            total_value: values.invoiceValue
-          };
-        });
-        fileName = "balance_stock";
-      } else if (activeTab === 'salonConsumption') {
-        dataToExport = salonConsumptionData;
-        fileName = "salon_consumption";
-      } else if (activeTab === 'salesHistory') {
-        // Sales History export is handled by the SalesHistoryTab component directly
-        toast.info('Please use the Export button in the Sales History tab');
-        setIsExporting(false);
+      // Fetch Sales History data specifically for the export
+      console.log('Fetching Sales History data for export...');
+      const { data: salesData, error: salesError } = await supabase
+        .from('sales_product_new') // Use the correct view name
+        .select('*');
+
+      if (salesError) {
+        console.error("❌ Error fetching Sales History data for export:", salesError);
+        toast.error(`Failed to fetch Sales History: ${salesError.message}`);
+        // Optionally decide if you want to proceed without sales data or stop
+        // For now, we'll proceed but won't add the sheet if fetch fails
+      } else {
+        console.log(`✅ Fetched ${salesData?.length || 0} sales history records for export.`);
+      }
+
+      // Create a new workbook
+      const wb = XLSX.utils.book_new();
+
+      // Adjusted check to include salesData possibility
+      if (
+        (!purchases || purchases.length === 0) &&
+        (!stockHistory || stockHistory.length === 0) &&
+        (!consumptionData || consumptionData.length === 0) &&
+        (!salonConsumptionData || salonConsumptionData.length === 0) &&
+        (!salesData || salesData.length === 0) // Check fetched salesData
+      ) {
+        toast.error('No data available across any tabs to export.');
+        console.error('No data to export.');
+        setIsExporting(false); // Stop export if absolutely nothing loaded
         return;
       }
 
-      // Create worksheet from json data
-      const worksheet = XLSX.utils.json_to_sheet(dataToExport);
-      
-      // Create workbook and add the worksheet
-      const workbook = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(workbook, worksheet, "Data");
-      
-      // Generate xlsx file
-      XLSX.writeFile(workbook, `${fileName}_${new Date().toISOString().split('T')[0]}.xlsx`);
+      // Purchases Sheet (Existing logic)
+      if (purchases && purchases.length > 0) {
+        console.log(`Using ${purchases.length} purchase records from state`);
+        // Format data for Purchase History
+        const formattedPurchaseData = purchases.map(purchase => {
+          const purchaseCostPerUnitExGst = (purchase.purchase_taxable_value && purchase.purchase_qty)
+            ? purchase.purchase_taxable_value / purchase.purchase_qty
+            : (purchase.mrp_excl_gst * (1 - (purchase.discount_on_purchase_percentage || 0) / 100)); // Fallback calculation
+          
+          return {
+            'Date': purchase.date ? new Date(purchase.date).toLocaleDateString() : '',
+            'Product Name': purchase.product_name || '',
+            'HSN Code': purchase.hsn_code || '',
+            'Units': purchase.units || '',
+            'Vendor': purchase.supplier || '',
+            'Purchase Invoice No.': purchase.purchase_invoice_number || '',
+            'Purchase Qty.': purchase.purchase_qty || 0,
+            'MRP Incl. GST (Rs.)': purchase.mrp_incl_gst || 0,
+            'MRP Ex. GST (Rs.)': purchase.mrp_excl_gst || 0,
+            'Discount %': purchase.discount_on_purchase_percentage || 0,
+            'Purchase Cost/Unit (Ex.GST)': parseFloat(purchaseCostPerUnitExGst.toFixed(2)),
+            'GST %': purchase.gst_percentage || 0,
+            'Taxable Value (Rs.)': purchase.purchase_taxable_value || 0,
+            'IGST (Rs.)': purchase.purchase_igst || 0,
+            'CGST (Rs.)': purchase.purchase_cgst || 0,
+            'SGST (Rs.)': purchase.purchase_sgst || 0,
+            'Invoice Value (Rs.)': purchase.purchase_invoice_value_rs || 0,
+          }
+        });
+
+        // Convert to worksheet and add to workbook
+        const purchaseSheet = XLSX.utils.json_to_sheet(formattedPurchaseData);
+        XLSX.utils.book_append_sheet(wb, purchaseSheet, 'Purchase History');
+        console.log("✅ Added Purchase History sheet with", formattedPurchaseData.length, "rows");
+      } else {
+         console.log("⚠️ No purchase history data available to add to the export");
+      }
+
+
+      // Salon Consumption Sheet (Existing logic - slightly adjusted check)
+      const consumptionDataSource = consumptionData?.length > 0 ? consumptionData : salonConsumptionData;
+      if (consumptionDataSource && consumptionDataSource.length > 0) {
+          const isUsingComponentState = consumptionData?.length > 0;
+          console.log(`Using ${consumptionDataSource.length} consumption records from ${isUsingComponentState ? 'component state' : 'global state'}`);
+
+          const formattedConsumptionData = consumptionDataSource.map((item, index) => ({
+              serial_no: item['Serial No.'] || item.requisition_voucher_no || `SC-${(index + 1).toString().padStart(4, '0')}`,
+              date: item.Date ? new Date(item.Date).toLocaleDateString() : (item.created_at ? new Date(item.created_at).toLocaleDateString() : ''),
+              requisition_voucher_no: item['Requisition Voucher No.'] || item.requisition_voucher_no || '',
+              product_name: item['Product Name'] || item.product_name || '',
+              consumption_qty: item['Consumption Qty.'] || item.consumption_qty || 0,
+              price_per_unit: formatNumber(item['Purchase Cost per Unit (Ex. GST) (Rs.)'] || item.purchase_cost_per_unit),
+              gst_percentage: formatNumber(item['Purchase GST Percentage'] || item.purchase_gst_percentage) + '%',
+              taxable_value: formatNumber(item['Purchase Taxable Value (Rs.)'] || item.purchase_taxable_value),
+              igst: formatNumber(item['Purchase IGST (Rs.)'] || item.purchase_igst),
+              cgst: formatNumber(item['Purchase CGST (Rs.)'] || item.purchase_cgst),
+              sgst: formatNumber(item['Purchase SGST (Rs.)'] || item.purchase_sgst),
+              total_cost: formatNumber(item['Total Purchase Cost (Rs.)'] || item.total_purchase_cost),
+          }));
+
+          const consumptionSheet = XLSX.utils.json_to_sheet(formattedConsumptionData);
+          XLSX.utils.book_append_sheet(wb, consumptionSheet, 'Salon Consumption');
+          console.log("✅ Added Salon Consumption sheet with", formattedConsumptionData.length, "rows");
+      } else {
+        console.log("⚠️ No consumption data available to add to the export");
+      }
+
+      // *** START: Add Sales History Sheet ***
+      if (salesData && salesData.length > 0) {
+          console.log(`Formatting ${salesData.length} sales history records for export.`);
+          // Format sales data (similar to SalesHistoryTab's export)
+          const formattedSalesData = salesData.map(item => ({
+            'Serial No.': item.serial_no,
+            'Date': item.date ? new Date(item.date).toLocaleDateString() : '', // Use local date string
+            'Product Name': item.product_name,
+            'HSN Code': item.hsn_code || 'N/A',
+            'Units': item.product_type || 'N/A', // Assuming product_type represents units here
+            'Quantity': item.quantity,
+            'Unit Price (Inc. GST)': item.unit_price_inc_gst ?? (item.unit_price_ex_gst * (1 + (item.gst_percentage ?? 0) / 100)),
+            'Unit Price (Ex. GST)': item.unit_price_ex_gst,
+            'Taxable Value': item.taxable_value,
+            'GST %': item.gst_percentage,
+            'Discount (%)': typeof item.discount_percentage === 'number' ? `${item.discount_percentage.toFixed(2)}%` : '0.00%',
+            'CGST': item.cgst_amount,
+            'SGST': item.sgst_amount,
+            'Total Value': item.invoice_value,
+            'Initial Stock': item.initial_stock,
+            'Remaining Stock': item.remaining_stock,
+            'Current Stock': item.current_stock,
+            'Current Stock Taxable Value': item.current_stock_taxable_value,
+            'Current Stock IGST': item.current_stock_igst,
+            'Current Stock CGST': item.current_stock_cgst,
+            'Current Stock SGST': item.current_stock_sgst,
+            'Current Stock Total Value': item.current_stock_total_value,
+          }));
+
+          const salesSheet = XLSX.utils.json_to_sheet(formattedSalesData);
+          XLSX.utils.book_append_sheet(wb, salesSheet, 'Sales History');
+          console.log("✅ Added Sales History sheet with", formattedSalesData.length, "rows");
+      } else {
+          console.log("⚠️ No sales history data available to add to the export");
+      }
+      // *** END: Add Sales History Sheet ***
+
+      // Stock History Sheet (Existing logic)
+      if (stockHistory && stockHistory.length > 0) {
+        console.log(`Using ${stockHistory.length} stock history records from state`);
+        // ... (rest of existing stock history formatting)
+        const formattedStockHistoryData = stockHistory.map((item, index) => ({
+          'Serial No.': `SH-${(index + 1).toString().padStart(5, '0')}`,
+          'Date': item.date ? new Date(item.date).toLocaleString() : '',
+          'Product Name': item.product_name || '',
+          'HSN Code': item.hsn_code || '',
+          'Units': item.units || '',
+          'Change Type': item.change_type || 'Unknown',
+          'Source': item.source || '-',
+          'Reference ID': item.reference_id || '-',
+          'Quantity Change': item.change_qty || 0,
+          'Quantity After Change': item.stock_after || 0,
+        }));
+
+        const historySheet = XLSX.utils.json_to_sheet(formattedStockHistoryData);
+        XLSX.utils.book_append_sheet(wb, historySheet, 'Stock History');
+        console.log("✅ Added Stock History sheet with", formattedStockHistoryData.length, "rows");
+      } else {
+        console.log("⚠️ No stock history data available to add to the export");
+      }
+
+      // Check if any sheet was actually added before writing the file
+       if (wb.SheetNames.length === 0) {
+         toast.error('No data found in any tab to export.');
+         console.log("❌ No sheets were added to the workbook. Aborting export.");
+       } else {
+         // Generate filename with date
+         const filename = `RG_Salon_Inventory_Report_${new Date().toISOString().split('T')[0]}.xlsx`;
+
+         // Write file
+         XLSX.writeFile(wb, filename);
+         console.log(`✅ Successfully exported to ${filename}`);
+         toast.success(`Exported ${wb.SheetNames.length} sheet(s) successfully!`);
+       }
+
     } catch (error) {
-      console.error("Error exporting data:", error);
-      alert("Error exporting data. Please try again.");
+      console.error("❌ Error exporting data:", error);
+      toast.error("Error exporting data. Please try again.");
     } finally {
       setIsExporting(false);
     }
+  };
+  
+  // Helper function to safely format numbers
+  const formatNumber = (value: any): string => {
+    if (value === undefined || value === null) return '0.00';
+    return typeof value === 'number' ? value.toFixed(2) : '0.00';
   };
 
   // Function to fetch salon consumption data directly
@@ -279,55 +499,79 @@ export default function InventoryManager() {
     }
   }, [activeTab, fetchSalonConsumptionDirect]);
 
-  const handleTabChange = (event: ChangeEvent<{}>, newValue: string) => {
-    setActiveTab(newValue as 'purchaseHistory' | 'balanceStock' | 'salonConsumption' | 'salesHistory');
-    setPage(0); // Reset to first page when changing tabs
-    
-    // Reset any form data if open
-    if (open) {
-      handleClose();
+  // Fetch Stock History data
+  const fetchStockHistory = useCallback(async () => {
+    setStockHistoryLoading(true);
+    setStockHistoryError(null);
+    console.log('Fetching stock history...');
+    try {
+      const { data, error } = await supabase
+        .from('stock_history')
+        .select('*')
+        .order('date', { ascending: false }) // Order by date descending
+        .order('created_at', { ascending: false }); // Secondary sort for same-timestamp events
+
+      // ** Corrected Error Handling **
+      // Check if there was an error from Supabase first
+      if (error) {
+        console.error("Supabase error fetching stock history:", error);
+        // Use the helper function correctly
+        const handledError = handleSupabaseError(error); 
+        setStockHistoryError(handledError.message); 
+        setStockHistory([]); // Clear data on error
+        setStockHistoryLoading(false); // Ensure loading stops
+        return; // Stop execution
+      }
+      
+      if (data) {
+         const transformedData: StockHistoryItem[] = data.map(item => ({
+           id: item.id,
+           date: item.date || item.created_at,
+           product_id: item.product_id,
+           product_name: item.product_name,
+           hsn_code: item.hsn_code || '',
+           units: item.units || '',
+           // Use specific qty columns if they exist, otherwise fallback
+           change_qty: item.qty_change ?? item.change_qty ?? 0,
+           stock_after: item.stock_after ?? item.current_qty ?? 0,
+           change_type: item.type || item.change_type || 'Unknown', // Prefer 'type' if it exists
+           source: item.source || '-',
+           reference_id: item.invoice_id || item.reference_id || '-', // Prefer specific IDs if available
+           created_at: item.created_at,
+         }));
+         setStockHistory(transformedData);
+         console.log(`Fetched ${transformedData.length} stock history records.`);
+      } else {
+        setStockHistory([]);
+        console.log('No stock history data found.');
+      }
+    } catch (err) {
+      console.error("Error fetching stock history:", err);
+      // Safer catch block error message handling
+      const message = (err instanceof Error && err.message) 
+        ? err.message 
+        : 'An unexpected error occurred while fetching stock history.';
+      setStockHistoryError(message);
+      setStockHistory([]);
+    } finally {
+      setStockHistoryLoading(false);
     }
+  }, []);
+
+  const handleTabChange = (event: ChangeEvent<{}>, newValue: string) => {
+    setActiveTab(newValue as 'purchaseHistory' | 'stockHistory' | 'salonConsumption' | 'salesHistory');
+    setPage(0); // Reset pagination when changing tabs
     
-    // Fetch data based on selected tab
+    // Fetch data based on new tab
     if (newValue === 'purchaseHistory') {
       fetchPurchases();
-    } else if (newValue === 'balanceStock') {
-      fetchBalanceStock();
+    } else if (newValue === 'stockHistory') {
+      fetchStockHistory();
     } else if (newValue === 'salonConsumption') {
       fetchSalonConsumptionDirect();
     }
+    // No need to add a fetch for salesHistory as it handles its own data fetching
   };
-
-  // Fetch/Calculate Balance Stock derived from Product Master List
-  const fetchBalanceStock = useCallback(() => {
-    try {
-      setBalanceLoading(true);
-      const balanceItems: BalanceStockItem[] = productMasterList.map((product: Product) => ({
-        id: product.id,
-        product_name: product.name,
-        hsn_code: product.hsn_code || '',
-        units: product.units || '',
-        unit_type: product.units || '',
-        balance_qty: product.stock_quantity || 0,
-        mrp_per_unit_excl_gst: calculatePriceExcludingGST(product.mrp_incl_gst || 0, product.gst_percentage || 0),
-        mrp_incl_gst: product.mrp_incl_gst || 0,
-        gst_percentage: product.gst_percentage || 0,
-      }));
-
-      setBalanceStock(balanceItems);
-    } catch (error) {
-      console.error("Error calculating balance stock:", error);
-    } finally {
-      setBalanceLoading(false);
-    }
-  }, [productMasterList]);
-
-  useEffect(() => {
-    // Initial fetch for balance stock derived from product master list
-    if (productMasterList.length > 0) {
-       fetchBalanceStock();
-    }
-  }, [productMasterList, fetchBalanceStock]);
 
   const handleOpen = () => {
     setPurchaseFormData(extendedInitialFormData);
@@ -437,11 +681,12 @@ export default function InventoryManager() {
   const handleRefresh = async () => {
     if (activeTab === 'purchaseHistory') {
       fetchPurchases();
-    } else if (activeTab === 'balanceStock') {
-      fetchBalanceStock();
+    } else if (activeTab === 'stockHistory') {
+      fetchStockHistory();
     } else if (activeTab === 'salonConsumption') {
       fetchSalonConsumptionDirect();
     }
+    // No need to add a refresh for salesHistory as it handles its own refresh
   };
 
   const calculatePrices = (price: number, gstPercentage: number) => {
@@ -565,22 +810,6 @@ export default function InventoryManager() {
     });
   };
 
-  const calculateBalanceValues = (item: BalanceStockItem) => {
-    const taxableValue = parseFloat(((item.balance_qty || 0) * (item.mrp_per_unit_excl_gst || 0)).toFixed(2));
-    const gstRate = (item.gst_percentage || 0) / 100;
-    const totalGST = parseFloat((taxableValue * gstRate).toFixed(2));
-    const halfGST = parseFloat((totalGST / 2).toFixed(2));
-    const invoiceValue = parseFloat((taxableValue + totalGST).toFixed(2));
-
-    return {
-      taxableValue,
-      igst: 0,
-      cgst: halfGST,
-      sgst: halfGST,
-      invoiceValue
-    };
-  };
-
   const handleProductSelect = (product: Product | null) => {
     if (!product) {
         setPurchaseFormData(prev => ({ ...prev, product_name: '', hsn_code: '', unit_type: '', gst_percentage: 0, mrp_incl_gst: 0 }));
@@ -603,6 +832,89 @@ export default function InventoryManager() {
 
   };
 
+  // Function to toggle date filter
+  const toggleDateFilter = () => {
+    setDateFilter(prev => ({
+      ...prev,
+      isActive: !prev.isActive
+    }));
+    
+    // Reset to page 1 when toggling filter
+    setPage(0);
+    
+    // Refresh data when filter is toggled
+    handleRefresh();
+  };
+  
+  // Function to handle date filter changes
+  const handleDateFilterChange = (field: 'startDate' | 'endDate', value: string) => {
+    setDateFilter(prev => ({
+      ...prev,
+      [field]: value
+    }));
+    
+    // Reset to page 1 when changing dates
+    setPage(0);
+  };
+  
+  // Function to apply date filter to data
+  const applyDateFilter = <T extends { date?: string; created_at?: string; payment_date?: string }>(data: T[]): T[] => {
+    if (!dateFilter.isActive) return data;
+    
+    const startDate = new Date(dateFilter.startDate);
+    startDate.setHours(0, 0, 0, 0);
+    
+    const endDate = new Date(dateFilter.endDate);
+    endDate.setHours(23, 59, 59, 999);
+    
+    return data.filter(item => {
+      // Try to get a date from various date fields
+      let itemDate: Date | null = null;
+      
+      if (item.date) {
+        itemDate = new Date(item.date);
+      } else if (item.created_at) {
+        itemDate = new Date(item.created_at);
+      } else if (item.payment_date) {
+        itemDate = new Date(item.payment_date);
+      }
+      
+      // If no date field found or invalid date, skip filtering this item
+      if (!itemDate || isNaN(itemDate.getTime())) return true;
+      
+      // Check if date is within range
+      return itemDate >= startDate && itemDate <= endDate;
+    });
+  };
+
+  // Calculate filtered data using useMemo for efficiency
+  const filteredPurchases = useMemo(() => applyDateFilter(purchases), [purchases, dateFilter]);
+  const filteredStockHistory = useMemo(() => applyDateFilter(stockHistory), [stockHistory, dateFilter]);
+
+  // Calculate totals using useMemo
+  const totalPurchaseQty = useMemo(() => 
+    filteredPurchases.reduce((sum, item) => sum + (item.purchase_qty || 0), 0), 
+    [filteredPurchases]
+  );
+
+  const totalStockChangeQty = useMemo(() => 
+    filteredStockHistory.reduce((sum, item) => sum + (item.change_qty || 0), 0), 
+    [filteredStockHistory]
+  );
+
+  // Fix the calculatePriceBreakdown function to match expected property names
+  const calculatePriceBreakdown = (price: number, gstPercentage: number) => {
+    // Calculate price excluding GST and GST amount
+    const priceExclGst = calculatePriceExcludingGST(price, gstPercentage);
+    const gstAmount = calculateGSTAmount(priceExclGst, gstPercentage);
+    
+    return {
+      priceExclGst,
+      gstAmount,
+      totalPrice: priceExclGst + gstAmount
+    };
+  };
+
   return (
     <Box sx={{ p: 3 }}>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
@@ -611,6 +923,16 @@ export default function InventoryManager() {
         </Typography>
         
         <Box sx={{ display: 'flex', gap: 1 }}>
+          {activeTab === 'purchaseHistory' && (
+            <Button
+              variant="contained"
+              color="primary"
+              startIcon={<AddIcon />}
+              onClick={handleOpen}
+            >
+              Add Purchase
+            </Button>
+          )}
           <Button 
             variant="outlined" 
             color="primary" 
@@ -618,7 +940,7 @@ export default function InventoryManager() {
             onClick={handleRefresh}
             disabled={
               (activeTab === 'purchaseHistory' && isLoadingPurchases) || 
-              (activeTab === 'balanceStock' && balanceLoading) || 
+              (activeTab === 'stockHistory' && stockHistoryLoading) || 
               (activeTab === 'salonConsumption' && isLoadingConsumption)
             }
           >
@@ -631,16 +953,67 @@ export default function InventoryManager() {
             startIcon={isExporting ? <CircularProgress size={20} color="inherit" /> : <DownloadIcon />}
             onClick={handleExport}
             disabled={isExporting || 
-              (activeTab === 'purchaseHistory' && (!purchases.length || isLoadingPurchases)) || 
-              (activeTab === 'balanceStock' && (!balanceStock.length || balanceLoading)) || 
-              (activeTab === 'salonConsumption' && (!salonConsumptionData.length || isLoadingConsumption)) ||
-              activeTab === 'salesHistory'
+              (!purchases.length && !stockHistory.length && !consumptionData.length && !salonConsumptionData.length)
             }
           >
-            Export All (.xlsx)
+            {isExporting ? 'Exporting...' : 'Export All Tables (Combined)'}
           </Button>
         </Box>
       </Box>
+      
+      {/* Add Date Filter Controls */}
+      <Paper 
+        elevation={1} 
+        sx={{ 
+          p: 2, 
+          mb: 2, 
+          display: 'flex', 
+          alignItems: 'center', 
+          justifyContent: 'space-between',
+          borderLeft: dateFilter.isActive ? '4px solid #4caf50' : 'none'
+        }}
+      >
+        <Box sx={{ display: 'flex', alignItems: 'center' }}>
+          <DateRangeIcon sx={{ mr: 1, color: 'primary.main' }} />
+          <Typography variant="subtitle1" fontWeight="bold">
+            Date Filter
+          </Typography>
+        </Box>
+        
+        <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
+          <TextField
+            label="Start Date"
+            type="date"
+            size="small"
+            value={dateFilter.startDate}
+            onChange={(e) => handleDateFilterChange('startDate', e.target.value)}
+            InputLabelProps={{ shrink: true }}
+            disabled={!dateFilter.isActive}
+            sx={{ minWidth: 170 }}
+          />
+          
+          <TextField
+            label="End Date"
+            type="date"
+            size="small"
+            value={dateFilter.endDate}
+            onChange={(e) => handleDateFilterChange('endDate', e.target.value)}
+            InputLabelProps={{ shrink: true }}
+            disabled={!dateFilter.isActive}
+            sx={{ minWidth: 170 }}
+          />
+          
+          <Button
+            variant={dateFilter.isActive ? "contained" : "outlined"}
+            color={dateFilter.isActive ? "success" : "primary"}
+            onClick={toggleDateFilter}
+            startIcon={dateFilter.isActive ? <FilterOffIcon /> : <FilterIcon />}
+            size="small"
+          >
+            {dateFilter.isActive ? 'Disable Filter' : 'Enable Filter'}
+          </Button>
+        </Box>
+      </Paper>
 
       <Tabs 
         value={activeTab} 
@@ -650,16 +1023,16 @@ export default function InventoryManager() {
         sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}
       >
         <Tab label="Purchase History" value="purchaseHistory" />
-        <Tab label="Balance Stock" value="balanceStock" />
-        <Tab label="Sales History" value="salesHistory" />
         <Tab label="Salon Consumption" value="salonConsumption" />
+        <Tab label="Sales History" value="salesHistory" />
+        <Tab label="Balance Stock" value="stockHistory" />
       </Tabs>
 
       {activeTab === 'purchaseHistory' && errorPurchases && (
         <Alert severity="error" sx={{ mb: 2 }}>{errorPurchases}</Alert>
       )}
-      {activeTab === 'balanceStock' && errorProducts && (
-        <Alert severity="error" sx={{ mb: 2 }}>{`Error loading product master: ${errorProducts}`}</Alert>
+      {activeTab === 'stockHistory' && stockHistoryError && (
+        <Alert severity="error" sx={{ mb: 2 }}>{`Error loading stock history: ${stockHistoryError}`}</Alert>
       )}
       {activeTab === 'salonConsumption' && errorConsumption && (
         <Alert severity="error" sx={{ mb: 2 }}>{errorConsumption}</Alert>
@@ -668,13 +1041,14 @@ export default function InventoryManager() {
       {activeTab === 'purchaseHistory' && (
         <Paper sx={{ width: '100%', overflow: 'hidden' }}>
           <TableContainer sx={{ maxHeight: 'calc(100vh - 300px)', overflow: 'auto' }}>
-            <Table stickyHeader aria-label="products purchase history table" sx={{ minWidth: 1600 }}>
+            <Table stickyHeader aria-label="products purchase history table" sx={{ minWidth: 2200 }}>
               <TableHead>
                  <TableRow>
                    <StyledTableCell>Date</StyledTableCell>
                    <StyledTableCell>Product Name</StyledTableCell>
                    <StyledTableCell>HSN Code</StyledTableCell>
                    <StyledTableCell>UNITS</StyledTableCell>
+                   <StyledTableCell>Vendor</StyledTableCell>
                    <StyledTableCell>Purchase Invoice No.</StyledTableCell>
                    <StyledTableCell align="right">Purchase Qty.</StyledTableCell>
                    <StyledTableCell align="right">MRP Incl. GST (Rs.)</StyledTableCell>
@@ -687,146 +1061,165 @@ export default function InventoryManager() {
                    <StyledTableCell align="right">CGST (Rs.)</StyledTableCell>
                    <StyledTableCell align="right">SGST (Rs.)</StyledTableCell>
                    <StyledTableCell align="right">Invoice Value (Rs.)</StyledTableCell>
+                   <StyledTableCell align="right">Current Stock</StyledTableCell>
+                   <StyledTableCell align="right">Total Taxable Value</StyledTableCell>
+                   <StyledTableCell align="right">Total CGST</StyledTableCell>
+                   <StyledTableCell align="right">Total SGST</StyledTableCell>
+                   <StyledTableCell align="right">Total IGST</StyledTableCell>
                    <StyledTableCell align="center">Actions</StyledTableCell>
                  </TableRow>
               </TableHead>
               <TableBody>
                 {isLoadingPurchases ? (
                   <TableRow>
-                    <TableCell colSpan={17} align="center" sx={{ py: 3 }}>
+                    <TableCell colSpan={23} align="center" sx={{ py: 3 }}>
                       <CircularProgress size={40} />
                     </TableCell>
                   </TableRow>
-                ) : purchases.length > 0 ? (
-                  purchases
+                ) : null}
+                {!isLoadingPurchases && filteredPurchases.length > 0 ? (
+                  filteredPurchases
                     .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
-                    .map((purchase) => (
-                      <TableRow key={purchase.purchase_id} hover>
-                        <TableCell>{new Date(purchase.date).toLocaleDateString() || '-'}</TableCell>
-                        <TableCell>{purchase.product_name}</TableCell>
-                        <TableCell>{purchase.hsn_code || '-'}</TableCell>
-                        <TableCell>{purchase.units || '-'}</TableCell>
-                        <TableCell>{purchase.purchase_invoice_number || '-'}</TableCell>
-                        <TableCell align="right">{purchase.purchase_qty ?? '-'}</TableCell>
-                        <TableCell align="right">₹{purchase.mrp_incl_gst?.toFixed(2) || '0.00'}</TableCell>
-                        <TableCell align="right">₹{purchase.mrp_excl_gst?.toFixed(2) || '0.00'}</TableCell>
-                        <TableCell align="right">{purchase.discount_on_purchase_percentage?.toFixed(2) || '0.00'}%</TableCell>
-                        <TableCell align="right">₹{(purchase.purchase_taxable_value && purchase.purchase_qty) ? (purchase.purchase_taxable_value / purchase.purchase_qty).toFixed(2) : '0.00'}</TableCell>
-                        <TableCell align="right">{purchase.gst_percentage?.toFixed(2) || '0.00'}%</TableCell>
-                        <TableCell align="right">₹{purchase.purchase_taxable_value?.toFixed(2) || '0.00'}</TableCell>
-                        <TableCell align="right">₹{(purchase.purchase_igst ?? 0) > 0 ? (purchase.purchase_igst ?? 0).toFixed(2) : "-"}</TableCell>
-                        <TableCell align="right">₹{purchase.purchase_cgst?.toFixed(2) || '0.00'}</TableCell>
-                        <TableCell align="right">₹{purchase.purchase_sgst?.toFixed(2) || '0.00'}</TableCell>
-                        <TableCell align="right">₹{purchase.purchase_invoice_value_rs?.toFixed(2) || '0.00'}</TableCell>
-                        <TableCell align="center">
-                          <IconButton color="primary" onClick={() => handleEdit(purchase)} title="Edit Purchase">
-                            <EditIcon />
-                          </IconButton>
-                        </TableCell>
-                      </TableRow>
-                    ))
-                ) : (
+                    .map((purchase, index) => {
+                      // Use the stock_after_purchase directly from the purchase record
+                      const stockAfterPurchaseDisplay = typeof purchase.stock_after_purchase === 'number' 
+                        ? purchase.stock_after_purchase 
+                        : '-'; // Display '-' if null or undefined
+
+                      // Calculations for new columns (can remain largely the same, but should use data directly from purchase if possible)
+                      let totalValueMRP = 0;
+                      let totalCGST = 0;
+                      let totalSGST = 0;
+                      let totalIGST = 0; // Assuming local by default
+                      const gstRate = purchase.gst_percentage ?? 18; // Default to 18% if not available
+
+                      if (typeof purchase.stock_after_purchase === 'number' && purchase.stock_after_purchase > 0 && purchase.mrp_incl_gst && purchase.mrp_incl_gst > 0) {
+                        totalValueMRP = purchase.stock_after_purchase * purchase.mrp_incl_gst;
+                        // Calculate base value before GST
+                        const baseValue = totalValueMRP / (1 + gstRate / 100);
+                        // Calculate taxes based on purchase type (assuming purchase.purchase_igst indicates interstate)
+                        if (purchase.purchase_igst && purchase.purchase_igst > 0) {
+                           totalIGST = baseValue * (gstRate / 100);
+                        } else {
+                           totalCGST = baseValue * (gstRate / 200); // Half of GST rate
+                           totalSGST = baseValue * (gstRate / 200); // Half of GST rate
+                        }
+                      }
+
+                      return (
+                        <TableRow key={purchase.purchase_id} hover>
+                          <TableCell>{new Date(purchase.date).toLocaleDateString() || '-'}</TableCell>
+                          <TableCell>{purchase.product_name}</TableCell>
+                          <TableCell>{purchase.hsn_code || '-'}</TableCell>
+                          <TableCell>{purchase.units || '-'}</TableCell>
+                          <TableCell>{purchase.supplier || '-'}</TableCell>
+                          <TableCell>{purchase.purchase_invoice_number || '-'}</TableCell>
+                          <TableCell align="right">{purchase.purchase_qty ?? '-'}</TableCell>
+                          <TableCell align="right">₹{purchase.mrp_incl_gst?.toFixed(2) || '0.00'}</TableCell>
+                          <TableCell align="right">₹{purchase.mrp_excl_gst?.toFixed(2) || '0.00'}</TableCell>
+                          <TableCell align="right">{purchase.discount_on_purchase_percentage?.toFixed(2) || '0.00'}%</TableCell>
+                          <TableCell align="right">₹{(purchase.purchase_taxable_value && purchase.purchase_qty) ? (purchase.purchase_taxable_value / purchase.purchase_qty).toFixed(2) : '0.00'}</TableCell>
+                          <TableCell align="right">{purchase.gst_percentage?.toFixed(2) || '0.00'}%</TableCell>
+                          <TableCell align="right">₹{purchase.purchase_taxable_value?.toFixed(2) || '0.00'}</TableCell>
+                          <TableCell align="right">₹{(purchase.purchase_igst ?? 0) > 0 ? (purchase.purchase_igst ?? 0).toFixed(2) : "-"}</TableCell>
+                          <TableCell align="right">₹{purchase.purchase_cgst?.toFixed(2) || '0.00'}</TableCell>
+                          <TableCell align="right">₹{purchase.purchase_sgst?.toFixed(2) || '0.00'}</TableCell>
+                          <TableCell align="right">₹{purchase.purchase_invoice_value_rs?.toFixed(2) || '0.00'}</TableCell>
+                          <TableCell align="right">
+                            {/* Display the stock level AFTER this purchase */}
+                            {stockAfterPurchaseDisplay}
+                          </TableCell>
+                          <TableCell align="right">₹{totalValueMRP > 0 ? totalValueMRP.toFixed(2) : '-'}</TableCell>
+                          <TableCell align="right">₹{totalCGST > 0 ? totalCGST.toFixed(2) : '-'}</TableCell>
+                          <TableCell align="right">₹{totalSGST > 0 ? totalSGST.toFixed(2) : '-'}</TableCell>
+                          <TableCell align="right">₹{totalIGST > 0 ? totalIGST.toFixed(2) : '-'}</TableCell>
+                          <TableCell align="center">
+                            <IconButton color="primary" onClick={() => handleEdit(purchase)} title="Edit Purchase">
+                              <EditIcon />
+                            </IconButton>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })
+                ) : null}
+                {!isLoadingPurchases && filteredPurchases.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={17} align="center" sx={{ py: 3 }}>
-                      No product purchases found.
+                    <TableCell colSpan={23} align="center" sx={{ py: 3 }}>
+                      No purchase history found {dateFilter.isActive ? 'for the selected dates' : ''}.
                     </TableCell>
                   </TableRow>
-                )}
+                ) : null}
               </TableBody>
             </Table>
           </TableContainer>
           <TablePagination
-            rowsPerPageOptions={[5, 10, 25]}
+            rowsPerPageOptions={[10, 25, 100]}
             component="div"
-            count={purchases.length}
+            count={filteredPurchases.length}
             rowsPerPage={rowsPerPage}
             page={page}
             onPageChange={handleChangePage}
             onRowsPerPageChange={handleChangeRowsPerPage}
+            labelDisplayedRows={({ from, to, count }) => (
+              <>
+                {`${from}–${to} of ${count !== -1 ? count : `more than ${to}`} | Total Qty: `}
+                <Box component="span" sx={{ fontWeight: 'bold' }}>
+                  {totalPurchaseQty.toLocaleString()}
+                </Box>
+              </>
+            )}
           />
         </Paper>
       )}
 
-      {activeTab === 'balanceStock' && (
+      {activeTab === 'stockHistory' && (
          <Paper sx={{ width: '100%', overflow: 'hidden' }}>
            <TableContainer sx={{ maxHeight: 'calc(100vh - 300px)', overflow: 'auto' }}>
-             <Table stickyHeader aria-label="balance stock table">
+             <Table stickyHeader aria-label="stock history table" sx={{ minWidth: 1000 }}>
                <TableHead>
                  <TableRow>
                    <StyledTableCell>Serial No.</StyledTableCell>
+                   <StyledTableCell>Date</StyledTableCell>
                    <StyledTableCell>Product Name</StyledTableCell>
                    <StyledTableCell>HSN Code</StyledTableCell>
-                   <StyledTableCell>UNITS</StyledTableCell>
-                   <StyledTableCell align="right">Balance Qty.</StyledTableCell>
-                   <StyledTableCell align="right">GST %</StyledTableCell>
-                   <StyledTableCell align="right">Taxable Value (Rs.)</StyledTableCell>
-                   <StyledTableCell align="right">IGST (Rs.)</StyledTableCell>
-                   <StyledTableCell align="right">CGST (Rs.)</StyledTableCell>
-                   <StyledTableCell align="right">SGST (Rs.)</StyledTableCell>
-                   <StyledTableCell align="right">Stock Value (Incl. GST) (Rs.)</StyledTableCell>
+                   <StyledTableCell>Units</StyledTableCell>
+                   <StyledTableCell>Change Type</StyledTableCell>
+                   <StyledTableCell>Source</StyledTableCell>
+                   <StyledTableCell>Reference ID</StyledTableCell>
+                   <StyledTableCell align="right">Quantity Change</StyledTableCell>
+                   <StyledTableCell align="right">Quantity After Change</StyledTableCell>
                  </TableRow>
                </TableHead>
                <TableBody>
-                 {isLoadingProducts || balanceLoading ? (
+                 {stockHistoryLoading && (
                    <TableRow>
-                     <TableCell colSpan={11} align="center" sx={{ py: 3 }}>
+                     <TableCell colSpan={10} align="center" sx={{ py: 3 }}>
                        <CircularProgress size={40} />
                      </TableCell>
                    </TableRow>
-                 ) : balanceStock.length > 0 ? (
-                   <>
-                     {balanceStock
-                       .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
-                       .map((item, index) => {
-                          const values = calculateBalanceValues(item);
-                          return (
-                             <TableRow key={item.id} hover>
-                               <TableCell>{`BS-${String(index + 1 + page * rowsPerPage).padStart(4, '0')}`}</TableCell>
-                               <TableCell>{item.product_name}</TableCell>
-                               <TableCell>{item.hsn_code}</TableCell>
-                               <TableCell>{item.units}</TableCell>
-                               <TableCell align="right">{item.balance_qty}</TableCell>
-                               <TableCell align="right">{item.gst_percentage.toFixed(2)}%</TableCell>
-                               <TableCell align="right">₹{values.taxableValue.toFixed(2)}</TableCell>
-                               <TableCell align="right">{values.igst > 0 ? `₹${values.igst.toFixed(2)}` : "-"}</TableCell>
-                               <TableCell align="right">₹{values.cgst.toFixed(2)}</TableCell>
-                               <TableCell align="right">₹{values.sgst.toFixed(2)}</TableCell>
-                               <TableCell align="right">₹{values.invoiceValue.toFixed(2)}</TableCell>
-                             </TableRow>
-                          );
-                       })}
-                       {balanceStock.length > 0 && (
-                           <TableRow sx={{
-                               backgroundColor: 'rgba(76, 175, 80, 0.08)',
-                               '& > td': { borderTop: '1px solid rgba(224, 224, 224, 1)', fontWeight: 'bold' }
-                           }}>
-                               <TableCell colSpan={4} sx={{ fontWeight: 'bold' }}>Total (Current Page)</TableCell>
-                               <TableCell align="right" sx={{ fontWeight: 'bold' }}>
-                                   {balanceStock.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage).reduce((sum, item) => sum + (item.balance_qty || 0), 0)}
-                               </TableCell>
-                               <TableCell sx={{ fontWeight: 'bold' }}>{/* GST % Total Empty */}</TableCell>
-                               <TableCell align="right" sx={{ fontWeight: 'bold' }}>
-                                   ₹{balanceStock.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage).reduce((sum, item) => sum + calculateBalanceValues(item).taxableValue, 0).toFixed(2)}
-                               </TableCell>
-                               <TableCell align="right" sx={{ fontWeight: 'bold' }}>
-                                   {balanceStock.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage).reduce((sum, item) => sum + calculateBalanceValues(item).igst, 0) > 0 ? `₹${balanceStock.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage).reduce((sum, item) => sum + calculateBalanceValues(item).igst, 0).toFixed(2)}` : '-'}
-                               </TableCell>
-                               <TableCell align="right" sx={{ fontWeight: 'bold' }}>
-                                   ₹{balanceStock.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage).reduce((sum, item) => sum + calculateBalanceValues(item).cgst, 0).toFixed(2)}
-                               </TableCell>
-                               <TableCell align="right" sx={{ fontWeight: 'bold' }}>
-                                   ₹{balanceStock.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage).reduce((sum, item) => sum + calculateBalanceValues(item).sgst, 0).toFixed(2)}
-                               </TableCell>
-                               <TableCell align="right" sx={{ fontWeight: 'bold' }}>
-                                   ₹{balanceStock.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage).reduce((sum, item) => sum + calculateBalanceValues(item).invoiceValue, 0).toFixed(2)}
-                               </TableCell>
-                           </TableRow>
-                       )}
-                   </>
-                 ) : (
+                 )}
+                 {!stockHistoryLoading && filteredStockHistory.length > 0 && (
+                   filteredStockHistory
+                     .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
+                     .map((item, index) => (
+                       <TableRow key={item.id} hover>
+                         <TableCell>{`SH-${(page * rowsPerPage + index + 1).toString().padStart(5, '0')}`}</TableCell>
+                         <TableCell>{item.date ? new Date(item.date).toLocaleString() : '-'}</TableCell>
+                         <TableCell>{item.product_name || '-'}</TableCell>
+                         <TableCell>{item.hsn_code || '-'}</TableCell>
+                         <TableCell>{item.units || '-'}</TableCell>
+                         <TableCell>{item.change_type || '-'}</TableCell>
+                         <TableCell>{item.source || '-'}</TableCell>
+                         <TableCell>{item.reference_id || '-'}</TableCell>
+                         <TableCell align="right">{item.change_qty ?? '-'}</TableCell>
+                         <TableCell align="right">{item.stock_after ?? '-'}</TableCell>
+                       </TableRow>
+                     ))
+                 )}
+                 {!stockHistoryLoading && filteredStockHistory.length === 0 && (
                    <TableRow>
-                     <TableCell colSpan={11} align="center" sx={{ py: 3 }}>
-                       No balance stock data available.
+                     <TableCell colSpan={10} align="center" sx={{ py: 3 }}>
+                       No stock history found {dateFilter.isActive ? 'for the selected dates' : ''}.
                      </TableCell>
                    </TableRow>
                  )}
@@ -834,24 +1227,41 @@ export default function InventoryManager() {
              </Table>
            </TableContainer>
            <TablePagination
-             rowsPerPageOptions={[5, 10, 25]}
+             rowsPerPageOptions={[10, 25, 100]}
              component="div"
-             count={balanceStock.length}
+             count={filteredStockHistory.length}
              rowsPerPage={rowsPerPage}
              page={page}
              onPageChange={handleChangePage}
              onRowsPerPageChange={handleChangeRowsPerPage}
+             labelDisplayedRows={({ from, to, count }) => (
+                <>
+                  {`${from}–${to} of ${count !== -1 ? count : `more than ${to}`} | Total Change Qty: `}
+                  <Box component="span" sx={{ fontWeight: 'bold' }}>
+                    {totalStockChangeQty.toLocaleString()}
+                  </Box>
+                </>
+             )}
            />
          </Paper>
       )}
 
+      {/* Sales History Tab */}
       {activeTab === 'salesHistory' && (
-        <SalesHistoryTab />
+        <div style={{ display: activeTab === 'salesHistory' ? 'block' : 'none' }}>
+          <SalesHistoryTab />
+        </div>
       )}
 
-      {activeTab === 'salonConsumption' && (
-        <SalonConsumptionTab />
-      )}
+      {/* Always render SalonConsumptionTab (but hide it) to ensure data is loaded */}
+      <div style={{ display: activeTab === 'salonConsumption' ? 'block' : 'none' }}>
+        <SalonConsumptionTab
+          consumptionData={consumptionData}
+          setConsumptionData={setConsumptionData}
+          dateFilter={dateFilter}
+          applyDateFilter={applyDateFilter}
+        />
+      </div>
 
       <Dialog open={open} onClose={handleClose} maxWidth="lg" fullWidth>
         <DialogTitle>

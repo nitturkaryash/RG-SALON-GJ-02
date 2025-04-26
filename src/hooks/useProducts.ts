@@ -19,15 +19,29 @@ export interface Product {
   updated_at?: string;
 }
 
+// Type for services within CreateOrderData (if needed explicitly)
+export interface CreateServiceData {
+	service_id: string;
+	service_name: string;
+	quantity: number;
+	price: number;
+  type?: 'service' | 'product';
+  gst_percentage?: number;
+  hsn_code?: string; // Add HSN code field for product type services
+}
+
 // Update product inventory when items are sold
-export const updateProductInventory = async (updates: { productId: string; quantity: number }[]): Promise<{ success: boolean; error?: any }> => {
+export const updateProductInventory = async (updates: { productId: string; quantity: number }[]): Promise<{ success: boolean; updatedProducts?: any[]; error?: any }> => {
   try {
+    console.log('🔸 INVENTORY UPDATE: Starting inventory update for products:', updates);
     let allUpdatesSuccessful = true;
     const validUpdates = [];
     const errors = [];
+    const updatedProducts = [];
     
     // First, validate all IDs - they must be UUIDs
     for (const update of updates) {
+      console.log(`🔸 INVENTORY UPDATE: Validating product ID ${update.productId} for inventory update`);
       // Check if productId is a valid UUID
       const isValidUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(update.productId);
       
@@ -52,13 +66,17 @@ export const updateProductInventory = async (updates: { productId: string; quant
       };
     }
     
+    console.log(`🔸 INVENTORY UPDATE: Processing ${validUpdates.length} valid product updates`);
+    
     // Process only valid updates
     for (const update of validUpdates) {
       try {
+        console.log(`🔸 INVENTORY UPDATE: Updating stock for product ID ${update.productId} by ${update.quantity}`);
+        
         // Get the current product data from the 'products' table
         const { data: product, error: fetchError } = await supabase
           .from('products') // Use 'products' table
-          .select('stock_quantity') // Select only necessary field
+          .select('id, name, stock_quantity') // Select necessary fields
           .eq('id', update.productId) // Use 'id' column
           .single();
         
@@ -76,23 +94,44 @@ export const updateProductInventory = async (updates: { productId: string; quant
           continue;
         }
         
-        // Calculate new stock quantity (add fallback if undefined)
+        // Get current stock for logging
         const currentStock = product.stock_quantity ?? 0;
-        const newStock = Math.max(0, currentStock - update.quantity);
+        console.log(`🔸 INVENTORY UPDATE: Current stock for ${product.name} (${update.productId}): ${currentStock}`);
         
-        // Update the product in the 'products' table
-        const { error: updateError } = await supabase
-          .from('products') // Use 'products' table
-          .update({
-            stock_quantity: newStock,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', update.productId); // Use 'id' column
+        // Use RPC call for atomic update (safer)
+        const { error: rpcError } = await supabase.rpc('decrement_product_stock', {
+          p_product_id: update.productId,
+          p_decrement_quantity: update.quantity
+        });
         
-        if (updateError) {
-          console.error(`Error updating product with ID ${update.productId}:`, updateError);
-          errors.push(`Error updating product with ID ${update.productId}: ${updateError.message}`);
+        if (rpcError) {
+          console.error(`Error updating stock via RPC for product ${update.productId}:`, rpcError);
+          errors.push(`Error updating stock via RPC for product ${update.productId}: ${rpcError.message}`);
           allUpdatesSuccessful = false;
+        } else {
+          console.log(`🔸 INVENTORY UPDATE: Successfully decremented stock for ${product.name} by ${update.quantity}`);
+          
+          // Verify the update was successful
+          const { data: verifyData, error: verifyError } = await supabase
+            .from('products')
+            .select('stock_quantity')
+            .eq('id', update.productId)
+            .single();
+            
+          if (verifyError) {
+            console.error(`Error verifying stock update for product ${update.productId}:`, verifyError);
+          } else {
+            const verifiedStock = verifyData?.stock_quantity ?? 0;
+            console.log(`🔸 INVENTORY UPDATE: Verified stock for ${product.name}: ${verifiedStock}`);
+            
+            updatedProducts.push({
+              id: update.productId,
+              name: product.name,
+              previousStock: currentStock,
+              newStock: verifiedStock,
+              change: -update.quantity
+            });
+          }
         }
       } catch (itemError) {
         console.error(`Error processing product update for ID ${update.productId}:`, itemError);
@@ -101,8 +140,15 @@ export const updateProductInventory = async (updates: { productId: string; quant
       }
     }
     
+    console.log('🔸 INVENTORY UPDATE: Completed with results:', {
+      success: allUpdatesSuccessful,
+      updatedProducts,
+      errors: errors.length > 0 ? errors : null
+    });
+    
     return { 
       success: allUpdatesSuccessful, 
+      updatedProducts,
       error: errors.length > 0 ? { message: 'Some updates failed', details: errors } : undefined 
     };
   } catch (error) {

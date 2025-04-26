@@ -126,4 +126,27 @@ export function getPurchaseType(order) {
 export function formatOrderCurrency(amount) {
   if (amount === undefined || amount === null) return '₹0';
   return `₹${parseFloat(amount).toFixed(2)}`;
-} 
+}
+
+/**
+ * Calculate the total amount for an order containing both products and services
+ * 
+ * @param {Array} products - Array of product items
+ * @param {Array} services - Array of service items 
+ * @returns {number} - The total amount
+ */
+export const calculateTotal = (products = [], services = []) => {
+  const productTotal = products.reduce((sum, product) => {
+    const price = product.price || 0;
+    const quantity = product.quantity || 1;
+    return sum + (price * quantity);
+  }, 0);
+  
+  const serviceTotal = services.reduce((sum, service) => {
+    const price = service.price || 0;
+    const quantity = service.quantity || 1;
+    return sum + (price * quantity);
+  }, 0);
+  
+  return productTotal + serviceTotal;
+}; 
