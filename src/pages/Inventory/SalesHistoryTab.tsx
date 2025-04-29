@@ -42,6 +42,7 @@ const SALES_PRODUCTS_VIEW = 'sales_products_new';
 interface SalesItem {
   serial_no: string;
   order_id: string;
+  order_item_id: string;
   date: string;
   product_name: string;
   quantity: number;
@@ -69,150 +70,8 @@ interface SalesItem {
   current_stock_cgst?: number;
   current_stock_sgst?: number;
   current_stock_total_value?: number;
+  taxable_after_discount?: number;
 }
-
-// Define the SQL to create the view
-const CREATE_VIEW_SQL = `
--- Drop any existing view
-DROP VIEW IF EXISTS sales_product_new;
-
--- Create the updated view with remaining stock, tax breakdown, and discount percentage
-CREATE OR REPLACE VIEW sales_product_new AS
-WITH order_item_details AS (
-  -- Calculate details for each order item (product or service)
-  SELECT
-    po.id AS order_id,
-    pi.id AS order_item_id,
-    po.created_at AS date,
-    pi.item_id AS item_id,
-    pi.type AS item_type,
-    COALESCE(p.name, s.name, pi.item_name, 'Unknown') AS product_name, -- Use item_name as fallback
-    pi.quantity::numeric AS quantity,
-    pi.unit_price::numeric AS unit_price_ex_gst,
-    COALESCE(
-        CASE pi.type
-            WHEN 'product' THEN p.gst_percentage
-            WHEN 'service' THEN s.gst_percentage
-            ELSE NULL -- Handle cases where item might not be in products/services tables
-        END, 18 -- Default GST if not found
-    )::numeric AS gst_percentage,
-    (pi.quantity::numeric * pi.unit_price::numeric) AS item_taxable_value,
-    COALESCE(po.discount, 0)::numeric AS order_discount_fixed, -- Order level fixed discount
-    po.total::numeric AS order_total_paid, -- Total amount paid for the order
-    po.payment_method AS payment_method,
-    po.created_at AS payment_date,
-    COALESCE(p.hsn_code, s.hsn_code) AS hsn_code, -- HSN from product or service
-    pi.type AS product_type, -- Keep original 'product_type' logic if needed elsewhere
-    COALESCE(p.mrp_incl_gst, (pi.unit_price::numeric * (1 + (COALESCE(CASE pi.type WHEN 'product' THEN p.gst_percentage WHEN 'service' THEN s.gst_percentage ELSE 18 END, 18) / 100))))::numeric AS mrp_incl_gst, -- Estimate if missing
-    pi.unit_price::numeric AS discounted_sales_rate_ex_gst, -- This seems incorrect, unit_price is usually ex-GST
-    0::numeric AS igst_amount, -- Assuming no IGST for now
-    p.stock_quantity AS current_stock, -- Only relevant for products
-    p.price AS product_master_price, -- Price from product master (might be different from sale price)
-    p.id AS product_id -- Keep product_id for stock calculations
-  FROM pos_orders po
-  JOIN pos_order_items pi ON po.id::text = pi.order_id
-  LEFT JOIN products p ON pi.item_id = p.id AND pi.type = 'product'
-  LEFT JOIN services s ON pi.item_id = s.id AND pi.type = 'service' -- Join services table
-  WHERE po.is_salon_consumption = FALSE OR po.is_salon_consumption IS NULL -- Exclude salon consumption orders
-),
-order_calculations AS (
-  -- Calculate pre-discount totals per order
-  SELECT
-    order_id,
-    order_discount_fixed,
-    SUM(item_taxable_value) AS order_subtotal_ex_gst,
-    SUM(item_taxable_value * (gst_percentage / 100)) AS order_total_gst,
-    (SUM(item_taxable_value) + SUM(item_taxable_value * (gst_percentage / 100))) AS order_total_before_discount
-  FROM order_item_details
-  GROUP BY order_id, order_discount_fixed
-),
-discount_percentage_calc AS (
-  -- Calculate discount percentage
-  SELECT
-    order_id,
-    order_discount_fixed,
-    order_total_before_discount,
-    CASE
-      WHEN order_total_before_discount > 0 THEN
-        ROUND((order_discount_fixed / order_total_before_discount) * 100, 2)
-      ELSE 0
-    END AS discount_percentage -- Calculated discount percentage
-  FROM order_calculations
-),
-ranked_sales_products AS (
-  -- Rank product sales for stock calculation (only for products)
-  SELECT
-    oid.*,
-    ROW_NUMBER() OVER (PARTITION BY oid.product_id ORDER BY oid.date) AS sale_order -- Partition by product_id
-  FROM order_item_details oid
-  WHERE oid.item_type = 'product' AND oid.product_id IS NOT NULL
-),
-initial_stock_calc AS (
-   -- Calculate initial stock for products
-   SELECT product_id, current_stock + SUM(quantity) AS initial_stock
-   FROM ranked_sales_products
-   WHERE current_stock IS NOT NULL -- Ensure current_stock exists
-   GROUP BY product_id, current_stock
-),
-stock_changes AS (
-  -- Calculate remaining stock after each product sale
-  SELECT
-    rsp.*,
-    isc.initial_stock,
-    (isc.initial_stock - SUM(rsp.quantity) OVER (
-      PARTITION BY rsp.product_id ORDER BY rsp.date
-      ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW))::numeric AS remaining_stock
-  FROM ranked_sales_products rsp
-  JOIN initial_stock_calc isc ON rsp.product_id = isc.product_id
-)
--- Final SELECT combining all data
-SELECT
-  oid.order_id,
-  CONCAT('INV-', SUBSTR(oid.order_id::text, 1, 8)) AS serial_no,
-  oid.date,
-  oid.product_name,
-  oid.quantity::text, -- Cast back to text if needed by UI
-  oid.unit_price_ex_gst::text,
-  oid.gst_percentage::text,
-  oid.item_taxable_value::text AS taxable_value, -- Item level taxable value
-  (oid.item_taxable_value * (oid.gst_percentage / 200))::text AS cgst_amount, -- Item level CGST
-  (oid.item_taxable_value * (oid.gst_percentage / 200))::text AS sgst_amount, -- Item level SGST
-  NULL AS total_purchase_cost, -- Keep existing columns if needed
-  dp.discount_percentage::numeric AS discount_percentage, -- *** ADDED DISCOUNT PERCENTAGE (as numeric) ***
-  dp.discount_fixed_amount::numeric AS discount, -- Keep fixed discount amount (as numeric)
-  (oid.item_taxable_value * (oid.gst_percentage / 100))::text AS tax, -- Item level total tax
-  oid.order_total_paid::text AS payment_amount,
-  oid.payment_method,
-  oid.payment_date,
-  oid.hsn_code,
-  oid.product_type,
-  oid.mrp_incl_gst::text,
-  oid.discounted_sales_rate_ex_gst::text, -- Revisit if this name is accurate
-   -- Calculate item invoice value (taxable + item gst)
-  (oid.item_taxable_value * (1 + oid.gst_percentage / 100))::text AS invoice_value,
-  oid.igst_amount::text,
-  -- Stock calculations (only for products, join from stock_changes)
-  -- Ensure we handle cases where a product might not have stock tracking (sc might be null)
-  COALESCE(sc.current_stock, p.stock_quantity, 0)::integer AS current_stock,
-  COALESCE(sc.initial_stock, p.stock_quantity, 0)::integer AS initial_stock,
-  COALESCE(GREATEST(0, sc.remaining_stock), p.stock_quantity, 0)::integer AS remaining_stock,
-  -- Current stock value breakdown (based on product master price or sale price?) - Using sale price for now
-  (COALESCE(sc.current_stock, p.stock_quantity, 0) * oid.unit_price_ex_gst)::numeric AS current_stock_taxable_value,
-  0::numeric AS current_stock_igst, -- Assuming no IGST
-  (COALESCE(sc.current_stock, p.stock_quantity, 0) * oid.unit_price_ex_gst * (oid.gst_percentage / 200))::numeric AS current_stock_cgst,
-  (COALESCE(sc.current_stock, p.stock_quantity, 0) * oid.unit_price_ex_gst * (oid.gst_percentage / 200))::numeric AS current_stock_sgst,
-  (COALESCE(sc.current_stock, p.stock_quantity, 0) * oid.unit_price_ex_gst * (1 + oid.gst_percentage / 100))::numeric AS current_stock_total_value
-FROM order_item_details oid
-LEFT JOIN discount_percentage_calc dp ON oid.order_id = dp.order_id
-LEFT JOIN stock_changes sc ON oid.order_item_id = sc.order_item_id AND oid.item_type = 'product' -- Join stock changes only for products
-LEFT JOIN products p ON oid.item_id = p.id AND oid.item_type = 'product' -- Re-join products to get stock if sc is null
-ORDER BY oid.date DESC, oid.order_item_id;
-
-
--- Annotate and reload schema
-COMMENT ON VIEW sales_product_new IS 'View of product and service sales with item-level details, order discount percentage, and product stock tracking.';
-NOTIFY pgrst, 'reload schema';
-`;
 
 // Custom styled components
 const HeaderCell = styled(TableCell)(({ theme }) => ({
@@ -237,7 +96,6 @@ const SalesHistoryTab: React.FC = () => {
   const [filteredData, setFilteredData] = useState<SalesItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [isCreatingView, setIsCreatingView] = useState(false);
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [searchTerm, setSearchTerm] = useState('');
@@ -272,8 +130,10 @@ const SalesHistoryTab: React.FC = () => {
 
       return {
         ...item,
+        order_item_id: item.order_item_id,
         unit_price_inc_gst: unitIncl,
         current_stock_taxable_value: taxable,
+        taxable_after_discount: (item.taxable_value ?? 0) * (1 - (item.discount_percentage ?? 0) / 100),
         current_stock_igst: igst,
         current_stock_cgst: cgst,
         current_stock_sgst: sgst,
@@ -281,36 +141,6 @@ const SalesHistoryTab: React.FC = () => {
       };
     });
   }, [filteredData]);
-
-  // Function to create the view
-  const createView = async () => {
-    try {
-      setIsCreatingView(true);
-      setError(null);
-      
-      // Execute the SQL to create the view
-      const { data, error } = await supabase.rpc('exec_sql', { sql: CREATE_VIEW_SQL });
-      
-      if (error) {
-        console.error(`Error creating ${SALES_PRODUCTS_VIEW} view:`, error);
-        setError(`Failed to create sales view: ${error.message || 'Unknown error'}`);
-        return;
-      }
-      
-      // After successful creation
-      toast.success(`Sales view created successfully!`);
-      // Wait a moment before fetching data to ensure view is ready
-      setTimeout(() => {
-        fetchSalesData();
-      }, 1000);
-    } catch (e) {
-      const errorMessage = e instanceof Error ? e.message : 'Unknown error';
-      console.error(`Unexpected error in createView: ${errorMessage}`, e);
-      setError(`Error setting up sales view: ${errorMessage}`);
-    } finally {
-      setIsCreatingView(false);
-    }
-  };
 
   // Function to fetch sales data
   const fetchSalesData = async () => {
@@ -373,6 +203,9 @@ const SalesHistoryTab: React.FC = () => {
           (item.hsn_code && item.hsn_code.toLowerCase().includes(term))
         );
       }
+      
+      // *** ADD FILTER FOR PRODUCTS ONLY ***
+      processedData = processedData.filter(item => item.product_type === 'product');
       
       // Apply sorting if needed
       if (sortBy.column) {
@@ -465,32 +298,40 @@ const SalesHistoryTab: React.FC = () => {
     try {
       setIsExporting(true);
       
-      // Create worksheet - use tableData which includes client-side calculations
-      const worksheet = XLSX.utils.json_to_sheet(tableData.map(item => ({ // Use tableData here
-        'Serial No.': item.serial_no,
-        'Date': formatDate(item.date),
-        'Product Name': item.product_name,
-        'HSN Code': item.hsn_code || 'N/A',
-        'Units': item.product_type || 'N/A',
-        'Quantity': item.quantity,
-        'Unit Price (Inc. GST)': item.unit_price_inc_gst, // Swapped
-        'Unit Price (Ex. GST)': item.unit_price_ex_gst,   // Swapped
-        'Taxable Value': item.taxable_value, // Swapped
-        'GST %': item.gst_percentage,        // Swapped
-        'Discount (%)': item.discount_percentage ? `${item.discount_percentage.toFixed(2)}%` : '0.00%', // Add discount percentage
-        'CGST': item.cgst_amount,
-        'SGST': item.sgst_amount,
-        'Total Value': item.invoice_value,
-        'Initial Stock': item.initial_stock,
-        'Remaining Stock': item.remaining_stock,
-        'Current Stock': item.current_stock,
-        // Include current stock breakdown from tableData
-        'Current Stock Taxable Value': item.current_stock_taxable_value,
-        'Current Stock IGST': item.current_stock_igst,
-        'Current Stock CGST': item.current_stock_cgst,
-        'Current Stock SGST': item.current_stock_sgst,
-        'Current Stock Total Value': item.current_stock_total_value
-      })));
+      // Build header and row arrays so Excel columns exactly match the UI table
+      const headers = [
+        'Serial No.', 'Date', 'Product Name', 'HSN Code', 'Units', 'Qty.',
+        'Unit Price (Inc. GST)', 'Unit Price (Ex.GST)', 'Taxable Value', 'GST %',
+        'Discount %', 'Taxable After Discount', 'CGST', 'SGST', 'Total Value',
+        'Initial Stock', 'Remaining Stock', 'Current Stock', 'Taxable Value',
+        'IGST (Rs.)', 'CGST (Rs.)', 'SGST (Rs.)', 'Total Value (Rs.)'
+      ];
+      const dataRows = tableData.map(item => [
+        item.serial_no,
+        formatDate(item.date),
+        item.product_name,
+        item.hsn_code || 'N/A',
+        item.product_type || 'N/A',
+        item.quantity,
+        item.unit_price_inc_gst,
+        item.unit_price_ex_gst,
+        item.taxable_value,
+        `${item.gst_percentage}%`,
+        item.discount_percentage ? `${item.discount_percentage.toFixed(2)}%` : '0.00%',
+        item.taxable_after_discount ?? 0,
+        item.cgst_amount,
+        item.sgst_amount,
+        item.invoice_value,
+        item.initial_stock,
+        item.remaining_stock,
+        item.current_stock,
+        item.current_stock_taxable_value ?? 0,
+        item.current_stock_igst ?? 0,
+        item.current_stock_cgst ?? 0,
+        item.current_stock_sgst ?? 0,
+        item.current_stock_total_value ?? 0
+      ]);
+      const worksheet = XLSX.utils.aoa_to_sheet([headers, ...dataRows]);
       
       // Auto size columns
       const range = XLSX.utils.decode_range(worksheet['!ref'] || 'A1:A1');
@@ -574,20 +415,6 @@ const SalesHistoryTab: React.FC = () => {
         <Alert 
           severity="error" 
           sx={{ mb: 2 }}
-          action={
-            error.includes('does not exist') && (
-              <Button 
-                color="primary" 
-                variant="contained"
-                size="small" 
-                onClick={createView}
-                disabled={isCreatingView}
-                sx={{ fontWeight: 'bold' }}
-              >
-                {isCreatingView ? 'Creating...' : 'Create View'}
-              </Button>
-            )
-          }
         >
           {error}
         </Alert>
@@ -678,6 +505,7 @@ const SalesHistoryTab: React.FC = () => {
                 {renderSortableHeader('taxable_value', 'Taxable Value')}
                 {renderSortableHeader('gst_percentage', 'GST %')}
                 {renderSortableHeader('discount_percentage', 'Discount %')}
+                {renderSortableHeader('taxable_after_discount', 'Taxable After Discount')}
                 {renderSortableHeader('cgst_amount', 'CGST')}
                 {renderSortableHeader('sgst_amount', 'SGST')}
                 {renderSortableHeader('invoice_value', 'Total Value')}
@@ -694,7 +522,7 @@ const SalesHistoryTab: React.FC = () => {
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={22} align="center" sx={{ py: 3 }}>
+                  <TableCell colSpan={23} align="center" sx={{ py: 3 }}>
                     <CircularProgress />
                     <Typography variant="body2" sx={{ mt: 1 }}>
                       Loading sales data...
@@ -705,7 +533,7 @@ const SalesHistoryTab: React.FC = () => {
                 tableData
                   .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
                   .map((row) => (
-                    <TableRow hover key={row.serial_no}>
+                    <TableRow hover key={row.order_item_id}>
                       <TableCell>{row.serial_no}</TableCell>
                       <TableCell>{formatDate(row.date)}</TableCell>
                       <TableCell>{row.product_name}</TableCell>
@@ -719,6 +547,7 @@ const SalesHistoryTab: React.FC = () => {
                       <TableCell align="right">
                         {row.discount_percentage ? `${row.discount_percentage.toFixed(2)}%` : '-'}
                       </TableCell>
+                      <TableCell align="right">{formatCurrency(row.taxable_after_discount ?? 0)}</TableCell>
                       <TableCell align="right">{formatCurrency(row.cgst_amount)}</TableCell>
                       <TableCell align="right">{formatCurrency(row.sgst_amount)}</TableCell>
                       <TableCell align="right">{formatCurrency(row.invoice_value)}</TableCell>
@@ -752,7 +581,7 @@ const SalesHistoryTab: React.FC = () => {
                   ))
               ) : (
                 <TableRow>
-                  <TableCell colSpan={22} align="center" sx={{ py: 3 }}>
+                  <TableCell colSpan={23} align="center" sx={{ py: 3 }}>
                     <Typography variant="body1">No sales data found</Typography>
                     <Typography variant="body2" color="textSecondary" sx={{ mt: 1 }}>
                       {searchTerm 

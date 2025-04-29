@@ -349,6 +349,8 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
   onAppointmentClick,
 }) => {
   const theme = useTheme();
+  const { clients: allClients, isLoading: isLoadingClients } = useClients(); // Add useClients hook
+
   const [stylists, setStylists] = useState<Stylist[]>(initialStylists);
   const [selectedStylist, setSelectedStylist] = useState<Stylist | null>(null);
   const [currentDate, setCurrentDate] = useState<Date>(selectedDate || new Date());
@@ -432,8 +434,6 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
     // Call the onSelectTimeSlot callback with the stylist ID and formatted time
     onSelectTimeSlot(stylistId, selectedTime);
   };
-
-  const { clients: allClients, isLoading: isLoadingClients, updateClient, updateClientFromAppointment } = useClients();
 
   const handleAppointmentClick = (appointment: any) => {
     console.log("Internal StylistDayView handleAppointmentClick called", appointment); // Debug log
@@ -1242,84 +1242,59 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
 
     return stylistAppointments.map(appointment => {
       const top = getAppointmentPosition(appointment.start_time);
-      const durationInPixels = getAppointmentDuration(appointment.start_time, appointment.end_time);
-      const service = services.find(s => s.id === appointment.service_id);
+      const duration = getAppointmentDuration(appointment.start_time, appointment.end_time);
 
-      // Ensure client name is available, fallback gracefully
-      const clientName = appointment.clients?.full_name || appointment.client_name || 'Unknown Client';
+      // Extract client and service info correctly
+      const primaryClient = appointment.clientDetails?.[0];
+      // Fallback to direct appointment.client_id if no clientDetails
+      const fallbackClient = allClients.find(c => c.id === appointment.client_id);
+      const clientName = primaryClient?.full_name || fallbackClient?.full_name || 'Unknown Client';
 
-      // Check for invalid duration or position
-      if (durationInPixels <= 0 || isNaN(top)) {
-        console.error('Invalid appointment calculation for rendering:', { appointment, top, durationInPixels });
-        return null; // Don't render invalid appointments
-      }
+      const primaryServices = primaryClient?.services || [];
+      // Fallback to direct appointment.service_id if no services in clientDetails
+      const fallbackService = services.find(s => s.id === appointment.service_id);
+      const serviceNames = primaryServices.length > 0
+        ? primaryServices.map(s => s.name).join(', ')
+        : (fallbackService?.name || 'Unknown Service');
+
+      const isPaid = appointment.paid || false;
+      const status = appointment.status || 'scheduled';
 
       return (
-        <Tooltip
-          title={
-            <Box sx={{ minWidth: 200 }}>
-              {appointment.stylists && appointment.stylists.length > 0 && (
-                <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                  Stylists: {appointment.stylists.map((s: any) => s?.name).filter(Boolean).join(', ')}
-                </Typography>
-              )}
-              {appointment.clients?.phone && (
-                <Typography variant="body2">Phone: {appointment.clients.phone}</Typography>
-              )}
-              {appointment.services && (
-                <Typography variant="body2">
-                  Service: {appointment.services.name} {appointment.services.price !== undefined ? `(${formatCurrency(appointment.services.price)})` : ''}
-                </Typography>
-              )}
-              <Typography variant="body2">Paid: {appointment.paid ? 'Yes' : 'No'}</Typography>
-              {appointment.notes && (
-                <Typography variant="body2" sx={{ fontStyle: 'italic', color: 'text.secondary' }}>
-                  Notes: {appointment.notes}
-                </Typography>
-              )}
-            </Box>
-          }
-          arrow
-          placement="top"
-          PopperProps={{
-            sx: {
-              '& .MuiTooltip-tooltip': {
-                backgroundColor: 'white',
-                color: 'black',
-                boxShadow: 3,
-                borderRadius: 2,
-                fontSize: '0.95em',
-                p: 1.2,
-              },
-              '& .MuiTooltip-arrow': {
-                color: 'white',
-              },
-            },
-          }}
-        >
+        <ErrorBoundary key={appointment.id} fallback={<Typography>Error rendering appointment</Typography>}>
           <AppointmentCard
-            key={appointment.id}
-            sx={{ top: `${top}px` }}
-            duration={durationInPixels}
-            isPaid={appointment.paid || false}
-            status={appointment.status || 'scheduled'} // Pass the status prop
+            style={{ top: `${top}px` }}
+            duration={duration}
+            isPaid={isPaid}
+            status={status}
             onClick={() => handleAppointmentClick(appointment)}
             draggable
             onDragStart={(e) => handleDragStart(e, appointment)}
+            title={`Status: ${status}, Paid: ${isPaid ? 'Yes' : 'No'}`}
           >
-            <Box>
-              <Typography variant="subtitle2" fontWeight="bold" noWrap>
-                {clientName}
-              </Typography>
-              <Typography variant="caption" display="block" noWrap>
-                {service ? service.name : 'Unknown Service'}
-              </Typography>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+              <Tooltip title={clientName}>
+                 <Typography variant="body2" fontWeight="bold" noWrap sx={{ flexGrow: 1, pr: 1 }}>
+                   {clientName}
+                 </Typography>
+              </Tooltip>
+              {status === 'completed' && (
+                <Chip label="Completed" size="small" color="default" sx={{ mr: 0.5 }} />
+              )}
+              {isPaid && status !== 'completed' && (
+                <Chip label="Paid" size="small" color="success" sx={{ mr: 0.5 }} />
+              )}
             </Box>
-            <Typography variant="caption" display="block" sx={{ mt: 0.5 }}>
+            <Tooltip title={serviceNames}>
+              <Typography variant="caption" display="block" noWrap>
+                {serviceNames}
+              </Typography>
+            </Tooltip>
+            <Typography variant="caption" display="block">
               {formatTime(appointment.start_time)} - {formatTime(appointment.end_time)}
             </Typography>
           </AppointmentCard>
-        </Tooltip>
+        </ErrorBoundary>
       );
     });
   };

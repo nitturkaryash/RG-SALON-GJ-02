@@ -55,7 +55,7 @@ export interface MergedAppointment extends Appointment {
     created_at?: string;
     services: Service[];
     stylists: Pick<Stylist, 'id' | 'name'>[];
-    selectedCollectionId?: string | null;
+    selectedCollectionId: string | null;
   }[];
 }
 
@@ -145,6 +145,28 @@ interface CreateAppointmentData {
   client_id?: string; // Optional client_id
   phone?: string;     // Optional phone
   email?: string;     // Optional email
+}
+
+// Define the expected input type for the update mutation
+interface UpdateAppointmentData {
+  id: string; // Appointment ID
+  // Simplified clientDetails structure
+  clientDetails: {
+    clientId: string;
+    serviceIds: string[];
+    stylistIds: string[];
+  }[];
+  // Other updatable fields for the base 'appointments' table
+  start_time?: string;
+  end_time?: string;
+  notes?: string;
+  status?: Appointment['status'];
+  paid?: boolean;
+  billed?: boolean;
+  // Primary keys if required by base table schema (might be redundant if clientDetails covers all)
+  client_id?: string; 
+  stylist_id?: string;
+  service_id?: string;
 }
 
 export function useAppointments() {
@@ -244,7 +266,7 @@ export function useAppointments() {
               // Optionally derive collection ID for UI convenience, defaulting undefined to null
               selectedCollectionId: servicesForThisClient[0]?.collection_id ?? null 
             };
-          }).filter((details): details is MergedAppointment['clientDetails'][0] => !!details); // Filter out any null entries
+          }).filter(details => !!details);
 
           // Combine base appointment data with the structured client details
           return {
@@ -388,82 +410,144 @@ export function useAppointments() {
   });
 
   const updateAppointment = useMutation({
-    mutationFn: async (data: {
-      id: string;
-      clientDetails: MergedAppointment['clientDetails'];
-      // Ensure other updatable fields are included here if needed
-      start_time?: string;
-      end_time?: string;
-      notes?: string;
-      status?: Appointment['status'];
-      client_id?: string; // Example: if base table needs primary client
-      stylist_id?: string; // Example: if base table needs primary stylist
-      service_id?: string; // Example: if base table needs primary service
-    } & Partial<Omit<MergedAppointment, 'clientDetails'>>) => {
-      const { id, clientDetails, ...appointmentBaseUpdates } = data;
-      
-      // **CRITICAL FIX:** Remove fields not directly on the 'appointments' table
-      // from the base update object.
-      // Keep only fields that actually exist on the 'appointments' table.
-      const { 
-        // Remove fields related to join tables if they aren't direct columns
-        // client_ids, // REMOVED - Does not exist
-        // service_ids, // Check if this exists directly on appointments table
-        // stylist_ids, // Check if this exists directly on appointments table
-         
-        // Keep only fields that ARE direct columns on the 'appointments' table
-        start_time,
-        end_time,
-        notes,
-        status,
-        client_id,   // Keep if 'appointments' has a primary client_id
-        stylist_id,  // Keep if 'appointments' has a primary stylist_id
-        service_id,  // Keep if 'appointments' has a primary service_id
-        paid,        // Keep standard fields
-        billed,      // Keep if 'appointments' has a billed column
-        stylist_ids, // Keep if 'appointments' has this array column
-        service_ids, // Keep if 'appointments' has this array column
-        // Add any other direct columns from 'appointments' schema here
-        ...restOfBaseUpdates // Include any other valid fields passed in
-      } = appointmentBaseUpdates; // Remove previous type assertion
+    // Use the new interface for the input data type
+    mutationFn: async (data: UpdateAppointmentData) => {
+      const { id: appointmentId, clientDetails, ...appointmentBaseUpdates } = data;
 
-      // Construct the object with ONLY valid columns for the 'appointments' table update
+      console.log(`Starting update for appointment ${appointmentId}`);
+
+      // --- Step 1: Delete existing join table entries --- 
+      // We should ideally wrap these in a transaction if possible, 
+      // but Supabase client might require RPC for transactions.
+      // Doing sequentially for now.
+      console.log(` -> Deleting existing joins for appointment ${appointmentId}...`);
+      try {
+        const { error: deleteClientsError } = await supabase
+          .from('appointment_clients')
+          .delete()
+          .eq('appointment_id', appointmentId);
+        if (deleteClientsError) throw new Error(`Failed to delete appointment_clients: ${deleteClientsError.message}`);
+
+        const { error: deleteServicesError } = await supabase
+          .from('appointment_services')
+          .delete()
+          .eq('appointment_id', appointmentId);
+        if (deleteServicesError) throw new Error(`Failed to delete appointment_services: ${deleteServicesError.message}`);
+
+        const { error: deleteStylistsError } = await supabase
+          .from('appointment_stylists')
+          .delete()
+          .eq('appointment_id', appointmentId);
+        if (deleteStylistsError) throw new Error(`Failed to delete appointment_stylists: ${deleteStylistsError.message}`);
+        console.log(` -> Successfully deleted existing joins.`);
+      } catch (error) {
+         console.error("Error deleting existing join table records:", error);
+         // Decide if we should proceed or throw. Let's throw for now.
+         throw new Error(`Failed to clear existing appointment links: ${error instanceof Error ? error.message : error}`);
+      }
+
+      // --- Step 2: Update the base appointments table --- 
+      // Construct the update object carefully, only including valid fields
+      const { 
+        start_time, 
+        end_time, 
+        notes, 
+        status, 
+        paid, 
+        billed, 
+        // Include primary keys if they are part of the update data and exist on the table
+        client_id, 
+        stylist_id, 
+        service_id 
+      } = appointmentBaseUpdates;
+
       const validBaseUpdateData: Partial<Appointment> & { updated_at?: string } = {
-        ...(start_time && { start_time }),
-        ...(end_time && { end_time }),
-        ...(notes && { notes }),
+        ...(start_time && { start_time: formatAppointmentTime(start_time) }), // Format time on update too
+        ...(end_time && { end_time: formatAppointmentTime(end_time) }),
+        ...(notes !== undefined && { notes }), // Allow empty string for notes
         ...(status && { status }),
-        ...(client_id && { client_id }),
+        ...(client_id && { client_id }), // Keep if appointments table needs primary keys
         ...(stylist_id && { stylist_id }),
         ...(service_id && { service_id }),
-        ...(paid !== undefined && { paid }), // Handle boolean
-        ...(billed !== undefined && { billed }), // Handle boolean
-        ...(stylist_ids && { stylist_ids }), // Include if column exists
-        ...(service_ids && { service_ids }), // Include if column exists
-        ...restOfBaseUpdates, // Include other valid fields
-        updated_at: new Date().toISOString() // Always add updated_at
+        ...(paid !== undefined && { paid }),
+        ...(billed !== undefined && { billed }),
+        updated_at: new Date().toISOString()
       };
+      
+      // Remove undefined keys to prevent sending them in the update payload
+      Object.keys(validBaseUpdateData).forEach(key => {
+        // Explicitly type key or cast object to allow indexing
+        const typedKey = key as keyof typeof validBaseUpdateData;
+        if (validBaseUpdateData[typedKey] === undefined) {
+          delete validBaseUpdateData[typedKey];
+        }
+      });
 
-      console.warn("updateAppointment mutation needs full implementation for join tables!");
-      console.log(`Attempting to update base appointment ${id} with:`, validBaseUpdateData);
-
-      // 1. Update base appointment table with ONLY valid fields
+      console.log(` -> Updating base appointment ${appointmentId} with:`, validBaseUpdateData);
       const { data: updatedAppointment, error: updateError } = await supabase
           .from('appointments')
-          .update(validBaseUpdateData) // Use the cleaned data
-          .eq('id', id)
+          .update(validBaseUpdateData)
+          .eq('id', appointmentId)
           .select()
           .single();
 
-      if (updateError) throw new Error(`Error updating appointment ${id}: ${updateError.message}`);
-      if (!updatedAppointment) throw new Error(`Failed to update appointment ${id}`);
+      if (updateError) throw new Error(`Error updating base appointment ${appointmentId}: ${updateError.message}`);
+      if (!updatedAppointment) throw new Error(`Failed to update base appointment ${appointmentId} (no data returned).`);
+      console.log(` -> Successfully updated base appointment.`);
 
-      // 2. **CRITICAL:** Update Join Tables
-      //    - Delete existing rows for this appointment_id in appointment_clients, _services, _stylists.
-      //    - Re-insert new rows based on the incoming `clientDetails` array.
-      //    - This needs careful implementation with error handling, similar to the create logic.
+      // --- Step 3: Insert new join table entries --- 
+      // This logic is very similar to the createAppointment mutation
+      console.log(` -> Inserting new joins for appointment ${appointmentId}...`);
+      try {
+        // Process inserts for all clients concurrently
+        await Promise.all(clientDetails.map(async (detail) => {
+          const { clientId, serviceIds, stylistIds } = detail;
+          console.log(`  -> Processing joins for client ${clientId}`);
 
-      return updatedAppointment; // Return updated base appointment for now
+          // 3a: Insert into appointment_clients
+          const { error: acError } = await supabase
+            .from('appointment_clients')
+            .insert({ appointment_id: appointmentId, client_id: clientId });
+          if (acError) throw new Error(`Failed to link client ${clientId}: ${acError.message}`);
+          console.log(`    - Linked client ${clientId}`);
+
+          // 3b: Insert into appointment_services
+          const serviceInserts = serviceIds.map(serviceId => ({ appointment_id: appointmentId, client_id: clientId, service_id: serviceId }));
+          if (serviceInserts.length > 0) {
+            const { error: asError } = await supabase.from('appointment_services').insert(serviceInserts);
+            // Handle potential duplicate key error if constraints were not properly handled by delete
+            if (asError && asError.code === '23505') { 
+                console.warn(`Ignoring duplicate service(s) on update for client ${clientId}: ${asError.message}`);
+            } else if (asError) {
+                throw new Error(`Failed to link services for client ${clientId} on update: ${asError.message}`);
+            }
+             console.log(`    - Linked ${serviceInserts.length} services for client ${clientId}`);
+          }
+
+          // 3c: Insert into appointment_stylists
+          const stylistInserts = stylistIds.map(stylistId => ({ appointment_id: appointmentId, client_id: clientId, stylist_id: stylistId }));
+           if (stylistInserts.length > 0) {
+             const { error: astError } = await supabase.from('appointment_stylists').insert(stylistInserts);
+             if (astError && astError.code === '23505') { 
+                 console.warn(`Ignoring duplicate stylist(s) on update for client ${clientId}: ${astError.message}`);
+             } else if (astError) {
+                throw new Error(`Failed to link stylists for client ${clientId} on update: ${astError.message}`);
+             }
+             console.log(`    - Linked ${stylistInserts.length} stylists for client ${clientId}`);
+           }
+        })); // End of Promise.all for client details
+
+        console.log(` -> Successfully inserted new joins for appointment ${appointmentId}.`);
+      } catch (joinError) {
+        // If inserting new joins fails, the base appointment is already updated.
+        // This leaves the data potentially inconsistent. Transactional logic would be better.
+        console.error(`Error inserting new join table records for appointment ${appointmentId}:`, joinError);
+        // We should probably throw here to indicate the update wasn't fully successful
+        throw new Error(`Update partially failed: Could not insert new links. ${joinError instanceof Error ? joinError.message : joinError}`);
+      }
+
+      // Return the updated base appointment record
+      return updatedAppointment;
     },
     onSuccess: (data) => {
       console.log("Appointment updated successfully in DB:", data);
@@ -508,4 +592,7 @@ export function useAppointments() {
     updateAppointment: updateAppointment.mutate,
     deleteAppointment: deleteAppointment.mutate,
   };
-} 
+}
+
+// Remove unused type export for non-existent module
+// export type { BillingResult } from './createBillsForAppointment'; 

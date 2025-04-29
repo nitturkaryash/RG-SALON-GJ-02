@@ -11,7 +11,7 @@ export const TABLES = {
   POS_ORDER_ITEMS: 'pos_order_items',
   SALES_CONSUMER: 'inventory_sales_consumer',
   SALON_CONSUMPTION: 'inventory_consumption',
-  SALON_CONSUMPTION_PRODUCTS: 'salon_consumption_products'
+  SALON_CONSUMPTION_PRODUCTS: 'inventory_salon_consumption'
 };
 
 // Global variable to track connection status and error for diagnostics - initialize first
