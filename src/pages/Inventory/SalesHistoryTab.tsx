@@ -204,9 +204,6 @@ const SalesHistoryTab: React.FC = () => {
         );
       }
       
-      // *** ADD FILTER FOR PRODUCTS ONLY ***
-      processedData = processedData.filter(item => item.product_type === 'product');
-      
       // Apply sorting if needed
       if (sortBy.column) {
         processedData.sort((a, b) => {

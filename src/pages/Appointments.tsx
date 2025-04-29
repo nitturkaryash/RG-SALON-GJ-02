@@ -21,7 +21,12 @@ import {
   Drawer,
   IconButton,
   Tooltip,
-  Divider
+  Divider,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogContentText,
+  DialogActions
 } from '@mui/material'
 import { useAppointments, Appointment, MergedAppointment } from '../hooks/useAppointments'
 import { useStylists, Stylist, StylistBreak } from '../hooks/useStylists'
@@ -108,6 +113,7 @@ export default function Appointments() {
   const [snackbarSeverity, setSnackbarSeverity] = useState<'error' | 'warning' | 'info' | 'success'>('error');
   const [editingAppointment, setEditingAppointment] = useState<MergedAppointment | null>(null);
   const [isBilling, setIsBilling] = useState(false); // Kept for potential future use with button disabling
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
 
   const timeOptions = generateTimeOptions();
   const navigate = useNavigate();
@@ -474,11 +480,24 @@ export default function Appointments() {
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', p: 2, borderBottom: '1px solid', borderColor: 'divider' }}>
           <Typography variant="h6">
             {editingAppointment ? 'Edit Appointment' : 'New Appointment'}
-              </Typography>
-          <IconButton onClick={handleCloseDrawer}>
-            <CloseIcon />
-          </IconButton>
-                  </Box>
+          </Typography>
+          <Box>
+            {editingAppointment && (
+              <Tooltip title="Delete Appointment">
+                <IconButton
+                  onClick={() => setDeleteDialogOpen(true)}
+                  color="error"
+                  sx={{ mr: 1 }}
+                >
+                  <DeleteIcon />
+                </IconButton>
+              </Tooltip>
+            )}
+            <IconButton onClick={handleCloseDrawer}>
+              <CloseIcon />
+            </IconButton>
+          </Box>
+        </Box>
 
         {/* Form Content Area - Allow Scrolling */}
         <Box sx={{ p: 3, overflowY: 'auto', flexGrow: 1 }}>
@@ -737,6 +756,41 @@ export default function Appointments() {
           {snackbarMessage}
         </Alert>
       </Snackbar>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog
+        open={deleteDialogOpen}
+        onClose={() => setDeleteDialogOpen(false)}
+        aria-labelledby="delete-appointment-title"
+        aria-describedby="delete-appointment-description"
+      >
+        <DialogTitle id="delete-appointment-title">Delete Appointment?</DialogTitle>
+        <DialogContent>
+          <DialogContentText id="delete-appointment-description">
+            Are you sure you want to delete this appointment? This action cannot be undone.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteDialogOpen(false)} color="primary">
+            Cancel
+          </Button>
+          <Button
+            onClick={async () => {
+              if (editingAppointment) {
+                await deleteAppointment(editingAppointment.id);
+                setDeleteDialogOpen(false);
+                handleCloseDrawer();
+                toast.success('Appointment deleted successfully');
+              }
+            }}
+            color="error"
+            variant="contained"
+            autoFocus
+          >
+            Delete
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 } 

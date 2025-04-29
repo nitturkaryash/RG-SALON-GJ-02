@@ -1,4 +1,5 @@
 import { supabase, handleSupabaseError } from './supabase/supabaseClient';
+import { TABLES } from './supabase/supabaseClient'; // Import TABLES constant
 import { Product } from '../hooks/useProducts'; // Import Product type if needed elsewhere
 import { PurchaseTransaction } from '../hooks/usePurchaseHistory'; // Assuming this defines the structure accurately
 import { v4 as uuidv4 } from 'uuid';
@@ -93,28 +94,34 @@ export const addPurchaseTransaction = async (purchaseData: PurchaseFormData) => 
     const currentStock = existingProduct?.stock_quantity || 0;
 
     // --- Step 2: Prepare data for purchases table --- 
+    // Explicitly map to the 'purchases' table columns, providing defaults
     const purchaseRecord: Record<string, any> = {
+      purchase_id: isUpdate ? purchaseData.id : uuidv4(),
       product_id: productId,
       date: purchaseData.date || timestamp,
-      invoice_no: purchaseData.invoice_number || purchaseData.purchase_invoice_number,
-      qty: purchaseData.purchase_qty,
+      invoice_no: purchaseData.invoice_number || purchaseData.purchase_invoice_number || 'N/A',
+      qty: purchaseData.purchase_qty || 0,
       incl_gst: purchaseData.mrp_incl_gst || 0,
       ex_gst: purchaseData.purchase_excl_gst || purchaseData.mrp_per_unit_excl_gst || 0,
-      taxable_value: purchaseData.purchase_taxable_value || purchaseData.purchase_cost_taxable_value || 0,
+      discount_percentage: purchaseData.discount_on_purchase_percentage || 0,
+      taxable_value: purchaseData.purchase_cost_taxable_value || purchaseData.purchase_taxable_value || 0,
       igst: purchaseData.purchase_igst || 0,
-      cgst: purchaseData.purchase_cgst || 0,
-      sgst: purchaseData.purchase_sgst || 0,
+      purchase_cgst: purchaseData.purchase_cgst || 0,
+      purchase_sgst: purchaseData.purchase_sgst || 0,
       invoice_value: purchaseData.purchase_invoice_value || purchaseData.purchase_invoice_value_rs || 0,
-      transaction_type: 'purchase',
       supplier: purchaseData.vendor || 'Direct Entry',
-      discount_percentage: purchaseData.discount_on_purchase_percentage || 0, // Save discount percentage explicitly
-      updated_at: timestamp
+      created_at: timestamp,
+      updated_at: timestamp,
+      stock_balance_after_purchase: !isUpdate ? currentStock + (purchaseData.purchase_qty || 0) : null
     };
 
-    // For new purchases, add ID and created_at
-    if (!isUpdate) {
-      purchaseRecord.id = uuidv4(); // Generate a UUID for the new purchase
-      purchaseRecord.created_at = timestamp;
+    // Persist the purchase record into the inventory_purchases table
+    const { error: purchaseInsertError } = await supabase
+      .from(TABLES.PURCHASES)  // 'inventory_purchases'
+      .insert(purchaseRecord);
+    if (purchaseInsertError) {
+      console.error("Error inserting purchase record:", purchaseInsertError);
+      throw new Error(`Failed to record purchase: ${purchaseInsertError.message}`);
     }
 
     // --- Step 4: Calculate new stock and update product --- 
@@ -161,11 +168,12 @@ export const addPurchaseTransaction = async (purchaseData: PurchaseFormData) => 
         hsn_code: purchaseData.hsn_code || '',   // Add HSN code
         units: purchaseData.unit_type || 'pcs', // Add units
         date: purchaseData.date || timestamp,
-        change_qty: quantityChange,
-        previous_qty: currentStock, // Stock BEFORE the transaction
-        stock_after: newStock,    // Stock AFTER the transaction
+        // Ensure current_qty (previous stock) is always a number
+        current_qty: Number(currentStock) || 0, // Stock BEFORE the transaction
+        qty_change: quantityChange,             // Difference in stock
+        stock_after: newStock,      // Stock AFTER the transaction
         type: 'purchase',       // Transaction type
-        reference_id: purchaseRecord.id, // Link to the purchase record ID
+        reference_id: purchaseRecord.purchase_id, // Link to the purchase record ID
         source: `Purchase Invoice: ${purchaseData.invoice_number || purchaseData.purchase_invoice_number || 'N/A'}`, // Source document
         created_at: timestamp,
       };

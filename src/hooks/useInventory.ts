@@ -376,8 +376,8 @@ export const useInventory = () => {
       try {
         console.log('Fetching salon consumption data...');
         
-        // Make sure we have a valid table name with fallback
-        const tableNameToUse = TABLES.SALON_CONSUMPTION || 'salon_consumption_orders';
+        // Use the salon_consumption_products view for detailed consumption data
+        const tableNameToUse = TABLES.SALON_CONSUMPTION_PRODUCTS || 'salon_consumption_products';
         console.log('Using table name:', tableNameToUse);
         
         // Check if we have the table first to avoid 404 errors
@@ -392,22 +392,11 @@ export const useInventory = () => {
           return [];
         }
         
-        // Use proper table name reference with fallback
+        // Fetch all columns from the view
         const { data, error } = await supabase
           .from(tableNameToUse)
-          .select(`
-            id,
-            order_id,
-            date,
-            product_name,
-            quantity,
-            stylist_name,
-            status,
-            total_amount,
-            type,
-            payment_method
-          `)
-          .order('date', { ascending: false });
+          .select('*')
+          .order('Date', { ascending: false });
           
         if (error) throw error;
         return data || [];
