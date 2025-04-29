@@ -525,47 +525,48 @@ export default function POS() {
 	// 3. SIDE EFFECTS (useEffect)
 	// ====================================================
 	useEffect(() => {
-		// Handle appointment data from location state
+		console.log('[POS useEffect] Running effect. Location state:', location.state);
+
 		if (location.state?.appointmentData) {
 			const appointmentData = location.state.appointmentData;
-			console.log('Received appointment data:', appointmentData);
-			
-			// Set tab to appointment payment (first tab)
+			console.log('[POS useEffect] Processing appointment data:', JSON.stringify(appointmentData));
+
 			setTabValue(0);
-			
-			// Set client
+			setActiveStep(appointmentData.step ?? 0);
+
 			if (appointmentData.clientName) {
 				setCustomerName(appointmentData.clientName);
-				// Attempt to find the client in the loaded list
 				const existingClient = clients?.find(c => c.full_name === appointmentData.clientName);
 				if (existingClient) {
 					setSelectedClient(existingClient);
 				}
 			}
-			
-			// Set stylist
+
 			if (appointmentData.stylistId) {
 				const existingStylist = stylists?.find(s => s.id === appointmentData.stylistId);
 				if (existingStylist) {
 					setSelectedStylist(existingStylist);
 				}
 			}
-			
-			// Set service/item
+
 			if (appointmentData.serviceId && appointmentData.type === 'service') {
 				const serviceToAdd = services?.find(s => s.id === appointmentData.serviceId);
 				if (serviceToAdd) {
+					console.log('[POS useEffect] Found service to add:', serviceToAdd.name, "(ID:", serviceToAdd.id, "). Calling handleAddToOrder...");
 					handleAddToOrder(serviceToAdd, 1, appointmentData.servicePrice);
+				} else {
+					console.warn('[POS useEffect] Service ID received, but service not found in local list:', appointmentData.serviceId);
 				}
 			}
 
-			// Store the appointment ID
-			setCurrentAppointmentId(appointmentData.id || null); // <-- Store appointment ID
+			setCurrentAppointmentId(appointmentData.id || null);
 
-			// Clear location state to prevent re-processing on refresh
+			console.log('[POS useEffect] Clearing location state...');
 			navigate(location.pathname, { replace: true, state: {} });
+			console.log('[POS useEffect] Location state cleared.');
 		}
-	}, [location.state, clients, stylists, services, navigate]); // Add dependencies
+		// Removed handleAddToOrder from dependency array as it's defined outside with useCallback and its own deps
+	}, [location.state?.appointmentData, navigate]);
 
 	const fetchBalanceStockData = useCallback(async () => {
 		console.log("Fetching latest stock data from products table...");
@@ -620,78 +621,50 @@ export default function POS() {
 		}
 	}, [supabase]); // Add dependencies if needed
 
-	useEffect(() => {
-		// Add event listener for inventory updates
-		const handleInventoryUpdate = () => {
-			console.log('Inventory update detected in POS, refreshing stock data');
-			fetchBalanceStockData();
-		};
-
-		// Listen for the custom event
-		window.addEventListener('inventory-updated', handleInventoryUpdate);
-
-		// Cleanup function
-		return () => {
-			window.removeEventListener('inventory-updated', handleInventoryUpdate);
-		};
-	}, [fetchBalanceStockData]);
-
-	// Restore useEffect wrapper
-	useEffect(() => {
-		// Fetch all products from products table
-		const fetchAllProducts = async () => {
-			setLoadingProducts(true);
-			try {
-				let allLoadedProducts: POSService[] = [];
-
-				// Fetch directly from products table
-				if (inventoryProducts && inventoryProducts.length > 0) {
-					console.log(`Found ${inventoryProducts.length} products from products table`);
-
-					// Map to POS service format using exact field names from the database
-					const mappedProducts = inventoryProducts.map((product) => ({
-						id: product.id,
-						name: product.name,
-						price: product.mrp_per_unit_excl_gst || product.mrp_incl_gst || product.price || 0,
-						description: `HSN: ${product.hsn_code || 'N/A'} | GST: ${product.gst_percentage}%`,
-						type: "product" as "product" | "service",
-						hsn_code: product.hsn_code,
-						units: product.units,
-						gst_percentage: product.gst_percentage,
-						stock_quantity: product.stock_quantity || 0 // Use stock_quantity directly from products
-					}));
-
-					allLoadedProducts = [...mappedProducts];
-					console.log("Mapped products from products table:", allLoadedProducts.slice(0, 2));
-				}
-
-				console.log(`Total products loaded: ${allLoadedProducts.length}`);
-				setAllProducts(allLoadedProducts);
-
-				// Get the latest stock information
-				if (allLoadedProducts.length > 0) {
-					await fetchBalanceStockData();
-				}
-
-			} catch (error) {
-				console.error('Error fetching products:', error);
-				toast.error('Error loading products. Please try again.');
-			} finally {
-				setLoadingProducts(false);
+	// Define fetchAllProducts BEFORE useEffect that uses it
+	const fetchAllProducts = useCallback(async () => {
+		setLoadingProducts(true);
+		try {
+			let allLoadedProducts: POSService[] = [];
+			if (inventoryProducts && inventoryProducts.length > 0) {
+				const mappedProducts = inventoryProducts.map((product) => ({
+					id: product.id,
+					name: product.name,
+					price: product.mrp_per_unit_excl_gst || product.mrp_incl_gst || product.price || 0,
+					description: `HSN: ${product.hsn_code || 'N/A'} | GST: ${product.gst_percentage}%`,
+					type: "product" as "product" | "service",
+					hsn_code: product.hsn_code,
+					units: product.units,
+					gst_percentage: product.gst_percentage,
+					stock_quantity: product.stock_quantity || 0
+				}));
+				allLoadedProducts = [...mappedProducts];
 			}
-		};
-
-		fetchAllProducts();
+			setAllProducts(allLoadedProducts);
+			if (allLoadedProducts.length > 0) {
+				await fetchBalanceStockData();
+			}
+		} catch (error) {
+			console.error('Error fetching products:', error);
+			toast.error('Error loading products. Please try again.');
+		} finally {
+			setLoadingProducts(false);
+		}
 	}, [inventoryProducts, fetchBalanceStockData]);
+
+	// UseEffect for initial fetch
+	useEffect(() => {
+		fetchAllProducts();
+	}, [fetchAllProducts]);
 
 	// ====================================================
 	// 4. EVENT HANDLERS & HELPER FUNCTIONS (useCallback or regular)
 	// ====================================================
 
-  // Generate time slots (e.g., 8 AM to 8 PM, 15-minute intervals)
-  const timeSlots = useMemo(() => generateTimeSlots(8, 20, 15), []);
+	// Generate time slots (defined after helper function)
+	const timeSlots = useMemo(() => generateTimeSlots(8, 20, 15), []);
 
-	// Restore the definitions for handlers and validators
+	// Restore handler definitions
 	const handleClientSelect = useCallback((client: Client | null) => {
 		setSelectedClient(client);
 		if (client) {
@@ -707,8 +680,10 @@ export default function POS() {
 		setActiveStep((prev) => prev - 1);
 	}, []);
 
+	// DEFINE handleAddToOrder *BEFORE* useEffect that uses it
 	const handleAddToOrder = useCallback((service: POSService, quantity: number = 1, customPrice?: number) => {
-		// Check if this is a product and if it's out of stock
+		console.log(`[handleAddToOrder] Called for: ${service.name} (ID: ${service.id}), Quantity: ${quantity}`);
+
 		const isOutOfStock = service.type === 'product' &&
 			(typeof service.stock_quantity === 'number' && service.stock_quantity <= 0);
 
@@ -720,25 +695,20 @@ export default function POS() {
 
 		console.log(`🛒 Adding to order - Product: ${service.name}, ID: ${service.id}, Type: ${service.type}, Quantity: ${quantity}, Current stock: ${service.stock_quantity}`);
 
-		// For products, check if adding the quantity would exceed available stock
 		if (service.type === 'product' && typeof service.stock_quantity === 'number') {
-			// Find existing item to check total quantity
 			const existingItem = orderItems.find(item =>
 				item.item_id === service.id
 			);
-
 			const existingQty = existingItem ? existingItem.quantity : 0;
 			const newTotalQty = existingQty + quantity;
 
 			console.log(`🛒 Stock check - Current cart quantity: ${existingQty}, Adding: ${quantity}, New total: ${newTotalQty}, Available: ${service.stock_quantity}`);
 
-			// Check if new total exceeds available stock
 			if (newTotalQty > service.stock_quantity) {
 				toast.warning(`Cannot add ${quantity} of "${service.name}" - Only ${service.stock_quantity} available (${existingQty} already in cart)`);
 				return;
 			}
 
-			// Show low stock warnings
 			const remainingStock = service.stock_quantity - newTotalQty;
 			if (remainingStock === 0) {
 				toast.warning(`Added last ${quantity} of "${service.name}" to cart - No more in stock`);
@@ -747,10 +717,9 @@ export default function POS() {
 			}
 		}
 
-		// Create a new order item matching the OrderItem interface
 		const newItem: OrderItem = {
-			id: uuidv4(), // Generate a unique ID
-			order_id: '', // This will be set when the order is created
+			id: uuidv4(),
+			order_id: '',
 			item_id: service.id,
 			item_name: service.name,
 			quantity: quantity,
@@ -763,9 +732,11 @@ export default function POS() {
 		};
 
 		console.log(`🛒 Created order item:`, newItem);
-		
-		// Add to order items
-		setOrderItems((prev) => [...prev, newItem]);
+
+		setOrderItems((prev) => {
+			const newState = [...prev, newItem];
+			return newState;
+		});
 
 		toast.success(`Added ${service.name} to order`);
 	}, [orderItems, toast]);
@@ -840,16 +811,22 @@ export default function POS() {
 			}
 
 			// Correct arguments for updateClientFromOrder 
-			const clientPhoneString = selectedClient?.phone;
-			// Provide 0 as default if phone is undefined or NaN after parsing
-			const clientPhone = clientPhoneString ? (parseInt(clientPhoneString, 10) || 0) : 0; 
+			// We need the actual total amount and payment method for the order
+			const actualTotalAmount = calculateTotalAmount();
+			const actualPaymentMethod = isSplitPayment ? 'split' : walkInPaymentMethod;
 			
-			const client = await updateClientFromOrder(
-				selectedClient?.full_name || customerName,
-				clientPhone, // Pass number (defaulting to 0 if needed)
-				`Order: ${orderId}`, 
-				new Date().toISOString()
-			);
+			// Only update client if a name is available
+			const clientNameToUpdate = selectedClient?.full_name || customerName;
+			if (clientNameToUpdate && clientNameToUpdate !== 'Walk-in Customer') { // Avoid updating for generic walk-in
+				await updateClientFromOrder(
+					clientNameToUpdate,
+					actualTotalAmount,      // Pass the calculated total amount
+					actualPaymentMethod,    // Pass the actual payment method
+					new Date().toISOString() 
+				);
+			} else {
+				console.log('Skipping client update for generic Walk-in Customer or missing name.');
+			}
 			
 			// Rather than using the orderData CreateOrderData object directly,
 			// transform it to match the parameters expected by the standalone createWalkInOrder function
@@ -864,7 +841,9 @@ export default function POS() {
 				quantity: service.quantity,
 				gst_percentage: service.gst_percentage || 0,
 				hsn_code: service.hsn_code || '',
-				type: 'service' as const
+				type: 'service' as const,
+				product_id: service.item_id, // Add these fields for type compatibility
+				product_name: service.item_name
 			}));
 			
 			// Convert products to format expected by standalone function
@@ -906,7 +885,7 @@ export default function POS() {
 				stylist_id: staffInfo?.id || '',
 				stylist_name: staffInfo?.name || '',
 				items: [],
-				services: formattedProducts.concat(formattedServices),
+				services: ([...formattedProducts, ...formattedServices] as any[]),
 				payment_method: isSplitPayment ? 'split' : walkInPaymentMethod,
 				split_payments: isSplitPayment ? splitPayments : undefined,
 				discount: walkInDiscount,
@@ -934,11 +913,11 @@ export default function POS() {
 			// --- Update Appointment Status if Applicable ---
 			if (currentAppointmentId && updateAppointment) {
 				try {
-					await updateAppointment({ id: currentAppointmentId, status: 'completed', paid: true });
+					await updateAppointment({ id: currentAppointmentId, status: 'completed', paid: true, clientDetails: [] });
 					console.log(`Appointment ${currentAppointmentId} marked as completed and paid.`);
 				} catch (updateError) {
 					console.error(`Failed to update appointment status for ${currentAppointmentId}:`, updateError);
-					toast.error('Order created, but failed to update appointment status.'); // Inform user
+					toast.error('Order created, but failed to update appointment status.');
 				}
 			}
 
@@ -1174,18 +1153,21 @@ export default function POS() {
 						const salonConsumptionEntry = {
 							id: uuidv4(),
 							date: currentDate,
+							created_at: currentDate,
 							product_name: product.item_name,
 							hsn_code: product.hsn_code || '',
+							units: product.units || '',              // Added units (Product Type)
 							quantity: product.quantity,
 							purpose: consumptionPurpose,
-							price_per_unit: price.toString(),
-							gst_percentage: gstPercentage.toString(),
-							// Add new fields
+							price_per_unit: price,                   // Use numeric value
+							gst_percentage: gstPercentage,           // Use numeric percentage
+							// Map to the new column names in inventory_salon_consumption
 							current_stock: currentStock,
-							current_stock_value: parseFloat((currentStock * price).toFixed(2)),
-							c_sgst: parseFloat(sgst.toFixed(2)),
-							c_cgst: parseFloat(cgst.toFixed(2)),
-							c_tax: parseFloat(totalTax.toFixed(2))
+							current_stock_taxable_value: parseFloat((currentStock * price).toFixed(2)), // Renamed
+							current_stock_igst: 0, // Added (always 0 for local consumption)
+							current_stock_sgst: parseFloat(sgst.toFixed(2)), // Renamed
+							current_stock_cgst: parseFloat(cgst.toFixed(2)), // Renamed
+							current_stock_total_value: parseFloat(totalTax.toFixed(2)) // Renamed
 						};
 						
 						const { error: consumptionError } = await supabase
@@ -1366,6 +1348,9 @@ export default function POS() {
 				queryClient.invalidateQueries({ queryKey: ['products'] });
 				queryClient.invalidateQueries({ queryKey: ['balance-stock'] });
 				queryClient.invalidateQueries({ queryKey: ['pos-orders'] });
+				// Refresh salon consumption data in Inventory Manager and SalonConsumptionTab
+				queryClient.invalidateQueries({ queryKey: ['inventory-salon-consumption'] });
+				queryClient.invalidateQueries({ queryKey: ['salon-consumption-products'] });
 			}
 
 			window.dispatchEvent(new CustomEvent('inventory-updated'));
@@ -1427,7 +1412,7 @@ export default function POS() {
 		const totalAmount = calculateTotalAmount();
 
 		try {
-			if (createOrder) { 
+			if (createOrder && typeof createOrder.mutateAsync === 'function') {
 				const baseOrderData: CreateOrderData = {
 					order_id: `order_${uuidv4()}`,
 					client_id: client.id,
@@ -1455,25 +1440,29 @@ export default function POS() {
 				};
 
 				// Construct the object matching Partial<Order> based on its definition
-				const orderPayload: Partial<Order> = {
-					id: baseOrderData.order_id,
-					customer_name: baseOrderData.client_name, 
-						order_date: baseOrderData.order_date,
-						total_amount: baseOrderData.total_amount, 
-						payment_method: isSplitPayment ? undefined : baseOrderData.payment_method as PaymentMethod, 
-						staff_id: baseOrderData.stylist_id, 
-						status: baseOrderData.status,
-						is_salon_consumption: false,
-						consumption_purpose: undefined,
-						// Try 'regular_purchase' for purchase_type
-						purchase_type: 'regular_purchase',
-						order_type: 'appointment', // This seems valid according to Order type
-						// DO NOT include fields not in Order, including 'items'
-						// items: baseOrderData.items, 
+				const orderPayload: Partial<CreateOrderData> = {
+					order_id: baseOrderData.order_id,
+					client_id: baseOrderData.client_id,
+					client_name: baseOrderData.client_name, 
+					order_date: baseOrderData.order_date,
+					items: baseOrderData.items,
+					services: baseOrderData.services,
+					subtotal: baseOrderData.subtotal,
+					tax: baseOrderData.tax,
+					discount: baseOrderData.discount,
+					total: baseOrderData.total,
+					payment_method: baseOrderData.payment_method,
+					split_payments: baseOrderData.split_payments,
+					notes: baseOrderData.notes,
+					gst_amount: baseOrderData.gst_amount,
+					total_amount: baseOrderData.total_amount,
+					status: baseOrderData.status,
+					is_walk_in: baseOrderData.is_walk_in,
+					stylist_id: baseOrderData.stylist_id,
 				};
 
-				await createOrder(orderPayload);
-			} else {
+				await createOrder.mutateAsync(orderPayload);
+			} else if (typeof createOrder === 'function') {
 				const walkInOrderData: CreateOrderData = {
 					order_id: `order_${uuidv4()}`,
 					client_id: client.id,
