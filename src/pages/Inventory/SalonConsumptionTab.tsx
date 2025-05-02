@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Box, Typography, CircularProgress, Alert } from '@mui/material';
 import InventoryTable from '../../components/inventory/InventoryTable';
-import { supabase } from '../../utils/supabase/supabaseClient';
+import { supabase, TABLES } from '../../utils/supabase/supabaseClient';
 import { formatCurrency } from '../../utils/format';
 
 interface SalonConsumptionTabProps {
@@ -20,7 +20,7 @@ const SalonConsumptionTab: React.FC<SalonConsumptionTabProps> = ({ dateFilter, a
       setError(null);
       try {
         const { data: viewRows, error: fetchError } = await supabase
-          .from<any, any>('salon_consumption_products')
+          .from<any, any>(TABLES.SALON_CONSUMPTION_PRODUCTS)
           .select('*')
           .order('Date', { ascending: false });
         if (fetchError) throw fetchError;

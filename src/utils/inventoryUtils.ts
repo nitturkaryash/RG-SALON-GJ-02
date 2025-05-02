@@ -93,26 +93,29 @@ export const addPurchaseTransaction = async (purchaseData: PurchaseFormData) => 
     // Get current stock quantity (0 for new products)
     const currentStock = existingProduct?.stock_quantity || 0;
 
-    // --- Step 2: Prepare data for purchases table --- 
+    // --- Step 2: Prepare data for purchases table ---
     // Explicitly map to the 'purchases' table columns, providing defaults
     const purchaseRecord: Record<string, any> = {
       purchase_id: isUpdate ? purchaseData.id : uuidv4(),
       product_id: productId,
+      product_name: purchaseData.product_name,
       date: purchaseData.date || timestamp,
-      invoice_no: purchaseData.invoice_number || purchaseData.purchase_invoice_number || 'N/A',
-      qty: purchaseData.purchase_qty || 0,
-      incl_gst: purchaseData.mrp_incl_gst || 0,
-      ex_gst: purchaseData.purchase_excl_gst || purchaseData.mrp_per_unit_excl_gst || 0,
-      discount_percentage: purchaseData.discount_on_purchase_percentage || 0,
-      taxable_value: purchaseData.purchase_cost_taxable_value || purchaseData.purchase_taxable_value || 0,
-      igst: purchaseData.purchase_igst || 0,
+      hsn_code: purchaseData.hsn_code || null,
+      units: purchaseData.units || null,
+      purchase_invoice_number: purchaseData.invoice_number || purchaseData.purchase_invoice_number || 'N/A',
+      purchase_qty: purchaseData.purchase_qty || 0,
+      mrp_incl_gst: purchaseData.mrp_incl_gst || 0,
+      mrp_excl_gst: purchaseData.purchase_excl_gst || purchaseData.mrp_per_unit_excl_gst || 0,
+      discount_on_purchase_percentage: purchaseData.discount_on_purchase_percentage || 0,
+      gst_percentage: purchaseData.gst_percentage || 18,
+      purchase_taxable_value: purchaseData.purchase_cost_taxable_value || purchaseData.purchase_taxable_value || 0,
+      purchase_igst: purchaseData.purchase_igst || 0,
       purchase_cgst: purchaseData.purchase_cgst || 0,
       purchase_sgst: purchaseData.purchase_sgst || 0,
-      invoice_value: purchaseData.purchase_invoice_value || purchaseData.purchase_invoice_value_rs || 0,
-      supplier: purchaseData.vendor || 'Direct Entry',
+      purchase_invoice_value_rs: purchaseData.purchase_invoice_value || purchaseData.purchase_invoice_value_rs || 0,
       created_at: timestamp,
       updated_at: timestamp,
-      stock_balance_after_purchase: !isUpdate ? currentStock + (purchaseData.purchase_qty || 0) : null
+      current_stock: !isUpdate ? currentStock + (purchaseData.purchase_qty || 0) : null
     };
 
     // Persist the purchase record into the inventory_purchases table
@@ -164,17 +167,18 @@ export const addPurchaseTransaction = async (purchaseData: PurchaseFormData) => 
     if (!isUpdate || quantityChange !== 0) {
       const stockHistoryRecord = {
         product_id: productId,
-        product_name: purchaseData.product_name, // Add product name
-        hsn_code: purchaseData.hsn_code || '',   // Add HSN code
-        units: purchaseData.unit_type || 'pcs', // Add units
+        product_name: purchaseData.product_name,
+        hsn_code: purchaseData.hsn_code || '',
+        units: purchaseData.unit_type || 'pcs',
         date: purchaseData.date || timestamp,
-        // Ensure current_qty (previous stock) is always a number
-        current_qty: Number(currentStock) || 0, // Stock BEFORE the transaction
-        qty_change: quantityChange,             // Difference in stock
-        stock_after: newStock,      // Stock AFTER the transaction
-        type: 'purchase',       // Transaction type
-        reference_id: purchaseRecord.purchase_id, // Link to the purchase record ID
-        source: `Purchase Invoice: ${purchaseData.invoice_number || purchaseData.purchase_invoice_number || 'N/A'}`, // Source document
+        previous_qty: currentStock,
+        current_qty: Number(currentStock) || 0,
+        change_qty: quantityChange,         // required by stock_history schema
+        qty_change: quantityChange,         // legacy field (nullable)
+        stock_after: newStock,
+        change_type: 'purchase',           // required by stock_history schema
+        reference_id: purchaseRecord.purchase_id,
+        source: `Purchase Invoice: ${purchaseData.invoice_number || purchaseData.purchase_invoice_number || 'N/A'}`,
         created_at: timestamp,
       };
 

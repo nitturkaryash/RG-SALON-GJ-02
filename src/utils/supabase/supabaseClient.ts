@@ -6,12 +6,12 @@ export const TABLES = {
   PURCHASES: 'inventory_purchases',
   SALES: 'inventory_sales_new',
   CONSUMPTION: 'inventory_consumption',
-  BALANCE_STOCK: 'inventory_balance_stock',
+  BALANCE_STOCK: 'balance_stock',
   POS_ORDERS: 'pos_orders',
   POS_ORDER_ITEMS: 'pos_order_items',
   SALES_CONSUMER: 'inventory_sales_consumer',
-  SALON_CONSUMPTION: 'inventory_consumption',
-  SALON_CONSUMPTION_PRODUCTS: 'inventory_salon_consumption'
+  SALON_CONSUMPTION: 'inventory_salon_consumption',
+  SALON_CONSUMPTION_PRODUCTS: 'salon_consumption_products'
 };
 
 // Global variable to track connection status and error for diagnostics - initialize first

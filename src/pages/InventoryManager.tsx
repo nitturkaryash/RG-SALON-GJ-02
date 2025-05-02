@@ -494,50 +494,6 @@ export default function InventoryManager() {
     }
   }, []);
 
-  // Fetch consumption data when the tab is active or component mounts
-  useEffect(() => {
-    if (activeTab === 'salonConsumption') {
-      fetchSalonConsumptionDirect();
-      
-      // Debug: Check if inventory_salon_consumption table exists
-      const checkTable = async () => {
-        try {
-          // Check table existence using information_schema
-          const { data: tableData, error: tableError } = await supabase
-            .from('information_schema.tables')
-            .select('table_name')
-            .eq('table_schema', 'public') 
-            .eq('table_name', 'inventory_salon_consumption');
-            
-            console.log('🔍 DEBUG: inventory_salon_consumption table check:', { 
-              success: !tableError,
-              exists: tableData && tableData.length > 0,
-              error: tableError ? tableError.message : null
-            });
-
-            // Check columns in the inventory_salon_consumption table
-            if (tableData && tableData.length > 0) {
-              const { data: columnData, error: columnError } = await supabase
-                .from('information_schema.columns')
-                .select('column_name, data_type')
-                .eq('table_schema', 'public')
-                .eq('table_name', 'inventory_salon_consumption');
-                
-                console.log('🔍 DEBUG: inventory_salon_consumption columns:', { 
-                  success: !columnError,
-                  columns: columnData,
-                  error: columnError ? columnError.message : null
-                });
-            }
-        } catch (err) {
-          console.error('Error in table check:', err);
-        }
-      };
-      
-      checkTable();
-    }
-  }, [activeTab, fetchSalonConsumptionDirect]);
-
   // Fetch Stock History data
   const fetchStockHistory = useCallback(async () => {
     setStockHistoryLoading(true);

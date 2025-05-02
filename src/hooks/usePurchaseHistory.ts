@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { supabase, handleSupabaseError } from '../utils/supabase/supabaseClient';
+import { supabase, handleSupabaseError, TABLES } from '../utils/supabase/supabaseClient';
 
 // Interface based on existing purchases table in Supabase
 export interface PurchaseTransaction {
@@ -36,26 +36,25 @@ export const usePurchaseHistory = () => {
     setError(null);
     try {
       const { data, error: fetchError } = await supabase
-        .from('purchases')
+        .from(TABLES.PURCHASES)
         .select(`
-          id,
+          purchase_id,
           product_id,
           date,
-          invoice_no,
-          qty,
-          incl_gst,
-          ex_gst,
-          taxable_value,
-          igst,
-          cgst,
-          sgst,
-          invoice_value,
-          supplier,
-          discount_percentage,
+          purchase_invoice_number,
+          purchase_qty,
+          mrp_incl_gst,
+          mrp_excl_gst,
+          purchase_taxable_value,
+          purchase_igst,
+          purchase_cgst,
+          purchase_sgst,
+          purchase_invoice_value_rs,
+          discount_on_purchase_percentage,
           created_at,
           updated_at,
-          stock_balance_after_purchase,
-          products ( name, hsn_code, units, gst_percentage )
+          stock_balance_after_purchase:current_stock,
+          product_master(name,hsn_code,units,gst_percentage)
         `)
         .order('date', { ascending: true });
 
@@ -64,61 +63,54 @@ export const usePurchaseHistory = () => {
       }
 
       type FetchedPurchaseItem = {
-        id: string;
+        purchase_id: string;
         product_id: string;
         date: string;
-        invoice_no?: string;
-        qty: number;
-        incl_gst?: number;
-        ex_gst?: number;
-        taxable_value?: number;
-        igst?: number;
-        cgst?: number;
-        sgst?: number;
-        invoice_value?: number;
-        supplier?: string;
-        discount_percentage?: number;
+        purchase_invoice_number?: string;
+        purchase_qty: number;
+        mrp_incl_gst?: number;
+        mrp_excl_gst?: number;
+        purchase_taxable_value?: number;
+        purchase_igst?: number;
+        purchase_cgst?: number;
+        purchase_sgst?: number;
+        purchase_invoice_value_rs?: number;
+        discount_on_purchase_percentage?: number;
         created_at?: string;
         updated_at?: string;
         stock_balance_after_purchase?: number | null;
-        products: { name: string | null; hsn_code: string | null; units: string | null; gst_percentage: number | null; } | { name: string | null; hsn_code: string | null; units: string | null; gst_percentage: number | null; }[] | null;
+        product_master: { name: string | null; hsn_code: string | null; units: string | null; gst_percentage: number | null; } | null;
       };
 
       const transformedData: PurchaseTransaction[] = ((data as unknown) as FetchedPurchaseItem[]).map(item => {
-        // Handle products as array or object
-        let product = null;
-        if (Array.isArray(item.products)) {
-          product = item.products.length > 0 ? item.products[0] : null;
-        } else {
-          product = item.products;
-        }
+        const product = item.product_master;
         let calculatedGstPercentage = 0;
-        const taxableValue = item.taxable_value ?? 0;
+        const taxableValue = item.purchase_taxable_value ?? 0;
         if (taxableValue > 0) {
-          if (item.cgst != null && item.sgst != null) {
-            calculatedGstPercentage = ((item.cgst + item.sgst) / taxableValue) * 100;
-          } else if (item.igst != null) {
-            calculatedGstPercentage = (item.igst / taxableValue) * 100;
+          if (item.purchase_cgst != null && item.purchase_sgst != null) {
+            calculatedGstPercentage = ((item.purchase_cgst + item.purchase_sgst) / taxableValue) * 100;
+          } else if (item.purchase_igst != null) {
+            calculatedGstPercentage = (item.purchase_igst / taxableValue) * 100;
           }
         }
         return {
-          purchase_id: item.id,
+          purchase_id: item.purchase_id,
           product_id: item.product_id,
           date: item.date,
           product_name: product?.name || 'Unknown Product',
           hsn_code: product?.hsn_code ?? undefined,
           units: product?.units ?? undefined,
-          purchase_invoice_number: item.invoice_no,
-          purchase_qty: Number(item.qty),
-          mrp_incl_gst: item.incl_gst,
-          mrp_excl_gst: item.ex_gst,
-          discount_on_purchase_percentage: item.discount_percentage || 0,
+          purchase_invoice_number: item.purchase_invoice_number,
+          purchase_qty: Number(item.purchase_qty),
+          mrp_incl_gst: item.mrp_incl_gst,
+          mrp_excl_gst: item.mrp_excl_gst,
+          discount_on_purchase_percentage: item.discount_on_purchase_percentage || 0,
           gst_percentage: parseFloat(calculatedGstPercentage.toFixed(2)) || product?.gst_percentage || 18,
-          purchase_taxable_value: item.taxable_value,
-          purchase_igst: item.igst,
-          purchase_cgst: item.cgst,
-          purchase_sgst: item.sgst,
-          purchase_invoice_value_rs: item.invoice_value,
+          purchase_taxable_value: item.purchase_taxable_value,
+          purchase_igst: item.purchase_igst,
+          purchase_cgst: item.purchase_cgst,
+          purchase_sgst: item.purchase_sgst,
+          purchase_invoice_value_rs: item.purchase_invoice_value_rs,
           created_at: item.created_at,
           updated_at: item.updated_at,
           supplier: item.supplier || 'Direct Entry',
