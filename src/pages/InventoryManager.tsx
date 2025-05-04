@@ -220,56 +220,108 @@ export default function InventoryManager() {
       setIsExporting(true);
       console.log('Exporting data to Excel file...');
 
-      // Fetch Sales History data specifically for the export
+      // Define headers for each sheet
+      const purchaseHeaders = [
+        'Date', 'Product Name', 'HSN Code', 'Units', 'Vendor', 'Purchase Invoice No.',
+        'Purchase Qty.', 'MRP Incl. GST (Rs.)', 'MRP Ex. GST (Rs.)', 'Discount %',
+        'Purchase Cost/Unit (Ex.GST)', 'GST %', 'Taxable Value (Rs.)', 'IGST (Rs.)',
+        'CGST (Rs.)', 'SGST (Rs.)', 'Invoice Value (Rs.)', 'Current Stock', 
+        'Total Taxable Value', 'Total CGST', 'Total SGST', 'Total IGST'
+      ];
+
+      const salonConsumptionHeaders = [
+        'Requisition Voucher No.', 'Order ID', 'Date', 'Product Name', 'Product Type',
+        'Consumption Qty.', 'HSN Code', 'MRP Inclusive GST (Rs.)',
+        'Purchase Cost/Unit Ex. GST (Rs.)', 'GST %', 'Purchase Taxable Value (Rs.)',
+        'IGST (Rs.)', 'CGST (Rs.)', 'SGST (Rs.)', 'Total Purchase Cost (Rs.)',
+        'Discounted Sales Rate (Rs.)', 'Initial Stock', 'Current Stock', 'Remaining Stock',
+        'Remaining Stock CGST (Rs.)', 'Remaining Stock SGST (Rs.)', 'Remaining Stock IGST (Rs.)',
+        'Current Stock Total Ex. GST (Rs.)', 'Total Remaining Stock Value (Rs.)'
+      ];
+
+      const salesHistoryHeaders = [
+        'Serial No.', 'Date', 'Product Name', 'HSN Code', 'Units', 'Qty.',
+        'Unit Price (Inc. GST)', 'Unit Price (Ex.GST)', 'Taxable Value', 'GST %',
+        'Discount %', 'Taxable After Discount', 'CGST', 'SGST', 'Total Value',
+        'Initial Stock', 'Remaining Stock', 'Current Stock', 'Taxable Value',
+        'IGST (Rs.)', 'CGST (Rs.)', 'SGST (Rs.)', 'Total Value (Rs.)'
+      ];
+
+      const stockHistoryHeaders = [
+        'Serial No.', 'Date', 'Product Name', 'HSN Code', 'Units', 'Change Type',
+        'Source', 'Reference ID', 'Quantity Change', 'Quantity After Change'
+      ];
+
+      // Fetch Sales History data from the view
       console.log('Fetching Sales History data for export...');
-      const { data: salesData, error: salesError } = await supabase
-        .from('sales_products_new') // Use the correct view name (plural) matching SalesHistoryTab
-        .select('*');
-        
-      console.log('Raw salesData for export:', salesData);
-      console.log('Raw salesError for export:', salesError);
+      const SALES_PRODUCTS_VIEW = 'sales_products_new';
+      let filteredSalesData: any[] = [];
+      
+      try {
+        // Trying the direct query approach like SalesHistoryTab uses
+        const { data: salesData, error: salesError } = await supabase
+          .from(SALES_PRODUCTS_VIEW)
+          .select('*');
 
-      // Declare filteredSalesData here to be accessible later
-      let filteredSalesData: any[] = []; // Initialize with explicit type or leave as any[] for now
-
-      if (salesError) {
-        console.error("❌ Error fetching Sales History data for export:", salesError);
-        toast.error(`Failed to fetch Sales History: ${salesError.message}`);
-        // Sales data fetch failed, filteredSalesData remains empty
-      } else {
-        console.log(`✅ Fetched ${salesData?.length || 0} sales history records for export.`);
-        // Filter to products only
-        if (salesData) {
-          filteredSalesData = salesData.filter(item => item.product_type === 'product'); // Assign filtered data
-          console.log(`ℹ️ Filtered sales data to ${filteredSalesData.length} product records for export.`);
+        if (salesError) {
+          console.error(`❌ Error fetching data from ${SALES_PRODUCTS_VIEW}:`, salesError);
+          toast.error(`Failed to fetch Sales History: ${salesError.message}`);
+        } else if (!salesData || salesData.length === 0) {
+          console.warn(`⚠️ No data found in ${SALES_PRODUCTS_VIEW} view.`);
+        } else {
+          console.log(`✅ Fetched ${salesData.length} sales records from ${SALES_PRODUCTS_VIEW} view.`);
+          
+          // Apply any needed transformations similar to SalesHistoryTab
+          const transformedData = salesData.map(item => ({
+            ...item,
+            // Handle unit price including GST if needed
+            unit_price_inc_gst: item.unit_price_inc_gst || 
+              (item.unit_price_ex_gst * (1 + (item.gst_percentage/100)))
+          }));
+          
+          filteredSalesData = transformedData;
         }
+      } catch (err) {
+        console.error('❌ Exception while fetching sales data:', err);
+        toast.error('Error loading sales history data for export.');
       }
 
       // Create a new workbook
       const wb = XLSX.utils.book_new();
 
-      // Adjusted check to include salesData possibility
-      if (
-        (!purchases || purchases.length === 0) &&
-        (!stockHistory || stockHistory.length === 0) &&
-        (!consumptionData || consumptionData.length === 0) &&
-        (!salonConsumptionData || salonConsumptionData.length === 0) &&
-        (!filteredSalesData || filteredSalesData.length === 0) // Check fetched salesData
-      ) {
-        toast.error('No data available across any tabs to export.');
-        console.error('No data to export.');
-        setIsExporting(false); // Stop export if absolutely nothing loaded
-        return;
-      }
-
-      // Purchases Sheet (Existing logic)
+      // 1. PURCHASE HISTORY SHEET - Always add, with at least headers
+      let formattedPurchaseData: any[] = [];
       if (purchases && purchases.length > 0) {
         console.log(`Using ${purchases.length} purchase records from state`);
         // Format data for Purchase History
-        const formattedPurchaseData = purchases.map(purchase => {
+        formattedPurchaseData = purchases.map(purchase => {
           const purchaseCostPerUnitExGst = (purchase.purchase_taxable_value && purchase.purchase_qty)
             ? purchase.purchase_taxable_value / purchase.purchase_qty
-            : ((purchase.mrp_excl_gst ?? 0) * (1 - (purchase.discount_on_purchase_percentage || 0) / 100)); // Fallback calculation + null check
+            : ((purchase.mrp_excl_gst ?? 0) * (1 - (purchase.discount_on_purchase_percentage || 0) / 100));
+          
+          // Calculate current stock and total values for additional columns
+          const stockAfterPurchase = typeof purchase.stock_after_purchase === 'number' 
+            ? purchase.stock_after_purchase 
+            : 0;
+          
+          let totalValueMRP = 0;
+          let totalCGST = 0;
+          let totalSGST = 0;
+          let totalIGST = 0;
+          const gstRate = purchase.gst_percentage ?? 18;
+
+          if (stockAfterPurchase > 0 && purchase.mrp_incl_gst && purchase.mrp_incl_gst > 0) {
+            totalValueMRP = stockAfterPurchase * purchase.mrp_incl_gst;
+            // Calculate base value before GST
+            const baseValue = totalValueMRP / (1 + gstRate / 100);
+            // Calculate taxes based on purchase type
+            if (purchase.purchase_igst && purchase.purchase_igst > 0) {
+              totalIGST = baseValue * (gstRate / 100);
+            } else {
+              totalCGST = baseValue * (gstRate / 200); // Half of GST rate
+              totalSGST = baseValue * (gstRate / 200); // Half of GST rate
+            }
+          }
           
           return {
             'Date': purchase.date ? new Date(purchase.date).toLocaleDateString() : '',
@@ -289,117 +341,187 @@ export default function InventoryManager() {
             'CGST (Rs.)': purchase.purchase_cgst || 0,
             'SGST (Rs.)': purchase.purchase_sgst || 0,
             'Invoice Value (Rs.)': purchase.purchase_invoice_value_rs || 0,
+            'Current Stock': stockAfterPurchase,
+            'Total Taxable Value': totalValueMRP > 0 ? parseFloat(totalValueMRP.toFixed(2)) : 0,
+            'Total CGST': totalCGST > 0 ? parseFloat(totalCGST.toFixed(2)) : 0,
+            'Total SGST': totalSGST > 0 ? parseFloat(totalSGST.toFixed(2)) : 0,
+            'Total IGST': totalIGST > 0 ? parseFloat(totalIGST.toFixed(2)) : 0
           }
         });
-
-        // Convert to worksheet and add to workbook
-        const purchaseSheet = XLSX.utils.json_to_sheet(formattedPurchaseData);
-        XLSX.utils.book_append_sheet(wb, purchaseSheet, 'Purchase History');
-        console.log("✅ Added Purchase History sheet with", formattedPurchaseData.length, "rows");
       } else {
-         console.log("⚠️ No purchase history data available to add to the export");
+        // If no data, create an empty row with just headers
+        console.log("⚠️ No purchase history data available, adding empty sheet with headers");
+        formattedPurchaseData = [purchaseHeaders.reduce((obj, header) => ({ ...obj, [header]: '' }), {})];
       }
 
-      // Salon Consumption Sheet
-      console.log('Fetching Salon Consumption data for export...');
+      // Always add Purchase History sheet
+      const purchaseSheet = XLSX.utils.json_to_sheet(formattedPurchaseData);
+      XLSX.utils.book_append_sheet(wb, purchaseSheet, 'Purchase History');
+      console.log("✅ Added Purchase History sheet with", formattedPurchaseData.length, "rows");
+
+      // 2. SALON CONSUMPTION SHEET - Always add, with at least headers
+      let formattedSalonData: any[] = [];
       try {
-        // @ts-ignore: override table type for dynamic mapping
+        console.log('Fetching Salon Consumption data for export...');
         const { data, error: salonError } = await supabase
           .from<any, any>('salon_consumption_products')
           .select('*');
+        
         if (salonError) {
           console.error('❌ Error fetching Salon Consumption data for export:', salonError);
           toast.error(`Failed to fetch Salon Consumption: ${salonError.message}`);
-        } else {
-          const rows = data as any[] || [];
-          if (rows.length > 0) {
-            console.log(`✅ Fetched ${rows.length} salon consumption records for export.`);
-            const formattedSalonData = rows.map((item: any) => ({
-              'Requisition Voucher No.': item['Requisition Voucher No.'],
-              'Order ID': item['order_id'],
+          // Add empty sheet with headers
+          formattedSalonData = [salonConsumptionHeaders.reduce((obj, header) => ({ ...obj, [header]: '' }), {})];
+        } else if (data && data.length > 0) {
+          console.log(`✅ Fetched ${data.length} salon consumption records for export.`);
+          // Process the data with the same calculation logic as in SalonConsumptionTab.tsx
+          formattedSalonData = data.map((item: any) => {
+            // Extract base values with fallbacks
+            const qty = item['Consumption Qty.'] ?? 0;
+            const costEx = item['Purchase_Cost_per_Unit_Ex_GST_Rs'] ?? 0;
+            const gstPct = item['Purchase_GST_Percentage'] ?? 0;
+            
+            // Purchase calculations
+            const purchaseTaxable = costEx * qty;
+            const igstAmt = item['Purchase_IGST_Rs'] ?? 0;
+            const cgstAmt = item['Purchase_CGST_Rs'] ?? (purchaseTaxable * gstPct / 200);
+            const sgstAmt = item['Purchase_SGST_Rs'] ?? (purchaseTaxable * gstPct / 200);
+            const totalPurchase = item['Total_Purchase_Cost_Rs'] ?? (purchaseTaxable + igstAmt + cgstAmt + sgstAmt);
+            
+            // Stock calculations
+            const initialStock = item['Initial_Stock'] ?? 0;
+            const currentStock = item['Current_Stock'] ?? 0;
+            const remainingStock = item['Remaining_Stock'] ?? (initialStock - qty);
+            
+            // Value on hand - THIS WAS MISSING!
+            const currentStockTotalExGST = currentStock * costEx;
+            const remainingEx = remainingStock * costEx;
+            
+            // Remaining stock taxes
+            const remCgst = item['Remaining_Stock_CGST_Rs'] ?? (remainingEx * gstPct / 200);
+            const remSgst = item['Remaining_Stock_SGST_Rs'] ?? (remainingEx * gstPct / 200);
+            const remIgst = item['Remaining_Stock_IGST_Rs'] ?? 0;
+            
+            const totalRemaining = item['Total_Remaining_Stock_Value_Rs'] ?? (remainingEx + remIgst + remCgst + remSgst);
+            
+            // Log to debug
+            if (item.id === data[0].id) {
+              console.log('First salon consumption row calculation debug:', {
+                currentStock,
+                costEx,
+                currentStockTotalExGST
+              });
+            }
+
+            return {
+              'Requisition Voucher No.': item['Requisition Voucher No.'] ?? '',
+              'Order ID': item['order_id'] ?? '',
               'Date': item['Date'] ? new Date(item['Date']).toLocaleDateString() : '',
-              'Product Name': item['Product Name'],
-              'Product Type': item['Product Type'],
-              'Consumption Qty.': item['Consumption Qty.'],
-              'HSN Code': item['HSN_Code'],
-              'MRP Inclusive GST (Rs.)': item['MRP_Inclusive_GST_Rs'],
-              'Purchase Cost/Unit Ex. GST (Rs.)': item['Purchase_Cost_per_Unit_Ex_GST_Rs'],
-              'GST %': item['Purchase_GST_Percentage'],
-              'Purchase Taxable Value (Rs.)': item['Purchase_Taxable_Value_Rs'],
-              'IGST (Rs.)': item['Purchase_IGST_Rs'],
-              'CGST (Rs.)': item['Purchase_CGST_Rs'],
-              'SGST (Rs.)': item['Purchase_SGST_Rs'],
-              'Total Purchase Cost (Rs.)': item['Total_Purchase_Cost_Rs'],
-              'Discounted Sales Rate (Rs.)': item['Discounted_Sales_Rate_Rs'],
-              'Initial Stock': item['Initial_Stock'],
-              'Current Stock': item['Current_Stock'],
-              'Remaining Stock': item['Remaining_Stock'],
-              'Remaining Stock CGST (Rs.)': item['Remaining_Stock_CGST_Rs'],
-              'Remaining Stock SGST (Rs.)': item['Remaining_Stock_SGST_Rs'],
-              'Remaining Stock IGST (Rs.)': item['Remaining_Stock_IGST_Rs'],
-              'Total Remaining Stock Value (Rs.)': item['Total_Remaining_Stock_Value_Rs']
-            }));
-            const salonSheet = XLSX.utils.json_to_sheet(formattedSalonData);
-            XLSX.utils.book_append_sheet(wb, salonSheet, 'Salon Consumption');
-            console.log('✅ Added Salon Consumption sheet with', formattedSalonData.length, 'rows');
-          } else {
-            console.log('⚠️ No salon consumption records to export');
-          }
+              'Product Name': item['Product Name'] ?? '',
+              'Product Type': item['Product Type'] ?? '',
+              'Consumption Qty.': qty,
+              'HSN Code': item['HSN_Code'] ?? '',
+              'MRP Inclusive GST (Rs.)': item['MRP_Inclusive_GST_Rs'] ?? 0,
+              'Purchase Cost/Unit Ex. GST (Rs.)': costEx,
+              'GST %': gstPct,
+              'Purchase Taxable Value (Rs.)': purchaseTaxable,
+              'IGST (Rs.)': igstAmt,
+              'CGST (Rs.)': cgstAmt,
+              'SGST (Rs.)': sgstAmt,
+              'Total Purchase Cost (Rs.)': totalPurchase,
+              'Discounted Sales Rate (Rs.)': item['Discounted_Sales_Rate_Rs'] ?? 0,
+              'Initial Stock': initialStock,
+              'Current Stock': currentStock,
+              'Remaining Stock': remainingStock,
+              'Remaining Stock CGST (Rs.)': remCgst,
+              'Remaining Stock SGST (Rs.)': remSgst,
+              'Remaining Stock IGST (Rs.)': remIgst,
+              'Current Stock Total Ex. GST (Rs.)': currentStockTotalExGST,
+              'Total Remaining Stock Value (Rs.)': totalRemaining
+            };
+          });
+
+          // Log sample data for verification
+          console.log('Sample salon consumption data for Excel:', 
+            formattedSalonData[0] ? 
+            `Current Stock Total Ex. GST (Rs.): ${formattedSalonData[0]['Current Stock Total Ex. GST (Rs.)']}` : 
+            'No data');
+        } else {
+          console.log('⚠️ No salon consumption records to export, adding empty sheet with headers');
+          formattedSalonData = [salonConsumptionHeaders.reduce((obj, header) => ({ ...obj, [header]: '' }), {})];
         }
       } catch (err) {
         console.error('❌ Exception while exporting Salon Consumption data:', err);
         toast.error('Error exporting Salon Consumption.');
+        // Add empty sheet with headers
+        formattedSalonData = [salonConsumptionHeaders.reduce((obj, header) => ({ ...obj, [header]: '' }), {})];
       }
 
-      // *** START: Add Sales History Sheet ***
+      // Always add Salon Consumption sheet
+      const salonSheet = XLSX.utils.json_to_sheet(formattedSalonData);
+      XLSX.utils.book_append_sheet(wb, salonSheet, 'Salon Consumption');
+      console.log('✅ Added Salon Consumption sheet with', formattedSalonData.length, 'rows');
+      
+      // 3. SALES HISTORY SHEET - Always add, with at least headers
+      let salesDataRows: any[] = [];
       if (filteredSalesData && filteredSalesData.length > 0) {
-          console.log(`Formatting ${filteredSalesData.length} sales history records for export.`);
-          // Build header and row arrays so Excel columns exactly match the UI table
-          const headers = [
-            'Serial No.', 'Date', 'Product Name', 'HSN Code', 'Units', 'Qty.',
-            'Unit Price (Inc. GST)', 'Unit Price (Ex.GST)', 'Taxable Value', 'GST %',
-            'Discount %', 'Taxable After Discount', 'CGST', 'SGST', 'Total Value',
-            'Initial Stock', 'Remaining Stock', 'Current Stock', 'Taxable Value',
-            'IGST (Rs.)', 'CGST (Rs.)', 'SGST (Rs.)', 'Total Value (Rs.)'
-          ];
-          const dataRows = filteredSalesData.map(item => [
-            item.serial_no,
-            item.date ? new Date(item.date).toLocaleDateString() : '',
-            item.product_name,
-            item.hsn_code || 'N/A',
-            item.product_type || 'N/A',
-            item.quantity,
-            item.unit_price_inc_gst ?? (item.unit_price_ex_gst * (1 + (item.gst_percentage ?? 0)/100)),
-            item.unit_price_ex_gst,
-            item.taxable_value,
-            item.gst_percentage,
-            typeof item.discount_percentage === 'number' ? `${item.discount_percentage.toFixed(2)}%` : '0.00%',
-            parseFloat(((item.taxable_value ?? 0) * (1 - (item.discount_percentage ?? 0) / 100)).toFixed(2)),
-            item.cgst_amount,
-            item.sgst_amount,
-            item.invoice_value,
-            item.initial_stock,
-            item.remaining_stock,
-            item.current_stock,
-            item.current_stock_taxable_value ?? 0,
-            item.current_stock_igst ?? 0,
-            item.current_stock_cgst ?? 0,
-            item.current_stock_sgst ?? 0,
-            item.current_stock_total_value ?? 0
-          ]);
-          const salesSheet = XLSX.utils.aoa_to_sheet([headers, ...dataRows]);
-          XLSX.utils.book_append_sheet(wb, salesSheet, 'Sales History');
-          console.log(`✅ Added Sales History sheet with ${filteredSalesData.length} rows`);
+        console.log(`Formatting ${filteredSalesData.length} sales history records for export.`);
+        salesDataRows = filteredSalesData.map(item => [
+          item.serial_no || '',
+          item.date ? new Date(item.date).toLocaleDateString() : '',
+          item.product_name || '',
+          item.hsn_code || '',
+          item.product_type || '',
+          item.quantity || 0,
+          // Calculate or use price including GST
+          typeof item.unit_price_inc_gst === 'number' ? item.unit_price_inc_gst : 
+            (parseFloat(item.unit_price_ex_gst) * (1 + (parseFloat(item.gst_percentage)/100))) || 0,
+          // Ensure numeric values
+          typeof item.unit_price_ex_gst === 'number' ? item.unit_price_ex_gst : parseFloat(item.unit_price_ex_gst) || 0,
+          typeof item.taxable_value === 'number' ? item.taxable_value : parseFloat(item.taxable_value) || 0,
+          typeof item.gst_percentage === 'number' ? item.gst_percentage : parseFloat(item.gst_percentage) || 0,
+          // Handle discount
+          item.discount_percentage ? `${item.discount_percentage}%` : '0%',
+          typeof item.taxable_value === 'number' ? item.taxable_value : parseFloat(item.taxable_value) || 0,
+          // Tax amounts
+          typeof item.cgst_amount === 'number' ? item.cgst_amount : parseFloat(item.cgst_amount) || 0,
+          typeof item.sgst_amount === 'number' ? item.sgst_amount : parseFloat(item.sgst_amount) || 0,
+          // Invoice total
+          typeof item.invoice_value === 'number' ? item.invoice_value : parseFloat(item.invoice_value) || 0,
+          // Stock information
+          typeof item.initial_stock === 'number' ? item.initial_stock : parseFloat(item.initial_stock) || 0,
+          typeof item.remaining_stock === 'number' ? item.remaining_stock : parseFloat(item.remaining_stock) || 0,
+          typeof item.current_stock === 'number' ? item.current_stock : parseFloat(item.current_stock) || 0,
+          // Current stock values
+          typeof item.current_stock_taxable_value === 'number' ? item.current_stock_taxable_value : 
+            (item.current_stock * parseFloat(item.unit_price_ex_gst)) || 0,
+          typeof item.current_stock_igst === 'number' ? item.current_stock_igst : parseFloat(item.igst_amount) || 0,
+          typeof item.current_stock_cgst === 'number' ? item.current_stock_cgst : 
+            parseFloat(item.Remaining_Stock_CGST_Rs) || 0,
+          typeof item.current_stock_sgst === 'number' ? item.current_stock_sgst : 
+            parseFloat(item.Remaining_Stock_SGST_Rs) || 0,
+          // Total
+          typeof item.current_stock_total_value === 'number' ? item.current_stock_total_value :
+            (parseFloat(item.taxable_value) + parseFloat(item.cgst_amount) + parseFloat(item.sgst_amount)) || 0
+        ]);
       } else {
-          console.log("⚠️ No sales history data available to add to the export");
+        console.log("⚠️ No sales history data available, adding empty sheet with headers");
+        // Add an empty row (with the same number of columns as the headers)
+        salesDataRows = [salesHistoryHeaders.map(() => '')]; 
       }
-      // *** END: Add Sales History Sheet ***
+      
+      console.log("Sales data sample row for Excel:", salesDataRows[0] || "No data rows");
+      
+      // Always add Sales History sheet
+      const salesSheet = XLSX.utils.aoa_to_sheet([salesHistoryHeaders, ...salesDataRows]);
+      XLSX.utils.book_append_sheet(wb, salesSheet, 'Sales History');
+      console.log(`✅ Added Sales History sheet with ${salesDataRows.length} rows`);
 
-      // Stock History Sheet (Existing logic)
+      // 4. STOCK HISTORY SHEET - Always add, with at least headers
+      let formattedStockHistoryData: any[] = [];
       if (stockHistory && stockHistory.length > 0) {
         console.log(`Using ${stockHistory.length} stock history records from state`);
-        // ... (rest of existing stock history formatting)
-        const formattedStockHistoryData = stockHistory.map((item, index) => ({
+        formattedStockHistoryData = stockHistory.map((item, index) => ({
           'Serial No.': `SH-${(index + 1).toString().padStart(5, '0')}`,
           'Date': item.date ? new Date(item.date).toLocaleString() : '',
           'Product Name': item.product_name || '',
@@ -411,27 +533,23 @@ export default function InventoryManager() {
           'Quantity Change': item.change_qty || 0,
           'Quantity After Change': item.stock_after || 0,
         }));
-
-        const historySheet = XLSX.utils.json_to_sheet(formattedStockHistoryData);
-        XLSX.utils.book_append_sheet(wb, historySheet, 'Stock History');
-        console.log("✅ Added Stock History sheet with", formattedStockHistoryData.length, "rows");
       } else {
-        console.log("⚠️ No stock history data available to add to the export");
+        console.log("⚠️ No stock history data available, adding empty sheet with headers");
+        formattedStockHistoryData = [stockHistoryHeaders.reduce((obj, header) => ({ ...obj, [header]: '' }), {})];
       }
 
-      // Check if any sheet was actually added before writing the file
-       if (wb.SheetNames.length === 0) {
-         toast.error('No data found in any tab to export.');
-         console.log("❌ No sheets were added to the workbook. Aborting export.");
-       } else {
-         // Generate filename with date
-         const filename = `RG_Salon_Inventory_Report_${new Date().toISOString().split('T')[0]}.xlsx`;
+      // Always add Stock History sheet
+      const historySheet = XLSX.utils.json_to_sheet(formattedStockHistoryData);
+      XLSX.utils.book_append_sheet(wb, historySheet, 'Stock History');
+      console.log("✅ Added Stock History sheet with", formattedStockHistoryData.length, "rows");
+      
+      // Generate filename with date
+      const filename = `RG_Salon_Inventory_Report_${new Date().toISOString().split('T')[0]}.xlsx`;
 
-         // Write file
-         XLSX.writeFile(wb, filename);
-         console.log(`✅ Successfully exported to ${filename}`);
-         toast.success(`Exported ${wb.SheetNames.length} sheet(s) successfully!`);
-       }
+      // Write file
+      XLSX.writeFile(wb, filename);
+      console.log(`✅ Successfully exported to ${filename}`);
+      toast.success(`Exported all 4 sheets successfully!`);
 
     } catch (error) {
       console.error("❌ Error exporting data:", error);

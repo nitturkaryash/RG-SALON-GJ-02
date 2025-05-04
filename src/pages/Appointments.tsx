@@ -452,9 +452,25 @@ export default function Appointments() {
   const showDrawer = !!selectedSlot || !!editingAppointment;
 
   return (
-    <Box sx={{ display: 'flex', height: 'calc(100vh - 64px)' }}>
-      {/* Left Side: Stylist Day View */}
-      <Box sx={{ width: showDrawer ? '70%' : '100%', overflowY: 'auto', borderRight: showDrawer ? '1px solid' : 'none', borderColor: 'divider', transition: 'width 0.3s ease' }}>
+    <Box sx={{ 
+      display: 'flex', 
+      height: 'calc(100vh - 64px)', 
+      width: '100%',
+      position: 'relative', 
+      overflow: 'hidden'
+    }}>
+      {/* Main Content Area - Calendar */}
+      <Box 
+        sx={{ 
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: showDrawer ? drawerWidth : 0,
+          bottom: 0,
+          overflowY: 'auto',
+          transition: 'right 0.3s ease',
+        }}
+      >
         <StylistDayView
           stylists={processedStylists}
           appointments={appointments}
@@ -471,10 +487,22 @@ export default function Appointments() {
         variant="persistent"
         anchor="right"
         open={showDrawer}
-              sx={{
+        sx={{
           width: drawerWidth,
           flexShrink: 0,
-          [`& .MuiDrawer-paper`]: { width: drawerWidth, boxSizing: 'border-box', position: 'relative' },
+          zIndex: 10,
+          position: 'absolute',
+          right: 0,
+          height: '100%',
+          '& .MuiDrawer-paper': { 
+            width: drawerWidth, 
+            boxSizing: 'border-box',
+            position: 'absolute',
+            height: '100%',
+            borderLeft: '1px solid',
+            borderColor: 'divider',
+            boxShadow: showDrawer ? '0px 0px 15px rgba(0, 0, 0, 0.1)' : 'none',
+          },
         }}
       >
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', p: 2, borderBottom: '1px solid', borderColor: 'divider' }}>
@@ -544,7 +572,7 @@ export default function Appointments() {
                 )}
               </Box>
 
-                    <Autocomplete
+              <Autocomplete
                 sx={{ mb: 2 }}
                 options={allClients}
                 getOptionLabel={(option) => typeof option === 'string' ? option : `${option.full_name}${option.phone ? ` (${option.phone})` : ''}`}
@@ -571,18 +599,18 @@ export default function Appointments() {
                     updateEntry(entry.id, { client: newValue ? { ...newValue } : null });
                   }
                 }}
-                      filterOptions={(options, params) => {
+                filterOptions={(options, params) => {
                   const filtered = filterClients(options, params);
                   if (params.inputValue !== '' && !options.some(option => option.full_name === params.inputValue)) {
-                          filtered.push({
+                    filtered.push({
                       inputValue: params.inputValue,
                       full_name: `Add "${params.inputValue}"`,
                       id: '',
-                            phone: ''
-                          });
-                        }
-                        return filtered;
-                      }}
+                      phone: ''
+                    });
+                  }
+                  return filtered;
+                }}
                 renderInput={(params) => <TextField {...params} label="Select or Add Client" variant="outlined" />}
                 isOptionEqualToValue={(option, value) => option.id === value?.id}
                 freeSolo
@@ -611,8 +639,8 @@ export default function Appointments() {
                       onChange={(e) => updateEntry(entry.id, { client: { ...entry.client!, email: e.target.value } })}
                     />
                   </Grid>
-                   </Grid>
-                 )}
+                </Grid>
+              )}
 
               <FormControl fullWidth sx={{ mb: 2 }}>
                 <InputLabel id={`collection-label-${entry.id}`}>Service Collection</InputLabel>
@@ -627,35 +655,35 @@ export default function Appointments() {
                 </Select>
               </FormControl>
 
-                    <Autocomplete
+              <Autocomplete
                 sx={{ mb: 2 }}
-                      multiple
+                multiple
                 options={getFilteredServices(entry)}
                 getOptionLabel={(option) => `${option.name} (${formatCurrency(option.price)})`}
-                      value={entry.services}
+                value={entry.services}
                 onChange={(event, newValue) => updateEntry(entry.id, { services: newValue })}
                 renderInput={(params) => <TextField {...params} label="Select Services" variant="outlined" />}
                 renderTags={(value, getTagProps) => value.map((option, index) => <Chip variant="outlined" label={option.name} {...getTagProps({ index })} />)}
-                      isOptionEqualToValue={(option, value) => option.id === value.id}
-                      disabled={!entry.selectedCollectionId}
+                isOptionEqualToValue={(option, value) => option.id === value.id}
+                disabled={!entry.selectedCollectionId}
               />
 
-                    <Autocomplete
+              <Autocomplete
                 sx={{ mb: 2 }}
-                      multiple
+                multiple
                 options={(allStylists || []).map(st => ({ id: st.id, name: st.name }))}
                 getOptionLabel={(option) => option.name}
                 value={entry.stylists}
                 onChange={(event, newValue) => updateEntry(entry.id, { stylists: newValue })}
                 renderInput={(params) => <TextField {...params} label="Select Stylists" variant="outlined" />}
                 renderTags={(value, getTagProps) => value.map((option, index) => <Chip variant="outlined" label={option.name} {...getTagProps({ index })} />)}
-                      isOptionEqualToValue={(option, value) => option.id === value.id}
+                isOptionEqualToValue={(option, value) => option.id === value.id}
               />
 
-              // Add per-client Create Bill button when editing an existing appointment
+              {/* Add per-client Create Bill button when editing an existing appointment */}
               {editingAppointment && entry.client && entry.services.length > 0 && entry.stylists.length > 0 && (
                 <Box sx={{ textAlign: 'right', mb: 2 }}>
-          <Button
+                  <Button
                     variant="contained"
                     startIcon={<ReceiptIcon />}
                     onClick={() => {
@@ -681,7 +709,7 @@ export default function Appointments() {
                     }}
                   >
                     Create Bill for Client {index + 1}
-          </Button>
+                  </Button>
                 </Box>
               )}
             </Paper>
@@ -689,11 +717,11 @@ export default function Appointments() {
 
           <Button startIcon={<AddIcon />} onClick={addBlankEntry} sx={{ mb: 3 }}>Add Another Client</Button>
 
-              <TextField
+          <TextField
             label="Notes"
-                multiline
-                rows={3}
-                fullWidth
+            multiline
+            rows={3}
+            fullWidth
             value={appointmentNotes}
             onChange={(e) => setAppointmentNotes(e.target.value)}
             variant="outlined"
@@ -743,10 +771,10 @@ export default function Appointments() {
           })()}
 
           <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 2 }}>
-              <Button onClick={handleCloseDrawer} variant="outlined">Cancel</Button>
+            <Button onClick={handleCloseDrawer} variant="outlined">Cancel</Button>
             <Button onClick={handleSaveAppointment} variant="contained" color="primary">
               {editingAppointment ? 'Update Appointment' : 'Book Appointment'}
-                </Button>
+            </Button>
           </Box>
         </Box>
       </Drawer>
@@ -761,7 +789,7 @@ export default function Appointments() {
       <Dialog
         open={deleteDialogOpen}
         onClose={() => setDeleteDialogOpen(false)}
-        aria-labelledby="delete-appointment-title"
+        aria-labelid="delete-appointment-title"
         aria-describedby="delete-appointment-description"
       >
         <DialogTitle id="delete-appointment-title">Delete Appointment?</DialogTitle>

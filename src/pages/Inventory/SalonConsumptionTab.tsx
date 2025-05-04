@@ -24,7 +24,49 @@ const SalonConsumptionTab: React.FC<SalonConsumptionTabProps> = ({ dateFilter, a
           .select('*')
           .order('Date', { ascending: false });
         if (fetchError) throw fetchError;
-        setData(viewRows || []);
+        // Compute all derived fields for each row
+        const rows = viewRows || [];
+        const processedRows = rows.map(row => {
+          const qty = row['Consumption Qty.'] ?? row.consumption_qty ?? 0;
+          const costEx = row.Purchase_Cost_per_Unit_Ex_GST_Rs ?? 0;
+          const gstPct = row.Purchase_GST_Percentage ?? 0;
+          
+          // Purchase calculations
+          const purchaseTaxable = costEx * qty;
+          const igstAmt = row.Purchase_IGST_Rs ?? 0;
+          const cgstAmt = row.Purchase_CGST_Rs ?? (purchaseTaxable * gstPct / 200);
+          const sgstAmt = row.Purchase_SGST_Rs ?? (purchaseTaxable * gstPct / 200);
+          const totalPurchase = row.Total_Purchase_Cost_Rs ?? (purchaseTaxable + igstAmt + cgstAmt + sgstAmt);
+          
+          // Stock calculations
+          const initialStock = row.Initial_Stock ?? 0;
+          const currentStock = row.Current_Stock ?? 0;
+          const remainingStock = row.Remaining_Stock ?? (initialStock - qty);
+          
+          // Value on hand
+          const currentEx = currentStock * costEx;
+          const remainingEx = remainingStock * costEx;
+          
+          // Remaining stock taxes
+          const remCgst = row.Remaining_Stock_CGST_Rs ?? (remainingEx * gstPct / 200);
+          const remSgst = row.Remaining_Stock_SGST_Rs ?? (remainingEx * gstPct / 200);
+          const remIgst = row.Remaining_Stock_IGST_Rs ?? 0;
+          
+          const totalRemaining = row.Total_Remaining_Stock_Value_Rs ?? (remainingEx + remIgst + remCgst + remSgst);
+          
+          return {
+            ...row,
+            Purchase_Taxable_Value_Rs: purchaseTaxable,
+            Purchase_IGST_Rs: igstAmt,
+            Purchase_CGST_Rs: cgstAmt,
+            Purchase_SGST_Rs: sgstAmt,
+            Total_Purchase_Cost_Rs: totalPurchase,
+            Remaining_Stock: remainingStock,
+            Current_Stock_Total_Ex_GST_Rs: currentEx,
+            Total_Remaining_Stock_Value_Rs: totalRemaining
+          };
+        });
+        setData(processedRows);
       } catch (err: any) {
         console.error('Error loading salon consumption data:', err);
         setError(err.message || 'Failed to load salon consumption data.');
@@ -60,6 +102,7 @@ const SalonConsumptionTab: React.FC<SalonConsumptionTabProps> = ({ dateFilter, a
     { id: 'Remaining_Stock_CGST_Rs', label: 'Remaining Stock CGST (Rs.)', align: 'right' as const, format: (v: any) => formatCurrency(v) },
     { id: 'Remaining_Stock_SGST_Rs', label: 'Remaining Stock SGST (Rs.)', align: 'right' as const, format: (v: any) => formatCurrency(v) },
     { id: 'Remaining_Stock_IGST_Rs', label: 'Remaining Stock IGST (Rs.)', align: 'right' as const, format: (v: any) => formatCurrency(v) },
+    { id: 'Current_Stock_Total_Ex_GST_Rs', label: 'Current Stock Total Ex. GST (Rs.)', align: 'right' as const, format: (v: any) => formatCurrency(v) },
     { id: 'Total_Remaining_Stock_Value_Rs', label: 'Total Remaining Stock Value (Rs.)', align: 'right' as const, format: (v: any) => formatCurrency(v) }
   ];
 

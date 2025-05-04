@@ -74,13 +74,14 @@ const TIME_SLOT_HEIGHT = 30; // Height in pixels for each 15-minute slot
 
 // Styled components
 const DayViewContainer = styled(Paper)(({ theme }) => ({
-  height: 'calc(100vh - 120px)',
+  height: '100%',
+  width: '100%',
   display: 'flex',
   flexDirection: 'column',
   overflow: 'hidden',
   backgroundColor: theme.palette.background.default,
-  border: `1px solid ${theme.palette.divider}`,
-  borderRadius: theme.shape.borderRadius,
+  border: 'none', // Remove border as the parent container will handle this
+  borderRadius: 0, // Remove border radius for full bleed
 }));
 
 const DayViewHeader = styled(Box)(({ theme }) => ({
@@ -100,6 +101,7 @@ const ScheduleGrid = styled(Box)(({ theme }) => ({
   flex: 1,
   overflow: 'auto',
   position: 'relative',
+  width: '100%', // Ensure it takes full width
   '& > *': {  // This affects all direct children
     height: 'fit-content',  // Allow elements to grow beyond viewport
     minHeight: '100%'       // But at minimum be full height

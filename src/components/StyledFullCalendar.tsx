@@ -3,6 +3,17 @@ import FullCalendar from '@fullcalendar/react';
 
 export const StyledFullCalendar = styled(FullCalendar)(({ theme }) => ({
   height: '100%',
+  width: '100%',
+  maxWidth: '100%',
+  position: 'absolute', // Make it absolutely positioned
+  top: 0,
+  left: 0,
+  right: 0,
+  bottom: 0,
+  display: 'flex',
+  flexDirection: 'column',
+  transition: 'all 0.3s ease',
+
   '& .fc': {
     // Calendar container
     '--fc-page-bg-color': theme.palette.background.default,
@@ -34,11 +45,31 @@ export const StyledFullCalendar = styled(FullCalendar)(({ theme }) => ({
     '--fc-button-hover-border-color': theme.palette.primary.dark,
     '--fc-button-active-bg-color': theme.palette.primary.dark,
     '--fc-button-active-border-color': theme.palette.primary.dark,
+    
+    // Make the calendar take the full available space
+    width: '100%',
+    height: '100%',
+    minHeight: '100%',
+    display: 'flex',
+    flexDirection: 'column',
+  },
+
+  // Calendar body to take remaining space
+  '& .fc-view-harness': {
+    flexGrow: 1,
+    transition: 'all 0.3s ease',
+    minHeight: '500px', // Ensure minimum height to prevent tiny calendar
+  },
+
+  // Make sure content fills the container
+  '& .fc-scroller': {
+    height: '100% !important',
   },
 
   // Additional custom styles
   '& .fc-theme-standard': {
     backgroundColor: theme.palette.background.default,
+    height: '100%',
   },
 
   '& .fc-theme-standard td, & .fc-theme-standard th': {
@@ -113,6 +144,27 @@ export const StyledFullCalendar = styled(FullCalendar)(({ theme }) => ({
 
   '& .fc-toolbar-title': {
     color: theme.palette.text.primary,
+  },
+
+  // Toolbar responsive improvements
+  '& .fc-toolbar': {
+    flexWrap: 'wrap',
+    gap: '8px',
+    padding: '4px',
+    justifyContent: 'space-between',
+    
+    '@media (max-width: 600px)': {
+      flexDirection: 'column',
+      alignItems: 'flex-start',
+    }
+  },
+
+  // Ensure the day header row stays visible even when scrolling
+  '& .fc-col-header': {
+    position: 'sticky',
+    top: 0,
+    backgroundColor: theme.palette.background.paper,
+    zIndex: 1,
   },
 
   '& .fc-button': {
