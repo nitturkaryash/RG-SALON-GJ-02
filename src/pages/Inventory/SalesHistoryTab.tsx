@@ -133,7 +133,8 @@ const SalesHistoryTab: React.FC = () => {
         order_item_id: item.order_item_id,
         unit_price_inc_gst: unitIncl,
         current_stock_taxable_value: taxable,
-        taxable_after_discount: (item.taxable_value ?? 0) * (1 - (item.discount_percentage ?? 0) / 100),
+        discount_percentage: Number(item.discount_percentage) || 0,
+        taxable_after_discount: (item.taxable_value ?? 0) * (1 - ((item.discount_percentage || 0) / 100)),
         current_stock_igst: igst,
         current_stock_cgst: cgst,
         current_stock_sgst: sgst,
@@ -177,6 +178,14 @@ const SalesHistoryTab: React.FC = () => {
 
       // Process the data
       console.log(`Fetched ${data.length} records from ${SALES_PRODUCTS_VIEW} view.`);
+      if (data.length > 0) {
+        console.log('Sample item with discount fields:', {
+          sample_item: data[0],
+          discount: data[0].discount,
+          discount_percentage: data[0].discount_percentage,
+          taxable_value: data[0].taxable_value
+        });
+      }
       setSalesData(data);
       
       // Apply initial filtering/sorting
@@ -204,6 +213,16 @@ const SalesHistoryTab: React.FC = () => {
         );
       }
       
+      // Add debug logging for the discount percentage
+      if (processedData.length > 0) {
+        console.log("Debug - Sample discount_percentage values:", processedData.slice(0, 3).map(item => ({
+          product: item.product_name,
+          discount: item.discount,
+          discount_percentage: item.discount_percentage,
+          taxable_value: item.taxable_value
+        })));
+      }
+      
       // Apply sorting if needed
       if (sortBy.column) {
         processedData.sort((a, b) => {
@@ -229,6 +248,27 @@ const SalesHistoryTab: React.FC = () => {
             ? aString.localeCompare(bString) 
             : bString.localeCompare(aString);
         });
+      }
+      
+      // Override discount_percentage with the original order-level value from pos_orders
+      if (processedData.length > 0) {
+        try {
+          const orderIds = Array.from(new Set(processedData.map(item => item.order_id)));
+          const { data: ordersData, error: ordersError } = await supabase
+            .from('pos_orders')
+            .select('id, discount_percentage')
+            .in('id', orderIds);
+          if (!ordersError && ordersData) {
+            const discountMap = new Map(ordersData.map(o => [o.id, o.discount_percentage]));
+            processedData = processedData.map(item => ({
+              ...item,
+              // Use stored discount_percentage if available, else keep existing
+              discount_percentage: discountMap.get(item.order_id) ?? item.discount_percentage
+            }));
+          }
+        } catch (err) {
+          console.error('Error fetching order-level discount percentages:', err);
+        }
       }
       
       setFilteredData(processedData);
@@ -542,7 +582,9 @@ const SalesHistoryTab: React.FC = () => {
                       <TableCell align="right">{formatCurrency(row.taxable_value)}</TableCell>
                       <TableCell align="right">{row.gst_percentage}%</TableCell>
                       <TableCell align="right">
-                        {row.discount_percentage ? `${row.discount_percentage.toFixed(2)}%` : '-'}
+                        {row.discount_percentage && row.discount_percentage > 0 
+                          ? `${Number(row.discount_percentage).toFixed(2)}%` 
+                          : '-'}
                       </TableCell>
                       <TableCell align="right">{formatCurrency(row.taxable_after_discount ?? 0)}</TableCell>
                       <TableCell align="right">{formatCurrency(row.cgst_amount)}</TableCell>
