@@ -30,17 +30,23 @@ import {
   ArrowDownward as ArrowDownwardIcon,
   ArrowUpward as ArrowUpwardIcon
 } from '@mui/icons-material';
-import { supabase } from '../../utils/supabase/supabaseClient';
+import { supabase, TABLES } from '../../utils/supabase/supabaseClient';
 import { styled } from '@mui/material/styles';
 import * as XLSX from 'xlsx';
 import { toast } from 'react-hot-toast';
+import DeleteButton from '../../components/DeleteButton';
+import { useInventory } from '../../hooks/useInventory';
 
-// Define the view name as a constant for easy updating
-const SALES_PRODUCTS_VIEW = 'sales_products_new';
+// Use the actual base table for mutations, view for reading
+const SALES_VIEW = 'sales_product_new';
+const SALES_BASE_TABLE = 'inventory_sales_new';
 
 // Define type for sales data that matches the SQL view
 interface SalesItem {
-  serial_no: string;
+  id: string; // Unique sale record ID from inventory_sales_new OR order_id for display grouping
+  order_item_pk: string; // Actual Primary Key from pos_order_items
+  original_serial_no?: number; // Original serial number from view
+  serial_no: string | number;
   order_id: string;
   order_item_id: string;
   date: string;
@@ -90,7 +96,11 @@ const StyledChip = styled(Chip)(({ theme }) => ({
   padding: '0 4px',
 }));
 
-const SalesHistoryTab: React.FC = () => {
+interface SalesHistoryTabProps {
+  onDataUpdate?: (data: any[]) => void;
+}
+
+const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
   // State for data and UI
   const [salesData, setSalesData] = useState<SalesItem[]>([]);
   const [filteredData, setFilteredData] = useState<SalesItem[]>([]);
@@ -108,13 +118,16 @@ const SalesHistoryTab: React.FC = () => {
     endDate: new Date().toISOString().split('T')[0] // Today
   });
   const [isExporting, setIsExporting] = useState(false);
+  const { deleteSale } = useInventory();
   
   // Compute remaining-stock tax breakdown on the client
   const tableData = useMemo(() => {
     return filteredData.map(item => {
       const qty = item.current_stock ?? 0;
-      const unitExcl = item.unit_price_ex_gst ?? 0;
-      const gstPct = item.gst_percentage ?? 0;
+      const unitExcl = Number(item.unit_price_ex_gst) || 0;
+      const gstPct = Number(item.gst_percentage) || 0;
+      
+      // Calculate inclusive price from exclusive price and GST percentage
       const unitIncl = unitExcl * (1 + gstPct / 100);
 
       // 1 Taxable Value
@@ -128,13 +141,18 @@ const SalesHistoryTab: React.FC = () => {
       // 5 Total value
       const totalVal = taxable + igst + cgst + sgst;
 
+      // Calculate taxable after discount
+      const discountPct = Number(item.discount_percentage) || 0;
+      const taxableAfterDiscount = (Number(item.taxable_value) || 0) * (1 - (discountPct / 100));
+
       return {
         ...item,
-        order_item_id: item.order_item_id,
+        gst_percentage: gstPct,
+        order_item_id: item.order_item_id || '',
         unit_price_inc_gst: unitIncl,
         current_stock_taxable_value: taxable,
-        discount_percentage: Number(item.discount_percentage) || 0,
-        taxable_after_discount: (item.taxable_value ?? 0) * (1 - ((item.discount_percentage || 0) / 100)),
+        discount_percentage: discountPct,
+        taxable_after_discount: taxableAfterDiscount,
         current_stock_igst: igst,
         current_stock_cgst: cgst,
         current_stock_sgst: sgst,
@@ -143,138 +161,164 @@ const SalesHistoryTab: React.FC = () => {
     });
   }, [filteredData]);
 
+  // Notify parent of latest table data
+  useEffect(() => {
+    if (onDataUpdate) {
+      onDataUpdate(tableData);
+    }
+  }, [tableData, onDataUpdate]);
+
+  // Handler to delete a single sale entry by its order_item_pk
+  const handleDeleteSale = async (itemToDeletePk: string) => {
+    if (!itemToDeletePk) {
+      toast.error('Cannot delete: Missing item primary key');
+      console.error('Delete attempted with null/empty primary key');
+      return;
+    }
+    console.log('Attempting to delete item with primary key:', itemToDeletePk);
+    if (!window.confirm('Are you sure you want to delete this sale record?')) return;
+    try {
+      toast.loading('Deleting sales record...');
+
+      // Call stored procedure to delete the sale item by its primary key
+      const { data, error } = await supabase
+        .rpc('delete_sales_item', { item_id: itemToDeletePk });
+
+      toast.dismiss();
+      if (error) {
+        console.error('Error deleting sale via RPC:', error);
+        toast.error('Failed to delete sale record. Please contact support.');
+        return;
+      }
+      // The function returns a JSONB { success: boolean, error?: string }
+      if (!(data && (data as any).success)) {
+        console.error('RPC delete_sales_item returned failure:', data);
+        toast.error((data as any).error || 'Failed to delete sale record.');
+        return;
+      }
+
+      toast.success('Deleted sale entry successfully');
+
+      // Update local state and reindex serial numbers
+      setSalesData(prev => reindexSerialNumbers(prev.filter(item => item.order_item_pk !== itemToDeletePk)));
+      setFilteredData(prev => reindexSerialNumbers(prev.filter(item => item.order_item_pk !== itemToDeletePk)));
+
+      // Trigger a refetch
+      fetchSalesData();
+
+      // Adjust pagination if necessary
+      if ((filteredData.length - 1) % rowsPerPage === 0 && page > 0) {
+        setPage(page - 1);
+      }
+    } catch (err: any) {
+      toast.dismiss();
+      console.error('Error deleting sale record:', err);
+      toast.error(err.message || 'Failed to delete sale record.');
+    }
+  };
+
   // Function to fetch sales data
   const fetchSalesData = async () => {
     try {
       setIsLoading(true);
       setError(null);
       
-      // Skip the view existence check as it seems to cause issues
-      // Try to directly fetch the data
-      const { data, error } = await supabase.from(SALES_PRODUCTS_VIEW).select('*');
+      console.log('Fetching data from view:', SALES_VIEW);
+      
+      // Continue to fetch from the view for reading
+      const { data, error } = await supabase
+        .from(SALES_VIEW)
+        .select('*')
+        .gte('date', dateRange.startDate)
+        .lte('date', dateRange.endDate)
+        .order('date', { ascending: false });
 
-      // Check for fetch error
+      // Check for fetch error and log the view name for debugging
       if (error) {
-        console.error(`Error fetching data from ${SALES_PRODUCTS_VIEW}:`, error);
-        
-        // Check if the error is due to view not existing
-        if (error.code === '42P01' || error.message.includes('relation') && error.message.includes('does not exist')) {
-          setError(`The ${SALES_PRODUCTS_VIEW} view does not exist. Please create it first.`);
-        } else {
-          setError(`Failed to load sales data: ${error.message || 'Unknown error'}`);
-        }
+        console.error(`Error fetching data from ${SALES_VIEW}:`, error);
+        setError(`Failed to load sales data: ${error.message || 'Unknown error'}`);
         setIsLoading(false);
         return;
       }
 
       // Check if data exists
       if (!data || data.length === 0) {
-        console.warn(`No data found in ${SALES_PRODUCTS_VIEW} view.`);
+        console.warn(`No data found in ${SALES_VIEW}.`);
         setSalesData([]);
         setFilteredData([]);
         setIsLoading(false);
         return;
       }
 
-      // Process the data
-      console.log(`Fetched ${data.length} records from ${SALES_PRODUCTS_VIEW} view.`);
-      if (data.length > 0) {
-        console.log('Sample item with discount fields:', {
-          sample_item: data[0],
-          discount: data[0].discount,
-          discount_percentage: data[0].discount_percentage,
-          taxable_value: data[0].taxable_value
-        });
-      }
-      setSalesData(data);
+      console.log(`Received ${data.length} records from ${SALES_VIEW}`);
       
-      // Apply initial filtering/sorting
-      let processedData = [...data];
+      // Check if any records have order_item_pk
+      const hasOrderItemPk = data.some(item => item.order_item_pk);
+      console.log('Records have order_item_pk?', hasOrderItemPk);
       
-      // Apply date filtering if needed
-      if (dateRange.startDate && dateRange.endDate) {
-        const startDate = new Date(dateRange.startDate);
-        const endDate = new Date(dateRange.endDate);
-        endDate.setHours(23, 59, 59, 999); // Set to end of day
-        
-        processedData = processedData.filter(item => {
-          const itemDate = new Date(item.date);
-          return itemDate >= startDate && itemDate <= endDate;
-        });
+      if (!hasOrderItemPk) {
+        console.warn('No order_item_pk found in any records! First record sample:', data[0]);
+      } else {
+        console.log('Sample order_item_pk value:', data[0].order_item_pk);
       }
       
-      // Apply search term filtering if needed
-      if (searchTerm) {
-        const term = searchTerm.toLowerCase();
-        processedData = processedData.filter(item => 
-          (item.product_name && item.product_name.toLowerCase().includes(term)) ||
-          (item.serial_no && item.serial_no.toLowerCase().includes(term)) ||
-          (item.hsn_code && item.hsn_code.toLowerCase().includes(term))
-        );
-      }
-      
-      // Add debug logging for the discount percentage
-      if (processedData.length > 0) {
-        console.log("Debug - Sample discount_percentage values:", processedData.slice(0, 3).map(item => ({
-          product: item.product_name,
-          discount: item.discount,
-          discount_percentage: item.discount_percentage,
-          taxable_value: item.taxable_value
-        })));
-      }
-      
-      // Apply sorting if needed
-      if (sortBy.column) {
-        processedData.sort((a, b) => {
-          const aValue = a[sortBy.column!];
-          const bValue = b[sortBy.column!];
-          
-          // Handle different types of values
-          if (typeof aValue === 'number' && typeof bValue === 'number') {
-            return sortBy.direction === 'asc' ? aValue - bValue : bValue - aValue;
-          }
-          
-          // Convert dates to timestamps for comparison
-          if (sortBy.column === 'date') {
-            const aDate = new Date(a.date).getTime();
-            const bDate = new Date(b.date).getTime();
-            return sortBy.direction === 'asc' ? aDate - bDate : bDate - aDate;
-          }
-          
-          // Handle string comparisons
-          const aString = String(aValue || '');
-          const bString = String(bValue || '');
-          return sortBy.direction === 'asc' 
-            ? aString.localeCompare(bString) 
-            : bString.localeCompare(aString);
-        });
-      }
-      
-      // Override discount_percentage with the original order-level value from pos_orders
-      if (processedData.length > 0) {
-        try {
-          const orderIds = Array.from(new Set(processedData.map(item => item.order_id)));
-          const { data: ordersData, error: ordersError } = await supabase
-            .from('pos_orders')
-            .select('id, discount_percentage')
-            .in('id', orderIds);
-          if (!ordersError && ordersData) {
-            const discountMap = new Map(ordersData.map(o => [o.id, o.discount_percentage]));
-            processedData = processedData.map(item => ({
-              ...item,
-              // Use stored discount_percentage if available, else keep existing
-              discount_percentage: discountMap.get(item.order_id) ?? item.discount_percentage
-            }));
-          }
-        } catch (err) {
-          console.error('Error fetching order-level discount percentages:', err);
+      // Process raw table rows - adjust field mappings for sales_product_new
+      const sortedData = data.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      const processedData: SalesItem[] = sortedData.map((item, index) => {
+        // Log the first few records to debug primary key issues
+        if (index < 3) {
+          console.log(`Record ${index} raw data:`, {
+            order_item_pk: item.order_item_pk,
+            order_id: item.order_id,
+            order_item_id: item.order_item_id
+          });
         }
-      }
-      
+        
+        // Only use the actual primary key from the view for deletion
+        const primaryKey = item.order_item_pk || '';
+        
+        const processedItem = {
+          id: item.order_id, // Using order_id as the main id for row identification
+          order_item_pk: primaryKey, // Ensure we always have a value here for deletion
+          serial_no: index + 1,
+          order_id: item.order_id,
+          order_item_id: item.order_item_id || '',
+          date: item.date,
+          product_name: item.product_name,
+          quantity: item.quantity,
+          unit_price_ex_gst: Number(item.unit_price_ex_gst) || 0,
+          gst_percentage: Number(item.gst_percentage) || 0,
+          taxable_value: Number(item.taxable_value) || 0,
+          cgst_amount: Number(item.cgst_amount) || 0,
+          sgst_amount: Number(item.sgst_amount) || 0,
+          total_purchase_cost: Number(item.total_purchase_cost) || 0,
+          discount: Number(item.discount) || 0,
+          discount_percentage: Number(item.discount_percentage) || 0,
+          tax: Number(item.tax) || 0,
+          hsn_code: item.hsn_code || '',
+          product_type: item.product_type || '',
+          mrp_incl_gst: Number(item.mrp_incl_gst) || 0,
+          discounted_sales_rate_ex_gst: Number(item.discounted_sales_rate_ex_gst) || 0,
+          invoice_value: Number(item.invoice_value) || 0,
+          igst_amount: Number(item.igst_amount) || 0,
+          initial_stock: Number(item.initial_stock) || 0,
+          remaining_stock: Number(item.remaining_stock) || 0,
+          current_stock: Number(item.current_stock) || 0
+        };
+        
+        // Log first item for debugging
+        if (index === 0) {
+          console.log('First processed item:', processedItem);
+        }
+        
+        return processedItem;
+      });
+
+      setSalesData(processedData);
       setFilteredData(processedData);
     } catch (err) {
-      console.error('Error in fetchSalesData:', err);
-      setError('Failed to load sales data due to an unexpected error.');
+      console.error('Error fetching data:', err);
+      setError('An unexpected error occurred while loading sales data.');
     } finally {
       setIsLoading(false);
     }
@@ -316,9 +360,82 @@ const SalesHistoryTab: React.FC = () => {
     }));
   };
   
+  // Utility function to reindex serial numbers after filtering or sorting
+  const reindexSerialNumbers = (data: SalesItem[]): SalesItem[] => {
+    return data.map((item, index) => ({
+      ...item,
+      serial_no: index + 1
+    }));
+  };
+
+  // Front-end only: remove row and reindex serial numbers
+  const handleRemoveRow = (itemPk: string) => {
+    setSalesData(prev => reindexSerialNumbers(prev.filter(item => item.order_item_pk !== itemPk)));
+    setFilteredData(prev => reindexSerialNumbers(prev.filter(item => item.order_item_pk !== itemPk)));
+    if ((filteredData.length - 1) % rowsPerPage === 0 && page > 0) {
+      setPage(page - 1);
+    }
+  };
+
+  // Effect to reindex serial numbers whenever filtered data changes due to filters/sorting
+  useEffect(() => {
+    if (filteredData.length > 0) {
+      // Apply any sort first based on current sort criteria
+      let sortedData = [...filteredData];
+      
+      if (sortBy.column) {
+        sortedData.sort((a, b) => {
+          const aValue = a[sortBy.column!];
+          const bValue = b[sortBy.column!];
+          
+          // Handle different types of values
+          if (typeof aValue === 'number' && typeof bValue === 'number') {
+            return sortBy.direction === 'asc' ? aValue - bValue : bValue - aValue;
+          }
+          
+          // Convert dates to timestamps for comparison
+          if (sortBy.column === 'date') {
+            const aDate = new Date(a.date).getTime();
+            const bDate = new Date(b.date).getTime();
+            return sortBy.direction === 'asc' ? aDate - bDate : bDate - aDate;
+          }
+          
+          // Handle string comparisons
+          const aString = String(aValue || '');
+          const bString = String(bValue || '');
+          return sortBy.direction === 'asc' 
+            ? aString.localeCompare(bString) 
+            : bString.localeCompare(aString);
+        });
+      }
+      
+      // Reindex serial numbers after sorting
+      const reindexedData = reindexSerialNumbers(sortedData);
+      
+      // Only update if the serial numbers actually changed
+      if (JSON.stringify(reindexedData.map(i => i.serial_no)) !== 
+          JSON.stringify(filteredData.map(i => i.serial_no))) {
+        setFilteredData(reindexedData);
+      }
+    }
+  }, [filteredData, sortBy]);
+
   // Handle search
   const handleSearch = (event: React.ChangeEvent<HTMLInputElement>) => {
-    setSearchTerm(event.target.value);
+    const searchValue = event.target.value.toLowerCase();
+    setSearchTerm(searchValue);
+    
+    // Apply the search filter
+    if (searchValue.trim() === '') {
+      setFilteredData(salesData);
+    } else {
+      const filtered = salesData.filter(item => 
+        (item.product_name && item.product_name.toLowerCase().includes(searchValue)) ||
+        (item.hsn_code && item.hsn_code.toLowerCase().includes(searchValue))
+      );
+      setFilteredData(filtered);
+    }
+    
     setPage(0); // Reset to first page
   };
   
@@ -328,6 +445,11 @@ const SalesHistoryTab: React.FC = () => {
       ...prev,
       [name]: value
     }));
+  };
+  
+  // Apply date filter when the Apply button is clicked
+  const applyDateFilter = () => {
+    fetchSalesData();
   };
   
   // Export data to Excel
@@ -353,8 +475,8 @@ const SalesHistoryTab: React.FC = () => {
         item.unit_price_inc_gst,
         item.unit_price_ex_gst,
         item.taxable_value,
-        `${item.gst_percentage}%`,
-        item.discount_percentage ? `${item.discount_percentage.toFixed(2)}%` : '0.00%',
+        Number(item.gst_percentage ?? 0).toFixed(2) + '%',
+        Number(item.discount_percentage ?? 0).toFixed(2) + '%',
         item.taxable_after_discount ?? 0,
         item.cgst_amount,
         item.sgst_amount,
@@ -400,16 +522,17 @@ const SalesHistoryTab: React.FC = () => {
   const totals = tableData.reduce((sum, item) => {
     // Helper to safely parse and sum, treating non-numbers as 0
     const safeAdd = (currentSum: number, value: any): number => {
-      const num = parseFloat(String(value)); // Convert to string first, then parse
-      return currentSum + (isNaN(num) ? 0 : num); // Add 0 if NaN or invalid
+      const num = parseFloat(String(value));
+      return currentSum + (isNaN(num) ? 0 : num);
     };
 
     return {
       quantity: safeAdd(sum.quantity, item.quantity),
       taxableValue: safeAdd(sum.taxableValue, item.taxable_value),
-      cgst: safeAdd(sum.cgst, item.cgst_amount), // Use safeAdd
-      sgst: safeAdd(sum.sgst, item.sgst_amount), // Use safeAdd
-      totalValue: safeAdd(sum.totalValue, item.invoice_value), // Use safeAdd
+      taxableAfterDiscount: safeAdd(sum.taxableAfterDiscount, item.taxable_after_discount),
+      cgst: safeAdd(sum.cgst, item.cgst_amount),
+      sgst: safeAdd(sum.sgst, item.sgst_amount),
+      totalValue: safeAdd(sum.totalValue, item.invoice_value),
       currentStockTaxable: safeAdd(sum.currentStockTaxable, (item.current_stock_taxable_value ?? 0)),
       currentStockIgst: safeAdd(sum.currentStockIgst, (item.current_stock_igst ?? 0)),
       currentStockCgst: safeAdd(sum.currentStockCgst, (item.current_stock_cgst ?? 0)),
@@ -419,6 +542,7 @@ const SalesHistoryTab: React.FC = () => {
   }, {
     quantity: 0,
     taxableValue: 0,
+    taxableAfterDiscount: 0,
     cgst: 0,
     sgst: 0,
     totalValue: 0,
@@ -445,7 +569,7 @@ const SalesHistoryTab: React.FC = () => {
       </Box>
     </HeaderCell>
   );
-  
+
   return (
     <Box sx={{ p: 0 }}>
       {error && (
@@ -502,7 +626,7 @@ const SalesHistoryTab: React.FC = () => {
               <Button 
                 variant="outlined" 
                 size="small"
-                onClick={() => fetchSalesData()}
+                onClick={applyDateFilter}
                 startIcon={<FilterIcon />}
               >
                 Apply
@@ -531,6 +655,7 @@ const SalesHistoryTab: React.FC = () => {
           <Table stickyHeader aria-label="sales history table">
             <TableHead>
               <TableRow>
+                <TableCell padding="checkbox" /> {/* For expand/collapse */}
                 {renderSortableHeader('serial_no', 'Serial No.')}
                 {renderSortableHeader('date', 'Date')}
                 {renderSortableHeader('product_name', 'Product Name')}
@@ -538,7 +663,7 @@ const SalesHistoryTab: React.FC = () => {
                 {renderSortableHeader('product_type', 'Units')}
                 {renderSortableHeader('quantity', 'Qty.')}
                 {renderSortableHeader('unit_price_inc_gst', 'Unit Price (Inc. GST)')}
-                {renderSortableHeader('unit_price_ex_gst', 'Unit Price (Ex.GST)')}
+                {renderSortableHeader('unit_price_ex_gst', 'Unit Price (Ex. GST)')}
                 {renderSortableHeader('taxable_value', 'Taxable Value')}
                 {renderSortableHeader('gst_percentage', 'GST %')}
                 {renderSortableHeader('discount_percentage', 'Discount %')}
@@ -554,6 +679,8 @@ const SalesHistoryTab: React.FC = () => {
                 {renderSortableHeader('current_stock_cgst', 'CGST (Rs.)')}
                 {renderSortableHeader('current_stock_sgst', 'SGST (Rs.)')}
                 {renderSortableHeader('current_stock_total_value', 'Total Value (Rs.)')}
+                {renderSortableHeader('order_id', 'Order ID')}
+                {renderSortableHeader('order_item_id', 'Actions')}
               </TableRow>
             </TableHead>
             <TableBody>
@@ -570,52 +697,54 @@ const SalesHistoryTab: React.FC = () => {
                 tableData
                   .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
                   .map((row) => (
-                    <TableRow hover key={row.order_item_id}>
-                      <TableCell>{row.serial_no}</TableCell>
-                      <TableCell>{formatDate(row.date)}</TableCell>
-                      <TableCell>{row.product_name}</TableCell>
-                      <TableCell>{row.hsn_code || 'N/A'}</TableCell>
-                      <TableCell>{row.product_type || 'N/A'}</TableCell>
-                      <TableCell align="right">{row.quantity}</TableCell>
+                    <TableRow key={row.order_id} sx={{ '&:last-child td, &:last-child th': { border: 0 } }} hover>
+                      <TableCell padding="checkbox" />
+                      <TableCell align="center">{row.serial_no}</TableCell>
+                      <TableCell align="center">{formatDate(row.date)}</TableCell>
+                      <TableCell align="left">{row.product_name}</TableCell>
+                      <TableCell align="center">{row.hsn_code}</TableCell>
+                      <TableCell align="center">{row.product_type}</TableCell>
+                      <TableCell align="center">{row.quantity}</TableCell>
                       <TableCell align="right">{formatCurrency(row.unit_price_inc_gst)}</TableCell>
                       <TableCell align="right">{formatCurrency(row.unit_price_ex_gst)}</TableCell>
                       <TableCell align="right">{formatCurrency(row.taxable_value)}</TableCell>
-                      <TableCell align="right">{row.gst_percentage}%</TableCell>
-                      <TableCell align="right">
-                        {row.discount_percentage && row.discount_percentage > 0 
-                          ? `${Number(row.discount_percentage).toFixed(2)}%` 
-                          : '-'}
-                      </TableCell>
-                      <TableCell align="right">{formatCurrency(row.taxable_after_discount ?? 0)}</TableCell>
+                      <TableCell align="right">{Number(row.gst_percentage ?? 0).toFixed(2)}%</TableCell>
+                      <TableCell align="right">{Number(row.discount_percentage ?? 0).toFixed(2)}%</TableCell>
+                      <TableCell align="right">{formatCurrency(row.taxable_after_discount)}</TableCell>
                       <TableCell align="right">{formatCurrency(row.cgst_amount)}</TableCell>
                       <TableCell align="right">{formatCurrency(row.sgst_amount)}</TableCell>
                       <TableCell align="right">{formatCurrency(row.invoice_value)}</TableCell>
-                      <TableCell align="right">
-                        <StyledChip 
-                          label={Math.round(row.initial_stock)} 
-                          color="primary" 
-                          variant="outlined"
-                        />
-                      </TableCell>
-                      <TableCell align="right">
-                        <StyledChip 
-                          label={Math.round(row.remaining_stock)} 
-                          color={row.remaining_stock > 0 ? "success" : "error"} 
-                          variant="outlined"
-                        />
-                      </TableCell>
-                      <TableCell align="right">
-                        <StyledChip 
-                          label={Math.round(row.current_stock)} 
-                          color={row.current_stock > 0 ? "success" : "error"} 
-                          variant="outlined"
-                        />
-                      </TableCell>
+                      <TableCell align="right">{row.initial_stock}</TableCell>
+                      <TableCell align="right">{row.remaining_stock}</TableCell>
+                      <TableCell align="right">{row.current_stock}</TableCell>
                       <TableCell align="right">{formatCurrency(row.current_stock_taxable_value)}</TableCell>
                       <TableCell align="right">{formatCurrency(row.current_stock_igst)}</TableCell>
                       <TableCell align="right">{formatCurrency(row.current_stock_cgst)}</TableCell>
                       <TableCell align="right">{formatCurrency(row.current_stock_sgst)}</TableCell>
                       <TableCell align="right">{formatCurrency(row.current_stock_total_value)}</TableCell>
+                      <TableCell align="center">
+                        <Tooltip title={row.order_id}>
+                          <Typography variant="body2" sx={{ color: 'text.secondary', fontSize: '0.75rem', maxWidth: 80, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {row.order_id.substring(0, 8)}...
+                          </Typography>
+                        </Tooltip>
+                      </TableCell>
+                      <TableCell align="center">
+                        <DeleteButton
+                          onDelete={() => {
+                            // Only attempt deletion with the actual primary key
+                            const pk = row.order_item_pk;
+                            if (pk) {
+                              handleDeleteSale(pk);
+                            } else {
+                              toast.error('Cannot delete: Missing item primary key');
+                            }
+                          }}
+                          itemName={`Sale record #${row.serial_no}`}
+                          itemType="sale"
+                          confirmationMessage="This will permanently delete this sales record. Are you sure?"
+                        />
+                      </TableCell>
                     </TableRow>
                   ))
               ) : (
