@@ -64,6 +64,10 @@ import {
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import HistoryIcon from '@mui/icons-material/History';
 import Drawer from '@mui/material/Drawer';
+// Import membership hooks
+import { useMembershipTiers } from '../hooks/useMembershipTiers';
+import { MembershipTier } from '../types/membershipTier';
+import CardMembershipIcon from '@mui/icons-material/CardMembership';
 
 // Helper function to generate time slots
 const generateTimeSlots = (startHour: number, endHour: number, interval: number): string[] => {
@@ -131,6 +135,17 @@ interface POSService {
 	stock_quantity?: number;
 	gst_percentage?: number;
 	category?: string;
+}
+
+// Define POSMembership interface
+interface POSMembership {
+	id: string;
+	name: string;
+	price: number;
+	duration_months: number;
+	benefits: string[];
+	description?: string;
+	type?: "membership";
 }
 
 // Payment method labels for display
@@ -334,6 +349,7 @@ export default function POS() {
 	const { services, isLoading: loadingServices } = useServices();
 	const { recordSalonConsumption } = useInventory();
 	const { appointments, isLoading: loadingAppointments, updateAppointment } = useAppointments();
+	const { tiers: memberships, isLoading: loadingMemberships } = useMembershipTiers();
 
 	// TanStack Queries/Mutations (These are hook calls)
 	const { data: balanceStockData } = useQuery({
@@ -409,11 +425,14 @@ export default function POS() {
 	const [selectedProductId, setSelectedProductId] = useState<string>("");
 	const [serviceDropdownValue, setServiceDropdownValue] = useState<Service | null>(null);
 	const [productDropdownValue, setProductDropdownValue] = useState<POSService | null>(null);
+	const [membershipDropdownValue, setMembershipDropdownValue] = useState<MembershipTier | null>(null);
 	// State for history drawer
 	const [historyDrawerOpen, setHistoryDrawerOpen] = useState(false);
 	// State for client service history (raw supabase records)
 	const [clientServiceHistory, setClientServiceHistory] = useState<any[]>([]);
 	const [isHistoryLoading, setIsHistoryLoading] = useState(false);
+	// Add new state for filtering memberships
+	const [membershipSearchTerm, setMembershipSearchTerm] = useState("");
 
 	// Fetch client service history from the database
 	const fetchClientHistory = useCallback(async (clientName: string) => {
@@ -628,6 +647,15 @@ export default function POS() {
 			Array.isArray(order.services)
 		);
 	}, [orders, selectedClient]);
+
+	// Filtered memberships based on search term
+	const filteredMemberships = useMemo(() => {
+		if (!membershipSearchTerm.trim()) return memberships || [];
+		return (memberships || []).filter(membership => 
+			membership.name.toLowerCase().includes(membershipSearchTerm.toLowerCase()) ||
+			(membership.description && membership.description.toLowerCase().includes(membershipSearchTerm.toLowerCase()))
+		);
+	}, [memberships, membershipSearchTerm]);
 
 	// ====================================================
 	// 3. SIDE EFFECTS (useEffect)
@@ -1099,6 +1127,11 @@ export default function POS() {
 		// Reset search terms
 		setProductSearchTerm("");
 		setServiceSearchTerm("");
+		setMembershipSearchTerm("");
+		// Reset dropdown values
+		setServiceDropdownValue(null);
+		setProductDropdownValue(null);
+		setMembershipDropdownValue(null);
 	}, []);
 
 	const handleAddSalonProduct = useCallback((service: POSService, quantity: number = 1) => {
@@ -1600,119 +1633,38 @@ export default function POS() {
 		return groupedItems;
 	};
 
-	// Replace the existing renderServiceSelectionSection with a dropdown-based implementation
+	// Change renderServiceSelectionSection to return null
 	const renderServiceSelectionSection = () => {
 		// Group services by category
-		const groupedServices = groupByCategory(filteredServices as Service[]);
+		// const groupedServices = groupByCategory(filteredServices as Service[]); // This line can be kept if other logic depends on it, or removed if not
 		
+		// Return null to hide this section as per user request to revert to dropdown-only UI for services
+		return null;
+
+		/* Original card rendering code - kept for reference if needed later
 		return (
 			<Box sx={{ p: 2 }}>
 				<Typography variant="h6" gutterBottom>
 					Services
 				</Typography>
 
-				{/* Service search */}
-				<TextField
-					fullWidth
-					placeholder="Search services..."
-					variant="outlined"
-					size="small"
-					margin="dense"
-					value={serviceSearchTerm}
-					onChange={(e) => setServiceSearchTerm(e.target.value)}
-					InputProps={{
-						startAdornment: (
-							<InputAdornment position="start">
-								<Search fontSize="small" />
-							</InputAdornment>
-						),
-						sx: { borderRadius: '8px' }
-					}}
-					sx={{ mb: 2 }}
-				/>
+				<TextField ... />
 
-				{/* Service display */}
-				{loadingStylists || loadingServices ? (
-					<Box sx={{ display: 'flex', justifyContent: 'center', my: 2 }}>
-						<CircularProgress size={24} />
-					</Box>
-				) : Object.keys(groupedServices).length > 0 ? (
-					<Box>
-						{Object.entries(groupedServices).map(([category, categoryServices]) => (
-							<Box key={category} sx={{ mb: 2 }}>
-								<Typography variant="subtitle2" color="primary" sx={{ mb: 1, fontWeight: 600 }}>
-									{category}
-								</Typography>
-								<Grid container spacing={1}>
-									{(categoryServices as Service[]).map((service) => (
-										<Grid item xs={12} sm={6} key={service.id}>
-											<Box 
-												sx={{ 
-													display: 'flex',
-													justifyContent: 'space-between', 
-													alignItems: 'center',
-													p: 1,
-													borderRadius: '8px',
-													border: '1px solid',
-													borderColor: 'divider',
-													mb: 1,
-													'&:hover': { bgcolor: 'action.hover' }
-												}}
-											>
-												<Box>
-													<Typography variant="body2" fontWeight="medium">
-														{service.name}
-													</Typography>
-													<Typography variant="caption" color="text.secondary">
-														₹{service.price} • {service.duration} min
-													</Typography>
-												</Box>
-												<Button
-													variant="contained"
-													size="small"
-													color="primary"
-													onClick={() => handleAddToOrder({
-														id: service.id,
-														name: service.name,
-														price: service.price,
-														duration: service.duration,
-														type: 'service',
-														category: service.category
-													})}
-													sx={{ minWidth: '70px' }}
-												>
-													Add
-												</Button>
-											</Box>
-										</Grid>
-									))}
-								</Grid>
-							</Box>
-						))}
-					</Box>
-				) : (
-					<Box sx={{
-						textAlign: 'center',
-						my: 2,
-						p: 2,
-						bgcolor: 'grey.50',
-						borderRadius: '8px',
-						border: '1px dashed rgba(0, 0, 0, 0.12)'
-					}}>
-						<Typography variant="body2" color="text.secondary">
-							No services found
-						</Typography>
-					</Box>
-				)}
+				{loadingStylists || loadingServices ? ( ... ) : ( ... )}
 			</Box>
 		);
+		*/
 	};
 
-	// Replace the existing renderProductsSelectionSection with a dropdown-based implementation
+	// Change renderProductsSelectionSection to return null
 	const renderProductsSelectionSection = () => {
 		// Group products by category
-		const groupedProducts = groupByCategory(filteredProducts as POSService[]);
-		
+		// const groupedProducts = groupByCategory(filteredProducts as POSService[]); // This line can be kept if other logic depends on it, or removed if not
+
+		// Return null to hide this section as per user request to revert to dropdown-only UI for products
+		return null;
+
+		/* Original card rendering code - kept for reference if needed later
 		return (
 			<Box sx={{ p: 2, mt: 1 }}>
 				<Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
@@ -1720,130 +1672,16 @@ export default function POS() {
 						Products
 					</Typography>
 					<Box sx={{ display: 'flex', alignItems: 'center' }}>
-						<RefreshInventoryButton
-							onRefresh={async () => {
-								try {
-									await fetchBalanceStockData();
-									await fetchAllProducts();
-									toast.success("Stock refreshed");
-								} catch (error) {
-									toast.error("Failed to refresh stock");
-								}
-								return Promise.resolve();
-							}}
-							size="small"
-							buttonText="Refresh"
-							variant="outlined"
-						/>
+						<RefreshInventoryButton ... />
 					</Box>
 				</Box>
 
-				{/* Product search */}
-				<TextField
-					fullWidth
-					placeholder="Search products..."
-					variant="outlined"
-					size="small"
-					margin="dense"
-					value={productSearchTerm}
-					onChange={(e) => setProductSearchTerm(e.target.value)}
-					InputProps={{
-						startAdornment: (
-							<InputAdornment position="start">
-								<Search fontSize="small" />
-							</InputAdornment>
-						),
-						sx: { borderRadius: '8px' }
-					}}
-					sx={{ mb: 2 }}
-				/>
+				<TextField ... />
 
-				{/* Product display */}
-				{loadingProducts ? (
-					<Box sx={{ display: 'flex', justifyContent: 'center', my: 2 }}>
-						<CircularProgress size={24} />
-					</Box>
-				) : Object.keys(groupedProducts).length > 0 ? (
-					<Box>
-						{Object.entries(groupedProducts).map(([category, categoryProducts]) => (
-							<Box key={category} sx={{ mb: 2 }}>
-								<Typography variant="subtitle2" color="secondary" sx={{ mb: 1, fontWeight: 600 }}>
-									{category}
-								</Typography>
-								<Grid container spacing={1}>
-									{(categoryProducts as POSService[]).map((product) => {
-										// Check if product is out of stock
-										const isOutOfStock = product.stock_quantity !== undefined &&
-											product.stock_quantity !== null &&
-											product.stock_quantity <= 0;
-										
-										return (
-											<Grid item xs={12} sm={6} key={product.id}>
-												<Box 
-													sx={{ 
-														display: 'flex',
-														justifyContent: 'space-between', 
-														alignItems: 'center',
-														p: 1,
-														borderRadius: '8px',
-														border: '1px solid',
-														borderColor: 'divider',
-														mb: 1,
-														opacity: isOutOfStock ? 0.6 : 1,
-														'&:hover': { bgcolor: 'action.hover' }
-													}}
-												>
-													<Box>
-														<Typography variant="body2" fontWeight="medium">
-															{product.name}
-														</Typography>
-														<Box sx={{ display: 'flex', alignItems: 'center' }}>
-															<Typography variant="caption" color="text.secondary" sx={{ mr: 1 }}>
-																₹{product.price}
-															</Typography>
-															<Typography variant="caption" color={
-																(product.stock_quantity === undefined || product.stock_quantity === null || product.stock_quantity === 0) ? "error.main" : 
-																(product.stock_quantity !== undefined && product.stock_quantity !== null && product.stock_quantity <= 5) ? "warning.main" : 
-																"success.main"
-															}>
-																Stock: {product.stock_quantity || 0}
-															</Typography>
-														</Box>
-													</Box>
-													<Button
-														variant="contained"
-														size="small"
-														color="secondary"
-														onClick={() => handleAddToOrder(product)}
-														disabled={isOutOfStock}
-														sx={{ minWidth: '70px' }}
-													>
-														{isOutOfStock ? 'OOS' : 'Add'}
-													</Button>
-												</Box>
-											</Grid>
-										);
-									})}
-								</Grid>
-							</Box>
-						))}
-					</Box>
-				) : (
-					<Box sx={{
-						textAlign: 'center',
-						my: 2,
-						p: 2,
-						bgcolor: 'grey.50',
-						borderRadius: '8px',
-						border: '1px dashed rgba(0, 0, 0, 0.12)'
-					}}>
-						<Typography variant="body2" color="text.secondary">
-							No products found
-						</Typography>
-					</Box>
-				)}
+				{loadingProducts ? ( ... ) : ( ... )}
 			</Box>
 		);
+		*/
 	};
 
 	const renderSalonProductSelection = () => {
@@ -2129,10 +1967,165 @@ export default function POS() {
 		);
 	};
 
+	// Add a handler for adding memberships to order
+	const handleAddMembershipToOrder = useCallback((membership: POSMembership) => {
+		const newItem: OrderItem = {
+			id: uuidv4(),
+			order_id: '',
+			item_id: membership.id,
+			item_name: membership.name,
+			quantity: 1,
+			price: membership.price,
+			total: membership.price,
+			type: 'service', // Use service type since memberships are a type of service
+			category: 'membership', // Use category to identify it as a membership
+			for_salon_use: false
+		};
+
+		setOrderItems((prev) => {
+			const newState = [...prev, newItem];
+			return newState;
+		});
+
+		toast.success(`Added ${membership.name} membership to order`);
+	}, []);
+
+	// Change renderMembershipSelectionSection to return null to remove the membership cards section
+	// This keeps the membership dropdown at the top that's already in place
+	const renderMembershipSelectionSection = () => {
+		// Return null to hide the membership cards section as per user request
+		return null;
+		
+		/* Original membership cards section - kept for reference if needed later
+		return (
+			<Box sx={{ p: 2, mt: 2 }}>
+				<Typography variant="h6" gutterBottom>
+					Memberships
+				</Typography>
+
+				<TextField
+					fullWidth
+					placeholder="Search memberships..."
+					variant="outlined"
+					size="small"
+					margin="dense"
+					value={membershipSearchTerm}
+					onChange={(e) => setMembershipSearchTerm(e.target.value)}
+					InputProps={{
+						startAdornment: (
+							<InputAdornment position="start">
+								<Search fontSize="small" />
+							</InputAdornment>
+						),
+						sx: { borderRadius: '8px' }
+					}}
+					sx={{ mb: 2 }}
+				/>
+
+				{loadingMemberships ? (
+					<Box sx={{ display: 'flex', justifyContent: 'center', my: 2 }}>
+						<CircularProgress size={24} />
+					</Box>
+				) : filteredMemberships.length > 0 ? (
+					<Grid container spacing={2}>
+						{filteredMemberships.map((membership) => (
+							<Grid item xs={12} sm={6} md={4} key={membership.id}>
+								<Card sx={{
+									height: '100%',
+									display: 'flex',
+									flexDirection: 'column',
+									borderRadius: '8px',
+									boxShadow: '0 2px 4px rgba(0,0,0,0.08)',
+									'&:hover': {
+										boxShadow: '0 4px 8px rgba(0,0,0,0.15)'
+									}
+								}}>
+									<CardContent sx={{ flexGrow: 1 }}>
+										<Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+											<CardMembershipIcon sx={{ mr: 1, color: 'primary.main' }} />
+											<Typography variant="h6" sx={{ fontWeight: 600 }}>{membership.name}</Typography>
+										</Box>
+										<Typography color="text.secondary" sx={{ mb: 1 }}>
+											₹{membership.price} • {membership.duration_months} months
+										</Typography>
+										<Box sx={{ mb: 2 }}>
+											<Typography variant="body2" color="text.secondary">
+												{membership.description}
+											</Typography>
+											{membership.benefits && membership.benefits.length > 0 && (
+												<Box sx={{ mt: 1 }}>
+													{membership.benefits.slice(0, 3).map((benefit, index) => (
+														<Chip 
+															key={index} 
+															label={benefit} 
+															size="small" 
+															variant="outlined"
+															color="primary"
+															sx={{ mr: 0.5, mb: 0.5, borderRadius: '4px' }} 
+														/>
+													))}
+													{membership.benefits.length > 3 && (
+														<Chip 
+															label={`+${membership.benefits.length - 3} more`} 
+															size="small"
+															variant="outlined" 
+															sx={{ mr: 0.5, mb: 0.5, borderRadius: '4px' }} 
+														/>
+													)}
+												</Box>
+											)}
+										</Box>
+									</CardContent>
+									<CardActions sx={{ justifyContent: 'flex-end', pt: 0, pb: 2, px: 2 }}>
+										<Button
+											variant="contained"
+											size="small"
+											color="primary"
+											onClick={() => handleAddMembershipToOrder({
+												id: membership.id,
+												name: membership.name,
+												price: membership.price,
+												duration_months: membership.duration_months,
+												benefits: membership.benefits,
+												description: membership.description,
+												type: 'membership'
+											})}
+											sx={{
+												borderRadius: '6px',
+												textTransform: 'none',
+												fontWeight: 500
+											}}
+										>
+											Add
+										</Button>
+									</CardActions>
+								</Card>
+							</Grid>
+						))}
+					</Grid>
+				) : (
+					<Box sx={{
+						textAlign: 'center',
+						my: 2,
+						p: 2,
+						bgcolor: 'grey.50',
+						borderRadius: '8px',
+						border: '1px dashed rgba(0, 0, 0, 0.12)'
+					}}>
+						<Typography variant="body2" color="text.secondary">
+							No memberships found
+						</Typography>
+					</Box>
+				)}
+			</Box>
+		);
+		*/
+	};
+
 	// ====================================================
 	// 5. LOADING CHECK (AFTER ALL HOOKS)
 	// ====================================================
-	const isInitialLoading = loadingClients || loadingStylists || loadingAppointments || loadingInventoryProducts || loadingServices;
+	const isInitialLoading = loadingClients || loadingStylists || loadingAppointments || loadingInventoryProducts || loadingServices || loadingMemberships;
 	// Add check for other essential data if needed
 
 	if (isInitialLoading) {
@@ -2329,6 +2322,28 @@ export default function POS() {
 										)}
 									/>
 								</Box>
+								<Box sx={{ flex: 1, minWidth: '240px' }}>
+									<Autocomplete
+										options={filteredMemberships}
+										getOptionLabel={(option) => `${option.name} (₹${option.price})`}
+										value={membershipDropdownValue}
+										onChange={(_, newMembership) => {
+											if (newMembership) handleAddMembershipToOrder({
+												id: newMembership.id,
+												name: newMembership.name,
+												price: newMembership.price,
+												duration_months: newMembership.duration_months,
+												benefits: newMembership.benefits || [],
+												description: newMembership.description,
+												type: 'membership'
+											});
+											setMembershipDropdownValue(null);
+										}}
+										renderInput={(params) => (
+											<TextField {...params} label="Select Membership" variant="outlined" size="small" />
+										)}
+									/>
+								</Box>
 							</Box>
 							{selectedClient && (
 								<>
@@ -2367,6 +2382,15 @@ export default function POS() {
 									</Grid>
 								</>
 							)}
+							
+							{/* Service Selection Section */}
+							{renderServiceSelectionSection()}
+							
+							{/* Product Selection Section */}
+							{renderProductsSelectionSection()}
+							
+							{/* Membership Selection Section - Add this new section */}
+							{renderMembershipSelectionSection()}
 						</Paper>
 					</Grid>
 

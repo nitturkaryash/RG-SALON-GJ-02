@@ -465,6 +465,7 @@ export default function Appointments() {
           onSelectTimeSlot={handleDayViewSelect}
           onAppointmentClick={handleAppointmentClick}
           onAddBreak={handleAddBreak}
+          onDateChange={setSelectedDate}
         />
       </Box>
 

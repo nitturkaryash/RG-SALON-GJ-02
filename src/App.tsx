@@ -27,6 +27,7 @@ const POS = lazy(() => import('./pages/POS'));
 const Products = lazy(() => import('./pages/InventoryManager'));
 const ProductMaster = lazy(() => import('./pages/ProductMaster'));
 const CollectionDetail = lazy(() => import('./pages/CollectionDetail'));
+const MembershipTiers = lazy(() => import('./pages/MembershipTiers'));
 
 // Loading fallback component
 const PageLoader = () => (
@@ -67,6 +68,11 @@ function App() {
             <Route path="services" element={<ServiceCollections />} />
             <Route path="services/:id" element={<ServiceCollectionDetail />} />
             <Route path="members" element={<Members />} />
+            <Route path="membership-tiers" element={
+              <ErrorBoundary>
+                <MembershipTiers />
+              </ErrorBoundary>
+            } />
             <Route path="products" element={<Products />} />
             <Route path="product-master" element={
               <ErrorBoundary>
