@@ -141,7 +141,9 @@ const AddMembershipTierForm: React.FC<AddMembershipTierFormProps> = ({
     >
       <DialogTitle>
         <Box display="flex" justifyContent="space-between" alignItems="center">
-          {isEditing ? 'Edit Membership Tier' : 'Add New Membership Tier'}
+          <Typography sx={{ color: 'rgb(94, 129, 34)', fontWeight: 'bold' }}>
+            {isEditing ? 'Edit Membership Tier' : 'Add New Membership Tier'}
+          </Typography>
           <IconButton onClick={onClose} size="small">
             <CloseIcon />
           </IconButton>
@@ -233,7 +235,12 @@ const AddMembershipTierForm: React.FC<AddMembershipTierFormProps> = ({
                 />
                 <Button 
                   variant="contained"
-                  color="primary"
+                  sx={{
+                    bgcolor: 'rgb(94, 129, 34)',
+                    '&:hover': {
+                      bgcolor: 'rgb(75, 103, 27)'
+                    }
+                  }}
                   onClick={handleAddBenefit}
                   disabled={!newBenefit.trim()}
                   startIcon={<AddIcon />}
@@ -253,8 +260,18 @@ const AddMembershipTierForm: React.FC<AddMembershipTierFormProps> = ({
                       key={index}
                       label={benefit}
                       onDelete={() => handleDeleteBenefit(index)}
-                      deleteIcon={<DeleteIcon fontSize="small" />}
-                      color="secondary"
+                      deleteIcon={<DeleteIcon />}
+                      sx={{ 
+                        bgcolor: 'rgba(94, 129, 34, 0.1)', 
+                        color: 'rgb(94, 129, 34)',
+                        border: '1px solid rgba(94, 129, 34, 0.2)',
+                        '& .MuiChip-deleteIcon': {
+                          color: 'rgb(94, 129, 34)',
+                          '&:hover': {
+                            color: 'rgb(75, 103, 27)'
+                          }
+                        }
+                      }}
                     />
                   ))
                 )}
@@ -267,17 +284,32 @@ const AddMembershipTierForm: React.FC<AddMembershipTierFormProps> = ({
       <Divider />
       
       <DialogActions sx={{ px: 3, py: 2 }}>
-        <Button onClick={onClose} variant="outlined">
+        <Button 
+          onClick={onClose}
+          variant="outlined"
+          sx={{ 
+            color: 'rgb(94, 129, 34)',
+            borderColor: 'rgb(94, 129, 34)',
+            '&:hover': {
+              borderColor: 'rgb(75, 103, 27)',
+              backgroundColor: 'rgba(94, 129, 34, 0.04)'
+            }
+          }}
+        >
           Cancel
         </Button>
         <Button 
           type="submit"
           form="membership-tier-form"
-          variant="contained" 
-          color="primary"
-          disabled={(tierData.name || '').trim() === ''}
+          variant="contained"
+          sx={{
+            bgcolor: 'rgb(94, 129, 34)',
+            '&:hover': {
+              bgcolor: 'rgb(75, 103, 27)'
+            }
+          }}
         >
-          {isEditing ? 'Update' : 'Create'}
+          {isEditing ? 'Save Changes' : 'Create Tier'}
         </Button>
       </DialogActions>
     </Dialog>

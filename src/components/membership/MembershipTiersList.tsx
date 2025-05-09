@@ -56,7 +56,15 @@ const MembershipTiersList: React.FC = () => {
   return (
     <>
       <Box display="flex" justifyContent="space-between" alignItems="center" mb={4}>
-        <Typography variant="h4" component="h1">
+        <Typography 
+          variant="h1" 
+          component="h1" 
+          sx={{ 
+            fontSize: '2.5rem', 
+            fontWeight: 'bold', 
+            color: 'rgb(94, 129, 34)'
+          }}
+        >
           Membership Tiers
         </Typography>
         <Button
@@ -64,6 +72,13 @@ const MembershipTiersList: React.FC = () => {
           color="primary"
           startIcon={<AddIcon />}
           onClick={handleOpenForm}
+          sx={{
+            bgcolor: 'rgb(94, 129, 34)',
+            borderRadius: '20px',
+            '&:hover': {
+              bgcolor: 'rgb(75, 103, 27)'
+            }
+          }}
         >
           Add New Tier
         </Button>

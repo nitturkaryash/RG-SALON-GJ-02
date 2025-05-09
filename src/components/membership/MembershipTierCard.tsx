@@ -12,22 +12,23 @@ const StyledCard = styled(Card)(({ theme }) => ({
   flexDirection: 'column',
   justifyContent: 'space-between',
   borderRadius: theme.shape.borderRadius,
-  boxShadow: theme.shadows[3],
+  boxShadow: '0px 2px 4px rgba(0, 0, 0, 0.1)',
   backgroundColor: theme.palette.background.paper,
   color: theme.palette.text.primary,
-  transition: 'transform 0.3s ease-in-out, box-shadow 0.3s ease-in-out',
+  border: '1px solid #e0e0e0',
+  transition: 'transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out',
   '&:hover': {
-    transform: 'translateY(-4px)',
-    boxShadow: theme.shadows[6],
+    transform: 'translateY(-2px)',
+    boxShadow: '0px 4px 8px rgba(0, 0, 0, 0.1)',
   },
 }));
 
-const PriceArea = styled(Box)(({ theme }) => ({
-  backgroundColor: theme.palette.primary.main,
-  color: theme.palette.primary.contrastText,
-  padding: theme.spacing(1.5),
+const PriceArea = styled(Box)(() => ({
+  backgroundColor: 'rgb(94, 129, 34)',
+  color: '#fff',
+  padding: '12px',
   textAlign: 'center',
-  borderRadius: `0 0 ${theme.shape.borderRadius}px ${theme.shape.borderRadius}px`,
+  borderRadius: '0 0 4px 4px',
 }));
 
 interface MembershipTierCardProps {
@@ -52,7 +53,7 @@ const MembershipTierCard: React.FC<MembershipTierCardProps> = ({
               {tier.name}
             </Typography>
           </Box>
-          <Star color="primary" fontSize="large" />
+          <Star sx={{ color: 'rgb(94, 129, 34)' }} fontSize="large" />
         </Box>
         
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2, display: 'flex', alignItems: 'center' }}>
@@ -76,7 +77,11 @@ const MembershipTierCard: React.FC<MembershipTierCardProps> = ({
                 key={index} 
                 label={benefit} 
                 size="small" 
-                color="secondary" 
+                sx={{ 
+                  bgcolor: 'rgba(94, 129, 34, 0.1)', 
+                  color: 'rgb(94, 129, 34)',
+                  border: '1px solid rgba(94, 129, 34, 0.2)'
+                }}
                 variant="outlined"
               />
             ))}
@@ -90,15 +95,29 @@ const MembershipTierCard: React.FC<MembershipTierCardProps> = ({
           <Button 
             size="small" 
             variant="outlined" 
-            color="primary"
+            sx={{ 
+              color: 'rgb(94, 129, 34)',
+              borderColor: 'rgb(94, 129, 34)',
+              '&:hover': {
+                borderColor: 'rgb(75, 103, 27)',
+                backgroundColor: 'rgba(94, 129, 34, 0.04)'
+              }
+            }}
             onClick={() => onViewDetails(tier)}
           >
             Details
           </Button>
           <Button 
             size="small" 
-            variant="outlined" 
-            color="secondary"
+            variant="outlined"
+            sx={{ 
+              color: 'rgb(94, 129, 34)',
+              borderColor: 'rgb(94, 129, 34)',
+              '&:hover': {
+                borderColor: 'rgb(75, 103, 27)',
+                backgroundColor: 'rgba(94, 129, 34, 0.04)'
+              }
+            }}
             onClick={() => onEdit(tier)}
             startIcon={<Edit />}
           >
