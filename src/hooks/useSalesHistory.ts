@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { supabase } from '../utils/supabase/supabaseClient';
+import { supabase, TABLES } from '../utils/supabase/supabaseClient';
 import { showNotification } from '@mantine/notifications';
 import dayjs from 'dayjs';
 
@@ -20,6 +20,7 @@ interface SalesHistoryItem {
   stylist_name: string;
   payment_method: string;
   invoice_number: string;
+  serial_no: number;
 }
 
 // Define the type for the sales_product_new view
@@ -36,6 +37,7 @@ interface SalesProductNew {
   sgst_amount: number | null;
   total_purchase_cost: number | null;
   discount: number | null;
+  discount_percentage: number | null;
   tax: number | null;
   payment_amount: number | null;
   payment_method: string | null;
@@ -97,7 +99,8 @@ export const useSalesHistory = () => {
 
       console.log('[useSalesHistory] Fetched from sales_product_new view:', salesProductData.length);
 
-      const processedData: SalesHistoryItem[] = salesProductData.map((item: SalesProductNew) => {
+      // Process data and assign sequential serial numbers starting from 1
+      const processedData: SalesHistoryItem[] = salesProductData.map((item: SalesProductNew, index: number) => {
         // Calculate tax amount from cgst and sgst, falling back to tax field if needed
         const taxAmount = 
           (item.cgst_amount !== null && item.sgst_amount !== null) 
@@ -119,14 +122,15 @@ export const useSalesHistory = () => {
           quantity: item.quantity,
           price_excl_gst: item.unit_price_ex_gst,
           gst_percentage: item.gst_percentage || 0,
-          discount_percentage: item.discount || 0,
+          discount_percentage: item.discount_percentage || item.discount || 0,
           taxable_value: item.taxable_value,
           tax_amount: taxAmount,
           total_amount: totalAmount,
           customer_name: 'Customer', // Not available directly in the view
           stylist_name: '-', // Not available directly in the view
           payment_method: item.payment_method || 'N/A',
-          invoice_number: item.serial_no, // Use the serial_no as the invoice number
+          invoice_number: item.serial_no, // Use the original serial_no as the invoice number
+          serial_no: index + 1 // Assign new sequential serial number starting from 1
         };
       });
 
@@ -157,5 +161,25 @@ export const useSalesHistory = () => {
     };
   }, [fetchSalesHistory]);
 
-  return { salesHistory, isLoading, error, fetchSalesHistory };
+  // Update the delete function to use the correct table and primary key
+  const deleteSalesEntry = useCallback(async (itemPk: string) => {
+    try {
+      // Delete from pos_order_items using its primary key (id)
+      const { error } = await supabase
+        .from('pos_order_items')
+        .delete()
+        .eq('id', itemPk);
+      
+      if (error) throw error;
+      
+      // Refresh list after delete
+      fetchSalesHistory();
+      showNotification({ title: 'Deleted', message: 'Sales entry deleted successfully', color: 'green' });
+    } catch (err: any) {
+      console.error('[useSalesHistory] Error deleting sales entry:', err);
+      showNotification({ title: 'Error', message: err.message || 'Failed to delete sales entry', color: 'red' });
+    }
+  }, [fetchSalesHistory]);
+
+  return { salesHistory, isLoading, error, fetchSalesHistory, deleteSalesEntry };
 };

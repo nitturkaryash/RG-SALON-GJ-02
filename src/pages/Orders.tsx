@@ -1247,8 +1247,14 @@ export default function Orders() {
                   <strong>Status:</strong> {selectedOrder.status}
                 </Typography>
                 <Typography variant="body2">
-                  <strong>Payment Method:</strong> {PAYMENT_METHOD_LABELS[selectedOrder.payment_method as PaymentMethod] ||
-                    selectedOrder.payment_method.replace('_', ' ').replace(/\b\w/g, (l: string) => l.toUpperCase())}
+                  <strong>Payment Method:</strong>{" "}
+                  {Array.isArray(selectedOrder.payments) && selectedOrder.payments.length > 0
+                    ? selectedOrder.payments.map((p: PaymentDetail) =>
+                        PAYMENT_METHOD_LABELS[p.payment_method as PaymentMethod] ||
+                        p.payment_method.replace('_', ' ').replace(/\b\w/g, (l: string) => l.toUpperCase())
+                      ).join(', ')
+                    : PAYMENT_METHOD_LABELS[selectedOrder.payment_method as PaymentMethod] ||
+                      selectedOrder.payment_method.replace('_', ' ').replace(/\b\w/g, (l: string) => l.toUpperCase())}
                 </Typography>
                 {selectedOrder.appointment_time && (
                   <Typography variant="body2">
@@ -1291,7 +1297,6 @@ export default function Orders() {
                           <TableRow>
                             <TableCell>Method</TableCell>
                             <TableCell align="right">Amount</TableCell>
-                            <TableCell>Date</TableCell>
                           </TableRow>
                         </TableHead>
                         <TableBody>
@@ -1299,12 +1304,11 @@ export default function Orders() {
                             <TableRow key={payment.id}>
                               <TableCell>{PAYMENT_METHOD_LABELS[payment.payment_method as PaymentMethod]}</TableCell>
                               <TableCell align="right">{formatCurrency(payment.amount)}</TableCell>
-                              <TableCell>{new Date(payment.payment_date).toLocaleDateString()}</TableCell>
                             </TableRow>
                           ))}
                           {selectedOrder.pending_amount > 0 && (
                             <TableRow>
-                              <TableCell colSpan={2}>
+                              <TableCell>
                                 <Typography color="error">Pending Payment:</Typography>
                               </TableCell>
                               <TableCell align="right">

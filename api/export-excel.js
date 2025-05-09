@@ -8,34 +8,34 @@ export default async function handler(req, res) {
   }
 
   try {
-    // Fetch all data from Supabase
+    // Fetch raw tables and views exactly
     const [
       productsResponse,
       purchasesResponse,
       salesResponse,
       consumptionResponse,
-      balanceResponse
+      stockHistoryResponse
     ] = await Promise.all([
       supabase.from('products').select('*'),
-      supabase.from('purchases').select('*, products(*)'),
-      supabase.from('sales').select('*, products(*)'),
-      supabase.from('consumption').select('*, products(*)'),
-      supabase.from('balance_stock').select('*, products(*)')
+      supabase.from('purchases').select('*'),
+      supabase.from('sales_product_new').select('*'),
+      supabase.from('salon_consumption_products').select('*'),
+      supabase.from('stock_history').select('*')
     ]);
 
-    // Check for errors
+    // Handle errors
     if (productsResponse.error) throw productsResponse.error;
     if (purchasesResponse.error) throw purchasesResponse.error;
     if (salesResponse.error) throw salesResponse.error;
     if (consumptionResponse.error) throw consumptionResponse.error;
-    if (balanceResponse.error) throw balanceResponse.error;
+    if (stockHistoryResponse.error) throw stockHistoryResponse.error;
 
-    // Get the data
+    // Extract data arrays
     const products = productsResponse.data || [];
     const purchases = purchasesResponse.data || [];
     const sales = salesResponse.data || [];
     const consumption = consumptionResponse.data || [];
-    const balance = balanceResponse.data || [];
+    const stockHistory = stockHistoryResponse.data || [];
 
     // Create a new workbook
     const workbook = new ExcelJS.Workbook();
@@ -44,163 +44,29 @@ export default async function handler(req, res) {
     workbook.created = new Date();
     workbook.modified = new Date();
 
-    // Add a worksheet
-    const worksheet = workbook.addWorksheet('STOCK DETAILS');
+    // Helper to add JSON data to a sheet matching keys exactly
+    function addJsonSheet(sheetName, data: any[]) {
+      const sheet = workbook.addWorksheet(sheetName);
+      if (data.length > 0) {
+        const columns = Object.keys(data[0]).map(key => ({ header: key, key }));
+        sheet.columns = columns;
+        sheet.addRows(data);
+      }
+    }
 
-    // Add title
-    worksheet.addRow(['STOCK DETAILS']);
-    worksheet.addRow([]);
+    // Add each table/view as its own sheet
+    addJsonSheet('Products', products);
+    addJsonSheet('Purchases', purchases);
+    addJsonSheet('Sales History', sales);
+    addJsonSheet('Salon Consumption', consumption);
+    addJsonSheet('Stock History', stockHistory);
 
-    // Add purchase section
-    worksheet.addRow(['PURCHASE - STOCK IN']);
-    
-    // Add purchase header
-    worksheet.addRow([
-      'Date', 'Product Name', 'HSN Code', 'UNITS', 'Invoice No.', 'Qty.',
-      'Price Incl. GST', 'Price Ex. GST', 'Discount %', 'Purchase Cost Per Unit Ex. GST', 
-      'GST %', 'Taxable Value', 'IGST', 'CGST', 'SGST', 'Invoice Value'
-    ]);
-    
-    // Add purchase data
-    for (const purchase of purchases) {
-      worksheet.addRow([
-        purchase.date,
-        purchase.products?.name || '',
-        purchase.products?.hsn_code || '',
-        purchase.products?.unit || '',
-        purchase.invoice_no,
-        purchase.qty,
-        purchase.incl_gst,
-        purchase.ex_gst,
-        0, // Discount % (not stored in database)
-        purchase.ex_gst / purchase.qty, // Purchase Cost Per Unit Ex. GST
-        purchase.igst / purchase.taxable_value * 100, // GST %
-        purchase.taxable_value,
-        purchase.igst,
-        purchase.cgst,
-        purchase.sgst,
-        purchase.invoice_value
-      ]);
-    }
-    
-    worksheet.addRow([]);
-    
-    // Add sales section
-    worksheet.addRow(['SALES TO CUSTOMER - STOCK OUT']);
-    
-    // Add sales header
-    worksheet.addRow([
-      'Date', 'Product Name', 'HSN Code', 'UNITS', 'Invoice No.', 'Qty.',
-      'Purchase Cost Per Unit Ex. GST', 'Purchase GST %', 'Purchase Taxable Value',
-      'Purchase IGST', 'Purchase CGST', 'Purchase SGST', 'Total Purchase Cost',
-      'MRP Incl. GST', 'MRP Ex. GST', 'Discount %', 'Discounted Sales Rate Ex. GST',
-      'Sales GST %', 'Sales Taxable Value', 'Sales IGST', 'Sales CGST', 'Sales SGST',
-      'Invoice Value'
-    ]);
-    
-    // Add sales data
-    for (const sale of sales) {
-      worksheet.addRow([
-        sale.date,
-        sale.products?.name || '',
-        sale.products?.hsn_code || '',
-        sale.products?.unit || '',
-        sale.invoice_no,
-        sale.qty,
-        sale.purchase_cost_per_unit_ex_gst,
-        sale.purchase_gst_percentage * 100,
-        sale.purchase_taxable_value,
-        sale.purchase_igst,
-        sale.purchase_cgst,
-        sale.purchase_sgst,
-        sale.total_purchase_cost,
-        sale.incl_gst,
-        sale.ex_gst,
-        sale.discount_percentage,
-        sale.discounted_sales_rate_ex_gst,
-        sale.sales_gst_percentage * 100,
-        sale.taxable_value,
-        sale.igst,
-        sale.cgst,
-        sale.sgst,
-        sale.invoice_value
-      ]);
-    }
-    
-    worksheet.addRow([]);
-    
-    // Add consumption section
-    worksheet.addRow(['SALON CONSUMPTION - STOCK OUT']);
-    
-    // Add consumption header
-    worksheet.addRow([
-      'Date', 'Product Name', 'HSN Code', 'UNITS', 'Requisition Voucher No.', 'Qty.',
-      'Purchase Cost Per Unit Ex. GST', 'Purchase GST %', 'Taxable Value',
-      'IGST', 'CGST', 'SGST', 'Total Purchase Cost'
-    ]);
-    
-    // Add consumption data
-    for (const item of consumption) {
-      worksheet.addRow([
-        item.date,
-        item.products?.name || '',
-        item.products?.hsn_code || '',
-        item.products?.unit || '',
-        item.requisition_voucher_no || '',
-        item.qty,
-        item.purchase_cost_per_unit_ex_gst,
-        item.purchase_gst_percentage * 100,
-        item.taxable_value,
-        item.igst,
-        item.cgst,
-        item.sgst,
-        item.total_purchase_cost
-      ]);
-    }
-    
-    worksheet.addRow([]);
-    
-    // Add balance section
-    worksheet.addRow(['BALANCE STOCK']);
-    
-    // Add balance header
-    worksheet.addRow([
-      'Product Name', 'HSN Code', 'UNITS', 'Qty.', 'Taxable Value',
-      'IGST', 'CGST', 'SGST', 'Invoice Value'
-    ]);
-    
-    // Add balance data
-    for (const item of balance) {
-      worksheet.addRow([
-        item.products?.name || '',
-        item.products?.hsn_code || '',
-        item.products?.unit || '',
-        item.qty,
-        item.taxable_value,
-        item.igst,
-        item.cgst,
-        item.sgst,
-        item.invoice_value
-      ]);
-    }
-    
-    // Apply some styling
-    worksheet.getRow(1).font = { bold: true, size: 16 };
-    worksheet.getRow(3).font = { bold: true, size: 14 };
-    worksheet.getRow(4).font = { bold: true };
-    worksheet.getRow(purchases.length + 6).font = { bold: true, size: 14 };
-    worksheet.getRow(purchases.length + 7).font = { bold: true };
-    worksheet.getRow(purchases.length + sales.length + 9).font = { bold: true, size: 14 };
-    worksheet.getRow(purchases.length + sales.length + 10).font = { bold: true };
-    worksheet.getRow(purchases.length + sales.length + consumption.length + 12).font = { bold: true, size: 14 };
-    worksheet.getRow(purchases.length + sales.length + consumption.length + 13).font = { bold: true };
-    
     // Generate the Excel file
     const buffer = await workbook.xlsx.writeBuffer();
     
     // Set response headers
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', 'attachment; filename=STOCK_DETAILS.xlsx');
+    res.setHeader('Content-Disposition', 'attachment; filename=RG_Salon_Inventory_Report.xlsx');
     
     // Send the file
     res.status(200).send(Buffer.from(buffer));

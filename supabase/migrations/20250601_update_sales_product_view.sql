@@ -7,6 +7,7 @@ DROP VIEW IF EXISTS sales_product_new;
 CREATE OR REPLACE VIEW sales_product_new AS
 SELECT
     po.id AS order_id,
+    pi.id AS order_item_pk,
     CONCAT('INV-', SUBSTR(po.id::text, 1, 8)) AS serial_no,
     po.created_at AS date,
     p.name AS product_name,

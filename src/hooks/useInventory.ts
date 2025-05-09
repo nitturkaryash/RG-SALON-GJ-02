@@ -284,6 +284,7 @@ export const useInventory = () => {
     const mrpExclGst = gstPercentage >= 0 ? mrpInclGst / (1 + (gstPercentage / 100)) : mrpInclGst;
 
     // Calculate or use provided purchase cost per unit ex GST
+    // This is the price after applying discount to MRP excluding GST
     let costPerUnitExGst = providedCost > 0 ? providedCost : mrpExclGst * (1 - (discountPercentage / 100));
     // Handle potential NaN/Infinity from mrpExclGst calculation
     if (!isFinite(costPerUnitExGst)) {

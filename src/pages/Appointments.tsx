@@ -91,7 +91,6 @@ interface ServiceCollection {
 interface ClientAppointmentEntry {
   id: string;
   client: (Client & { inputValue?: string }) | null; // Allow storing inputValue for new clients
-  selectedCollectionId: string | null;
   services: Service[];
   stylists: Pick<Stylist, 'id' | 'name'>[];
 }
@@ -104,7 +103,7 @@ export default function Appointments() {
   const [selectedSlot, setSelectedSlot] = useState<DateSelectArg | null>(null);
   const [selectedStylistId, setSelectedStylistId] = useState<string | null>(null);
   const [clientEntries, setClientEntries] = useState<ClientAppointmentEntry[]>([
-    { id: uuidv4(), client: null, selectedCollectionId: null, services: [], stylists: [] }
+    { id: uuidv4(), client: null, services: [], stylists: [] }
   ]);
   const [appointmentTime, setAppointmentTime] = useState({ startTime: '', endTime: '' });
   const [appointmentNotes, setAppointmentNotes] = useState('');
@@ -143,7 +142,7 @@ export default function Appointments() {
 
   // --- Other Helper Functions ---
   const addBlankEntry = () => {
-    setClientEntries(prev => [...prev, { id: uuidv4(), client: null, selectedCollectionId: null, services: [], stylists: [] }]);
+    setClientEntries(prev => [...prev, { id: uuidv4(), client: null, services: [], stylists: [] }]);
   };
 
   const removeEntry = (id: string) => {
@@ -155,9 +154,6 @@ export default function Appointments() {
       prev.map(e => {
         if (e.id === id) {
           const updatedEntry = { ...e, ...changes };
-          if (changes.selectedCollectionId !== undefined && changes.selectedCollectionId !== e.selectedCollectionId) {
-            updatedEntry.services = []; // Reset services if collection changes
-          }
           return updatedEntry;
         }
         return e;
@@ -174,7 +170,7 @@ export default function Appointments() {
       startTime: `${startDate.getHours()}:${String(startDate.getMinutes()).padStart(2, '0')}`,
       endTime: `${endDate.getHours()}:${String(endDate.getMinutes()).padStart(2, '0')}`,
     });
-    setClientEntries([{ id: uuidv4(), client: null, selectedCollectionId: null, services: [], stylists: [] }]);
+    setClientEntries([{ id: uuidv4(), client: null, services: [], stylists: [] }]);
     setAppointmentNotes('');
   };
 
@@ -193,18 +189,17 @@ export default function Appointments() {
       return {
         id: uuidv4(),
         client: client ? { ...client } : null, // Ensure client exists before spreading
-        selectedCollectionId: clientDetail.selectedCollectionId || clientDetail.services?.[0]?.collection_id || null,
-          services: clientDetail.services || [], 
-          stylists: clientDetail.stylists || [], 
+        services: clientDetail.services || [], 
+        stylists: clientDetail.stylists || [], 
       };
     }).filter((entry): entry is ClientAppointmentEntry => entry !== null);
 
     if (clientEntriesToSet.length === 0 && appointment.clientDetails?.length > 0) {
       console.warn("Appointment data missing nested client details after filtering. Check data consistency.");
-      setClientEntries([{ id: uuidv4(), client: null, selectedCollectionId: null, services: [], stylists: [] }]);
+      setClientEntries([{ id: uuidv4(), client: null, services: [], stylists: [] }]);
     } else if (clientEntriesToSet.length === 0) {
        console.log("Setting default blank entry as clientDetails was empty.")
-       setClientEntries([{ id: uuidv4(), client: null, selectedCollectionId: null, services: [], stylists: [] }]);
+       setClientEntries([{ id: uuidv4(), client: null, services: [], stylists: [] }]);
     } else {
       setClientEntries(clientEntriesToSet);
     }
@@ -239,7 +234,6 @@ export default function Appointments() {
     setClientEntries([{ 
       id: uuidv4(), 
       client: null, 
-      selectedCollectionId: null, 
       services: [], 
       stylists: preSelectedStylist ? [{ id: preSelectedStylist.id, name: preSelectedStylist.name }] : []
     }]);
@@ -266,10 +260,6 @@ export default function Appointments() {
       if (isNewClient && !clientPhone) {
         console.error(`Validation Error: Phone number required for new client in entry ${idx + 1}`);
           isValid = false;
-      }
-      if (!entry.selectedCollectionId) {
-        console.error(`Validation Error: Collection not selected for entry ${idx + 1}`);
-        isValid = false;
       }
       if (entry.services.length === 0) {
         console.error(`Validation Error: No services selected for entry ${idx + 1}`);
@@ -431,7 +421,7 @@ export default function Appointments() {
     setSelectedSlot(null);
     setEditingAppointment(null);
     setIsBilling(false);
-    setClientEntries([{ id: uuidv4(), client: null, selectedCollectionId: null, services: [], stylists: [] }]);
+    setClientEntries([{ id: uuidv4(), client: null, services: [], stylists: [] }]);
     setAppointmentTime({ startTime: '', endTime: '' });
     setAppointmentNotes('');
   };
@@ -443,11 +433,6 @@ export default function Appointments() {
   if (loadingAppointments || loadingServices || loadingStylists || loadingClients || loadingCollections) {
     return <CircularProgress />;
   }
-
-  const getFilteredServices = (entry: ClientAppointmentEntry): Service[] => {
-    if (!entry.selectedCollectionId) return [];
-    return (allServices || []).filter(service => service.collection_id === entry.selectedCollectionId);
-  };
 
   const showDrawer = !!selectedSlot || !!editingAppointment;
 
@@ -472,6 +457,7 @@ export default function Appointments() {
         }}
       >
         <StylistDayView
+          key={selectedDate.toISOString()}
           stylists={processedStylists}
           appointments={appointments}
           services={allServices}
@@ -490,10 +476,12 @@ export default function Appointments() {
         sx={{
           width: drawerWidth,
           flexShrink: 0,
-          zIndex: 10,
+          zIndex: showDrawer ? 10 : -1,
           position: 'absolute',
           right: 0,
           height: '100%',
+          visibility: showDrawer ? 'visible' : 'hidden',
+          pointerEvents: showDrawer ? 'auto' : 'none',
           '& .MuiDrawer-paper': { 
             width: drawerWidth, 
             boxSizing: 'border-box',
@@ -642,30 +630,16 @@ export default function Appointments() {
                 </Grid>
               )}
 
-              <FormControl fullWidth sx={{ mb: 2 }}>
-                <InputLabel id={`collection-label-${entry.id}`}>Service Collection</InputLabel>
-                <Select
-                  labelId={`collection-label-${entry.id}`}
-                  value={entry.selectedCollectionId || ''}
-                  label="Service Collection"
-                  onChange={(e) => updateEntry(entry.id, { selectedCollectionId: e.target.value || null })}
-                >
-                  <MenuItem value=""><em>None</em></MenuItem>
-                  {serviceCollections.map(collection => <MenuItem key={collection.id} value={collection.id}>{collection.name}</MenuItem>)}
-                </Select>
-              </FormControl>
-
               <Autocomplete
                 sx={{ mb: 2 }}
                 multiple
-                options={getFilteredServices(entry)}
+                options={allServices || []}
                 getOptionLabel={(option) => `${option.name} (${formatCurrency(option.price)})`}
                 value={entry.services}
                 onChange={(event, newValue) => updateEntry(entry.id, { services: newValue })}
                 renderInput={(params) => <TextField {...params} label="Select Services" variant="outlined" />}
                 renderTags={(value, getTagProps) => value.map((option, index) => <Chip variant="outlined" label={option.name} {...getTagProps({ index })} />)}
                 isOptionEqualToValue={(option, value) => option.id === value.id}
-                disabled={!entry.selectedCollectionId}
               />
 
               <Autocomplete

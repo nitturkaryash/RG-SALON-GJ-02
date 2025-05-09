@@ -1,3 +1,4 @@
+-- Update sales_product_new view to include order_item_pk for proper deletion
 DROP VIEW IF EXISTS sales_product_new;
 
 CREATE OR REPLACE VIEW sales_product_new AS
@@ -79,4 +80,79 @@ final_sales AS (
         order_item_pk
     FROM cumulative_sales
 )
-SELECT * FROM final_sales; 
+SELECT * FROM final_sales;
+
+-- Create function for safely deleting sales items
+DROP FUNCTION IF EXISTS delete_sales_item;
+
+CREATE OR REPLACE FUNCTION delete_sales_item(item_id TEXT)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $delete_sales_item$
+DECLARE
+  result JSONB;
+  affected_rows INT;
+  order_uuid UUID;  -- declare order_uuid to track the parent order
+BEGIN
+  -- Log the deletion attempt for debugging
+  RAISE NOTICE 'Attempting to delete sales item with ID: %', item_id;
+  
+  -- Check if the item exists
+  IF NOT EXISTS (SELECT 1 FROM pos_order_items WHERE id = item_id::UUID) THEN
+    RETURN jsonb_build_object(
+      'success', false,
+      'error', 'Item not found with ID: ' || item_id
+    );
+  END IF;
+
+  -- Fetch the associated order ID and remove the service entry from the order's JSON
+  SELECT pos_order_id INTO order_uuid FROM pos_order_items WHERE id = item_id::UUID;
+  UPDATE pos_orders
+  SET services = (
+    SELECT COALESCE(jsonb_agg(elem), '[]'::jsonb)
+    FROM jsonb_array_elements(services) AS elem
+    WHERE elem->>'id' != item_id
+  )
+  WHERE id = order_uuid;
+  RAISE NOTICE 'Removed JSON element from pos_orders for order %', order_uuid;
+
+  -- Delete the item from pos_order_items
+  DELETE FROM pos_order_items 
+  WHERE id = item_id::UUID
+  RETURNING count(*) INTO affected_rows;
+  
+  -- Check if deletion was successful
+  IF affected_rows > 0 THEN
+    result := jsonb_build_object(
+      'success', true,
+      'message', 'Successfully deleted sales item and removed from order JSON',
+      'affected_rows', affected_rows
+    );
+  ELSE
+    result := jsonb_build_object(
+      'success', false,
+      'error', 'Failed to delete item. No rows affected.'
+    );
+  END IF;
+  
+  RETURN result;
+END;
+$delete_sales_item$; 
+
+-- Add a rule so that DELETE on the view deletes the underlying item and updates the JSON
+DROP RULE IF EXISTS delete_sales_item_on_view ON sales_product_new;
+CREATE RULE delete_sales_item_on_view AS
+ON DELETE TO sales_product_new
+DO INSTEAD (
+  -- Remove the service element from the parent order's JSON array
+  UPDATE pos_orders
+  SET services = (
+    SELECT COALESCE(jsonb_agg(elem), '[]'::jsonb)
+    FROM jsonb_array_elements(services) AS elem
+    WHERE elem->>'id' != OLD.order_item_id
+  )
+  WHERE id = OLD.order_id;
+  -- Delete the row from the pos_order_items table
+  DELETE FROM pos_order_items WHERE id = OLD.order_item_pk;
+); 

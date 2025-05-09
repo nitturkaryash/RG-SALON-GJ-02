@@ -78,6 +78,7 @@ export interface CreateOrderData {
 	payment_method: PaymentMethod | 'split';
 	split_payments?: PaymentDetail[];
 	discount?: number;
+	discount_percentage?: number; // Add discount percentage field
 	notes?: string;
 	subtotal: number;
 	tax: number;
@@ -151,6 +152,7 @@ interface PosOrder {
   subtotal: number;
   tax: number;
   discount: number;
+  discount_percentage?: number;
   payment_method: PaymentMethod | 'split';
   status: 'completed' | 'pending' | 'cancelled';
   appointment_time?: string;
@@ -349,6 +351,17 @@ export async function deleteOrder(orderId: string): Promise<{ success: boolean, 
       return { success: false, message: 'Order not found or could not be fetched' };
     }
     
+    // Delete associated order items to avoid foreign key conflict
+    const { error: deleteItemsError } = await supabase
+      .from('pos_order_items')
+      .delete()
+      .eq('pos_order_id', orderId);
+
+    if (deleteItemsError) {
+      console.error('Error deleting order items:', deleteItemsError);
+      return { success: false, message: 'Failed to delete order items: ' + deleteItemsError.message };
+    }
+
     // Delete the order
     const { error: deleteError } = await supabase
       .from('pos_orders')
@@ -889,6 +902,7 @@ export function usePOS() {
         subtotal: subtotal,
         tax: tax,
         discount: discount,
+        discount_percentage: data.discount_percentage, // Add discount percentage field
         payment_method: data.payment_method,
         status: orderStatus,
         appointment_time: data.appointment_time,
@@ -1191,7 +1205,16 @@ export function usePOS() {
           order_date: data.order_date || new Date().toISOString(),
           is_walk_in: data.is_walk_in !== undefined ? data.is_walk_in : true,
           pending_amount: data.pending_amount || 0,
-          payments: data.payments || []
+          payments: data.payments || [],
+          discount: data.discount,
+          discount_percentage: data.discount_percentage,
+          split_payments: data.split_payments || [],
+          consumption_purpose: data.consumption_purpose,
+          consumption_notes: data.consumption_notes,
+          is_salon_consumption: data.is_salon_consumption,
+          appointment_id: data.appointment_id,
+          appointment_time: data.appointment_time,
+          stylist_name: data.stylist_name,
         };
         
         // Use the existing walkInOrder mutation to process the order

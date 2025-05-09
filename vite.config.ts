@@ -122,14 +122,16 @@ export default defineConfig({
   optimizeDeps: {
     // Include more dependencies for pre-bundling to prevent issues
     include: [
-      '@emotion/react', 
-      '@emotion/styled', 
+      '@emotion/react',
+      '@emotion/styled',
       '@mui/material/Tooltip',
       '@mui/material',
       '@mui/icons-material',
       'react-router-dom',
       'react-toastify',
-      'framer-motion'
+      'framer-motion',
+      '@mui/x-date-pickers',
+      '@mui/x-date-pickers/AdapterDateFns'
     ],
     // Force nested dependencies to be pre-bundled
     force: true

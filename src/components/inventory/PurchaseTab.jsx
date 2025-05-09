@@ -283,6 +283,7 @@ function PurchaseForm({ onSubmit, isSubmitting }) {
         
         // Calculate purchase cost per unit after discount
         const discountPercentage = updatedData.discount_on_purchase_percentage;
+        // This is the price after applying discount to MRP excluding GST
         updatedData.purchase_cost_per_unit_ex_gst = parseFloat((updatedData.mrp_excl_gst * (1 - (discountPercentage / 100))).toFixed(2));
         
         // Calculate taxable value = purchase cost per unit * quantity
@@ -291,12 +292,13 @@ function PurchaseForm({ onSubmit, isSubmitting }) {
         // Calculate GST components
         const gstAmount = parseFloat((updatedData.purchase_taxable_value * (gstPercentage / 100)).toFixed(2));
         
-        // Split between CGST and SGST
-        updatedData.purchase_igst = 0;
+        // For simplicity, split between CGST and SGST evenly if not IGST
+        // In a real application, this logic would depend on whether it's inter-state (IGST) or intra-state (CGST+SGST)
+        updatedData.purchase_igst = 0; // Default to 0, would be set based on state-to-state transaction
         updatedData.purchase_cgst = parseFloat((gstAmount / 2).toFixed(2));
         updatedData.purchase_sgst = parseFloat((gstAmount / 2).toFixed(2));
         
-        // Calculate invoice value
+        // Calculate invoice value = taxable value + IGST + CGST + SGST
         updatedData.purchase_invoice_value_rs = parseFloat((updatedData.purchase_taxable_value + 
             updatedData.purchase_igst + updatedData.purchase_cgst + updatedData.purchase_sgst).toFixed(2));
         
@@ -846,6 +848,7 @@ const PurchaseTab = ({ purchases: initialPurchases, isLoading, error, purchasesQ
             
             // Calculate purchase cost per unit after discount
             const discountPercentage = updatedFormState.discount_on_purchase_percentage;
+            // This is the price after applying discount to MRP excluding GST
             updatedFormState.purchase_cost_per_unit_ex_gst = parseFloat((updatedFormState.mrp_excl_gst * (1 - (discountPercentage / 100))).toFixed(2));
             
             // Calculate taxable value = purchase cost per unit * quantity
@@ -920,6 +923,7 @@ const PurchaseTab = ({ purchases: initialPurchases, isLoading, error, purchasesQ
                 const discountPercentage = updatedFormState.discount_on_purchase_percentage;
                 
                 // Calculate purchase cost per unit after discount
+                // This is the price after applying discount to MRP excluding GST
                 updatedFormState.purchase_cost_per_unit_ex_gst = parseFloat((updatedFormState.mrp_excl_gst * (1 - (discountPercentage / 100))).toFixed(2));
                 
                 // Calculate taxable value
@@ -1260,10 +1264,11 @@ const PurchaseTab = ({ purchases: initialPurchases, isLoading, error, purchasesQ
                     >
                         <TableHead>
                             <TableRow>
+                                <StyledTableCell>S.No</StyledTableCell>
                                 <StyledTableCell>Date</StyledTableCell>
                                 <StyledTableCell>Product Name</StyledTableCell>
                                 <StyledTableCell>HSN Code</StyledTableCell>
-                                <StyledTableCell>Units</StyledTableCell>
+                                <StyledTableCell>UNITS</StyledTableCell>
                                 <StyledTableCell>Invoice Number</StyledTableCell>
                                 <StyledTableCell>Qty</StyledTableCell>
                                 <StyledTableCell>MRP (Incl. GST)</StyledTableCell>
@@ -1281,7 +1286,6 @@ const PurchaseTab = ({ purchases: initialPurchases, isLoading, error, purchasesQ
                         <TableBody>
                             {/* Combine cleaned purchases with local purchases to show the most up-to-date data */}
                             {(() => {
-                                // Create a merged array with no duplicates
                                 const allPurchases = [...localPurchases];
                                 // Add cleaned purchases that aren't already in the local state
                                 const localIds = new Set(localPurchases.map(p => p.purchase_id || p.id));
@@ -1296,7 +1300,8 @@ const PurchaseTab = ({ purchases: initialPurchases, isLoading, error, purchasesQ
                                 
                                 return allPurchases
                                 .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
-                                .map((purchase) => {
+                                .map((purchase, idx) => {
+                                    const serial = page * rowsPerPage + idx + 1;
                                     // Check if this is the newly added purchase
                                     const isNewPurchase = newPurchaseId && 
                                         (purchase.purchase_id === newPurchaseId || purchase.id === newPurchaseId);
@@ -1318,11 +1323,12 @@ const PurchaseTab = ({ purchases: initialPurchases, isLoading, error, purchasesQ
                                                 })
                                             }}
                                         >
+                                            <TableCell align="left">{serial}</TableCell>
                                             <TableCell align="left">{formatDate(purchase.date)}</TableCell>
                                             <TableCell align="left">{purchase.product_name}</TableCell>
                                             <TableCell align="left">{purchase.hsn_code}</TableCell>
                                             <TableCell align="left">{purchase.units}</TableCell>
-                                                <TableCell align="left">{purchase.invoice_no}</TableCell>
+                                            <TableCell align="left">{purchase.invoice_no}</TableCell>
                                             <TableCell align="left">{purchase.purchase_qty}</TableCell>
                                             <TableCell align="left">₹{parseFloat(purchase.mrp_incl_gst || 0).toFixed(2)}</TableCell>
                                             <TableCell align="left">₹{parseFloat(purchase.mrp_excl_gst || 0).toFixed(2)}</TableCell>
@@ -1336,7 +1342,7 @@ const PurchaseTab = ({ purchases: initialPurchases, isLoading, error, purchasesQ
                                             <TableCell align="left">₹{parseFloat(purchase.purchase_invoice_value_rs || 0).toFixed(2)}</TableCell>
                                         </TableRow>
                                     );
-                                    });
+                                });
                             })()}
                         </TableBody>
                     </Table>

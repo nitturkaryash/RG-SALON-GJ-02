@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from 'react';
-import { supabase } from '../../lib/supabase-client';
 import { useTheme } from '@mui/material/styles';
 import { 
   Box, 
@@ -13,16 +12,18 @@ import {
   Select,
   TextField,
   Typography,
+  Alert,
 } from '@mui/material';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import moment from 'moment';
+import { useSalesHistory } from '../../hooks/useSalesHistory';
 import SalesHistoryTable from './SalesHistoryTable';
 
 // Define the type for sales history items
 interface SalesItem {
-  serial_no: string;
+  serial_no: string | number;
   order_id: string;
   date: string;
   product_name: string;
@@ -53,12 +54,16 @@ interface SalesItem {
   igst_amount?: string | null;
   // Added from database view
   remaining_stock?: number | null;
+  taxable_after_discount?: string;
+  original_serial_no?: string;
+  order_item_pk?: string;
+  id?: string;
 }
 
 export default function SalesHistory() {
   const theme = useTheme();
-  const [loading, setLoading] = useState(true);
-  const [salesData, setSalesData] = useState<SalesItem[]>([]);
+  // Use hook for fetching and deleting sales history
+  const { salesHistory, isLoading: loading, error, fetchSalesHistory, deleteSalesEntry } = useSalesHistory();
   const [filteredData, setFilteredData] = useState<SalesItem[]>([]);
   const [startDate, setStartDate] = useState<Date | null>(new Date(new Date().setDate(new Date().getDate() - 30))); // Last 30 days
   const [endDate, setEndDate] = useState<Date | null>(new Date());
@@ -70,183 +75,45 @@ export default function SalesHistory() {
   const totalSales = filteredData.reduce((sum, item) => sum + Number(item.payment_amount), 0);
   const totalTax = filteredData.reduce((sum, item) => sum + Number(item.tax), 0);
 
+  // Fetch sales history on mount
   useEffect(() => {
-    fetchSalesData();
-  }, []);
+    fetchSalesHistory();
+  }, [fetchSalesHistory]);
 
+  // Apply filtering when data or filters change
   useEffect(() => {
-    if (salesData.length > 0) {
-      filterData();
-    }
-  }, [salesData, startDate, endDate, searchTerm, paymentMethod, productType]);
-
-  const fetchSalesData = async () => {
-    try {
-      setLoading(true);
-      const { data, error } = await supabase
-        .from('sales_product_new_view')
-        .select(`
-          serial_no,
-          order_id,
-          date,
-          product_name,
-          quantity,
-          unit_price_ex_gst,
-          gst_percentage,
-          taxable_value,
-          cgst_amount,
-          sgst_amount,
-          total_purchase_cost,
-          discount,
-          tax,
-          payment_amount,
-          payment_method,
-          payment_date,
-          current_stock,
-          current_stock_amount,
-          c_sgst,
-          c_cgst,
-          c_tax,
-          hsn_code,
-          product_type,
-          mrp_incl_gst,
-          discounted_sales_rate_ex_gst,
-          invoice_value,
-          igst_amount,
-          product_id,
-          remaining_stock
-        `)
-        .order('date', { ascending: false });
-
-      if (error) {
-        console.error('Error fetching sales data:', error);
-      } else if (data) {
-        setSalesData(data);
-      }
-    } catch (error) {
-      console.error('Error:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Enrich sales data with current stock information
-  const enrichSalesDataWithStock = async (salesData: any[]) => {
-    try {
-      // Extract unique product IDs
-      const productIds = [...new Set(salesData
-        .filter(item => item.product_id)
-        .map(item => item.product_id))];
-      
-      if (productIds.length === 0) return salesData;
-
-      // Fetch current stock data for these products
-      const { data: stockData, error } = await supabase
-        .from('products')
-        .select('id, stock_quantity, purchase_price, purchase_price_incl_tax, purchase_tax_rate')
-        .in('id', productIds);
-      
-      if (error) {
-        console.error('Error fetching stock data:', error);
-        return salesData;
-      }
-
-      // Create a map for quick lookups
-      const stockMap = new Map();
-      stockData?.forEach(item => {
-        stockMap.set(item.id, {
-          stock_quantity: item.stock_quantity,
-          purchase_price: item.purchase_price,
-          purchase_price_incl_tax: item.purchase_price_incl_tax,
-          purchase_tax_rate: item.purchase_tax_rate
-        });
-      });
-
-      // Enrich sales data with stock information
-      return salesData.map(item => {
-        if (!item.product_id || !stockMap.has(item.product_id)) {
-          return {
-            ...item,
-            current_stock: null,
-            current_stock_amount: null,
-            c_sgst: null,
-            c_cgst: null,
-            c_tax: null
-          };
-        }
-
-        const stockInfo = stockMap.get(item.product_id);
-        const stockQuantity = stockInfo.stock_quantity || 0;
-        const purchasePrice = stockInfo.purchase_price || 0;
-        const stockAmount = stockQuantity * purchasePrice;
-        
-        // Calculate tax
-        const taxRate = stockInfo.purchase_tax_rate || 0;
-        const cgst = taxRate > 0 ? (stockAmount * (taxRate / 2)) / 100 : 0;
-        const sgst = taxRate > 0 ? (stockAmount * (taxRate / 2)) / 100 : 0;
-        const totalTax = cgst + sgst;
-
-        return {
-          ...item,
-          current_stock: stockQuantity,
-          current_stock_amount: stockAmount,
-          c_sgst: sgst,
-          c_cgst: cgst,
-          c_tax: totalTax
-        };
-      });
-    } catch (error) {
-      console.error('Error enriching sales data:', error);
-      return salesData;
-    }
-  };
-
-  const filterData = () => {
-    let filtered = [...salesData];
-
+    let filtered = [...salesHistory];
     // Date filter
     if (startDate && endDate) {
       const start = moment(startDate).startOf('day');
       const end = moment(endDate).endOf('day');
-      
       filtered = filtered.filter(item => {
         const itemDate = moment(item.date);
         return itemDate.isSameOrAfter(start) && itemDate.isSameOrBefore(end);
       });
     }
-
     // Search term filter
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
       filtered = filtered.filter(item => 
-        item.product_name.toLowerCase().includes(term) ||
-        item.order_id.toLowerCase().includes(term) ||
-        (item.hsn_code && item.hsn_code.toLowerCase().includes(term))
+        (item.product_name && item.product_name.toLowerCase().includes(term)) ||
+        (item.serial_no && item.serial_no.toString().toLowerCase().includes(term))
       );
     }
-
     // Payment method filter
     if (paymentMethod !== 'all') {
       filtered = filtered.filter(item => 
-        item.payment_method?.toLowerCase() === paymentMethod.toLowerCase()
+        item.payment_method && item.payment_method.toLowerCase() === paymentMethod.toLowerCase()
       );
     }
-
     // Product type filter
     if (productType !== 'all') {
       filtered = filtered.filter(item => 
-        item.product_type?.toLowerCase() === productType.toLowerCase()
+        item.product_type && item.product_type.toLowerCase() === productType.toLowerCase()
       );
     }
-
-    // Add serial numbers
-    filtered = filtered.map((item, index) => ({
-      ...item,
-      serial_no: (index + 1).toString()
-    }));
-
     setFilteredData(filtered);
-  };
+  }, [salesHistory, startDate, endDate, searchTerm, paymentMethod, productType]);
 
   const exportToCSV = () => {
     // Headers for the CSV
@@ -284,7 +151,7 @@ export default function SalesHistory() {
 
     for (const item of filteredData) {
       const row = [
-        item.serial_no,
+        item.serial_no.toString(),
         new Date(item.date).toLocaleDateString(),
         `"${item.order_id}"`,
         `"${item.product_name}"`,
@@ -412,8 +279,10 @@ export default function SalesHistory() {
             totalTax={totalTax}
             loading={loading}
             onExportCsv={exportToCSV}
+            onDeleteSale={deleteSalesEntry}
           />
         )}
+        {error && <Alert severity="error">{error}</Alert>}
       </Paper>
     </Container>
   );

@@ -101,7 +101,8 @@ export const addPurchaseTransaction = async (purchaseData: PurchaseFormData) => 
       product_name: purchaseData.product_name,
       date: purchaseData.date || timestamp,
       hsn_code: purchaseData.hsn_code || null,
-      units: purchaseData.units || null,
+      // Use editable unit_type if provided, fallback to units
+      units: purchaseData.unit_type || purchaseData.units || null,
       purchase_invoice_number: purchaseData.invoice_number || purchaseData.purchase_invoice_number || 'N/A',
       purchase_qty: purchaseData.purchase_qty || 0,
       mrp_incl_gst: purchaseData.mrp_incl_gst || 0,
@@ -119,12 +120,25 @@ export const addPurchaseTransaction = async (purchaseData: PurchaseFormData) => 
     };
 
     // Persist the purchase record into the inventory_purchases table
-    const { error: purchaseInsertError } = await supabase
-      .from(TABLES.PURCHASES)  // 'inventory_purchases'
-      .insert(purchaseRecord);
-    if (purchaseInsertError) {
-      console.error("Error inserting purchase record:", purchaseInsertError);
-      throw new Error(`Failed to record purchase: ${purchaseInsertError.message}`);
+    if (isUpdate) {
+      // Update existing purchase
+      const { error: purchaseUpdateError } = await supabase
+        .from(TABLES.PURCHASES)
+        .update(purchaseRecord)
+        .eq('purchase_id', purchaseRecord.purchase_id);
+      if (purchaseUpdateError) {
+        console.error("Error updating purchase record:", purchaseUpdateError);
+        throw new Error(`Failed to update purchase: ${purchaseUpdateError.message}`);
+      }
+    } else {
+      // Insert new purchase
+      const { error: purchaseInsertError } = await supabase
+        .from(TABLES.PURCHASES)
+        .insert(purchaseRecord);
+      if (purchaseInsertError) {
+        console.error("Error inserting purchase record:", purchaseInsertError);
+        throw new Error(`Failed to record purchase: ${purchaseInsertError.message}`);
+      }
     }
 
     // --- Step 4: Calculate new stock and update product --- 

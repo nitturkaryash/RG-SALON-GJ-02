@@ -23,8 +23,8 @@ const Stylists = lazy(() => import('./pages/Stylists'));
 const ServiceCollections = lazy(() => import('./pages/ServiceCollections'));
 const ServiceCollectionDetail = lazy(() => import('./pages/ServiceCollectionDetail'));
 const Orders = lazy(() => import('./pages/Orders'));
-const POS = lazy(() => import('./pages/POS.tsx'));
-const Products = lazy(() => import('./pages/InventoryManager.tsx'));
+const POS = lazy(() => import('./pages/POS'));
+const Products = lazy(() => import('./pages/InventoryManager'));
 const ProductMaster = lazy(() => import('./pages/ProductMaster'));
 const CollectionDetail = lazy(() => import('./pages/CollectionDetail'));
 

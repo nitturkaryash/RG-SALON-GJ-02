@@ -18,14 +18,14 @@ import {
 } from '@mui/material';
 import { 
   Refresh as RefreshIcon,
-  FileDownload as FileDownloadIcon,
-  Delete as DeleteIcon
+  FileDownload as FileDownloadIcon
 } from '@mui/icons-material';
 import { styled } from '@mui/material/styles';
 import { useInventory } from '../../hooks/useInventory';
 import { BalanceStock } from '../../models/inventoryTypes';
 import { convertToCSV, downloadCSV } from '../../utils';
 import { toast } from 'react-toastify';
+import DeleteButton from '../DeleteButton';
 
 interface ProductStockSummary {
   id: string;
@@ -253,19 +253,14 @@ const BalanceStockTab: React.FC<BalanceStockTabProps> = ({ balanceStock, isLoadi
   };
 
   const handleDeleteProduct = async (productName: string) => {
+    if (isDeleting) return;
+    setIsDeleting(true);
     try {
-      // Use state to prevent multiple delete calls
-      if (isDeleting) return;
-      
-      if (window.confirm(`Are you sure you want to delete "${productName}" from inventory completely? This will delete all purchase, sales, and consumption records for this product. This action cannot be undone.`)) {
-        setIsDeleting(true);
-        
-        const result = await deleteProduct(productName);
-        if (result.success) {
-          toast.success(`Successfully deleted "${productName}" from inventory`);
-        } else {
-          toast.error(`Failed to delete "${productName}": ${result.error}`);
-        }
+      const result = await deleteProduct(productName);
+      if (result.success) {
+        toast.success(`Successfully deleted "${productName}" from inventory`);
+      } else {
+        toast.error(`Failed to delete "${productName}": ${result.error}`);
       }
     } catch (error) {
       console.error(`Error deleting product "${productName}":`, error);
@@ -371,14 +366,13 @@ const BalanceStockTab: React.FC<BalanceStockTabProps> = ({ balanceStock, isLoadi
                         <TableCell align="right">{formatCurrency(item.sgst)}</TableCell>
                         <TableCell align="right">{formatCurrency(item.invoice_value)}</TableCell>
                         <TableCell align="center">
-                          <IconButton 
-                            size="small" 
-                            color="error"
-                            onClick={() => handleDeleteProduct(item.product_name)}
+                          <DeleteButton
+                            onDelete={() => handleDeleteProduct(item.product_name)}
+                            itemName={item.product_name}
+                            itemType="product"
                             disabled={isDeleting}
-                          >
-                            <DeleteIcon fontSize="small" />
-                          </IconButton>
+                            size="small"
+                          />
                         </TableCell>
                       </TableRow>
                     ))}

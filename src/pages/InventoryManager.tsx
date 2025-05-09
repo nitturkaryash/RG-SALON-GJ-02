@@ -157,7 +157,8 @@ export default function InventoryManager() {
     purchases,
     isLoading: isLoadingPurchases,
     error: errorPurchases,
-    fetchPurchases
+    fetchPurchases,
+    deletePurchaseTransaction
   } = usePurchaseHistory();
 
   const [open, setOpen] = useState(false);
@@ -179,6 +180,7 @@ export default function InventoryManager() {
 
   // State for consumption data
   const [consumptionData, setConsumptionData] = useState<any[]>([]);
+  const [salesData, setSalesData] = useState<any[]>([]);
   
   // Add date filter state
   const [dateFilter, setDateFilter] = useState<{
@@ -220,50 +222,185 @@ export default function InventoryManager() {
     console.log('🚀 handleExport triggered');
     setIsExporting(true);
     try {
-      // fetch only the four UI tables
-      const [
-        purchasesRes,
-        consumptionRes,
-        salesRes,
-        stockHistoryRes
-      ] = await Promise.all([
-        supabase.from('inventory_purchases').select('*'),
-        supabase.from('salon_consumption_products').select('*'),
-        supabase.from('sales_products_new').select('*'),
-        supabase.from('stock_history').select('*')
-      ]);
-
-      // handle errors
-      if (purchasesRes.error) throw purchasesRes.error;
-      if (consumptionRes.error) throw consumptionRes.error;
-      if (salesRes.error) throw salesRes.error;
-      if (stockHistoryRes.error) throw stockHistoryRes.error;
-
-      // data arrays
-      const purchases = purchasesRes.data || [];
-      const consumption = consumptionRes.data || [];
-      const sales = salesRes.data || [];
-      const stockHistory = stockHistoryRes.data || [];
-
-      console.log('Export fetched:',
-        'purchases=', purchases.length,
-        'consumption=', consumption.length,
-        'sales=', sales.length,
-        'stockHistory=', stockHistory.length);
-
+      // Create new workbook
       const wb = XLSX.utils.book_new();
 
-      // append each sheet with UI sheet names
-      const appendSheet = (name, data) => {
-        const ws = XLSX.utils.json_to_sheet(data);
-        XLSX.utils.book_append_sheet(wb, ws, name);
-      };
+      // 1. Purchase History sheet
+      const purchaseHeaders = ['S.No','Date', 'Product Name', 'HSN Code', 'UNITS', 'Vendor', 'Purchase Invoice No.',
+        'Purchase Qty.', 'MRP Incl. GST (Rs.)', 'MRP Ex. GST (Rs.)', 'Discount %',
+        'Purchase Cost/Unit (Ex.GST)', 'GST %', 'Taxable Value (Transaction Rs.)',
+        'IGST (Transaction Rs.)', 'CGST (Transaction Rs.)', 'SGST (Transaction Rs.)', 'Invoice Value (Transaction Rs.)',
+        'Current Stock After Purchase', 'Total Taxable Value (Current Stock Rs.)', 'Total CGST (Current Stock Rs.)', 'Total SGST (Current Stock Rs.)', 'Total IGST (Current Stock Rs.)', 'Total Amount (Incl. GST Current Stock Rs.)'
+      ];
+      const purchaseRows = filteredPurchases.map((p, idx) => {
+        const serial = idx + 1;
+        const date = p.date ? new Date(p.date).toLocaleDateString() : '-';
+        const purchaseQtyVal = p.purchase_qty ?? 0;
+        const mrpInclGst = p.mrp_incl_gst ?? 0;
+        const gstPctVal = p.gst_percentage ?? 0;
+        // MRP Ex. GST for display, calculated as in UI
+        const mrpExclGstDisplay = calculatePriceExcludingGST(mrpInclGst, gstPctVal);
+        const discountOnPurchasePct = p.discount_on_purchase_percentage ?? 0;
+        const purchaseCostPerUnitExGst = p.purchase_cost_per_unit_ex_gst ?? 0;
+        
+        // Transaction values
+        const transactionTaxableValue = p.purchase_taxable_value ?? 0;
+        const transactionIgst = p.purchase_igst ?? 0;
+        const transactionCgst = p.purchase_cgst ?? 0;
+        const transactionSgst = p.purchase_sgst ?? 0;
+        const transactionInvoiceValue = p.purchase_invoice_value_rs ?? 0;
 
-      appendSheet('Purchase History', purchases);
-      appendSheet('Salon Consumption', consumption);
-      appendSheet('Sales History', sales);
-      appendSheet('Balance Stock', stockHistory);
+        const stockAfterPurchaseDisplay = p.stock_after_purchase != null ? String(p.stock_after_purchase) : '-';
 
+        // Current Stock Valuation (based on stock_after_purchase and purchase_cost_per_unit_ex_gst)
+        let currentStockTotalTaxableValue = 0;
+        let currentStockTotalIgst = 0;
+        let currentStockTotalCgst = 0;
+        let currentStockTotalSgst = 0;
+        const stockAfterP = p.stock_after_purchase;
+
+        if (typeof stockAfterP === 'number' && stockAfterP > 0 && purchaseCostPerUnitExGst > 0) {
+          currentStockTotalTaxableValue = stockAfterP * purchaseCostPerUnitExGst;
+          if (transactionIgst > 0) { // Assuming if transaction was IGST, stock valuation follows
+            currentStockTotalIgst = currentStockTotalTaxableValue * (gstPctVal / 100);
+          } else {
+            currentStockTotalCgst = currentStockTotalTaxableValue * (gstPctVal / 200);
+            currentStockTotalSgst = currentStockTotalTaxableValue * (gstPctVal / 200);
+          }
+        }
+        const currentStockTotalAmountInclGst = currentStockTotalTaxableValue + currentStockTotalIgst + currentStockTotalCgst + currentStockTotalSgst;
+
+        return [
+          serial, // S.No
+          date, // Date
+          p.product_name || '-', // Product Name
+          p.hsn_code || '-', // HSN Code
+          p.units || '-', // UNITS
+          p.supplier || '-', // Vendor
+          p.purchase_invoice_number || '-', // Purchase Invoice No.
+          purchaseQtyVal, // Purchase Qty.
+          `₹${mrpInclGst.toFixed(2)}`, // MRP Incl. GST (Rs.)
+          `₹${mrpExclGstDisplay.toFixed(2)}`, // MRP Ex. GST (Rs.)
+          `${discountOnPurchasePct.toFixed(2)}%`, // Discount %
+          `₹${purchaseCostPerUnitExGst.toFixed(2)}`, // Purchase Cost/Unit (Ex.GST)
+          `${gstPctVal.toFixed(2)}%`, // GST %
+          `₹${transactionTaxableValue.toFixed(2)}`, // Taxable Value (Transaction Rs.)
+          transactionIgst > 0 ? `₹${transactionIgst.toFixed(2)}` : '-', // IGST (Transaction Rs.)
+          transactionCgst > 0 ? `₹${transactionCgst.toFixed(2)}` : '-', // CGST (Transaction Rs.)
+          transactionSgst > 0 ? `₹${transactionSgst.toFixed(2)}` : '-', // SGST (Transaction Rs.)
+          `₹${transactionInvoiceValue.toFixed(2)}`, // Invoice Value (Transaction Rs.)
+          stockAfterPurchaseDisplay, // Current Stock After Purchase
+          currentStockTotalTaxableValue > 0 ? `₹${currentStockTotalTaxableValue.toFixed(2)}` : '-', // Total Taxable Value (Current Stock Rs.)
+          currentStockTotalCgst > 0 ? `₹${currentStockTotalCgst.toFixed(2)}` : '-', // Total CGST (Current Stock Rs.)
+          currentStockTotalSgst > 0 ? `₹${currentStockTotalSgst.toFixed(2)}` : '-', // Total SGST (Current Stock Rs.)
+          currentStockTotalIgst > 0 ? `₹${currentStockTotalIgst.toFixed(2)}` : '-', // Total IGST (Current Stock Rs.)
+          currentStockTotalAmountInclGst > 0 ? `₹${currentStockTotalAmountInclGst.toFixed(2)}` : '-' // Total Amount (Incl. GST Current Stock Rs.)
+        ];
+      });
+      const purchaseSheet = XLSX.utils.aoa_to_sheet([purchaseHeaders, ...purchaseRows]);
+      XLSX.utils.book_append_sheet(wb, purchaseSheet, 'Purchase History');
+
+      // 2. Salon Consumption sheet (UI values from SalonConsumptionTab)
+      const consUIData = dateFilter.isActive ? applyDateFilter(consumptionData) : consumptionData;
+      const consHeaders = [
+        'S.No', 'Date', 'Product Name', 'HSN Code', 'Product Type', 'Qty', 'Purpose', 'Stylist', 
+        'Unit Price (Rs.)', 'GST %', 
+        'Taxable Value (Transaction Rs.)', 'CGST (Transaction Rs.)', 'SGST (Transaction Rs.)', 'IGST (Transaction Rs.)', 'Total Invoice Value (Transaction Rs.)', 
+        'Notes', 
+        'Current Stock', 'Taxable Value (Current Stock Rs.)', 'IGST (Current Stock Rs.)', 'CGST (Current Stock Rs.)', 'SGST (Current Stock Rs.)', 'Total Value (Current Stock Rs.)'
+      ];
+      const consRows = consUIData.map((r: any, idx: number) => [
+        idx + 1, // S.No
+        r.date ? new Date(r.date).toLocaleDateString() : '-', // Date
+        r.product_name || '-', // Product Name
+        r.hsn_code || '-', // HSN Code
+        r.product_type || '-', // Product Type (formerly Units)
+        r.quantity || 0, // Qty
+        r.purpose || '-', // Purpose
+        r.stylist_name || '-', // Stylist
+        `₹${(Number(r.price_per_unit) || 0).toFixed(2)}`, // Unit Price (Rs.)
+        `${(Number(r.gst_percentage) || 0).toFixed(2)}%`, // GST %
+        // Transaction values from SalonConsumptionTab's processedData
+        `₹${(Number(r.transaction_taxable_value) || 0).toFixed(2)}`,
+        `₹${(Number(r.transaction_cgst) || 0).toFixed(2)}`,
+        `₹${(Number(r.transaction_sgst) || 0).toFixed(2)}`,
+        `₹${(Number(r.transaction_igst) || 0).toFixed(2)}`,
+        `₹${(Number(r.transaction_total_value) || 0).toFixed(2)}`,
+        r.notes || '-', // Notes
+        // Current Stock valuation from SalonConsumptionTab's processedData
+        r.current_stock ?? 0,
+        `₹${(Number(r.current_stock_taxable_value) || 0).toFixed(2)}`,
+        `₹${(Number(r.current_stock_igst) || 0).toFixed(2)}`,
+        `₹${(Number(r.current_stock_cgst) || 0).toFixed(2)}`,
+        `₹${(Number(r.current_stock_sgst) || 0).toFixed(2)}`,
+        `₹${(Number(r.current_stock_total_value) || 0).toFixed(2)}`,
+      ]);
+      const consSheet = XLSX.utils.aoa_to_sheet([consHeaders, ...consRows]);
+      XLSX.utils.book_append_sheet(wb, consSheet, 'Salon Consumption');
+
+      // 3. Sales History sheet
+      // Assuming salesData comes from SalesHistoryTab and contains all necessary fields for UI consistency.
+      // The column names here must exactly match what SalesHistoryTab would display.
+      const salesHeaders = [
+        'Serial No.', 'Date', 'Product Name', 'HSN Code', 'Product Type/Units', 'Qty.',
+        'Unit Price (Inc. GST Rs.)', 'Unit Price (Ex. GST Rs.)', 'Taxable Value (Transaction Rs.)', 'GST %',
+        'Discount %', 'Taxable After Discount (Rs.)', 'CGST (Transaction Rs.)', 'SGST (Transaction Rs.)', 'Total Value (Transaction Rs.)',
+        'Initial Stock Before Sale', 'Remaining Stock After Sale', 'Current Stock (Latest)', 
+        'Taxable Value (Current Stock Rs.)', 'IGST (Current Stock Rs.)', 'CGST (Current Stock Rs.)', 'SGST (Current Stock Rs.)', 'Total Value (Current Stock Rs.)', 'Order ID'
+      ];
+      const salesDataFiltered = dateFilter.isActive ? applyDateFilter(salesData) : salesData;
+      const salesRows = salesDataFiltered.map((i: any, idx: number) => [
+        i.serial_no || (idx + 1), // Serial No.
+        i.date ? new Date(i.date).toLocaleDateString() : '-', // Date
+        i.product_name || '-', // Product Name
+        i.hsn_code || '-', // HSN Code
+        i.product_type || i.units || '-', // Product Type/Units
+        i.quantity || 0, // Qty.
+        `₹${(i.unit_price_inc_gst ?? 0).toFixed(2)}`, // Unit Price (Inc. GST Rs.)
+        `₹${(i.unit_price_ex_gst ?? 0).toFixed(2)}`, // Unit Price (Ex. GST Rs.)
+        `₹${(i.taxable_value ?? 0).toFixed(2)}`, // Taxable Value (Transaction Rs.)
+        `${(i.gst_percentage ?? 0).toFixed(2)}%`, // GST %
+        `${(i.discount_percentage ?? 0).toFixed(2)}%`, // Discount %
+        `₹${(i.taxable_after_discount ?? 0).toFixed(2)}`, // Taxable After Discount (Rs.)
+        `₹${(i.cgst_amount ?? 0).toFixed(2)}`, // CGST (Transaction Rs.)
+        `₹${(i.sgst_amount ?? 0).toFixed(2)}`, // SGST (Transaction Rs.)
+        `₹${(i.invoice_value ?? 0).toFixed(2)}`, // Total Value (Transaction Rs.)
+        i.initial_stock_before_sale ?? '-', // Initial Stock Before Sale
+        i.remaining_stock_after_sale ?? '-', // Remaining Stock After Sale
+        i.current_stock_latest ?? '-', // Current Stock (Latest)
+        // Current Stock Valuation - assuming fields like i.current_stock_taxable_value exist in salesData
+        `₹${(i.current_stock_taxable_value ?? 0).toFixed(2)}`,
+        `₹${(i.current_stock_igst ?? 0).toFixed(2)}`,
+        `₹${(i.current_stock_cgst ?? 0).toFixed(2)}`,
+        `₹${(i.current_stock_sgst ?? 0).toFixed(2)}`,
+        `₹${(i.current_stock_total_value ?? 0).toFixed(2)}`,
+        i.order_id || '-' // Order ID
+      ]);
+      const salesSheet = XLSX.utils.aoa_to_sheet([salesHeaders, ...salesRows]);
+      XLSX.utils.book_append_sheet(wb, salesSheet, 'Sales History');
+
+      // 4. Balance Stock sheet (Stock History)
+      const stockHeaders = [
+        'Serial No.', 'Date', 'Product Name', 'HSN Code', 'Units',
+        'Change Type', 'Source', 'Reference ID', 'Quantity Change', 'Quantity After Change'
+      ];
+      // filteredStockHistory is already available and used by the UI table
+      const stockRows = filteredStockHistory.map((s, idx) => [
+        `SH-${(idx + 1).toString().padStart(5, '0')}`, // Serial No.
+        s.date ? new Date(s.date).toLocaleString() : '-', // Date
+        s.product_name || '-', // Product Name 
+        s.hsn_code || '-', // HSN Code
+        s.units || '-', // Units
+        s.change_type || '-', // Change Type
+        s.source || '-', // Source
+        s.reference_id || '-', // Reference ID
+        s.change_qty ?? 0, // Quantity Change
+        s.stock_after ?? 0 // Quantity After Change
+      ]);
+      const stockSheet = XLSX.utils.aoa_to_sheet([stockHeaders, ...stockRows]);
+      XLSX.utils.book_append_sheet(wb, stockSheet, 'Balance Stock');
+
+      // Write and trigger download
       const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
       const blob = new Blob([wbout], { type: 'application/octet-stream' });
       const filename = `RG_Salon_Inventory_Report_${new Date().toISOString().split('T')[0]}.xlsx`;
@@ -315,9 +452,11 @@ export default function InventoryManager() {
         }));
 
         setSalonConsumptionData(transformedData);
+        setConsumptionData(transformedData);
         console.log('🔍 DEBUG: Transformed consumption data:', { count: transformedData.length, sample: transformedData[0] });
       } else {
         setSalonConsumptionData([]);
+        setConsumptionData([]);
         console.log('🔍 DEBUG: No consumption data found in inventory_salon_consumption table');
       }
     } catch (err) {
@@ -325,6 +464,7 @@ export default function InventoryManager() {
       const errorMessage = err instanceof Error ? err.message : 'Failed to load salon consumption data.';
       setErrorConsumption(errorMessage);
       setSalonConsumptionData([]);
+      setConsumptionData([]);
     } finally {
       setIsLoadingConsumption(false);
     }
@@ -469,7 +609,19 @@ export default function InventoryManager() {
   };
 
   const handleDelete = async (purchaseId: string) => {
-    console.warn("Deleting purchase transactions not yet implemented.", purchaseId);
+    if (!window.confirm('Are you sure you want to delete this purchase record?')) return;
+    try {
+      const success = await deletePurchaseTransaction(purchaseId);
+      if (success) {
+        toast.success('Purchase deleted successfully');
+        fetchPurchases();
+      } else {
+        toast.error('Failed to delete purchase');
+      }
+    } catch (error) {
+      console.error('Error deleting purchase:', error);
+      toast.error('Error deleting purchase');
+    }
   };
 
   const validateForm = () => {
@@ -788,6 +940,7 @@ export default function InventoryManager() {
             {isExporting ? 'Exporting...' : 'Export All Tables'}
           </Button>
         </Box>
+        
       </Box>
       
       {/* Add Date Filter Controls */}
@@ -873,6 +1026,7 @@ export default function InventoryManager() {
             <Table stickyHeader aria-label="products purchase history table" sx={{ minWidth: 2200 }}>
               <TableHead>
                  <TableRow>
+                   <StyledTableCell>S.No</StyledTableCell>
                    <StyledTableCell>Date</StyledTableCell>
                    <StyledTableCell>Product Name</StyledTableCell>
                    <StyledTableCell>HSN Code</StyledTableCell>
@@ -885,17 +1039,17 @@ export default function InventoryManager() {
                    <StyledTableCell align="right">Discount %</StyledTableCell>
                    <StyledTableCell align="right">Purchase Cost/Unit (Ex.GST)</StyledTableCell>
                    <StyledTableCell align="right">GST %</StyledTableCell>
-                   <StyledTableCell align="right">Taxable Value (Rs.)</StyledTableCell>
-                   <StyledTableCell align="right">IGST (Rs.)</StyledTableCell>
-                   <StyledTableCell align="right">CGST (Rs.)</StyledTableCell>
-                   <StyledTableCell align="right">SGST (Rs.)</StyledTableCell>
-                   <StyledTableCell align="right">Invoice Value (Rs.)</StyledTableCell>
-                   <StyledTableCell align="right">Current Stock</StyledTableCell>
-                   <StyledTableCell align="right">Total Taxable Value</StyledTableCell>
-                   <StyledTableCell align="right">Total CGST</StyledTableCell>
-                   <StyledTableCell align="right">Total SGST</StyledTableCell>
-                   <StyledTableCell align="right">Total IGST</StyledTableCell>
-                   <StyledTableCell align="right">Total Amount (Incl. GST)</StyledTableCell>
+                   <StyledTableCell align="right">Taxable Value (Transaction Rs.)</StyledTableCell>
+                   <StyledTableCell align="right">IGST (Transaction Rs.)</StyledTableCell>
+                   <StyledTableCell align="right">CGST (Transaction Rs.)</StyledTableCell>
+                   <StyledTableCell align="right">SGST (Transaction Rs.)</StyledTableCell>
+                   <StyledTableCell align="right">Invoice Value (Transaction Rs.)</StyledTableCell>
+                   <StyledTableCell align="right">Current Stock After Purchase</StyledTableCell>
+                   <StyledTableCell align="right">Total Taxable Value (Current Stock Rs.)</StyledTableCell>
+                   <StyledTableCell align="right">Total CGST (Current Stock Rs.)</StyledTableCell>
+                   <StyledTableCell align="right">Total SGST (Current Stock Rs.)</StyledTableCell>
+                   <StyledTableCell align="right">Total IGST (Current Stock Rs.)</StyledTableCell>
+                   <StyledTableCell align="right">Total Amount (Incl. GST Current Stock Rs.)</StyledTableCell>
                    <StyledTableCell align="center">Actions</StyledTableCell>
                  </TableRow>
               </TableHead>
@@ -911,6 +1065,7 @@ export default function InventoryManager() {
                   filteredPurchases
                     .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
                     .map((purchase, index) => {
+                      const serial = page * rowsPerPage + index + 1;
                       // Use the stock_after_purchase directly from the purchase record
                       const stockAfterPurchaseDisplay = typeof purchase.stock_after_purchase === 'number' 
                         ? purchase.stock_after_purchase 
@@ -942,6 +1097,7 @@ export default function InventoryManager() {
 
                       return (
                         <TableRow key={purchase.purchase_id} hover>
+                          <TableCell>{serial}</TableCell>
                           <TableCell>{new Date(purchase.date).toLocaleDateString() || '-'}</TableCell>
                           <TableCell>{purchase.product_name}</TableCell>
                           <TableCell>{purchase.hsn_code || '-'}</TableCell>
@@ -950,7 +1106,12 @@ export default function InventoryManager() {
                           <TableCell>{purchase.purchase_invoice_number || '-'}</TableCell>
                           <TableCell align="right">{purchase.purchase_qty ?? '-'}</TableCell>
                           <TableCell align="right">₹{purchase.mrp_incl_gst?.toFixed(2) || '0.00'}</TableCell>
-                          <TableCell align="right">₹{purchase.mrp_excl_gst?.toFixed(2) || '0.00'}</TableCell>
+                          <TableCell align="right">
+                            ₹{calculatePriceExcludingGST(
+                              purchase.mrp_incl_gst ?? 0,
+                              purchase.gst_percentage ?? 0
+                            ).toFixed(2)}
+                          </TableCell>
                           <TableCell align="right">{purchase.discount_on_purchase_percentage?.toFixed(2) || '0.00'}%</TableCell>
                           <TableCell align="right">₹{purchase.purchase_cost_per_unit_ex_gst?.toFixed(2) || '0.00'}</TableCell>
                           <TableCell align="right">{purchase.gst_percentage?.toFixed(2) || '0.00'}%</TableCell>
@@ -971,6 +1132,9 @@ export default function InventoryManager() {
                           <TableCell align="center">
                             <IconButton color="primary" onClick={() => handleEdit(purchase)} title="Edit Purchase">
                               <EditIcon />
+                            </IconButton>
+                            <IconButton color="error" onClick={() => handleDelete(purchase.purchase_id)} title="Delete Purchase">
+                              <DeleteIcon />
                             </IconButton>
                           </TableCell>
                         </TableRow>
@@ -1013,7 +1177,7 @@ export default function InventoryManager() {
              <Table stickyHeader aria-label="stock history table" sx={{ minWidth: 1000 }}>
                <TableHead>
                  <TableRow>
-                   <StyledTableCell>Serial No.</StyledTableCell>
+                   <StyledTableCell>S.No</StyledTableCell>
                    <StyledTableCell>Date</StyledTableCell>
                    <StyledTableCell>Product Name</StyledTableCell>
                    <StyledTableCell>HSN Code</StyledTableCell>
@@ -1036,20 +1200,24 @@ export default function InventoryManager() {
                  {!stockHistoryLoading && filteredStockHistory.length > 0 && (
                    filteredStockHistory
                      .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
-                     .map((item, index) => (
-                       <TableRow key={item.id} hover>
-                         <TableCell>{`SH-${(page * rowsPerPage + index + 1).toString().padStart(5, '0')}`}</TableCell>
-                         <TableCell>{item.date ? new Date(item.date).toLocaleString() : '-'}</TableCell>
-                         <TableCell>{item.product_name || '-'}</TableCell>
-                         <TableCell>{item.hsn_code || '-'}</TableCell>
-                         <TableCell>{item.units || '-'}</TableCell>
-                         <TableCell>{item.change_type || '-'}</TableCell>
-                         <TableCell>{item.source || '-'}</TableCell>
-                         <TableCell>{item.reference_id || '-'}</TableCell>
-                         <TableCell align="right">{item.change_qty ?? '-'}</TableCell>
-                         <TableCell align="right">{item.stock_after ?? '-'}</TableCell>
-                       </TableRow>
-                     ))
+                     .map((item, index) => {
+                       // Compute sequential serial number
+                       const serial = page * rowsPerPage + index + 1;
+                       return (
+                         <TableRow key={item.id} hover>
+                           <TableCell>{serial}</TableCell>
+                           <TableCell>{item.date ? new Date(item.date).toLocaleString() : '-'}</TableCell>
+                           <TableCell>{item.product_name || '-'}</TableCell>
+                           <TableCell>{item.hsn_code || ''}</TableCell>
+                           <TableCell>{item.units || ''}</TableCell>
+                           <TableCell>{item.change_type || '-'}</TableCell>
+                           <TableCell>{item.source || '-'}</TableCell>
+                           <TableCell>{item.reference_id || '-'}</TableCell>
+                           <TableCell align="right">{item.change_qty ?? '-'}</TableCell>
+                           <TableCell align="right">{item.stock_after ?? '-'}</TableCell>
+                         </TableRow>
+                       );
+                     })
                  )}
                  {!stockHistoryLoading && filteredStockHistory.length === 0 && (
                    <TableRow>
@@ -1083,17 +1251,30 @@ export default function InventoryManager() {
 
       {/* Sales History Tab */}
       {activeTab === 'salesHistory' && (
-        <div style={{ display: activeTab === 'salesHistory' ? 'block' : 'none' }}>
-          <SalesHistoryTab />
-        </div>
+        <SalesHistoryTab onDataUpdate={(data) => setSalesData(data)} />
       )}
 
-      {/* Always render SalonConsumptionTab (but hide it) to ensure data is loaded */}
-      <div style={{ display: activeTab === 'salonConsumption' ? 'block' : 'none' }}>
+      {/* Salon Consumption Tab - render only for UI display when selected */}
+      {activeTab === 'salonConsumption' && (
         <SalonConsumptionTab
           dateFilter={dateFilter}
           applyDateFilter={applyDateFilter}
+          onDataUpdate={(data) => setConsumptionData(data)}
         />
+      )}
+
+      {/* Hidden SalonConsumptionTab to always prefetch UI data for export */}
+      <div style={{ display: 'none' }}>
+        <SalonConsumptionTab
+          dateFilter={dateFilter}
+          applyDateFilter={applyDateFilter}
+          onDataUpdate={(data) => setConsumptionData(data)}
+        />
+      </div>
+
+      {/* Hidden SalesHistoryTab to prefetch UI sales data for export */}
+      <div style={{ display: 'none' }}>
+        <SalesHistoryTab onDataUpdate={(data) => setSalesData(data)} />
       </div>
 
       <Dialog open={open} onClose={handleClose} maxWidth="lg" fullWidth>
@@ -1181,10 +1362,10 @@ export default function InventoryManager() {
               <TextField
                 label="UNITS *"
                 value={purchaseFormData.unit_type}
+                onChange={(e) => handleInputChange('unit_type', e.target.value)}
                 fullWidth
                 required
-                InputProps={{ readOnly: true }}
-                helperText="Auto-filled from Product Master"
+                helperText="Auto-filled from Product Master (editable)"
               />
             </Grid>
             

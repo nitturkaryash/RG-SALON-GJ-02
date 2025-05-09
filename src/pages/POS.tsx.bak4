@@ -411,38 +411,9 @@ export default function POS() {
 	const [productDropdownValue, setProductDropdownValue] = useState<POSService | null>(null);
 	// State for history drawer
 	const [historyDrawerOpen, setHistoryDrawerOpen] = useState(false);
-	// State for client service history (raw supabase records)
-	const [clientServiceHistory, setClientServiceHistory] = useState<any[]>([]);
+	// State for client service history
+	const [clientServiceHistory, setClientServiceHistory] = useState<OrderItem[]>([]);
 	const [isHistoryLoading, setIsHistoryLoading] = useState(false);
-
-	// Fetch client service history from the database
-	const fetchClientHistory = useCallback(async (clientName: string) => {
-		if (!clientName) return;
-		setIsHistoryLoading(true);
-		try {
-			const { data, error } = await supabase
-				.from('pos_order_items')
-				.select(`
-					*,
-					pos_orders(created_at, status, id)
-				`)
-				.eq('pos_orders.client_name', clientName)
-				.order('created_at', { ascending: false })
-				.limit(20);
-			if (error) {
-				console.error('Error fetching client history:', error);
-				toast.error('Failed to load client history');
-				setClientServiceHistory([]);
-			} else {
-				setClientServiceHistory(data || []);
-			}
-		} catch (err) {
-			console.error('Error in client history fetch:', err);
-			setClientServiceHistory([]);
-		} finally {
-			setIsHistoryLoading(false);
-		}
-	}, [supabase, toast]);
 
 	// ====================================================
 	// 2. DERIVED STATE & CALCULATIONS (useMemo, useCallback)
@@ -778,7 +749,7 @@ export default function POS() {
 		setSelectedClient(client);
 		if (client) {
 			setCustomerName(client.full_name || '');
-			fetchClientHistory(client.full_name);
+			fetchClientHistory(client.id);
 		} else {
 			setClientServiceHistory([]);
 		}
@@ -2765,11 +2736,11 @@ export default function POS() {
 						<Typography>No previous services found for this client.</Typography>
 					) : (
 						<List>
-							{clientServiceHistory.map((item: any) => (
+							{clientServiceHistory.map((item) => (
 								<React.Fragment key={item.id}>
 									<ListItem>
 										<ListItemText
-											primary={`${item.service_name || item.item_name} — ₹${item.price}`}
+											primary={`${item.item_name} — ₹${item.price}`}
 											secondary={`${item.pos_orders?.created_at ? format(new Date(item.pos_orders.created_at), 'dd/MM/yyyy') : 'N/A'} — Order #${item.pos_orders?.id?.slice(-4)} — Qty: ${item.quantity}`}
 										/>
 									</ListItem>

@@ -189,6 +189,15 @@ const InventoryTable: React.FC<InventoryTableProps> = ({
                 return (
                   <TableRow hover tabIndex={-1} key={row[deleteIdField] || `row-${rowIndex}`}>
                     {columns.map((column) => {
+                      // Dynamically compute serial number for the 'serial_no' column
+                      if (column.id === 'serial_no') {
+                        const serial = page * rowsPerPage + rowIndex + 1;
+                        return (
+                          <TableCell key={`serial-${rowIndex}`} align={column.align}>
+                            {serial}
+                          </TableCell>
+                        );
+                      }
                       const value = row[column.id];
                       return (
                         <TableCell key={`${row[deleteIdField]}-${column.id}`} align={column.align}>
@@ -210,8 +219,8 @@ const InventoryTable: React.FC<InventoryTableProps> = ({
                 );
               })
             )}
+            {renderFooter && renderFooter()}
           </TableBody>
-          {renderFooter && renderFooter()}
         </Table>
       </TableContainer>
 

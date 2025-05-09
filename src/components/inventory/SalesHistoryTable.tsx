@@ -24,7 +24,8 @@ import {
   EventNote as EventNoteIcon,
   ReceiptLong as ReceiptIcon,
   LocalMall as ProductIcon,
-  Inventory as InventoryIcon
+  Inventory as InventoryIcon,
+  Delete as DeleteIcon
 } from '@mui/icons-material';
 import { 
   formatCurrency, 
@@ -34,10 +35,11 @@ import {
   getPaymentMethodColor,
   getStockLevelColor
 } from '../../utils/formatters';
+import DeleteButton from '../DeleteButton';
 
 // Define SalesItem interface with all required fields
 interface SalesItem {
-  serial_no: string;
+  serial_no: string | number;
   order_id: string;
   date: string;
   product_name: string;
@@ -72,6 +74,8 @@ interface SalesItem {
   current_stock_cgst?: number | null;
   current_stock_sgst?: number | null;
   current_stock_total_value?: number | null;
+  order_item_pk?: string;
+  id?: string;
 }
 
 interface SalesHistoryTableProps {
@@ -80,6 +84,7 @@ interface SalesHistoryTableProps {
   totalTax: number;
   loading?: boolean;
   onExportCsv?: () => void;
+  onDeleteSale?: (itemPk: string) => void;
 }
 
 export default function SalesHistoryTable({ 
@@ -87,7 +92,8 @@ export default function SalesHistoryTable({
   totalSales, 
   totalTax, 
   loading = false, 
-  onExportCsv 
+  onExportCsv,
+  onDeleteSale
 }: SalesHistoryTableProps) {
   const theme = useTheme();
   const [showAdditionalFields, setShowAdditionalFields] = useState(false);
@@ -112,9 +118,10 @@ export default function SalesHistoryTable({
     const quantity = parseInt(item.quantity, 10) || 0;
     const taxableValue = parseFloat(item.taxable_value) || 0;
     const tax = parseFloat(item.tax) || 0;
-    const discount = parseFloat(item.discount) || 0;
     const paymentAmount = parseFloat(item.payment_amount) || 0;
     const invoiceValue = parseFloat(item.invoice_value || '0') || 0;
+    // Compute actual discount amount in rupees
+    const discountAmt = Math.max(0, invoiceValue - paymentAmount);
     
     // Get GST values
     const cgstAmount = parseFloat(item.cgst_amount || '0') || 0;
@@ -141,7 +148,7 @@ export default function SalesHistoryTable({
       sgstAmount: acc.sgstAmount + sgstAmount,
       igstAmount: acc.igstAmount + igstAmount,
       tax: acc.tax + tax,
-      discount: acc.discount + discount,
+      discount: acc.discount + discountAmt,
       paymentAmount: acc.paymentAmount + paymentAmount,
       invoiceValue: acc.invoiceValue + invoiceValue,
       currentStock: acc.currentStock + currentStock,
@@ -309,6 +316,8 @@ export default function SalesHistoryTable({
               <TableCell align="center" sx={{ fontWeight: 'bold' }}>Qty</TableCell>
               <TableCell align="right" sx={{ fontWeight: 'bold' }}>Unit Price</TableCell>
               <TableCell align="center" sx={{ fontWeight: 'bold' }}>GST %</TableCell>
+              <TableCell align="center" sx={{ fontWeight: 'bold' }}>Discount %</TableCell>
+              <TableCell align="right" sx={{ fontWeight: 'bold' }}>Taxable After Discount</TableCell>
               <TableCell align="right" sx={{ fontWeight: 'bold' }}>Taxable Value</TableCell>
               <TableCell align="right" sx={{ fontWeight: 'bold' }}>CGST</TableCell>
               <TableCell align="right" sx={{ fontWeight: 'bold' }}>SGST</TableCell>
@@ -345,6 +354,7 @@ export default function SalesHistoryTable({
               
               <TableCell sx={{ fontWeight: 'bold' }}>Payment</TableCell>
               <TableCell sx={{ fontWeight: 'bold' }}>Order ID</TableCell>
+              {onDeleteSale && <TableCell align="center">Actions</TableCell>}
             </TableRow>
           </TableHead>
           <TableBody>
@@ -427,6 +437,19 @@ export default function SalesHistoryTable({
                           sx={{ minWidth: 50 }}
                         />
                       </TableCell>
+                      <TableCell align="center">
+                        {(() => {
+                          const orig = parseFloat(row.unit_price_ex_gst) || 0;
+                          const discounted = parseFloat(row.discounted_sales_rate_ex_gst || '0') || 0;
+                          const pct = orig > 0 ? ((orig - discounted) / orig) * 100 : 0;
+                          return pct > 0 ? formatPercentage(pct.toString()) : '—';
+                        })()}
+                      </TableCell>
+                      <TableCell align="right">
+                        {safeFormatCurrency(
+                          (parseFloat(row.discounted_sales_rate_ex_gst || '0') * (parseInt(row.quantity, 10) || 0))
+                        )}
+                      </TableCell>
                       <TableCell align="right">{safeFormatCurrency(row.taxable_value)}</TableCell>
                       <TableCell align="right">{safeFormatCurrency(gstValues.cgst)}</TableCell>
                       <TableCell align="right">{safeFormatCurrency(gstValues.sgst)}</TableCell>
@@ -454,12 +477,16 @@ export default function SalesHistoryTable({
                       
                       <TableCell align="right" sx={{ fontWeight: 'bold' }}>{safeFormatCurrency(row.payment_amount)}</TableCell>
                       <TableCell align="right">
-                        {parseFloat(row.discount) > 0 ? 
-                          <Typography variant="body2" sx={{ color: 'error.main', fontWeight: 'medium' }}>
-                            {safeFormatCurrency(row.discount)}
-                          </Typography> : 
-                          '—'
-                        }
+                        {(() => {
+                          const orig = parseFloat(row.unit_price_ex_gst) || 0;
+                          const discounted = parseFloat(row.discounted_sales_rate_ex_gst || '0') || 0;
+                          const pct = orig > 0 ? ((orig - discounted) / orig) * 100 : 0;
+                          return pct > 0 ? (
+                            <Typography variant="body2" sx={{ color: 'error.main', fontWeight: 'medium' }}>
+                              {formatPercentage(pct.toString())}
+                            </Typography>
+                          ) : '—';
+                        })()}
                       </TableCell>
 
                       {/* Remaining Stock column - using database value */}
@@ -532,6 +559,18 @@ export default function SalesHistoryTable({
                           </Typography>
                         </Tooltip>
                       </TableCell>
+                      {onDeleteSale && (
+                        <TableCell align="center">
+                          <IconButton 
+                            color="error" 
+                            size="small" 
+                            onClick={() => onDeleteSale && onDeleteSale(row.order_item_pk || row.id)}
+                            title="Delete sale record"
+                          >
+                            <DeleteIcon fontSize="small" />
+                          </IconButton>
+                        </TableCell>
+                      )}
                     </TableRow>
                     
                     {/* Expanded row with additional details */}
