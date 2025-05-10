@@ -661,22 +661,27 @@ export default function Appointments() {
                   <Button
                     variant="contained"
                     startIcon={<ReceiptIcon />}
+                    disabled={isBilling}
                     onClick={() => {
-                      // Prepare data for POS
+                      setIsBilling(true);
                       const clientName = entry.client?.full_name || entry.client?.inputValue || '';
                       const stylistId = entry.stylists[0].id;
-                      const serviceId = entry.services[0].id;
-                      const servicePrice = entry.services[0].price;
+                      const servicesForPOS = entry.services.map(s => ({
+                        id: s.id,
+                        name: s.name,
+                        price: s.price,
+                        type: 'service'
+                      }));
+
                       navigate('/pos', {
                         state: {
                           appointmentData: {
                             id: editingAppointment.id,
                             clientName,
                             stylistId,
-                            serviceId,
-                            servicePrice,
-                            type: 'service',
-                            step: 2 // Directly go to payment (step index 2)
+                            services: servicesForPOS,
+                            type: 'service_collection',
+                            step: 2
                           }
                         }
                       });
@@ -710,7 +715,13 @@ export default function Appointments() {
             // Footer Create Bill: pass POS the exact shape it needs
             const primaryClientDetail = editingAppointment.clientDetails?.[0];
             if (!primaryClientDetail) return null;
-            const service = primaryClientDetail.services[0];
+            const servicesForPOS = primaryClientDetail.services.map(s => ({
+              id: s.id,
+              name: s.name,
+              price: s.price,
+              type: 'service'
+            }));
+
             return (
               <Button
                 variant="contained"
@@ -719,19 +730,17 @@ export default function Appointments() {
                 fullWidth
                 disabled={isBilling}
                 onClick={() => {
+                  setIsBilling(true);
                   const clientName = primaryClientDetail.full_name;
                   const stylistId = editingAppointment.stylist_id;
-                  const serviceId = service?.id;
-                  const servicePrice = service?.price;
                   navigate('/pos', {
                     state: {
                       appointmentData: {
                         id: editingAppointment.id,
                         clientName,
                         stylistId,
-                        serviceId,
-                        servicePrice,
-                        type: 'service',
+                        services: servicesForPOS,
+                        type: 'service_collection',
                         step: 2
                       }
                     }

@@ -436,6 +436,7 @@ export function useClients() {
     clients,
     isLoading,
     createClient: createClient.mutate,
+    createClientAsync: createClient.mutateAsync,
     updateClient: updateClient.mutate,
     updateClientFromOrder,
     updateClientFromAppointment,

@@ -25,6 +25,12 @@ export interface PurchaseTransaction {
   updated_at?: string;
   supplier?: string;
   stock_after_purchase?: number | null;
+  // Fields for current stock valuation
+  current_stock_taxable_value?: number;
+  current_stock_cgst?: number;
+  current_stock_sgst?: number;
+  current_stock_igst?: number;
+  current_stock_total_amount_incl_gst?: number;
 }
 
 export const usePurchaseHistory = () => {
@@ -93,19 +99,23 @@ export const usePurchaseHistory = () => {
         // Calculate total invoice value including GST
         const purchaseInvoiceValue = computedTaxableValue + purchaseCgst + purchaseSgst + purchaseIgst;
 
-        // Debug logging to track updated calculation
-        console.log('Purchase calculation:', {
-          product_name: product?.name,
-          mrp_excl_gst: calculatedMrpExcl,
-          discount: item.discount_on_purchase_percentage,
-          costPerUnitExGst,
-          purchaseQty,
-          calculatedTaxableValue: computedTaxableValue,
-          purchaseCgst,
-          purchaseSgst,
-          purchaseIgst,
-          purchaseInvoiceValue
-        });
+        // Calculate current stock valuation
+        const currentStockQty = item.stock_balance_after_purchase ?? 0;
+        const currentStockTaxableValue = currentStockQty * calculatedMrpExcl;
+        let currentStockCgst = 0;
+        let currentStockSgst = 0;
+        let currentStockIgst = 0;
+
+        if (item.purchase_igst != null && item.purchase_igst > 0) {
+          // Interstate purchase: full GST charged as IGST for current stock
+          currentStockIgst = currentStockTaxableValue * (finalGstPct / 100);
+        } else {
+          // Local purchase: split GST equally into CGST and SGST for current stock
+          const halfGstRate = finalGstPct / 2 / 100;
+          currentStockCgst = currentStockTaxableValue * halfGstRate;
+          currentStockSgst = currentStockTaxableValue * halfGstRate;
+        }
+        const currentStockTotalAmountInclGst = currentStockTaxableValue + currentStockCgst + currentStockSgst + currentStockIgst;
 
         return {
           purchase_id: item.purchase_id,
@@ -129,7 +139,13 @@ export const usePurchaseHistory = () => {
           created_at: item.created_at,
           updated_at: item.updated_at,
           supplier: 'Direct Entry',
-          stock_after_purchase: item.stock_balance_after_purchase ?? null
+          stock_after_purchase: item.stock_balance_after_purchase ?? null,
+          // Add calculated current stock values
+          current_stock_taxable_value: parseFloat(currentStockTaxableValue.toFixed(2)),
+          current_stock_cgst: parseFloat(currentStockCgst.toFixed(2)),
+          current_stock_sgst: parseFloat(currentStockSgst.toFixed(2)),
+          current_stock_igst: parseFloat(currentStockIgst.toFixed(2)),
+          current_stock_total_amount_incl_gst: parseFloat(currentStockTotalAmountInclGst.toFixed(2))
         };
       });
 
@@ -159,14 +175,18 @@ export const usePurchaseHistory = () => {
         .eq('purchase_id', purchaseId);
       if (error) {
         console.error('Error deleting purchase:', error);
+        // Consider setting an error state here for the UI
         return false;
       }
+      // Update local state to reflect the deletion
+      setPurchases(prevPurchases => prevPurchases.filter(p => p.purchase_id !== purchaseId));
       return true;
     } catch (err) {
       console.error('Unexpected error deleting purchase:', err);
+      // Consider setting an error state here for the UI
       return false;
     }
-  }, []);
+  }, [setPurchases]);
 
   return {
     purchases,

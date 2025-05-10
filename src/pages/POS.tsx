@@ -337,6 +337,7 @@ export default function POS() {
 	const orderDialogButtonRef = useRef(null);
 	const consumptionDialogButtonRef = useRef(null);
 	const snackbarRef = useRef(null);
+	const processedNavKeyRef = useRef<string | null>(null); // Added ref to track processed navigation data
 	const navigate = useNavigate();
 	const location = useLocation();
 	const queryClient = useQueryClient();
@@ -437,7 +438,71 @@ export default function POS() {
 	const [newClientPhone, setNewClientPhone] = useState("");
 	const [newClientEmail, setNewClientEmail] = useState("");
 
-	// Fetch client service history from the database
+	// ====================================================
+	// CALLBACK DEFINITIONS (MOVED UP OR RESTORED)
+	// ====================================================
+
+	const handleAddToOrder = useCallback((service: POSService, quantity: number = 1, customPrice?: number) => {
+		console.log(`[handleAddToOrder] Called for: ${service.name} (ID: ${service.id}), Quantity: ${quantity}`);
+
+		const isOutOfStock = service.type === 'product' &&
+			(typeof service.stock_quantity === 'number' && service.stock_quantity <= 0);
+
+		// Don't allow adding out-of-stock products
+		if (isOutOfStock) {
+			toast.error(`Cannot add "${service.name}" - Product is out of stock`);
+			return;
+		}
+
+		console.log(`🛒 Adding to order - Product: ${service.name}, ID: ${service.id}, Type: ${service.type}, Quantity: ${quantity}, Current stock: ${service.stock_quantity}`);
+
+		if (service.type === 'product' && typeof service.stock_quantity === 'number') {
+			const existingItem = orderItems.find(item =>
+				item.item_id === service.id
+			);
+			const existingQty = existingItem ? existingItem.quantity : 0;
+			const newTotalQty = existingQty + quantity;
+
+			console.log(`🛒 Stock check - Current cart quantity: ${existingQty}, Adding: ${quantity}, New total: ${newTotalQty}, Available: ${service.stock_quantity}`);
+
+			if (newTotalQty > service.stock_quantity) {
+				toast.warning(`Cannot add ${quantity} of "${service.name}" - Only ${service.stock_quantity} available (${existingQty} already in cart)`);
+				return;
+			}
+
+			const remainingStock = service.stock_quantity - newTotalQty;
+			if (remainingStock === 0) {
+				toast.warning(`Added last ${quantity} of "${service.name}" to cart - No more in stock`);
+			} else if (remainingStock > 0 && remainingStock <= 3) {
+				toast.info(`Low stock warning: Only ${remainingStock} ${service.name} remaining after this sale`);
+			}
+		}
+
+		const newItem: OrderItem = {
+			id: uuidv4(),
+			order_id: '',
+			item_id: service.id,
+			item_name: service.name,
+			quantity: quantity,
+			price: customPrice !== undefined ? customPrice : service.price,
+			total: (customPrice !== undefined ? customPrice : service.price) * quantity,
+			type: service.type || 'product',
+			hsn_code: service.hsn_code,
+			gst_percentage: service.gst_percentage,
+			for_salon_use: false
+		};
+
+		console.log(`🛒 Created order item:`, newItem);
+
+		setOrderItems((prev) => {
+			const newState = [...prev, newItem];
+			return newState;
+		});
+
+		toast.success(`Added ${service.name} to order`);
+	}, [orderItems, toast]); // Keep dependencies for handleAddToOrder itself
+
+	// RESTORING fetchClientHistory HERE
 	const fetchClientHistory = useCallback(async (clientName: string) => {
 		if (!clientName) return;
 		setIsHistoryLoading(true);
@@ -474,7 +539,29 @@ export default function POS() {
 		} finally {
 			setIsHistoryLoading(false);
 		}
-	}, [supabase, toast]);
+	}, [supabase, toast, setIsHistoryLoading, setClientServiceHistory]);
+
+	// RESTORING handleClientSelect HERE
+	const handleClientSelect = useCallback((client: Client | null) => {
+		setSelectedClient(client);
+		if (client) {
+			setCustomerName(client.full_name || '');
+			setNewClientPhone(""); 
+			setNewClientEmail("");
+			if (client.full_name) { 
+				fetchClientHistory(client.full_name); 
+			} else {
+				console.warn("Selected client has no name, cannot fetch history.");
+				setClientServiceHistory([]);
+			}
+		} else {
+			if (!customerName.trim()) {
+				setNewClientPhone("");
+				setNewClientEmail("");
+			}
+			setClientServiceHistory([]);
+		}
+	}, [fetchClientHistory, customerName, setSelectedClient, setCustomerName, setNewClientPhone, setNewClientEmail, setClientServiceHistory]);
 
 	// ====================================================
 	// 2. DERIVED STATE & CALCULATIONS (useMemo, useCallback)
@@ -674,49 +761,88 @@ export default function POS() {
 	// 3. SIDE EFFECTS (useEffect)
 	// ====================================================
 	useEffect(() => {
-		console.log('[POS useEffect] Running effect. Location state:', location.state);
+		console.log('[POS useEffect] Running effect. Location:', location);
+		const appointmentNavData = location.state?.appointmentData;
 
-		if (location.state?.appointmentData) {
-			const appointmentData = location.state.appointmentData;
-			console.log('[POS useEffect] Processing appointment data:', JSON.stringify(appointmentData));
+		if (appointmentNavData) {
+			const currentNavKey = JSON.stringify(appointmentNavData);
+			console.log('[POS useEffect] Found appointmentData in location.state. Key:', currentNavKey);
+
+			if (processedNavKeyRef.current === currentNavKey) {
+				console.log(`[POS useEffect] Appointment data with key ${currentNavKey} already processed. Ensuring state is cleared.`);
+				if (location.state?.appointmentData) {
+					navigate(location.pathname, { replace: true, state: {} });
+				}
+				return;
+			}
+
+			console.log('[POS useEffect] Processing new appointment data:', currentNavKey);
+			processedNavKeyRef.current = currentNavKey; // Mark as processed
 
 			setTabValue(0);
-			// We no longer use activeStep, so remove this line
-			// setActiveStep(appointmentData.step ?? 0);
 
-			if (appointmentData.clientName) {
-				setCustomerName(appointmentData.clientName);
-				const existingClient = clients?.find(c => c.full_name === appointmentData.clientName);
+			if (appointmentNavData.clientName) {
+				setCustomerName(appointmentNavData.clientName);
+				const existingClient = clients?.find(c => c.full_name === appointmentNavData.clientName);
 				if (existingClient) {
 					setSelectedClient(existingClient);
 				}
 			}
 
-			if (appointmentData.stylistId) {
-				const existingStylist = stylists?.find(s => s.id === appointmentData.stylistId);
+			if (appointmentNavData.stylistId) {
+				const existingStylist = stylists?.find(s => s.id === appointmentNavData.stylistId);
 				if (existingStylist) {
 					setSelectedStylist(existingStylist);
 				}
 			}
 
-			if (appointmentData.serviceId && appointmentData.type === 'service') {
-				const serviceToAdd = services?.find(s => s.id === appointmentData.serviceId);
-				if (serviceToAdd) {
-					console.log('[POS useEffect] Found service to add:', serviceToAdd.name, "(ID:", serviceToAdd.id, "). Calling handleAddToOrder...");
-					handleAddToOrder(serviceToAdd, 1, appointmentData.servicePrice);
-				} else {
-					console.warn('[POS useEffect] Service ID received, but service not found in local list:', appointmentData.serviceId);
+			if (appointmentNavData.services && Array.isArray(appointmentNavData.services) && (appointmentNavData.type === 'service_collection' || appointmentNavData.type === 'service')) {
+				appointmentNavData.services.forEach((serviceInfo: any) => {
+					const serviceFromHook = services?.find(s => s.id === serviceInfo.id);
+					if (serviceFromHook) {
+						console.log('[POS useEffect] Found service to add from array:', serviceFromHook.name, "(ID:", serviceFromHook.id, "). Calling handleAddToOrder...");
+						const serviceForOrder: POSService = {
+							id: serviceFromHook.id,
+							name: serviceInfo.name || serviceFromHook.name, // Prefer name from nav data if available
+							price: serviceInfo.price !== undefined ? serviceInfo.price : serviceFromHook.price,
+							type: 'service', // Explicitly set type
+							duration: serviceFromHook.duration,
+							category: serviceFromHook.category,
+						};
+						handleAddToOrder(serviceForOrder, 1);
+					} else {
+						console.warn('[POS useEffect] Service ID from array (', serviceInfo.id, ') received, but service not found in local list.');
+					}
+				});
+			} else if (appointmentNavData.serviceId && appointmentNavData.type === 'service') {
+				// Fallback for old single service structure, if necessary, though Appointments.tsx was changed.
+				const serviceFromHook = services?.find(s => s.id === appointmentNavData.serviceId);
+				if (serviceFromHook) {
+					console.log('[POS useEffect] Found single service to add (fallback):', serviceFromHook.name, "(ID:", serviceFromHook.id, "). Calling handleAddToOrder...");
+					const serviceForOrder: POSService = {
+						id: serviceFromHook.id,
+						name: serviceFromHook.name,
+						price: appointmentNavData.servicePrice !== undefined ? appointmentNavData.servicePrice : serviceFromHook.price,
+						type: 'service', 
+						duration: serviceFromHook.duration,
+						category: serviceFromHook.category,
+					};
+					handleAddToOrder(serviceForOrder, 1);
 				}
 			}
 
-			setCurrentAppointmentId(appointmentData.id || null);
+			setCurrentAppointmentId(appointmentNavData.id || null);
 
-			console.log('[POS useEffect] Clearing location state...');
+			console.log('[POS useEffect] Clearing location state after processing...');
 			navigate(location.pathname, { replace: true, state: {} });
-			console.log('[POS useEffect] Location state cleared.');
+			console.log('[POS useEffect] Location state cleared after processing.');
+		} else {
+			if (processedNavKeyRef.current !== null) {
+				console.log('[POS useEffect] No appointmentData in location.state. Resetting processedNavKeyRef.');
+				processedNavKeyRef.current = null;
+			}
 		}
-		// Removed handleAddToOrder from dependency array as it's defined outside with useCallback and its own deps
-	}, [location.state?.appointmentData, navigate]);
+	}, [location, services, clients, stylists, handleAddToOrder, navigate]); // Refined dependencies for this specific useEffect
 
 	const fetchBalanceStockData = useCallback(async () => {
 		console.log("Fetching latest stock data from products table...");
@@ -813,92 +939,6 @@ export default function POS() {
 
 	// Generate time slots (defined after helper function)
 	const timeSlots = useMemo(() => generateTimeSlots(8, 20, 15), []);
-
-	// Restore handler definitions
-	const handleClientSelect = useCallback((client: Client | null) => {
-		setSelectedClient(client);
-		if (client) {
-			setCustomerName(client.full_name || '');
-			setNewClientPhone(""); // Clear new client fields
-			setNewClientEmail("");
-			if (client.full_name) { // Use client.full_name
-				fetchClientHistory(client.full_name); // Pass client.full_name
-			} else {
-				console.warn("Selected client has no name, cannot fetch history.");
-				setClientServiceHistory([]);
-			}
-		} else {
-			// If client is deselected (e.g., cleared from Autocomplete), 
-			// customerName might still hold a value. If it does, treat as potentially new client.
-			// If customerName is also empty, then clear everything.
-			if (!customerName.trim()) {
-        setNewClientPhone("");
-        setNewClientEmail("");
-      }
-			setClientServiceHistory([]);
-		}
-	}, [fetchClientHistory, customerName]);
-
-	// DEFINE handleAddToOrder *BEFORE* useEffect that uses it
-	const handleAddToOrder = useCallback((service: POSService, quantity: number = 1, customPrice?: number) => {
-		console.log(`[handleAddToOrder] Called for: ${service.name} (ID: ${service.id}), Quantity: ${quantity}`);
-
-		const isOutOfStock = service.type === 'product' &&
-			(typeof service.stock_quantity === 'number' && service.stock_quantity <= 0);
-
-		// Don't allow adding out-of-stock products
-		if (isOutOfStock) {
-			toast.error(`Cannot add "${service.name}" - Product is out of stock`);
-			return;
-		}
-
-		console.log(`🛒 Adding to order - Product: ${service.name}, ID: ${service.id}, Type: ${service.type}, Quantity: ${quantity}, Current stock: ${service.stock_quantity}`);
-
-		if (service.type === 'product' && typeof service.stock_quantity === 'number') {
-			const existingItem = orderItems.find(item =>
-				item.item_id === service.id
-			);
-			const existingQty = existingItem ? existingItem.quantity : 0;
-			const newTotalQty = existingQty + quantity;
-
-			console.log(`🛒 Stock check - Current cart quantity: ${existingQty}, Adding: ${quantity}, New total: ${newTotalQty}, Available: ${service.stock_quantity}`);
-
-			if (newTotalQty > service.stock_quantity) {
-				toast.warning(`Cannot add ${quantity} of "${service.name}" - Only ${service.stock_quantity} available (${existingQty} already in cart)`);
-				return;
-			}
-
-			const remainingStock = service.stock_quantity - newTotalQty;
-			if (remainingStock === 0) {
-				toast.warning(`Added last ${quantity} of "${service.name}" to cart - No more in stock`);
-			} else if (remainingStock > 0 && remainingStock <= 3) {
-				toast.info(`Low stock warning: Only ${remainingStock} ${service.name} remaining after this sale`);
-			}
-		}
-
-		const newItem: OrderItem = {
-			id: uuidv4(),
-			order_id: '',
-			item_id: service.id,
-			item_name: service.name,
-			quantity: quantity,
-			price: customPrice !== undefined ? customPrice : service.price,
-			total: (customPrice !== undefined ? customPrice : service.price) * quantity,
-			type: service.type || 'product',
-			hsn_code: service.hsn_code,
-			gst_percentage: service.gst_percentage,
-			for_salon_use: false
-		};
-
-		console.log(`🛒 Created order item:`, newItem);
-
-		setOrderItems((prev) => {
-			const newState = [...prev, newItem];
-			return newState;
-		});
-
-		toast.success(`Added ${service.name} to order`);
-	}, [orderItems, toast]);
 
 	const handleAddSplitPayment = useCallback(() => {
 		const newPayment = {
@@ -2975,7 +3015,5 @@ export default function POS() {
 		</Box>
 	);
 }
-
-// Fetch client service history from the database
 
 
