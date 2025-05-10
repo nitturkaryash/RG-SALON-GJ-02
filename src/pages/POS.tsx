@@ -342,7 +342,7 @@ export default function POS() {
 	const queryClient = useQueryClient();
 
 	// Custom Hooks
-	const { clients, isLoading: loadingClients, updateClientFromOrder } = useClients();
+	const { clients, isLoading: loadingClients, updateClientFromOrder, createClientAsync } = useClients();
 	const { stylists, isLoading: loadingStylists } = useStylists();
 	const { createWalkInOrder: createWalkInOrderMutation, createOrder, orders, loadingOrders } = usePOS(); 
 	const { products: inventoryProducts, isLoading: loadingInventoryProducts } = useProducts();
@@ -433,6 +433,9 @@ export default function POS() {
 	const [isHistoryLoading, setIsHistoryLoading] = useState(false);
 	// Add new state for filtering memberships
 	const [membershipSearchTerm, setMembershipSearchTerm] = useState("");
+	// Add state for new client details
+	const [newClientPhone, setNewClientPhone] = useState("");
+	const [newClientEmail, setNewClientEmail] = useState("");
 
 	// Fetch client service history from the database
 	const fetchClientHistory = useCallback(async (clientName: string) => {
@@ -442,12 +445,22 @@ export default function POS() {
 			const { data, error } = await supabase
 				.from('pos_order_items')
 				.select(`
-					*,
-					pos_orders(created_at, status, id)
+					id,
+					service_name,
+					price,
+					quantity,
+					type,
+					pos_orders!inner (
+						id,
+						created_at,
+						status,
+						client_name
+					)
 				`)
 				.eq('pos_orders.client_name', clientName)
-				.order('created_at', { ascending: false })
+				.order('created_at', { referencedTable: 'pos_orders', ascending: false })
 				.limit(20);
+
 			if (error) {
 				console.error('Error fetching client history:', error);
 				toast.error('Failed to load client history');
@@ -806,11 +819,25 @@ export default function POS() {
 		setSelectedClient(client);
 		if (client) {
 			setCustomerName(client.full_name || '');
-			fetchClientHistory(client.full_name);
+			setNewClientPhone(""); // Clear new client fields
+			setNewClientEmail("");
+			if (client.full_name) { // Use client.full_name
+				fetchClientHistory(client.full_name); // Pass client.full_name
+			} else {
+				console.warn("Selected client has no name, cannot fetch history.");
+				setClientServiceHistory([]);
+			}
 		} else {
+			// If client is deselected (e.g., cleared from Autocomplete), 
+			// customerName might still hold a value. If it does, treat as potentially new client.
+			// If customerName is also empty, then clear everything.
+			if (!customerName.trim()) {
+        setNewClientPhone("");
+        setNewClientEmail("");
+      }
 			setClientServiceHistory([]);
 		}
-	}, [fetchClientHistory]);
+	}, [fetchClientHistory, customerName]);
 
 	// DEFINE handleAddToOrder *BEFORE* useEffect that uses it
 	const handleAddToOrder = useCallback((service: POSService, quantity: number = 1, customPrice?: number) => {
@@ -921,9 +948,44 @@ export default function POS() {
 		}
 		
 		setProcessing(true);
-		const orderId = uuidv4(); // Generate unique ID for the order
 		
 		try {
+			let clientIdToUse = selectedClient?.id;
+			let clientNameToUse = selectedClient?.full_name || customerName.trim();
+			let isNewClient = false;
+
+			// If no existing client is selected and a customer name is provided, create a new client
+			if (!selectedClient && customerName.trim() !== "") {
+				isNewClient = true;
+				console.log("Attempting to create new client:", customerName.trim());
+				try {
+					const newClientData = {
+						full_name: customerName.trim(),
+						phone: newClientPhone.trim(),
+						email: newClientEmail.trim(),
+						notes: 'Added via POS' // Default note
+					};
+					// Assume createClient is async and returns the created client object or relevant part
+					const createdClient = await createClientAsync(newClientData); // Use createClientAsync 
+					if (createdClient && createdClient.id) {
+						clientIdToUse = createdClient.id;
+						clientNameToUse = createdClient.full_name; // Use the name from the created client
+						toast.success(`New client '${clientNameToUse}' created successfully!`);
+						// queryClient.invalidateQueries({ queryKey: ['clients'] }); // Example for TanStack Query
+					} else {
+						// This case might indicate createClient didn't return expected data or failed silently before throwing
+						throw new Error('New client was processed but ID is missing.'); 
+					}
+				} catch (error) {
+					console.error("Error creating new client:", error);
+					const message = error instanceof Error ? error.message : "Unknown error creating client";
+					setSnackbarMessage(`Error creating client: ${message}`);
+					setSnackbarOpen(true);
+					setProcessing(false);
+					return; // Stop order processing if client creation fails
+				}
+			}
+
 			// Log order items for inventory tracking
 			const productItems = orderItems.filter(item => item.type === 'product');
 			const serviceItems = orderItems.filter(item => item.type === 'service');
@@ -941,12 +1003,12 @@ export default function POS() {
 			const actualPaymentMethod = isSplitPayment ? 'split' : walkInPaymentMethod;
 			
 			// Only update client if a name is available
-			const clientNameToUpdate = selectedClient?.full_name || customerName;
-			if (clientNameToUpdate && clientNameToUpdate !== 'Walk-in Customer') { // Avoid updating for generic walk-in
+			const finalClientNameToUpdate = clientNameToUse; 
+			if (finalClientNameToUpdate && finalClientNameToUpdate !== 'Walk-in Customer') { 
 				await updateClientFromOrder(
-					clientNameToUpdate,
-					actualTotalAmount,      // Pass the calculated total amount
-					actualPaymentMethod,    // Pass the actual payment method
+					finalClientNameToUpdate,
+					actualTotalAmount,      
+					actualPaymentMethod,    
 					new Date().toISOString() 
 				);
 			} else {
@@ -996,7 +1058,7 @@ export default function POS() {
 			const invoiceNumber = `INV-${Date.now().toString().slice(-6)}`;
 			
 			console.log(`📦 Calling standalone createWalkInOrder with:`, {
-				customerName: selectedClient?.full_name || customerName,
+				customerName: clientNameToUse, 
 				products: formattedProducts.length,
 				services: formattedServices.length,
 				staffInfo
@@ -1005,12 +1067,13 @@ export default function POS() {
 			// Call the standalone function with the correct parameters
 			const orderResult = await createWalkInOrderMutation.mutateAsync({
 				order_id: uuidv4(),
-				client_id: selectedClient?.id || '',
-				client_name: selectedClient?.full_name || customerName,
+				client_id: clientIdToUse || '', 
+				client_name: clientNameToUse,    
 				stylist_id: staffInfo?.id || '',
 				stylist_name: staffInfo?.name || '',
 				items: [],
 				services: ([...formattedProducts, ...formattedServices] as any[]),
+				
 				payment_method: isSplitPayment ? 'split' : walkInPaymentMethod,
 				split_payments: isSplitPayment ? splitPayments : undefined,
 				discount: walkInDiscount,
@@ -1100,7 +1163,7 @@ export default function POS() {
 		} finally {
 			setProcessing(false);
 		}
-	}, [currentAppointmentId, updateAppointment, orderItems, isOrderValid, calculateProductSubtotal, calculateServiceSubtotal, calculateProductGstAmount, calculateServiceGstAmount, walkInDiscount, getAmountPaid, selectedClient, selectedStylist, customerName, createWalkInOrderMutation, createOrder, isSplitPayment, splitPayments, productGstRate, serviceGstRate, calculateTotalAmount, allProducts, fetchBalanceStockData, directUpdateStockQuantity]);
+	}, [currentAppointmentId, updateAppointment, orderItems, isOrderValid, calculateProductSubtotal, calculateServiceSubtotal, calculateProductGstAmount, calculateServiceGstAmount, walkInDiscount, getAmountPaid, selectedClient, selectedStylist, customerName, createWalkInOrderMutation, createOrder, isSplitPayment, splitPayments, productGstRate, serviceGstRate, calculateTotalAmount, allProducts, fetchBalanceStockData, directUpdateStockQuantity, createClientAsync, newClientPhone, newClientEmail]);
 
 	const resetFormState = useCallback(() => {
 		// Remove activeStep reset since we don't use steps anymore
@@ -1119,6 +1182,9 @@ export default function POS() {
 		setWalkInDiscount(0);
 		setWalkInDiscountPercentage(0); // Reset percentage discount
 		setCurrentAppointmentId(null); // <-- Reset appointment ID
+		// Reset new client fields as well
+		setNewClientPhone("");
+		setNewClientEmail("");
 		// Reset salon consumption state if it exists
 		setSalonProducts([]);
 		setConsumptionPurpose("");
@@ -1486,7 +1552,7 @@ export default function POS() {
 		} finally {
 			setProcessing(false);
 		}
-	}, [currentAppointmentId, updateAppointment, orderItems, isOrderValid, calculateProductSubtotal, calculateServiceSubtotal, calculateProductGstAmount, calculateServiceGstAmount, walkInDiscount, getAmountPaid, selectedClient, selectedStylist, customerName, createWalkInOrderMutation, createOrder, isSplitPayment, splitPayments, productGstRate, serviceGstRate, salonProducts, consumptionPurpose, consumptionNotes, requisitionVoucherNo, fetchBalanceStockData, resetFormState, navigate, queryClient, directUpdateStockQuantity]);
+	}, [currentAppointmentId, updateAppointment, orderItems, isOrderValid, calculateProductSubtotal, calculateServiceSubtotal, calculateProductGstAmount, calculateServiceGstAmount, walkInDiscount, getAmountPaid, selectedClient, selectedStylist, customerName, createWalkInOrderMutation, createOrder, isSplitPayment, splitPayments, productGstRate, serviceGstRate, salonProducts, consumptionPurpose, consumptionNotes, requisitionVoucherNo, fetchBalanceStockData, resetFormState, navigate, queryClient, directUpdateStockQuantity, createClientAsync, newClientPhone, newClientEmail]); // Changed createClient to createClientAsync here as well
 
 	const handleRemoveFromOrder = useCallback((itemId: string) => {
 		setOrderItems((prevItems) => prevItems.filter((item) => item.id !== itemId));
@@ -1732,48 +1798,119 @@ export default function POS() {
 					/>
 				</Grid>
 
-				{/* Product selection UI for salon use - only products, no services */}
-				<Grid container spacing={3}>
-					{loadingProducts ? (
-						<Grid item xs={12} sx={{ display: 'flex', justifyContent: 'center', my: 4 }}>
-							<CircularProgress />
-						</Grid>
-					) : productsOnly.length > 0 ? (
-						productsOnly.map((product) => (
-							<Grid item xs={12} sm={6} md={4} key={product.id}>
-								{renderProductCard(product, handleAddSalonProduct)}
-							</Grid>
-						))
+				{/* Replace product cards with dropdown */}
+				<Box sx={{ mb: 4 }}>
+					<Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+						<Autocomplete
+							options={productsOnly}
+							getOptionLabel={(option) => {
+								const stockLabel = option.stock_quantity !== undefined ? 
+									` (${option.stock_quantity} in stock)` : '';
+								return `${option.name}${stockLabel}`;
+							}}
+							renderOption={(props, option) => (
+								<li {...props}>
+									<Box>
+										<Typography variant="body2">{option.name}</Typography>
+										<Typography variant="caption" color="text.secondary">
+											₹{option.price} • {option.stock_quantity !== undefined ? 
+												`${option.stock_quantity} in stock` : 'Stock not available'}
+										</Typography>
+									</Box>
+								</li>
+							)}
+							value={null}
+							onChange={(_, newProduct) => {
+								if (newProduct) {
+									if (newProduct.stock_quantity !== undefined && newProduct.stock_quantity <= 0) {
+										toast.error(`${newProduct.name} is out of stock`);
+									} else {
+										handleAddSalonProduct(newProduct);
+										toast.success(`Added ${newProduct.name} for salon use`);
+									}
+								}
+							}}
+							renderInput={(params) => (
+								<TextField {...params} 
+									label="Select Product" 
+									variant="outlined" 
+									fullWidth 
+									size="small"
+								/>
+							)}
+							sx={{ flex: 1 }}
+						/>
+						<Button
+							variant="contained"
+							color="primary"
+							sx={{
+								bgcolor: 'rgb(94, 129, 34)',
+								'&:hover': {
+									bgcolor: 'rgb(75, 103, 27)'
+								}
+							}}
+						>
+							Add Product
+						</Button>
+					</Box>
+				</Box>
+
+				<Box sx={{ mt: 2 }}>
+					<Typography variant="subtitle2">Selected Products:</Typography>
+					{salonProducts.length === 0 ? (
+						<Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+							No products selected. Please select products using the dropdown above.
+						</Typography>
 					) : (
-						<Grid item xs={12}>
-							<Box sx={{
-								textAlign: 'center',
-								my: 4,
-								p: 4,
-								bgcolor: 'grey.50',
-								borderRadius: '8px',
-								border: '1px dashed rgba(0, 0, 0, 0.12)'
-							}}>
-								<Typography variant="body1" color="text.secondary" sx={{ mb: 2 }}>
-									No products available. Add products from the Products section first.
-								</Typography>
-								<Button
-									variant="outlined"
-									color="primary"
-									component="a"
-									href="/products"
-									sx={{
-										borderRadius: '6px',
-										textTransform: 'none',
-										fontWeight: 500
-									}}
-								>
-									Go to Products
-								</Button>
-							</Box>
-						</Grid>
+						<TableContainer component={Paper} variant="outlined" sx={{ mt: 1 }}>
+							<Table size="small">
+								<TableHead>
+									<TableRow>
+										<TableCell>Product</TableCell>
+										<TableCell align="right">Quantity</TableCell>
+										<TableCell align="right">Price</TableCell>
+										<TableCell align="right">Total</TableCell>
+										<TableCell></TableCell>
+									</TableRow>
+								</TableHead>
+								<TableBody>
+									{salonProducts.map((product) => (
+										<TableRow key={product.id}>
+											<TableCell>{product.item_name}</TableCell>
+											<TableCell align="right">
+												<TextField
+													type="number"
+													size="small"
+													value={product.quantity}
+													onChange={(e) => {
+														const newQuantity = Math.max(1, parseInt(e.target.value) || 1);
+														const updatedProducts = salonProducts.map(p => 
+															p.id === product.id ? {...p, quantity: newQuantity, total: product.price * newQuantity} : p
+														);
+														setSalonProducts(updatedProducts);
+													}}
+													InputProps={{ inputProps: { min: 1, style: { textAlign: 'right' } } }}
+													sx={{ width: 70 }}
+												/>
+											</TableCell>
+											<TableCell align="right">{formatCurrency(product.price)}</TableCell>
+											<TableCell align="right">{formatCurrency(product.price * product.quantity)}</TableCell>
+											<TableCell align="right">
+												<IconButton
+													size="small"
+													color="error"
+													onClick={() => handleRemoveSalonProduct(product.item_id)}
+												>
+													<DeleteOutlineIcon fontSize="small" />
+												</IconButton>
+											</TableCell>
+										</TableRow>
+									))}
+								</TableBody>
+							</Table>
+						</TableContainer>
 					)}
-				</Grid>
+				</Box>
 			</Box>
 		);
 	};
@@ -2205,9 +2342,7 @@ export default function POS() {
 												variant="outlined"
 												fullWidth
 												size="small"
-												required
-												error={customerName.trim() === ""}
-												helperText={clients && clients.length === 0 ? "No clients available." : ""}
+												helperText={clients && clients.length === 0 ? "No clients available. Type a name to add a new one." : "Select an existing client or type a new name below."}
 											/>
 										)}
 										renderOption={(props, option) => (
@@ -2231,13 +2366,46 @@ export default function POS() {
 										label="Customer Name"
 										variant="outlined"
 										value={customerName}
-										onChange={(e) => setCustomerName(e.target.value)}
+										onChange={(e) => {
+											setCustomerName(e.target.value);
+											// If name is changed manually, deselect client to allow new client entry
+											if (selectedClient && selectedClient.full_name !== e.target.value) {
+												setSelectedClient(null);
+											}
+										}}
 										required
 										error={customerName.trim() === ""}
 										size="small"
 									/>
 								</Grid>
-								<Grid item xs={12} sm={4}>
+								{/* New Client Phone and Email - Conditionally Rendered */}
+								{!selectedClient && customerName.trim() !== "" && (
+									<>
+										<Grid item xs={12} sm={4}>
+											<TextField
+												fullWidth
+												label="New Client Phone"
+												variant="outlined"
+												value={newClientPhone}
+												onChange={(e) => setNewClientPhone(e.target.value)}
+												size="small"
+												placeholder='(Optional)'
+											/>
+										</Grid>
+										<Grid item xs={12} sm={4}>
+											<TextField
+												fullWidth
+												label="New Client Email"
+												variant="outlined"
+												value={newClientEmail}
+												onChange={(e) => setNewClientEmail(e.target.value)}
+												size="small"
+												placeholder='(Optional)'
+											/>
+										</Grid>
+									</>
+								)}
+								<Grid item xs={12} sm={selectedClient || !customerName.trim() ? 4 : 12} > {/* Adjust grid for stylist based on new client fields */} 
 									<FormControl
 										fullWidth
 										required
@@ -2793,8 +2961,8 @@ export default function POS() {
 								<React.Fragment key={item.id}>
 									<ListItem>
 										<ListItemText
-											primary={`${item.service_name || item.item_name} — ₹${item.price}`}
-											secondary={`${item.pos_orders?.created_at ? format(new Date(item.pos_orders.created_at), 'dd/MM/yyyy') : 'N/A'} — Order #${item.pos_orders?.id?.slice(-4)} — Qty: ${item.quantity}`}
+											primary={`${item.service_name || item.item_name || 'Unknown Item'} — ₹${item.price}`} // Updated to use service_name, with fallback
+											secondary={`${item.pos_orders?.created_at ? format(new Date(item.pos_orders.created_at), 'dd/MM/yyyy') : 'N/A'} — Order #${item.pos_orders?.id?.slice(-4) || 'N/A'} — Qty: ${item.quantity}`}
 										/>
 									</ListItem>
 									<Divider />
