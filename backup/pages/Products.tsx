@@ -1,3 +1,4 @@
+import React from 'react';
 import { useState, useEffect } from 'react';
 import {
   Box,
@@ -34,8 +35,8 @@ import {
 } from '@mui/icons-material';
 import { styled } from '@mui/material/styles';
 import { useProducts } from '../hooks/useProducts';
-import { cn } from '../lib/utils';
-import { formatCurrency } from '../utils/format';
+import { cn } from '../../src/lib/utils';
+import { formatCurrency } from '../../src/utils/format';
 // Import the new components
 import ProductPurchaseForm from '../components/products/ProductPurchaseForm';
 import ProductPurchaseTable from '../components/products/ProductPurchaseTable';
