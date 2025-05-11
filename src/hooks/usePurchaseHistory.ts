@@ -48,7 +48,7 @@ export const usePurchaseHistory = () => {
           'purchase_id,product_id,date,purchase_invoice_number,purchase_qty,' +
           'mrp_incl_gst,mrp_excl_gst,purchase_taxable_value,purchase_igst,purchase_cgst,' +
           'purchase_sgst,purchase_invoice_value_rs,discount_on_purchase_percentage,' +
-          'created_at,updated_at,units,stock_balance_after_purchase:current_stock,' +
+          'created_at,updated_at,units,stock_balance_after_purchase:current_stock,Vendor,' +
           'product_master(name,hsn_code,units,gst_percentage)'
         )
         .order('date', { ascending: true });
@@ -138,7 +138,7 @@ export const usePurchaseHistory = () => {
           purchase_invoice_value_rs: parseFloat(purchaseInvoiceValue.toFixed(2)),
           created_at: item.created_at,
           updated_at: item.updated_at,
-          supplier: 'Direct Entry',
+          supplier: item.Vendor || 'Direct Entry',
           stock_after_purchase: item.stock_balance_after_purchase ?? null,
           // Add calculated current stock values
           current_stock_taxable_value: parseFloat(currentStockTaxableValue.toFixed(2)),
