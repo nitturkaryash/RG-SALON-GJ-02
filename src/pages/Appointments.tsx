@@ -274,6 +274,21 @@ export default function Appointments() {
       console.error("Validation Error: Start or End time missing.");
       isValid = false;
     }
+    
+    // Validate that start time is before end time
+    if (appointmentTime.startTime && appointmentTime.endTime) {
+      const [startHour, startMinute] = appointmentTime.startTime.split(':').map(Number);
+      const [endHour, endMinute] = appointmentTime.endTime.split(':').map(Number);
+      
+      if (endHour < startHour || (endHour === startHour && endMinute <= startMinute)) {
+        console.error("Validation Error: End time must be after start time");
+        setSnackbarMessage('End time must be after start time');
+        setSnackbarSeverity('error');
+        setSnackbarOpen(true);
+        return;
+      }
+    }
+    
     if (!isValid) {
       setSnackbarMessage('Validation failed. Ensure all required fields are filled correctly.');
       setSnackbarSeverity('error');
@@ -293,8 +308,87 @@ export default function Appointments() {
     endTime.setHours(endHour, endMinute, 0, 0);
     if (endTime <= startTime) endTime.setDate(endTime.getDate() + 1);
     // --- End Time Calculation ---
-
+    
+    // --- Check for break conflicts ---
     try {
+      for (const entry of clientEntries) {
+        for (const stylist of entry.stylists) {
+          // Find the stylist's breaks
+          const stylistData = allStylists.find(s => s.id === stylist.id);
+          if (!stylistData) continue;
+          
+          // Check for break conflicts
+          const hasBreakConflict = (stylistData.breaks || []).some(breakItem => {
+            const breakStart = new Date(breakItem.startTime);
+            const breakEnd = new Date(breakItem.endTime);
+            
+            // Only check breaks on the same day
+            if (breakStart.getDate() !== startTime.getDate() ||
+                breakStart.getMonth() !== startTime.getMonth() ||
+                breakStart.getFullYear() !== startTime.getFullYear()) {
+              return false;
+            }
+            
+            // Check for overlap
+            return (
+              (startTime >= breakStart && startTime < breakEnd) || // Start during break
+              (endTime > breakStart && endTime <= breakEnd) || // End during break
+              (startTime <= breakStart && endTime >= breakEnd) // Break is within appointment
+            );
+          });
+          
+          if (hasBreakConflict) {
+            console.error(`Break conflict detected for stylist: ${stylist.name}`);
+            setSnackbarMessage(`Cannot book appointment: ${stylist.name} has a break scheduled during this time.`);
+            setSnackbarSeverity('error');
+            setSnackbarOpen(true);
+            return;
+          }
+        }
+      }
+      
+      // Check for overlapping appointments
+      const conflictingAppointments = appointments.filter(app => {
+        // Skip the current appointment being edited
+        if (editingAppointment && app.id === editingAppointment.id) return false;
+        
+        // Convert to Date objects
+        const appStart = new Date(app.start_time);
+        const appEnd = new Date(app.end_time);
+        
+        // Only check appointments on the same day
+        if (appStart.getDate() !== startTime.getDate() ||
+            appStart.getMonth() !== startTime.getMonth() ||
+            appStart.getFullYear() !== startTime.getFullYear()) {
+          return false;
+        }
+        
+        // Check if the appointment overlaps with the time range
+        return (
+          (startTime >= appStart && startTime < appEnd) || // Start during another appointment
+          (endTime > appStart && endTime <= appEnd) || // End during another appointment
+          (startTime <= appStart && endTime >= appEnd) // Another appointment is within this one
+        );
+      });
+      
+      // Filter for conflicting stylists
+      for (const entry of clientEntries) {
+        const selectedStylistIds = entry.stylists.map(s => s.id);
+        
+        const stylistConflicts = conflictingAppointments.filter(app => {
+          // Check if any of the selected stylists are already booked
+          return selectedStylistIds.includes(app.stylist_id);
+        });
+        
+        if (stylistConflicts.length > 0) {
+          const conflictingStylist = allStylists.find(s => s.id === stylistConflicts[0].stylist_id);
+          setSnackbarMessage(`Scheduling conflict: ${conflictingStylist ? conflictingStylist.name : 'A stylist'} is already booked during this time.`);
+          setSnackbarSeverity('error');
+          setSnackbarOpen(true);
+          return;
+        }
+      }
+
       // --- Create/Update Clients ---
       const processedClientDetails = await Promise.all(
         clientEntries.map(async (entry, idx) => {
@@ -406,14 +500,54 @@ export default function Appointments() {
 
   const handleDeleteBreak = async (stylistId: string, breakId: string) => {
     try {
+      console.log('Deleting break:', { stylistId, breakId });
       const stylist = (allStylists || []).find(s => s.id === stylistId);
       if (!stylist || !stylist.breaks) throw new Error("Stylist or breaks not found");
+      
+      // Confirm stylist has this break in their array
+      const breakExists = stylist.breaks.some(b => b.id === breakId);
+      if (!breakExists) {
+        console.error('Break not found in stylist breaks array:', { breakId, stylistBreaks: stylist.breaks });
+        throw new Error(`Break with ID ${breakId} not found for stylist`);
+      }
+      
       const updatedBreaks = stylist.breaks.filter(b => b.id !== breakId);
+      console.log('Updated breaks array:', updatedBreaks);
+      
+      // Update the stylist with the new breaks array
       await updateStylist({ id: stylistId, breaks: updatedBreaks });
       toast.success('Break deleted successfully');
-      } catch (error) {
+    } catch (error) {
       console.error('Error deleting break:', error);
       toast.error(`Failed to delete break: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  };
+
+  const handleUpdateBreak = async (stylistId: string, breakId: string, breakData: Omit<Break, 'id'>) => {
+    try {
+      console.log('Updating break:', { stylistId, breakId, breakData });
+      const stylist = (allStylists || []).find(s => s.id === stylistId);
+      if (!stylist || !stylist.breaks) throw new Error("Stylist or breaks not found");
+      
+      // Confirm stylist has this break in their array
+      const breakIndex = stylist.breaks.findIndex(b => b.id === breakId);
+      if (breakIndex === -1) {
+        console.error('Break not found in stylist breaks array:', { breakId, stylistBreaks: stylist.breaks });
+        throw new Error(`Break with ID ${breakId} not found for stylist`);
+      }
+      
+      const updatedBreaks = stylist.breaks.map(b => 
+        b.id === breakId ? { ...breakData, id: breakId } : b
+      );
+      
+      console.log('Updated breaks array:', updatedBreaks);
+      
+      // Update the stylist with the new breaks array
+      await updateStylist({ id: stylistId, breaks: updatedBreaks });
+      toast.success('Break updated successfully');
+    } catch (error) {
+      console.error('Error updating break:', error);
+      toast.error(`Failed to update break: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
 
@@ -465,6 +599,8 @@ export default function Appointments() {
           onSelectTimeSlot={handleDayViewSelect}
           onAppointmentClick={handleAppointmentClick}
           onAddBreak={handleAddBreak}
+          onDeleteBreak={handleDeleteBreak}
+          onUpdateBreak={handleUpdateBreak}
           onDateChange={setSelectedDate}
         />
       </Box>

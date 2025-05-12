@@ -36,7 +36,7 @@ import {
   Chip
 } from '@mui/material';
 import { styled } from '@mui/material/styles';
-import { ChevronLeft, ChevronRight, Today, Receipt, CalendarMonth, Delete as DeleteIcon, Close as CloseIcon, Add as AddIcon } from '@mui/icons-material';
+import { ChevronLeft, ChevronRight, Today, Receipt, CalendarMonth, Delete as DeleteIcon, Close as CloseIcon, Add as AddIcon, Edit as EditIcon, Save as SaveIcon } from '@mui/icons-material';
 import { format, addDays, isSameDay } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
 import { useClients, Client } from '../hooks/useClients';
@@ -329,9 +329,11 @@ interface StylistDayViewProps {
   onUpdateAppointment?: (appointmentId: string, updates: any) => Promise<void>;
   onDeleteAppointment?: (appointmentId: string) => Promise<void>;
   onAddBreak: (stylistId: string, breakData: Break) => Promise<void>;
+  onDeleteBreak?: (stylistId: string, breakId: string) => Promise<void>;
+  onUpdateBreak?: (stylistId: string, breakId: string, breakData: Omit<Break, 'id'>) => Promise<void>; // Add this prop
   onDateChange?: (date: Date) => void;
   onStylistsChange?: (updatedStylists: Stylist[]) => void;
-  onAppointmentClick?: (appointment: any) => void; // Add the missing prop definition (make optional if needed)
+  onAppointmentClick?: (appointment: any) => void;
 }
 
 // Define filter for freeSolo client options
@@ -346,6 +348,8 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
   onUpdateAppointment,
   onDeleteAppointment,
   onAddBreak,
+  onDeleteBreak,
+  onUpdateBreak,
   onDateChange,
   onStylistsChange,
   onAppointmentClick,
@@ -1053,6 +1057,52 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
         setSnackbarOpen(true);
         return;
       }
+      
+      // Check for conflicts with existing appointments for this stylist
+      const stylistAppointments = appointments.filter(app => 
+        app.stylist_id === selectedStylist.id && 
+        isSameDay(new Date(app.start_time), currentDate)
+      );
+      
+      const hasAppointmentConflict = stylistAppointments.some(appointment => {
+        const appStart = new Date(appointment.start_time);
+        const appEnd = new Date(appointment.end_time);
+        
+        return (
+          (formattedStartDate >= appStart && formattedStartDate < appEnd) || // Break starts during appointment
+          (formattedEndDate > appStart && formattedEndDate <= appEnd) || // Break ends during appointment
+          (formattedStartDate <= appStart && formattedEndDate >= appEnd) // Appointment is within break
+        );
+      });
+      
+      if (hasAppointmentConflict) {
+        setSnackbarMessage('Cannot add break: Conflicts with existing appointments');
+        setSnackbarOpen(true);
+        return;
+      }
+      
+      // Check for conflicts with existing breaks
+      const hasBreakConflict = selectedStylist.breaks.some(breakItem => {
+        const existingBreakStart = new Date(breakItem.startTime);
+        const existingBreakEnd = new Date(breakItem.endTime);
+        
+        // Only consider breaks on the same day
+        if (!isSameDay(existingBreakStart, currentDate)) {
+          return false;
+        }
+        
+        return (
+          (formattedStartDate >= existingBreakStart && formattedStartDate < existingBreakEnd) || // New break starts during existing break
+          (formattedEndDate > existingBreakStart && formattedEndDate <= existingBreakEnd) || // New break ends during existing break
+          (formattedStartDate <= existingBreakStart && formattedEndDate >= existingBreakEnd) // Existing break is within new break
+        );
+      });
+      
+      if (hasBreakConflict) {
+        setSnackbarMessage('Cannot add break: Conflicts with existing breaks');
+        setSnackbarOpen(true);
+        return;
+      }
 
       const breakData: Omit<Break, 'id'> = {
         startTime: formattedStartDate.toISOString(),
@@ -1093,22 +1143,44 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
     }
   };
 
-  const handleDeleteBreak = (index: number) => {
-    if (!selectedStylist || !selectedStylist.breaks) return;
+  const handleDeleteBreak = async (breakId: string) => {
+    if (!selectedStylist) return;
     
-    const updatedBreaks = [...selectedStylist.breaks];
-    updatedBreaks.splice(index, 1);
+    // Add confirmation dialog
+    if (!window.confirm('Are you sure you want to delete this break?')) {
+      return;
+    }
     
-    const updatedStylists = stylists.map(stylist => 
-      stylist.id === selectedStylist.id 
-        ? { ...stylist, breaks: updatedBreaks }
-        : stylist
-    );
-    
-    setStylists(updatedStylists);
-    setSelectedStylist({ ...selectedStylist, breaks: updatedBreaks });
-    setSnackbarMessage('Break time removed successfully');
-    setSnackbarOpen(true);
+    try {
+      console.log('Deleting break with id:', breakId, 'from stylist:', selectedStylist.id);
+      
+      if (onDeleteBreak) {
+        // Call the prop function to update the database
+        await onDeleteBreak(selectedStylist.id, breakId);
+        
+        // After successful server update, update the local state
+        const updatedBreaks = selectedStylist.breaks.filter(b => b.id !== breakId);
+        
+        const updatedStylists = stylists.map(stylist => 
+          stylist.id === selectedStylist.id 
+            ? { ...stylist, breaks: updatedBreaks }
+            : stylist
+        );
+        
+        setStylists(updatedStylists);
+        setSelectedStylist({ ...selectedStylist, breaks: updatedBreaks });
+        setSnackbarMessage('Break time removed successfully');
+        setSnackbarOpen(true);
+      } else {
+        console.error('onDeleteBreak prop is not provided');
+        setSnackbarMessage('Could not delete break: Delete function not available');
+        setSnackbarOpen(true);
+      }
+    } catch (error) {
+      console.error('Error deleting break:', error);
+      setSnackbarMessage(`Failed to delete break: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      setSnackbarOpen(true);
+    }
   };
 
   const BreakBlock = styled(Box)(({ theme }) => ({
@@ -1366,6 +1438,167 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
     }));
   };
 
+  // Add state for break editing
+  const [editingBreak, setEditingBreak] = useState<Break | null>(null);
+  const [editBreakDialogOpen, setEditBreakDialogOpen] = useState<boolean>(false);
+  const [editBreakFormData, setEditBreakFormData] = useState({
+    startTime: '',
+    endTime: '',
+    reason: ''
+  });
+  
+  const handleEditBreakDialogOpen = (breakItem: Break) => {
+    setEditingBreak(breakItem);
+    
+    // Convert ISO times to HH:MM format for the form
+    const startDate = new Date(breakItem.startTime);
+    const endDate = new Date(breakItem.endTime);
+    
+    const startHour = startDate.getHours().toString().padStart(2, '0');
+    const startMinute = startDate.getMinutes().toString().padStart(2, '0');
+    const endHour = endDate.getHours().toString().padStart(2, '0');
+    const endMinute = endDate.getMinutes().toString().padStart(2, '0');
+    
+    setEditBreakFormData({
+      startTime: `${startHour}:${startMinute}`,
+      endTime: `${endHour}:${endMinute}`,
+      reason: breakItem.reason || ''
+    });
+    
+    setEditBreakDialogOpen(true);
+  };
+  
+  const handleEditBreakDialogClose = () => {
+    setEditBreakDialogOpen(false);
+    setEditingBreak(null);
+  };
+  
+  const handleUpdateBreak = async () => {
+    try {
+      if (!selectedStylist || !editingBreak) return;
+      
+      const { startTime, endTime, reason } = editBreakFormData;
+      if (!startTime || !endTime) {
+        setSnackbarMessage('Please select both start and end times');
+        setSnackbarOpen(true);
+        return;
+      }
+      
+      // Create dates for validation
+      const formattedStartDate = new Date(currentDate);
+      const [startHour, startMinute] = startTime.split(':').map(Number);
+      formattedStartDate.setHours(startHour, startMinute, 0, 0);
+      
+      const formattedEndDate = new Date(currentDate);
+      const [endHour, endMinute] = endTime.split(':').map(Number);
+      formattedEndDate.setHours(endHour, endMinute, 0, 0);
+      
+      if (formattedEndDate <= formattedStartDate) {
+        setSnackbarMessage('End time must be after start time');
+        setSnackbarOpen(true);
+        return;
+      }
+      
+      // Check for conflicts with existing appointments for this stylist
+      const stylistAppointments = appointments.filter(app => 
+        app.stylist_id === selectedStylist.id && 
+        isSameDay(new Date(app.start_time), currentDate)
+      );
+      
+      const hasAppointmentConflict = stylistAppointments.some(appointment => {
+        const appStart = new Date(appointment.start_time);
+        const appEnd = new Date(appointment.end_time);
+        
+        return (
+          (formattedStartDate >= appStart && formattedStartDate < appEnd) || // Break starts during appointment
+          (formattedEndDate > appStart && formattedEndDate <= appEnd) || // Break ends during appointment
+          (formattedStartDate <= appStart && formattedEndDate >= appEnd) // Appointment is within break
+        );
+      });
+      
+      if (hasAppointmentConflict) {
+        setSnackbarMessage('Cannot update break: Conflicts with existing appointments');
+        setSnackbarOpen(true);
+        return;
+      }
+      
+      // Check for conflicts with existing breaks (excluding the current break being edited)
+      const hasBreakConflict = selectedStylist.breaks.some(breakItem => {
+        // Skip the current break being edited
+        if (breakItem.id === editingBreak.id) {
+          return false;
+        }
+        
+        const existingBreakStart = new Date(breakItem.startTime);
+        const existingBreakEnd = new Date(breakItem.endTime);
+        
+        // Only consider breaks on the same day
+        if (!isSameDay(existingBreakStart, currentDate)) {
+          return false;
+        }
+        
+        return (
+          (formattedStartDate >= existingBreakStart && formattedStartDate < existingBreakEnd) || // Updated break starts during existing break
+          (formattedEndDate > existingBreakStart && formattedEndDate <= existingBreakEnd) || // Updated break ends during existing break
+          (formattedStartDate <= existingBreakStart && formattedEndDate >= existingBreakEnd) // Existing break is within updated break
+        );
+      });
+      
+      if (hasBreakConflict) {
+        setSnackbarMessage('Cannot update break: Conflicts with existing breaks');
+        setSnackbarOpen(true);
+        return;
+      }
+      
+      const breakData: Omit<Break, 'id'> = {
+        startTime: formattedStartDate.toISOString(),
+        endTime: formattedEndDate.toISOString(),
+        reason: reason || ''
+      };
+      
+      console.log('Updating break with data:', {
+        stylistId: selectedStylist.id,
+        breakId: editingBreak.id,
+        breakData
+      });
+
+      if (onUpdateBreak) {
+        // Call the prop function to update the database
+        await onUpdateBreak(selectedStylist.id, editingBreak.id, breakData);
+        
+        // After successful server update, update the local state
+        const updatedBreaks = selectedStylist.breaks.map(b => 
+          b.id === editingBreak.id 
+            ? { ...breakData, id: editingBreak.id }
+            : b
+        );
+        
+        const updatedStylists = stylists.map(stylist => 
+          stylist.id === selectedStylist.id 
+            ? { ...stylist, breaks: updatedBreaks }
+            : stylist
+        );
+        
+        setStylists(updatedStylists);
+        setSelectedStylist({ ...selectedStylist, breaks: updatedBreaks });
+        setSnackbarMessage('Break time updated successfully');
+        setSnackbarOpen(true);
+      } else {
+        console.error('onUpdateBreak prop is not provided');
+        setSnackbarMessage('Could not update break: Update function not available');
+        setSnackbarOpen(true);
+      }
+      
+      setEditBreakDialogOpen(false);
+      setEditingBreak(null);
+      
+    } catch (error) {
+      console.error('Error updating break:', error);
+      setSnackbarMessage(`Failed to update break: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      setSnackbarOpen(true);
+    }
+  };
+
   return (
     <DayViewContainer>
       <DayViewHeader>
@@ -1535,8 +1768,11 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
                     display: 'flex',
                     flexDirection: 'column',
                     justifyContent: 'flex-start',
-                    gap: 0.5
+                    gap: 0.5,
+                    cursor: 'pointer', // Add pointer cursor
+                    position: 'relative' // Ensure we can position buttons inside
                   }}
+                  onClick={() => handleEditBreakDialogOpen(breakItem)} // Add click handler
                 >
                   <Typography variant="subtitle2" sx={{ fontWeight: 'bold', fontSize: '0.75rem' }}>
                     Break Time
@@ -1549,6 +1785,41 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
                       {breakItem.reason}
                     </Typography>
                   )}
+                  
+                  {/* Add edit and delete buttons directly on the break card */}
+                  <Box 
+                    sx={{ 
+                      position: 'absolute', 
+                      top: 4, 
+                      right: 4, 
+                      display: 'flex', 
+                      gap: 0.5,
+                      opacity: 0.7,
+                      '&:hover': { opacity: 1 }
+                    }}
+                    onClick={e => e.stopPropagation()} // Prevent opening edit dialog when clicking buttons
+                  >
+                    <IconButton 
+                      size="small" 
+                      sx={{ padding: 0.3, backgroundColor: 'rgba(255,255,255,0.3)' }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleEditBreakDialogOpen(breakItem);
+                      }}
+                    >
+                      <EditIcon fontSize="small" />
+                    </IconButton>
+                    <IconButton 
+                      size="small" 
+                      sx={{ padding: 0.3, backgroundColor: 'rgba(255,255,255,0.3)' }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteBreak(breakItem.id);
+                      }}
+                    >
+                      <DeleteIcon fontSize="small" />
+                    </IconButton>
+                  </Box>
                 </BreakBlock>
               );
             })}
@@ -1987,8 +2258,17 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
                         <TableCell align="right">
                           <IconButton
                             size="small"
+                            color="primary"
+                            onClick={() => handleEditBreakDialogOpen(breakItem)}
+                            title="Edit break"
+                            sx={{ mr: 1 }}
+                          >
+                            <EditIcon fontSize="small" />
+                          </IconButton>
+                          <IconButton
+                            size="small"
                             color="error"
-                            onClick={() => handleDeleteBreak(index)}
+                            onClick={() => handleDeleteBreak(breakItem.id)}
                             title="Delete break"
                           >
                             <DeleteIcon fontSize="small" />
@@ -2016,6 +2296,70 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
         </DialogContent>
         <DialogActions>
           <Button onClick={handleBreakDialogClose}>Close</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Edit Break Dialog */}
+      <Dialog open={editBreakDialogOpen} onClose={handleEditBreakDialogClose} maxWidth="md" fullWidth>
+        <DialogTitle>Edit Break Time</DialogTitle>
+        <DialogContent dividers>
+          <Box sx={{ mb: 3 }}>
+            <Grid container spacing={2}>
+              <Grid item xs={12} sm={6}>
+                <FormControl fullWidth>
+                  <InputLabel>Start Time</InputLabel>
+                  <Select
+                    value={editBreakFormData.startTime}
+                    onChange={(e) => setEditBreakFormData({ ...editBreakFormData, startTime: e.target.value as string })}
+                    label="Start Time"
+                  >
+                    {timeOptions.map((option) => (
+                      <MenuItem key={`break-edit-start-${option.value}`} value={option.value}>
+                        {option.label}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Grid>
+              <Grid item xs={12} sm={6}>
+                <FormControl fullWidth>
+                  <InputLabel>End Time</InputLabel>
+                  <Select
+                    value={editBreakFormData.endTime}
+                    onChange={(e) => setEditBreakFormData({ ...editBreakFormData, endTime: e.target.value as string })}
+                    label="End Time"
+                  >
+                    {timeOptions.map((option) => (
+                      <MenuItem key={`break-edit-end-${option.value}`} value={option.value}>
+                        {option.label}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Grid>
+              <Grid item xs={12}>
+                <TextField
+                  fullWidth
+                  label="Reason (Optional)"
+                  value={editBreakFormData.reason}
+                  onChange={(e) => setEditBreakFormData({ ...editBreakFormData, reason: e.target.value })}
+                  variant="outlined"
+                  placeholder="Lunch, Meeting, etc."
+                />
+              </Grid>
+            </Grid>
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleEditBreakDialogClose}>Cancel</Button>
+          <Button
+            onClick={handleUpdateBreak}
+            variant="contained"
+            color="primary"
+            startIcon={<SaveIcon />}
+          >
+            Update Break
+          </Button>
         </DialogActions>
       </Dialog>
 
