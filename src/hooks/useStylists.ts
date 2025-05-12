@@ -210,13 +210,67 @@ export function useStylists() {
 
   const deleteStylist = useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await supabase
-        .from('stylists')
-        .delete()
-        .eq('id', id);
-      
-      if (error) throw error;
-      return { success: true };
+      try {
+        // First, check if stylist has any appointments
+        const { data: appointmentsData, error: appointmentsError } = await supabase
+          .from('appointments')
+          .select('id')
+          .eq('stylist_id', id);
+          
+        if (appointmentsError) {
+          console.error('Error checking stylist appointments:', appointmentsError);
+          throw appointmentsError;
+        }
+        
+        // Check appointment_stylists table as well
+        const { data: appointmentStylistsData, error: appointmentStylistsError } = await supabase
+          .from('appointment_stylists')
+          .select('id')
+          .eq('stylist_id', id);
+          
+        if (appointmentStylistsError) {
+          console.error('Error checking appointment_stylists:', appointmentStylistsError);
+          throw appointmentStylistsError;
+        }
+        
+        // If stylist has appointments, update them to set stylist_id to null
+        if (appointmentsData && appointmentsData.length > 0) {
+          const { error: updateError } = await supabase
+            .from('appointments')
+            .update({ stylist_id: null })
+            .eq('stylist_id', id);
+            
+          if (updateError) {
+            console.error('Error updating appointments:', updateError);
+            throw updateError;
+          }
+        }
+        
+        // Delete entries from appointment_stylists
+        if (appointmentStylistsData && appointmentStylistsData.length > 0) {
+          const { error: deleteJoinError } = await supabase
+            .from('appointment_stylists')
+            .delete()
+            .eq('stylist_id', id);
+            
+          if (deleteJoinError) {
+            console.error('Error deleting from appointment_stylists:', deleteJoinError);
+            throw deleteJoinError;
+          }
+        }
+        
+        // Finally delete the stylist
+        const { error } = await supabase
+          .from('stylists')
+          .delete()
+          .eq('id', id);
+        
+        if (error) throw error;
+        return { success: true };
+      } catch (error) {
+        console.error('Error in deleteStylist:', error);
+        throw error;
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['stylists'] });

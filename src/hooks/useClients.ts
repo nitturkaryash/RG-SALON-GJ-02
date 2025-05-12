@@ -395,19 +395,98 @@ export function useClients() {
   // Delete a client
   const deleteClient = useMutation({
     mutationFn: async (clientId: string) => {
-      const { data, error } = await supabase
-        .from('clients')
-        .delete()
-        .eq('id', clientId)
-        .select()
-        .single();
-      
-      if (error) {
-        console.error('Error deleting client:', error);
+      try {
+        // First, check if client has any appointments
+        const { data: appointmentsData, error: appointmentsError } = await supabase
+          .from('appointments')
+          .select('id')
+          .eq('client_id', clientId);
+          
+        if (appointmentsError) {
+          console.error('Error checking client appointments:', appointmentsError);
+          throw appointmentsError;
+        }
+        
+        // Check appointment_clients table if it exists
+        const { data: appointmentClientsData, error: appointmentClientsError } = await supabase
+          .from('appointment_clients')
+          .select('id')
+          .eq('client_id', clientId);
+          
+        // If we get a 'relation does not exist' error, the table doesn't exist, which is fine
+        if (appointmentClientsError && !appointmentClientsError.message.includes('relation "appointment_clients" does not exist')) {
+          console.error('Error checking appointment_clients:', appointmentClientsError);
+          throw appointmentClientsError;
+        }
+        
+        // Check orders table
+        const { data: ordersData, error: ordersError } = await supabase
+          .from('orders')
+          .select('id')
+          .eq('client_id', clientId);
+          
+        if (ordersError) {
+          console.error('Error checking client orders:', ordersError);
+          throw ordersError;
+        }
+        
+        // If client has appointments, update them to set client_id to null
+        if (appointmentsData && appointmentsData.length > 0) {
+          const { error: updateError } = await supabase
+            .from('appointments')
+            .update({ client_id: null })
+            .eq('client_id', clientId);
+            
+          if (updateError) {
+            console.error('Error updating appointments:', updateError);
+            throw updateError;
+          }
+        }
+        
+        // Delete entries from appointment_clients if the table exists and has entries
+        if (appointmentClientsData && appointmentClientsData.length > 0) {
+          const { error: deleteJoinError } = await supabase
+            .from('appointment_clients')
+            .delete()
+            .eq('client_id', clientId);
+            
+          if (deleteJoinError) {
+            console.error('Error deleting from appointment_clients:', deleteJoinError);
+            throw deleteJoinError;
+          }
+        }
+        
+        // If client has orders, update them to set client_id to null
+        if (ordersData && ordersData.length > 0) {
+          const { error: updateOrdersError } = await supabase
+            .from('orders')
+            .update({ client_id: null })
+            .eq('client_id', clientId);
+            
+          if (updateOrdersError) {
+            console.error('Error updating orders:', updateOrdersError);
+            throw updateOrdersError;
+          }
+        }
+        
+        // Finally delete the client
+        const { data, error } = await supabase
+          .from('clients')
+          .delete()
+          .eq('id', clientId)
+          .select()
+          .single();
+        
+        if (error) {
+          console.error('Error deleting client:', error);
+          throw error;
+        }
+        
+        return data;
+      } catch (error) {
+        console.error('Error in deleteClient mutation:', error);
         throw error;
       }
-      
-      return data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['clients'] });

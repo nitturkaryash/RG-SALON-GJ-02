@@ -1691,7 +1691,9 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
       <ScheduleGrid className="schedule-grid">
         {renderTimeColumn()}
         
-        {stylists.map((stylist, index) => (
+        {stylists
+          .filter(stylist => stylist.available !== false) // Only show available stylists
+          .map((stylist, index, filteredStylists) => (
           <StylistColumn 
             key={stylist.id}
             className="stylist-column"
@@ -1704,7 +1706,7 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
                   backgroundColor: theme.palette.salon.oliveLight,
                   opacity: 0.9
                 },
-                ...(index === stylists.length - 1 && {
+                ...(index === filteredStylists.length - 1 && {
                   borderRight: 'none'
                 })
               }}
@@ -1719,7 +1721,7 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
                 onDragOver={(e) => handleDragOver(e, stylist.id, slot.hour, slot.minute)}
                 onDrop={(e) => handleDrop(e, stylist.id, slot.hour, slot.minute)}
                 sx={{
-                  ...(index === stylists.length - 1 && {
+                  ...(index === filteredStylists.length - 1 && {
                     borderRight: 'none'
                   }),
                   ...(isBreakTime(stylist.id, slot.hour, slot.minute) && { 
@@ -2030,8 +2032,11 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
                  {/* 3. Stylists multi-select */}
                  <Grid item xs={12}>
                     <Autocomplete
+                      sx={{ mb: 2 }}
                       multiple
-                      options={stylists || []}
+                      options={(stylists || [])
+                        .filter(st => st.available !== false) // Only show available stylists
+                        .map(st => ({ id: st.id, name: st.name }))}
                       getOptionLabel={st => st.name}
                       value={entry.stylistList || []} // Ensure value is always an array
                       onChange={(_, stylists) => handleStylistsChange(entry.id, stylists)}
@@ -2040,28 +2045,28 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
                         <li {...props} key={option.id}>
                           {option.name}
                         </li>
-                       )}
+                      )}
                       renderTags={(value, getTagProps) =>
                         value.map((st, i) => {
-                           const { key, ...rest } = getTagProps({ index: i });
-                           return <Chip key={key} {...rest} label={st.name} size="small" variant="outlined" />;
+                          const { key, ...rest } = getTagProps({ index: i });
+                          return <Chip key={key} {...rest} label={st.name} size="small" variant="outlined" />;
                         })
                       }
                       renderInput={params =>
-                         <TextField {...params}
-                            label="Stylist(s) *"
-                            required
-                            error={!entry.stylistList || entry.stylistList.length === 0} // Added null check
-                            helperText={!entry.stylistList || entry.stylistList.length === 0 ? "Select at least one stylist" : ""}
-                            InputProps={{
-                              ...params.InputProps,
-                              endAdornment: (
-                                <>
-                                  {loadingStylists ? <CircularProgress color="inherit" size={20} /> : null}
-                                  {params.InputProps.endAdornment}
-                                </>
-                              ),
-                            }}
+                        <TextField {...params}
+                          label="Stylist(s) *"
+                          required
+                          error={!entry.stylistList || entry.stylistList.length === 0} // Added null check
+                          helperText={!entry.stylistList || entry.stylistList.length === 0 ? "Select at least one stylist" : ""}
+                          InputProps={{
+                            ...params.InputProps,
+                            endAdornment: (
+                              <>
+                                {loadingStylists ? <CircularProgress color="inherit" size={20} /> : null}
+                                {params.InputProps.endAdornment}
+                              </>
+                            ),
+                          }}
                         />
                       }
                       fullWidth

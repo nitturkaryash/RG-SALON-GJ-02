@@ -125,16 +125,19 @@ export default function Appointments() {
 
   // --- Moved Helper Function BEFORE its use in useMemo ---
   const convertStylists = (stylists: Stylist[]): any[] => {
-    return stylists.map(stylist => ({
-      ...stylist,
-      breaks: (stylist.breaks || []).map((breakItem: StylistBreak) => ({
-        ...breakItem,
-        id: breakItem.id,
-        startTime: breakItem.startTime,
-        endTime: breakItem.endTime,
-        reason: breakItem.reason || ''
-      }))
-    }));
+    // Filter out stylists where available is false
+    return stylists
+      .filter(stylist => stylist.available !== false) // Only include available stylists
+      .map(stylist => ({
+        ...stylist,
+        breaks: (stylist.breaks || []).map((breakItem: StylistBreak) => ({
+          ...breakItem,
+          id: breakItem.id,
+          startTime: breakItem.startTime,
+          endTime: breakItem.endTime,
+          reason: breakItem.reason || ''
+        }))
+      }));
   };
 
   // --- Hooks Using Helper Functions ---
