@@ -3,7 +3,6 @@ import { Box, Typography, CircularProgress, Alert } from '@mui/material';
 import InventoryTable from '../../components/inventory/InventoryTable';
 import { supabase, TABLES } from '../../utils/supabase/supabaseClient';
 import { formatCurrency } from '../../utils/format';
-import { useInventory } from '../../hooks/useInventory';
 
 interface SalonConsumptionTabProps {
   dateFilter: { startDate: string; endDate: string; isActive: boolean };
@@ -13,7 +12,6 @@ interface SalonConsumptionTabProps {
 
 const SalonConsumptionTab: React.FC<SalonConsumptionTabProps> = ({ dateFilter, applyDateFilter, onDataUpdate }) => {
   const [data, setData] = useState<any[]>([]);
-  const { deleteConsumption } = useInventory();
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -22,9 +20,9 @@ const SalonConsumptionTab: React.FC<SalonConsumptionTabProps> = ({ dateFilter, a
     setError(null);
     try {
       const { data: consumptionRows, error: consumptionError } = await supabase
-        .from(TABLES.SALON_CONSUMPTION)
-        .select('*, product_master(units)') // Use Supabase join to fetch units from product_master
-        .order('date', { ascending: false });
+        .from('salon_consumption_products')
+        .select('*')
+        .order('Date', { ascending: false });
 
       if (consumptionError) throw consumptionError;
       if (!consumptionRows) {
@@ -33,30 +31,11 @@ const SalonConsumptionTab: React.FC<SalonConsumptionTabProps> = ({ dateFilter, a
         return;
       }
 
-      const { data: stockData, error: stockError } = await supabase
-        .from('balance_stock_view')
-        .select('product_name, balance_qty');
-
-      if (stockError) {
-        console.error('Error fetching balance stock data:', stockError);
-      }
-
-      const stockMap = new Map();
-      if (stockData && stockData.length > 0) {
-        stockData.forEach(item => {
-          stockMap.set(item.product_name?.toLowerCase(), item.balance_qty || 0);
-        });
-      }
-
       const processedRows = consumptionRows.map((row: any, index) => {
-        const currentStock = stockMap.get(row.product_name?.toLowerCase()) || 0;
-        const masterUnits = row.product_master?.units; // Units from joined product_master table
-
         return {
           ...row,
           serial_no: index + 1,
-          current_stock: currentStock,
-          product_type: row.product_type || row.units || masterUnits || ''
+          product_type: row.product_type || row.units || ''
         };
       });
 
@@ -74,25 +53,13 @@ const SalonConsumptionTab: React.FC<SalonConsumptionTabProps> = ({ dateFilter, a
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Fetch data on initial component mount
 
-  const handleDelete = async (id: string) => {
-    if (!window.confirm('Are you sure you want to delete this consumption record?')) return;
-    try {
-      await deleteConsumption(id);
-      // Refresh data by calling fetchData directly
-      await fetchData(); 
-    } catch (err) {
-      console.error('Error deleting consumption record:', err);
-      setError('Failed to delete consumption record.');
-    } 
-  };
-
   // Process data to calculate current stock values
   const processedData = useMemo(() => {
     return data.map(item => {
       // Calculations for the transaction itself
-      const consumedQuantity = Number(item.quantity) || 0;
-      const pricePerUnit = Number(item.price_per_unit) || 0;
-      const gstPercentage = Number(item.gst_percentage) || 0;
+      const consumedQuantity = Number(item["Consumption Qty."]) || 0;
+      const pricePerUnit = Number(item["Purchase_Cost_per_Unit_Ex_GST_Rs"]) || 0;
+      const gstPercentage = Number(item["Purchase_GST_Percentage"]) || 0;
 
       const transaction_taxable_value = consumedQuantity * pricePerUnit;
       const transaction_gst_amount = transaction_taxable_value * (gstPercentage / 100);
@@ -101,13 +68,14 @@ const SalonConsumptionTab: React.FC<SalonConsumptionTabProps> = ({ dateFilter, a
       const transaction_igst = 0; 
       const transaction_total_value = transaction_taxable_value + transaction_gst_amount;
 
-      const currentStockQty = item.current_stock ?? 0;
-      const current_stock_taxable_value = currentStockQty * pricePerUnit; 
-      const current_stock_gst_amount = current_stock_taxable_value * (gstPercentage / 100);
-      const current_stock_cgst = current_stock_gst_amount / 2;
-      const current_stock_sgst = current_stock_gst_amount / 2;
-      const current_stock_igst = 0;
-      const current_stock_total_value = current_stock_taxable_value + current_stock_gst_amount;
+      // Use direct values from item (row from salon_consumption_products) for current stock
+      const currentStockQty = Number(item["Remaining_Stock"]) || 0; // Using Remaining_Stock
+      const current_stock_total_value = Number(item["Total_Remaining_Stock_Value_Rs"]) || 0;
+      const current_stock_cgst = Number(item["Remaining_Stock_CGST_Rs"]) || 0;
+      const current_stock_sgst = Number(item["Remaining_Stock_SGST_Rs"]) || 0;
+      const current_stock_igst = Number(item["Remaining_Stock_IGST_Rs"]) || 0;
+      // Calculate taxable value for stock
+      const current_stock_taxable_value = current_stock_total_value - current_stock_cgst - current_stock_sgst - current_stock_igst;
       
       return {
         ...item,
@@ -116,6 +84,7 @@ const SalonConsumptionTab: React.FC<SalonConsumptionTabProps> = ({ dateFilter, a
         transaction_sgst,
         transaction_igst,
         transaction_total_value,
+        current_stock: currentStockQty, // Assign the stock quantity here
         current_stock_taxable_value, 
         current_stock_igst,
         current_stock_cgst,
@@ -135,15 +104,15 @@ const SalonConsumptionTab: React.FC<SalonConsumptionTabProps> = ({ dateFilter, a
 
   const columns = [
     { id: 'serial_no', label: 'S.No', align: 'center', minWidth: 50 },
-    { id: 'date', label: 'Date', format: (value: string) => new Date(value).toLocaleDateString() },
-    { id: 'product_name', label: 'Product Name' },
-    { id: 'hsn_code', label: 'HSN Code' },
-    { id: 'product_type', label: 'Product Type' },
-    { id: 'quantity', label: 'Qty', align: 'right' },
+    { id: 'Date', label: 'Date', format: (value: string) => new Date(value).toLocaleDateString() },
+    { id: 'Product Name', label: 'Product Name' },
+    { id: 'HSN_Code', label: 'HSN Code' },
+    { id: 'Product Type', label: 'Product Type' },
+    { id: 'Consumption Qty.', label: 'Qty', align: 'right' },
     { id: 'purpose', label: 'Purpose' },
     { id: 'stylist_name', label: 'Stylist' },
-    { id: 'price_per_unit', label: 'Unit Price', align: 'right', format: (v: any) => formatCurrency(v) },
-    { id: 'gst_percentage', label: 'GST %', align: 'right', format: (v: any) => `${v}%` },
+    { id: 'Purchase_Cost_per_Unit_Ex_GST_Rs', label: 'Unit Price', align: 'right', format: (v: any) => formatCurrency(v) },
+    { id: 'Purchase_GST_Percentage', label: 'GST %', align: 'right', format: (v: any) => `${v}%` },
     { id: 'transaction_taxable_value', label: 'Taxable Value', align: 'right', format: (v: any) => formatCurrency(v) },
     { id: 'transaction_cgst', label: 'CGST (Rs.)', align: 'right', format: (v: any) => formatCurrency(v) },
     { id: 'transaction_sgst', label: 'SGST (Rs.)', align: 'right', format: (v: any) => formatCurrency(v) },
@@ -166,8 +135,6 @@ const SalonConsumptionTab: React.FC<SalonConsumptionTabProps> = ({ dateFilter, a
         columns={columns}
         data={filteredData}
         isLoading={isLoading}
-        onDelete={handleDelete}
-        deleteIdField="id"
         itemType="consumption"
       />
     </Box>

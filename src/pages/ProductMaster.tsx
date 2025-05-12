@@ -69,6 +69,7 @@ interface Product {
   updated_at?: string;
   description?: string;
   category?: string;
+  product_type?: string;
 }
 
 // New product form state
@@ -83,6 +84,7 @@ interface ProductFormState {
   active: boolean;
   description?: string;
   category?: string;
+  product_type?: string;
   fromPurchaseHistory?: boolean;
 }
 
@@ -97,6 +99,7 @@ const initialFormState: ProductFormState = {
   active: true,
   description: '',
   category: 'General', // Default category
+  product_type: '',
   fromPurchaseHistory: false,
 };
 
@@ -114,6 +117,8 @@ export default function ProductMaster() {
     message: '',
     severity: 'success' as 'success' | 'error' | 'info' | 'warning',
   });
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [productToDelete, setProductToDelete] = useState<Product | null>(null);
 
   // Fetch purchase history data
   const { purchases, isLoading: isLoadingPurchases } = usePurchaseHistory();
@@ -204,6 +209,7 @@ export default function ProductMaster() {
       active: true,
       description: '',
       category: 'General',
+      product_type: selectedProduct.product_type || '',
       fromPurchaseHistory: true,
     });
   };
@@ -238,6 +244,7 @@ export default function ProductMaster() {
       active: product.active,
       description: product.description || '',
       category: product.category || 'General',
+      product_type: product.product_type || '',
     });
     setIsEditing(true);
     setOpen(true);
@@ -312,6 +319,7 @@ export default function ProductMaster() {
         active: formData.active,
         description: formData.description,
         category: formData.category,
+        product_type: formData.product_type,
         updated_at: new Date().toISOString(),
       };
       
@@ -360,31 +368,74 @@ export default function ProductMaster() {
 
   // Toggle product active status
   const handleToggleActive = async (product: Product) => {
+    const updatedProduct = { ...product, active: !product.active };
+
     try {
       const { error } = await supabase
         .from('products')
-        .update({ 
-          active: !product.active,
-          updated_at: new Date().toISOString()
-        })
+        .update({ active: updatedProduct.active })
         .eq('id', product.id);
-        
+
       if (error) throw handleSupabaseError(error);
-      
-      setSnackbar({ 
-        open: true, 
-        message: `Product ${product.active ? 'deactivated' : 'activated'} successfully`, 
-        severity: 'success' 
+
+      setProducts((prevProducts) =>
+        prevProducts.map((p) => (p.id === product.id ? updatedProduct : p))
+      );
+      setSnackbar({
+        open: true,
+        message: `Product ${updatedProduct.active ? 'activated' : 'deactivated'} successfully!`,
+        severity: 'success',
       });
-      
-      await fetchProducts();
     } catch (err) {
-      console.error('Error toggling product status:', err);
-      setSnackbar({ 
-        open: true, 
-        message: `Error: ${err instanceof Error ? err.message : 'Failed to update product status'}`, 
-        severity: 'error' 
+      console.error('Error toggling product active state:', err);
+      setError(err instanceof Error ? err.message : 'Failed to update product status');
+      setSnackbar({
+        open: true,
+        message: `Error: ${err instanceof Error ? err.message : 'Failed to update product status'}`,
+        severity: 'error',
       });
+    }
+  };
+
+  const handleOpenDeleteDialog = (product: Product) => {
+    setProductToDelete(product);
+    setDeleteDialogOpen(true);
+  };
+
+  const handleCloseDeleteDialog = () => {
+    setProductToDelete(null);
+    setDeleteDialogOpen(false);
+  };
+
+  const handleDeleteProduct = async () => {
+    if (!productToDelete) return;
+
+    try {
+      const { error } = await supabase
+        .from('products')
+        .delete()
+        .eq('id', productToDelete.id);
+
+      if (error) throw handleSupabaseError(error);
+
+      setProducts((prevProducts) =>
+        prevProducts.filter((p) => p.id !== productToDelete.id)
+      );
+      setSnackbar({
+        open: true,
+        message: 'Product deleted successfully!',
+        severity: 'success',
+      });
+    } catch (err) {
+      console.error('Error deleting product:', err);
+      setError(err instanceof Error ? err.message : 'Failed to delete product');
+      setSnackbar({
+        open: true,
+        message: `Error: ${err instanceof Error ? err.message : 'Failed to delete product'}`,
+        severity: 'error',
+      });
+    } finally {
+      handleCloseDeleteDialog();
     }
   };
 
@@ -448,6 +499,7 @@ export default function ProductMaster() {
                 <StyledTableCell align="right">Price (Excl. GST)</StyledTableCell>
                 <StyledTableCell align="right">MRP (Incl. GST)</StyledTableCell>
                 <StyledTableCell align="right">Stock Quantity</StyledTableCell>
+                <StyledTableCell>Product Type</StyledTableCell>
                 <StyledTableCell>Status</StyledTableCell>
                 <StyledTableCell align="center">Actions</StyledTableCell>
               </TableRow>
@@ -455,7 +507,7 @@ export default function ProductMaster() {
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={9} align="center" sx={{ py: 3 }}>
+                  <TableCell colSpan={10} align="center" sx={{ py: 3 }}>
                     <CircularProgress size={40} />
                   </TableCell>
                 </TableRow>
@@ -478,6 +530,7 @@ export default function ProductMaster() {
                       <TableCell align="right">₹{product.mrp_excl_gst?.toFixed(2) || '0.00'}</TableCell>
                       <TableCell align="right">₹{product.mrp_incl_gst?.toFixed(2) || '0.00'}</TableCell>
                       <TableCell align="right">{product.stock_quantity || 0}</TableCell>
+                      <TableCell>{product.product_type || '-'}</TableCell>
                       <TableCell>
                         <Box
                           sx={{
@@ -507,12 +560,20 @@ export default function ProductMaster() {
                         >
                           {product.active ? <VisibilityOffIcon /> : <VisibilityIcon />}
                         </IconButton>
+                        <IconButton
+                          size="small"
+                          color="error"
+                          onClick={() => handleOpenDeleteDialog(product)}
+                          title="Delete Product"
+                        >
+                          <DeleteIcon />
+                        </IconButton>
                       </TableCell>
                     </TableRow>
                   ))
               ) : (
                 <TableRow>
-                  <TableCell colSpan={9} align="center" sx={{ py: 3 }}>
+                  <TableCell colSpan={10} align="center" sx={{ py: 3 }}>
                     No products found. Click "Add Product" to create one.
                   </TableCell>
                 </TableRow>
@@ -662,6 +723,15 @@ export default function ProductMaster() {
               />
             </Grid>
             <Grid item xs={12} sm={6}>
+              <TextField
+                name="product_type"
+                label="Product Type"
+                value={formData.product_type || ''}
+                onChange={handleInputChange}
+                fullWidth
+              />
+            </Grid>
+            <Grid item xs={12} sm={6}>
               <FormControlLabel
                 control={
                   <Switch
@@ -716,6 +786,24 @@ export default function ProductMaster() {
           {snackbar.message}
         </Alert>
       </Snackbar>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={deleteDialogOpen} onClose={handleCloseDeleteDialog}>
+        <DialogTitle>Confirm Delete</DialogTitle>
+        <DialogContent>
+          <Typography>
+            Are you sure you want to delete the product "{productToDelete?.name}"? This action cannot be undone.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseDeleteDialog} color="primary">
+            Cancel
+          </Button>
+          <Button onClick={handleDeleteProduct} color="error">
+            Delete
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 } 

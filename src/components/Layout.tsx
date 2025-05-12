@@ -64,7 +64,6 @@ const menuLinks: MenuLink[] = [
   { text: 'POS', path: '/pos', icon: <PointOfSale /> },
   { text: 'Inventory Manager', path: '/products', icon: <StoreIcon /> },
   { text: 'Product Master', path: '/product-master', icon: <InventoryRounded /> },
-  { text: 'Members', path: '/members', icon: <CardMembership /> },
   { text: 'Membership Tiers', path: '/membership-tiers', icon: <CardMembership /> },
 ]
 

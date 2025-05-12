@@ -73,6 +73,8 @@ import ErrorBoundary from '../components/ErrorBoundary'
 import { useNavigate } from 'react-router-dom'
 import { Order as BaseOrder } from '../models/orderTypes'
 import { useServiceCollections } from '../hooks/useServiceCollections'
+import { supabase, TABLES } from '../utils/supabase/supabaseClient'
+import { useQueryClient } from '@tanstack/react-query'
 
 // Extended Order interface that encapsulates all the properties we need
 type ExtendedOrder = {
@@ -114,6 +116,7 @@ interface DateRange {
 }
 
 export default function Orders() {
+  const queryClient = useQueryClient()
   const { orders, isLoading, refreshOrders, deleteOrderById, deleteAllOrders } = useOrders()
   const { updateOrderPayment } = usePOS()
   const [selectedOrder, setSelectedOrder] = useState<any | null>(null)
@@ -157,23 +160,26 @@ export default function Orders() {
     if (orders) {
       const stats = {
         total: orders.length,
-        completed: orders.filter(order => order.status === 'completed').length,
-        pending: orders.filter(order => order.status === 'pending').length,
-        salonPurchases: orders.filter(order => isSalonConsumptionOrder(order)).length,
+        completed: orders.filter(order => normalizeOrder(order).status === 'completed').length,
+        pending: orders.filter(order => normalizeOrder(order).status === 'pending').length,
+        salonPurchases: orders.filter(order => isSalonConsumptionOrder(normalizeOrder(order))).length,
         services: orders.filter(order => {
-          const type = getPurchaseType(order);
+          const normalized = normalizeOrder(order);
+          const type = getPurchaseType(normalized);
           return type === 'service' || type === 'both';
         }).length,
         products: orders.filter(order => {
-          const type = getPurchaseType(order);
+          const normalized = normalizeOrder(order);
+          const type = getPurchaseType(normalized);
           return type === 'product' || type === 'both';
         }).length,
-        totalRevenue: orders.reduce((sum, order) => {
+        totalRevenue: orders.reduce((sum, orderRaw) => {
+          const order = normalizeOrder(orderRaw);
           // Only count completed orders or the paid portion of pending orders
           if (order.status === 'completed') {
-            return sum + order.total;
-          } else if (order.status === 'pending' && order.pending_amount < order.total) {
-            return sum + (order.total - order.pending_amount);
+            return sum + (order.total || 0);
+          } else if (order.status === 'pending' && (order.pending_amount || 0) < (order.total || 0)) {
+            return sum + ((order.total || 0) - (order.pending_amount || 0));
           }
           return sum;
         }, 0),
@@ -223,7 +229,6 @@ export default function Orders() {
     if (!orderToDelete) return
     
     try {
-      // Use order_id if available, otherwise fallback to id
       const orderId = orderToDelete.order_id || orderToDelete.id
       
       if (!orderId) {
@@ -231,21 +236,23 @@ export default function Orders() {
         return
       }
       
-      // Show loading toast
       toast.info('Deleting order...')
       
-      // Attempt to delete the order
       const success = await deleteOrderById(orderId)
       
       if (success) {
-        // Close the dialog
+        // The secondary delete for salon_consumption_products is assumed to be handled by the backend
+        // or within deleteOrderById. Removing the explicit client-side attempt.
+        
         setDeleteConfirmOpen(false)
-        // Clear the order to delete
         setOrderToDelete(null)
-        // Reset to first page if needed
         if (filteredOrders.length <= rowsPerPage && page > 0) {
           setPage(0)
         }
+        // Invalidate clients query to refetch client data
+        queryClient.invalidateQueries({ queryKey: ['clients'] })
+        // Ensure a success toast for the primary deletion is shown if not handled by deleteOrderById.
+        // For example: toast.success('Order deleted successfully');
       }
     } catch (error) {
       console.error('Error in confirmDeleteOrder:', error)
@@ -374,7 +381,8 @@ export default function Orders() {
 
   // Handler for processing the payment update
   const handlePaymentUpdate = async (orderId: string, paymentDetails: PaymentDetail) => {
-    await updateOrderPayment({ orderId, paymentDetails })
+    // Assuming updateOrderPayment is a react-query mutation object
+    await updateOrderPayment.mutateAsync({ orderId, paymentDetails }) 
   }
   
   // Function that bridges between CompletePaymentDialog's expected prop and our implementation
@@ -436,17 +444,17 @@ export default function Orders() {
   const filteredOrders = useMemo(() => {
     if (!orders) return [];
     
-    return orders.map(order => {
-      // Create a copy of the order to modify
-      const modifiedOrder = { ...order } as ExtendedOrder;
+    return orders.map(orderRaw => {
+      // Create a copy of the order to modify and normalize it
+      const order = normalizeOrder(orderRaw);
       
       // If this is a salon consumption order, always set status to completed
-      if (isSalonConsumptionOrder(modifiedOrder)) {
-        modifiedOrder.status = 'completed';
+      if (isSalonConsumptionOrder(order)) {
+        order.status = 'completed';
       }
       
-      return modifiedOrder;
-    }).filter((order) => {
+      return order; // order is now ExtendedOrder
+    }).filter((order) => { // order here is ExtendedOrder
       // Text search
       const searchLower = searchQuery.toLowerCase();
       const matchesSearch = 
@@ -469,11 +477,11 @@ export default function Orders() {
       // Salon consumption filter
       const matchesSalonConsumption = 
         isSalonPurchaseFilter === 'all' || 
-        (isSalonPurchaseFilter === 'true' && isSalonConsumptionOrder(order as ExtendedOrder)) ||
-        (isSalonPurchaseFilter === 'false' && !isSalonConsumptionOrder(order as ExtendedOrder));
+        (isSalonPurchaseFilter === 'true' && isSalonConsumptionOrder(order)) ||
+        (isSalonPurchaseFilter === 'false' && !isSalonConsumptionOrder(order));
       
       // Purchase type filter - enhanced with categories
-      const orderType = getPurchaseType(order as ExtendedOrder);
+      const orderType = getPurchaseType(order);
       let matchesPurchaseType = false;
       
       if (purchaseTypeFilter === 'all') {

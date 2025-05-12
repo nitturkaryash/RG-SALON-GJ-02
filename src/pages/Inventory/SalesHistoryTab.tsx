@@ -34,7 +34,6 @@ import { supabase, TABLES } from '../../utils/supabase/supabaseClient';
 import { styled } from '@mui/material/styles';
 import * as XLSX from 'xlsx';
 import { toast } from 'react-hot-toast';
-import DeleteButton from '../../components/DeleteButton';
 import { useInventory } from '../../hooks/useInventory';
 
 // Use the actual base table for mutations, view for reading
@@ -167,55 +166,6 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
       onDataUpdate(tableData);
     }
   }, [tableData, onDataUpdate]);
-
-  // Handler to delete a single sale entry by its order_item_pk
-  const handleDeleteSale = async (itemToDeletePk: string) => {
-    if (!itemToDeletePk) {
-      toast.error('Cannot delete: Missing item primary key');
-      console.error('Delete attempted with null/empty primary key');
-      return;
-    }
-    console.log('Attempting to delete item with primary key:', itemToDeletePk);
-    if (!window.confirm('Are you sure you want to delete this sale record?')) return;
-    try {
-      toast.loading('Deleting sales record...');
-
-      // Call stored procedure to delete the sale item by its primary key
-      const { data, error } = await supabase
-        .rpc('delete_sales_item', { item_id: itemToDeletePk });
-
-      toast.dismiss();
-      if (error) {
-        console.error('Error deleting sale via RPC:', error);
-        toast.error('Failed to delete sale record. Please contact support.');
-        return;
-      }
-      // The function returns a JSONB { success: boolean, error?: string }
-      if (!(data && (data as any).success)) {
-        console.error('RPC delete_sales_item returned failure:', data);
-        toast.error((data as any).error || 'Failed to delete sale record.');
-        return;
-      }
-
-      toast.success('Deleted sale entry successfully');
-
-      // Update local state and reindex serial numbers
-      setSalesData(prev => reindexSerialNumbers(prev.filter(item => item.order_item_pk !== itemToDeletePk)));
-      setFilteredData(prev => reindexSerialNumbers(prev.filter(item => item.order_item_pk !== itemToDeletePk)));
-
-      // Trigger a refetch
-      fetchSalesData();
-
-      // Adjust pagination if necessary
-      if ((filteredData.length - 1) % rowsPerPage === 0 && page > 0) {
-        setPage(page - 1);
-      }
-    } catch (err: any) {
-      toast.dismiss();
-      console.error('Error deleting sale record:', err);
-      toast.error(err.message || 'Failed to delete sale record.');
-    }
-  };
 
   // Function to fetch sales data
   const fetchSalesData = async () => {
@@ -367,58 +317,6 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
       serial_no: index + 1
     }));
   };
-
-  // Front-end only: remove row and reindex serial numbers
-  const handleRemoveRow = (itemPk: string) => {
-    setSalesData(prev => reindexSerialNumbers(prev.filter(item => item.order_item_pk !== itemPk)));
-    setFilteredData(prev => reindexSerialNumbers(prev.filter(item => item.order_item_pk !== itemPk)));
-    if ((filteredData.length - 1) % rowsPerPage === 0 && page > 0) {
-      setPage(page - 1);
-    }
-  };
-
-  // Effect to reindex serial numbers whenever filtered data changes due to filters/sorting
-  useEffect(() => {
-    if (filteredData.length > 0) {
-      // Apply any sort first based on current sort criteria
-      let sortedData = [...filteredData];
-      
-      if (sortBy.column) {
-        sortedData.sort((a, b) => {
-          const aValue = a[sortBy.column!];
-          const bValue = b[sortBy.column!];
-          
-          // Handle different types of values
-          if (typeof aValue === 'number' && typeof bValue === 'number') {
-            return sortBy.direction === 'asc' ? aValue - bValue : bValue - aValue;
-          }
-          
-          // Convert dates to timestamps for comparison
-          if (sortBy.column === 'date') {
-            const aDate = new Date(a.date).getTime();
-            const bDate = new Date(b.date).getTime();
-            return sortBy.direction === 'asc' ? aDate - bDate : bDate - aDate;
-          }
-          
-          // Handle string comparisons
-          const aString = String(aValue || '');
-          const bString = String(bValue || '');
-          return sortBy.direction === 'asc' 
-            ? aString.localeCompare(bString) 
-            : bString.localeCompare(aString);
-        });
-      }
-      
-      // Reindex serial numbers after sorting
-      const reindexedData = reindexSerialNumbers(sortedData);
-      
-      // Only update if the serial numbers actually changed
-      if (JSON.stringify(reindexedData.map(i => i.serial_no)) !== 
-          JSON.stringify(filteredData.map(i => i.serial_no))) {
-        setFilteredData(reindexedData);
-      }
-    }
-  }, [filteredData, sortBy]);
 
   // Handle search
   const handleSearch = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -680,13 +578,12 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
                 {renderSortableHeader('current_stock_sgst', 'SGST (Rs.)')}
                 {renderSortableHeader('current_stock_total_value', 'Total Value (Rs.)')}
                 {renderSortableHeader('order_id', 'Order ID')}
-                {renderSortableHeader('order_item_id', 'Actions')}
               </TableRow>
             </TableHead>
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={23} align="center" sx={{ py: 3 }}>
+                  <TableCell colSpan={22} align="center" sx={{ py: 3 }}>
                     <CircularProgress />
                     <Typography variant="body2" sx={{ mt: 1 }}>
                       Loading sales data...
@@ -729,27 +626,11 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
                           </Typography>
                         </Tooltip>
                       </TableCell>
-                      <TableCell align="center">
-                        <DeleteButton
-                          onDelete={() => {
-                            // Only attempt deletion with the actual primary key
-                            const pk = row.order_item_pk;
-                            if (pk) {
-                              handleDeleteSale(pk);
-                            } else {
-                              toast.error('Cannot delete: Missing item primary key');
-                            }
-                          }}
-                          itemName={`Sale record #${row.serial_no}`}
-                          itemType="sale"
-                          confirmationMessage="This will permanently delete this sales record. Are you sure?"
-                        />
-                      </TableCell>
                     </TableRow>
                   ))
               ) : (
                 <TableRow>
-                  <TableCell colSpan={23} align="center" sx={{ py: 3 }}>
+                  <TableCell colSpan={22} align="center" sx={{ py: 3 }}>
                     <Typography variant="body1">No sales data found</Typography>
                     <Typography variant="body2" color="textSecondary" sx={{ mt: 1 }}>
                       {searchTerm 
@@ -779,6 +660,7 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
                   <TableCell align="right" sx={{ fontWeight: 'bold' }}>{formatCurrency(totals.currentStockCgst)}</TableCell>
                   <TableCell align="right" sx={{ fontWeight: 'bold' }}>{formatCurrency(totals.currentStockSgst)}</TableCell>
                   <TableCell align="right" sx={{ fontWeight: 'bold' }}>{formatCurrency(totals.currentStockTotalValue)}</TableCell>
+                  <TableCell></TableCell>
                 </TableRow>
               )}
             </TableBody>

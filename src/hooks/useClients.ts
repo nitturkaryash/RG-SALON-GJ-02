@@ -15,6 +15,9 @@ export interface Client {
   notes?: string;
   appointment_count?: number;
   updated_at?: string;
+  gender?: string;
+  birth_date?: string | null; // Store as string, handle date conversion in UI
+  anniversary_date?: string | null; // Store as string, handle date conversion in UI
 }
 
 export function useClients() {
@@ -49,7 +52,10 @@ export function useClients() {
         notes: data.notes || '',
         total_spent: data.total_spent || 0,
         pending_payment: data.pending_payment || 0,
-        last_visit: data.last_visit || null
+        last_visit: data.last_visit || null,
+        gender: data.gender || '',
+        birth_date: data.birth_date || null,
+        anniversary_date: data.anniversary_date || null
       };
       
       const { data: insertedClient, error } = await supabase
@@ -79,10 +85,19 @@ export function useClients() {
   const updateClient = useMutation({
     mutationFn: async (data: Partial<Client> & { id: string }) => {
       const { id, ...updateData } = data;
+
+      // Ensure date fields are null if empty, otherwise keep their value
+      const processedUpdateData: Partial<Client> = { ...updateData };
+      if (updateData.birth_date === '') {
+        processedUpdateData.birth_date = null;
+      }
+      if (updateData.anniversary_date === '') {
+        processedUpdateData.anniversary_date = null;
+      }
       
       // Add updated_at timestamp
       const clientData = {
-        ...updateData,
+        ...processedUpdateData, // Use processed data here
         updated_at: new Date().toISOString()
       };
       
@@ -132,17 +147,27 @@ export function useClients() {
     if (existingClients && existingClients.length > 0) {
       // Update existing client
       const client = existingClients[0];
-      const updatedClient = { 
+      const updatedClientData: Partial<Client> & { updated_at: string } = {
         last_visit: orderDate,
-        // Update spending based on payment method
         total_spent: paymentMethod === 'bnpl' ? client.total_spent || 0 : (client.total_spent || 0) + orderTotal,
         pending_payment: paymentMethod === 'bnpl' ? (client.pending_payment || 0) + orderTotal : client.pending_payment || 0,
         updated_at: new Date().toISOString()
       };
+
+      // Only update appointment_count if the column exists to prevent errors
+      // and ensure it's treated as a number.
+      if (typeof client.appointment_count === 'number' || client.appointment_count === undefined || client.appointment_count === null) {
+        updatedClientData.appointment_count = (Number(client.appointment_count) || 0) + 1;
+      } else {
+        // If appointment_count is some other type, log a warning or handle as needed
+        console.warn(`Client ${client.id} has an unexpected type for appointment_count: ${typeof client.appointment_count}`);
+        // Optionally, you could decide to initialize it to 1 here if it's an unexpected type
+        // updatedClientData.appointment_count = 1;
+      }
       
       const { data, error } = await supabase
         .from('clients')
-        .update(updatedClient)
+        .update(updatedClientData)
         .eq('id', client.id)
         .select()
         .single();
@@ -164,7 +189,8 @@ export function useClients() {
         notes: 'Created from order',
         total_spent: paymentMethod === 'bnpl' ? 0 : orderTotal,
         pending_payment: paymentMethod === 'bnpl' ? orderTotal : 0,
-        last_visit: orderDate
+        last_visit: orderDate,
+        appointment_count: 1 // Initialize lifetime visit count to 1 for new clients from orders
       };
       
       const { data, error } = await supabase

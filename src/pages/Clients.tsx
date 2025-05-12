@@ -30,13 +30,18 @@ import {
   CreditCard as CreditCardIcon,
   Search as SearchIcon,
   CalendarToday as CalendarTodayIcon,
+  Event as EventIcon,
+  Wc as WcIcon,
+  ConfirmationNumber as ConfirmationNumberIcon,
   Delete as DeleteIcon
 } from '@mui/icons-material'
 import { useClients, Client } from '../hooks/useClients'
+import { useOrders } from '../hooks/useOrders'
 import { formatCurrency } from '../utils/format'
 
 export default function Clients() {
   const { clients, isLoading, createClient, updateClient, processPendingPayment, deleteClient, deleteAllClients } = useClients()
+  const { orders, isLoading: isLoadingOrders } = useOrders()
   const [openAddDialog, setOpenAddDialog] = useState(false)
   const [openEditDialog, setOpenEditDialog] = useState(false)
   const [openPaymentDialog, setOpenPaymentDialog] = useState(false)
@@ -51,7 +56,10 @@ export default function Clients() {
     full_name: '',
     phone: '',
     email: '',
-    notes: ''
+    notes: '',
+    gender: '',
+    birth_date: '',
+    anniversary_date: ''
   })
   
   // Handle form input changes
@@ -72,12 +80,19 @@ export default function Clients() {
   
   // Handle add client
   const handleAddClient = async () => {
-    await createClient(formData)
+    await createClient({
+      ...formData,
+      birth_date: formData.birth_date || null,
+      anniversary_date: formData.anniversary_date || null
+    })
     setFormData({
       full_name: '',
       phone: '',
       email: '',
-      notes: ''
+      notes: '',
+      gender: '',
+      birth_date: '',
+      anniversary_date: ''
     })
     setOpenAddDialog(false)
   }
@@ -102,7 +117,10 @@ export default function Clients() {
       full_name: client.full_name,
       phone: client.phone,
       email: client.email,
-      notes: client.notes
+      notes: client.notes || '',
+      gender: client.gender || '',
+      birth_date: client.birth_date || '',
+      anniversary_date: client.anniversary_date || ''
     })
     setOpenEditDialog(true)
   }
@@ -110,7 +128,7 @@ export default function Clients() {
   // Open payment dialog for BNPL
   const handleOpenPaymentDialog = (client: Client) => {
     setSelectedClient(client)
-    setPaymentAmount(client.pending_payment)
+    setPaymentAmount(client.pending_payment || 0)
     setOpenPaymentDialog(true)
   }
   
@@ -155,7 +173,7 @@ export default function Clients() {
     setOpenDeleteAllDialog(false)
   }
   
-  if (isLoading) {
+  if (isLoading || isLoadingOrders) {
     return (
       <Box display="flex" justifyContent="center" alignItems="center" height="100vh">
         <CircularProgress />
@@ -215,66 +233,89 @@ export default function Clients() {
                   <TableCell>Name</TableCell>
                   <TableCell>Contact</TableCell>
                   <TableCell>Last Visit</TableCell>
+                  <TableCell>Gender</TableCell>
+                  <TableCell>Birth Date</TableCell>
+                  <TableCell>Anniversary</TableCell>
+                  <TableCell>Lifetime Visits</TableCell>
                   <TableCell>Total Spent</TableCell>
                   <TableCell>Pending Payment</TableCell>
                   <TableCell>Actions</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
-                {filteredClients.map((client) => (
-                  <TableRow key={client.id}>
-                    <TableCell>{client.full_name}</TableCell>
-                    <TableCell>
-                      <Typography variant="body2">{client.phone}</Typography>
-                      <Typography variant="body2" color="text.secondary">{client.email}</Typography>
-                    </TableCell>
-                    <TableCell>
-                      {client.last_visit ? new Date(client.last_visit).toLocaleDateString() : 'Never'}
-                    </TableCell>
-                    <TableCell>
-                      <Typography color="success.main" fontWeight="bold">
-                        {formatCurrency(client.total_spent)}
-                      </Typography>
-                    </TableCell>
-                    <TableCell>
-                      {client.pending_payment > 0 ? (
-                        <Chip 
-                          label={formatCurrency(client.pending_payment)} 
-                          color="warning"
-                          onClick={() => handleOpenPaymentDialog(client)}
-                        />
-                      ) : (
-                        <Typography color="text.secondary">No pending amount</Typography>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <Box>
-                        <Tooltip title="Edit Client">
-                          <IconButton onClick={() => handleOpenEditDialog(client)}>
-                            <EditIcon />
-                          </IconButton>
-                        </Tooltip>
-                        
-                        {client.pending_payment > 0 && (
-                          <Tooltip title="Process Payment">
-                            <IconButton 
-                              color="primary"
-                              onClick={() => handleOpenPaymentDialog(client)}
-                            >
-                              <CreditCardIcon />
+                {filteredClients.map((client) => {
+                  // Calculate lifetime visits dynamically
+                  const lifetimeVisits = orders?.filter(
+                    order => 
+                      ((order as any).client_name === client.full_name || (order as any).customer_name === client.full_name) && 
+                      (order as any).status !== 'cancelled' && 
+                      !(order as any).consumption_purpose && 
+                      (order as any).client_name !== 'Salon Consumption'
+                  ).length || 0
+
+                  return (
+                    <TableRow key={client.id}>
+                      <TableCell>{client.full_name}</TableCell>
+                      <TableCell>
+                        <Typography variant="body2">{client.phone}</Typography>
+                        <Typography variant="body2" color="text.secondary">{client.email}</Typography>
+                      </TableCell>
+                      <TableCell>
+                        {client.last_visit ? new Date(client.last_visit).toLocaleDateString() : 'Never'}
+                      </TableCell>
+                      <TableCell>{client.gender || '-'}</TableCell>
+                      <TableCell>
+                        {client.birth_date ? new Date(client.birth_date).toLocaleDateString() : '-'}
+                      </TableCell>
+                      <TableCell>
+                        {client.anniversary_date ? new Date(client.anniversary_date).toLocaleDateString() : '-'}
+                      </TableCell>
+                      <TableCell>{lifetimeVisits}</TableCell>
+                      <TableCell>
+                        <Typography color="success.main" fontWeight="bold">
+                          {formatCurrency(client.total_spent)}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        {client.pending_payment > 0 ? (
+                          <Chip 
+                            label={formatCurrency(client.pending_payment)} 
+                            color="warning"
+                            onClick={() => handleOpenPaymentDialog(client)}
+                          />
+                        ) : (
+                          <Typography color="text.secondary">No pending amount</Typography>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <Box>
+                          <Tooltip title="Edit Client">
+                            <IconButton onClick={() => handleOpenEditDialog(client)}>
+                              <EditIcon />
                             </IconButton>
                           </Tooltip>
-                        )}
-                        
-                        <Tooltip title="Delete Client">
-                          <IconButton onClick={() => handleOpenDeleteDialog(client)}>
-                            <DeleteIcon />
-                          </IconButton>
-                        </Tooltip>
-                      </Box>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                          
+                          {client.pending_payment > 0 && (
+                            <Tooltip title="Process Payment">
+                              <IconButton 
+                                color="primary"
+                                onClick={() => handleOpenPaymentDialog(client)}
+                              >
+                                <CreditCardIcon />
+                              </IconButton>
+                            </Tooltip>
+                          )}
+                          
+                          <Tooltip title="Delete Client">
+                            <IconButton onClick={() => handleOpenDeleteDialog(client)}>
+                              <DeleteIcon />
+                            </IconButton>
+                          </Tooltip>
+                        </Box>
+                      </TableCell>
+                    </TableRow>
+                  )
+                })}
               </TableBody>
             </Table>
           </TableContainer>
@@ -317,6 +358,41 @@ export default function Clients() {
                 value={formData.email}
                 onChange={handleInputChange}
                 fullWidth
+              />
+            </Grid>
+            <Grid item xs={12} sm={6}>
+              <TextField
+                name="gender"
+                label="Gender"
+                value={formData.gender}
+                onChange={handleInputChange}
+                fullWidth
+              />
+            </Grid>
+            <Grid item xs={12} sm={6}>
+              <TextField
+                name="birth_date"
+                label="Birth Date"
+                type="date"
+                value={formData.birth_date}
+                onChange={handleInputChange}
+                fullWidth
+                InputLabelProps={{
+                  shrink: true,
+                }}
+              />
+            </Grid>
+            <Grid item xs={12} sm={6}>
+              <TextField
+                name="anniversary_date"
+                label="Anniversary Date"
+                type="date"
+                value={formData.anniversary_date}
+                onChange={handleInputChange}
+                fullWidth
+                InputLabelProps={{
+                  shrink: true,
+                }}
               />
             </Grid>
             <Grid item xs={12}>
@@ -378,6 +454,41 @@ export default function Clients() {
                 fullWidth
               />
             </Grid>
+            <Grid item xs={12} sm={6}>
+              <TextField
+                name="gender"
+                label="Gender"
+                value={formData.gender}
+                onChange={handleInputChange}
+                fullWidth
+              />
+            </Grid>
+            <Grid item xs={12} sm={6}>
+              <TextField
+                name="birth_date"
+                label="Birth Date"
+                type="date"
+                value={formData.birth_date}
+                onChange={handleInputChange}
+                fullWidth
+                InputLabelProps={{
+                  shrink: true,
+                }}
+              />
+            </Grid>
+            <Grid item xs={12} sm={6}>
+              <TextField
+                name="anniversary_date"
+                label="Anniversary Date"
+                type="date"
+                value={formData.anniversary_date}
+                onChange={handleInputChange}
+                fullWidth
+                InputLabelProps={{
+                  shrink: true,
+                }}
+              />
+            </Grid>
             <Grid item xs={12}>
               <TextField
                 name="notes"
@@ -400,9 +511,9 @@ export default function Clients() {
                 </Grid>
                 <Grid item xs={12} sm={6}>
                   <Typography variant="subtitle2">Pending Payment</Typography>
-                  <Typography variant="h6" color={selectedClient.pending_payment > 0 ? "warning.main" : "text.secondary"}>
-                    {selectedClient.pending_payment > 0 
-                      ? formatCurrency(selectedClient.pending_payment)
+                  <Typography variant="h6" color={(selectedClient.pending_payment || 0) > 0 ? "warning.main" : "text.secondary"}>
+                    {(selectedClient.pending_payment || 0) > 0 
+                      ? formatCurrency(selectedClient.pending_payment || 0)
                       : "No pending amount"}
                   </Typography>
                 </Grid>
@@ -413,6 +524,41 @@ export default function Clients() {
                     {selectedClient.last_visit 
                       ? new Date(selectedClient.last_visit).toLocaleDateString()
                       : "Never visited"}
+                  </Typography>
+                </Grid>
+                <Grid item xs={12} sm={4}>
+                  <Typography variant="subtitle2">Lifetime Visits</Typography>
+                  <Typography variant="body1" sx={{ display: 'flex', alignItems: 'center' }}>
+                    <ConfirmationNumberIcon fontSize="small" sx={{ mr: 1 }} />
+                    {/* Calculate for selected client in dialog */}
+                    {selectedClient && (orders?.filter( 
+                      order => 
+                        ((order as any).client_name === selectedClient.full_name || (order as any).customer_name === selectedClient.full_name) && 
+                        (order as any).status !== 'cancelled' && 
+                        !(order as any).consumption_purpose && 
+                        (order as any).client_name !== 'Salon Consumption'
+                    ).length || 0)}
+                  </Typography>
+                </Grid>
+                <Grid item xs={12} sm={4}>
+                  <Typography variant="subtitle2">Gender</Typography>
+                  <Typography variant="body1" sx={{ display: 'flex', alignItems: 'center' }}>
+                    <WcIcon fontSize="small" sx={{ mr: 1 }} />
+                    {selectedClient.gender || '-'}
+                  </Typography>
+                </Grid>
+                <Grid item xs={12} sm={4}>
+                  <Typography variant="subtitle2">Birth Date</Typography>
+                  <Typography variant="body1" sx={{ display: 'flex', alignItems: 'center' }}>
+                    <CalendarTodayIcon fontSize="small" sx={{ mr: 1 }} />
+                    {selectedClient.birth_date ? new Date(selectedClient.birth_date).toLocaleDateString() : '-'}
+                  </Typography>
+                </Grid>
+                <Grid item xs={12} sm={4}>
+                  <Typography variant="subtitle2">Anniversary Date</Typography>
+                  <Typography variant="body1" sx={{ display: 'flex', alignItems: 'center' }}>
+                    <EventIcon fontSize="small" sx={{ mr: 1 }} />
+                    {selectedClient.anniversary_date ? new Date(selectedClient.anniversary_date).toLocaleDateString() : '-'}
                   </Typography>
                 </Grid>
               </>
@@ -453,11 +599,11 @@ export default function Clients() {
                   onChange={(e) => setPaymentAmount(Number(e.target.value))}
                   fullWidth
                   InputProps={{
-                    inputProps: { min: 0, max: selectedClient.pending_payment },
+                    inputProps: { min: 0, max: selectedClient.pending_payment || 0 },
                     startAdornment: <InputAdornment position="start">₹</InputAdornment>,
                   }}
-                  error={paymentAmount > selectedClient.pending_payment}
-                  helperText={paymentAmount > selectedClient.pending_payment ? "Amount exceeds pending payment" : ""}
+                  error={paymentAmount > (selectedClient.pending_payment || 0)}
+                  helperText={paymentAmount > (selectedClient.pending_payment || 0) ? "Amount exceeds pending payment" : ""}
                   sx={{ mt: 2 }}
                 />
               </Grid>

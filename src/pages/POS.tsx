@@ -44,6 +44,7 @@ import { useClients, Client } from "../hooks/useClients";
 import { useStylists, Stylist } from "../hooks/useStylists";
 import { toast } from "react-toastify";
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useOrders } from '../hooks/useOrders'; // Import useOrders
 // Import the RefreshInventoryButton component
 import RefreshInventoryButton from '../components/RefreshInventoryButton';
 import LowStockWarning from '../components/LowStockWarning';
@@ -68,6 +69,32 @@ import Drawer from '@mui/material/Drawer';
 import { useMembershipTiers } from '../hooks/useMembershipTiers';
 import { MembershipTier } from '../types/membershipTier';
 import CardMembershipIcon from '@mui/icons-material/CardMembership';
+// Import the localStorage hook
+import { useLocalStorage } from '../utils/useLocalStorage';
+
+// Define a key for localStorage
+const POS_STATE_STORAGE_KEY = 'posState';
+
+// Define an interface for the state to be persisted
+interface PersistedPOSState {
+  tabValue: number;
+  customerName: string;
+  selectedClient: Client | null;
+  newClientPhone: string;
+  newClientEmail: string;
+  selectedStylist: Stylist | null;
+  orderItems: OrderItem[];
+  walkInPaymentMethod: PaymentMethod; // Default/fallback if not using paymentAmounts
+  walkInDiscount: number;
+  walkInDiscountPercentage: number;
+  paymentAmounts: Record<PaymentMethod, number>;
+  isSplitPayment: boolean; // To control UI for split payment section
+  // Salon Purchase tab state
+  salonProducts: OrderItem[];
+  consumptionPurpose: string;
+  consumptionNotes: string;
+  salonConsumptionDate: string; // Add this line
+}
 
 // Helper function to generate time slots
 const generateTimeSlots = (startHour: number, endHour: number, interval: number): string[] => {
@@ -345,7 +372,8 @@ export default function POS() {
 	// Custom Hooks
 	const { clients, isLoading: loadingClients, updateClientFromOrder, createClientAsync } = useClients();
 	const { stylists, isLoading: loadingStylists } = useStylists();
-	const { createWalkInOrder: createWalkInOrderMutation, createOrder, orders, loadingOrders } = usePOS(); 
+	const { createWalkInOrder: createWalkInOrderMutation, createOrder, orders: posOrders, loadingOrders: loadingPOSOrders } = usePOS(); // Renamed orders from usePOS to posOrders
+	const { orders, isLoading: isLoadingOrders } = useOrders(); // Orders for lifetime visits calculation
 	const { products: inventoryProducts, isLoading: loadingInventoryProducts } = useProducts();
 	const { services, isLoading: loadingServices } = useServices();
 	const { recordSalonConsumption } = useInventory();
@@ -391,9 +419,10 @@ export default function POS() {
 	const [tabValue, setTabValue] = useState(0);
 	// Keep the activeStep state for the Salon Consumption panel until we fully refactor it
 	const [activeStep, setActiveStep] = useState(0);
-	const [customerName, setCustomerName] = useState("");
-	const [selectedClient, setSelectedClient] = useState<Client | null>(null);
-	const [selectedStylist, setSelectedStylist] = useState<Stylist | null>(null);
+	const [customerName, setCustomerName] = useLocalStorage<string>('pos_customerName', '');
+	// Persist selectedClient across navigations
+	const [selectedClient, setSelectedClient] = useLocalStorage<Client | null>('pos_selectedClient', null);
+	const [selectedStylist, setSelectedStylist] = useLocalStorage<Stylist | null>('pos_selectedStylist', null);
 	const [appointmentDate, setAppointmentDate] = useState<Date | null>(new Date());
 	const [appointmentTime, setAppointmentTime] = useState<Date | null>(new Date());
 	const [orderItems, setOrderItems] = useState<OrderItem[]>([]);
@@ -437,6 +466,8 @@ export default function POS() {
 	// Add state for new client details
 	const [newClientPhone, setNewClientPhone] = useState("");
 	const [newClientEmail, setNewClientEmail] = useState("");
+	// Add state for salon consumption date
+	const [salonConsumptionDate, setSalonConsumptionDate] = useState<Date | null>(new Date());
 
 	// ====================================================
 	// CALLBACK DEFINITIONS (MOVED UP OR RESTORED)
@@ -1216,9 +1247,9 @@ export default function POS() {
 		setOrderItems([]);
 		setWalkInPaymentMethod("cash");
 		setIsSplitPayment(false);
-		setSplitPayments([]);
-		setNewPaymentAmount(0);
-		setNewPaymentMethod("cash");
+		setSplitPayments([]); // Keep for any remaining logic, though paymentAmounts is primary
+		setNewPaymentAmount(0); // Keep for any remaining logic
+		setNewPaymentMethod("cash"); // Keep for any remaining logic
 		setWalkInDiscount(0);
 		setWalkInDiscountPercentage(0); // Reset percentage discount
 		setCurrentAppointmentId(null); // <-- Reset appointment ID
@@ -1238,6 +1269,20 @@ export default function POS() {
 		setServiceDropdownValue(null);
 		setProductDropdownValue(null);
 		setMembershipDropdownValue(null);
+		// Reset paymentAmounts to default (e.g., cash covering total, others 0)
+		// This will be handled by the total recalculation and paymentAmounts useEffects
+		// For explicit reset:
+		setPaymentAmounts({ cash: 0, credit_card: 0, debit_card: 0, upi: 0, bnpl: 0 });
+		// Reset salon consumption date
+		setSalonConsumptionDate(new Date());
+
+		// Clear persisted state from localStorage
+		try {
+			localStorage.removeItem(POS_STATE_STORAGE_KEY);
+			console.log("Persisted POS state cleared from localStorage.");
+		} catch (error) {
+			console.error("Error clearing POS state from localStorage:", error);
+		}
 	}, []);
 
 	const handleAddSalonProduct = useCallback((service: POSService, quantity: number = 1) => {
@@ -1292,6 +1337,7 @@ export default function POS() {
 		try {
 			setProcessing(true);
 			const currentDate = new Date().toISOString();
+			const consumptionDateToUse = salonConsumptionDate ? salonConsumptionDate.toISOString() : currentDate;
 
 			// Record results for each product
 			const updateResults = [];
@@ -1374,8 +1420,8 @@ export default function POS() {
 						// 5. Add consumption record with tax details
 						const salonConsumptionEntry = {
 							id: uuidv4(),
-							date: currentDate,
-							created_at: currentDate,
+							date: consumptionDateToUse, // Use selected date
+							created_at: consumptionDateToUse, // Use selected date for consistency
 							product_name: product.item_name,
 							hsn_code: product.hsn_code || '',
 							units: product.units || '',              // Added units (Product Type)
@@ -1447,6 +1493,7 @@ export default function POS() {
 			try {
 				// Create order ID
 				const orderId = uuidv4();
+				const orderDateToUse = salonConsumptionDate ? salonConsumptionDate.toISOString() : new Date().toISOString();
 
 				// Format the products for order items - ENSURE CORRECT QUANTITIES
 				const orderItems = salonProducts.map((product, idx) => ({
@@ -1458,7 +1505,7 @@ export default function POS() {
 					quantity: product.quantity, // Use the EXACT quantity, no division
 					gst_percentage: product.gst_percentage,
 					hsn_code: product.hsn_code,
-					created_at: currentDate,
+					created_at: orderDateToUse, // Use selected or current date
 					pos_order_id: orderId
 				}));
 
@@ -1468,7 +1515,7 @@ export default function POS() {
 				// Create order record with fields exactly matching the pos_orders table schema
 				const orderData = {
 					id: orderId,
-					created_at: currentDate,
+					created_at: orderDateToUse,
 					client_name: 'Salon Consumption',
 					customer_name: 'Salon Consumption', // Add for consistency
 					consumption_purpose: consumptionPurpose,
@@ -1529,7 +1576,7 @@ export default function POS() {
 						items: orderItems.map(item => ({
 							...item,
 							order_id: orderId,
-							created_at: currentDate
+							created_at: orderDateToUse // Use selected or current date
 						}))
 					};
 
@@ -1556,14 +1603,13 @@ export default function POS() {
 
 			// Log consumption details
 			console.log('Salon consumption summary:', {
-				date: currentDate,
+				date: consumptionDateToUse, // Use consumptionDateToUse as it's in scope
 				purpose: consumptionPurpose,
 				notes: consumptionNotes,
 				products: salonProducts.map(p => ({
 					name: p.item_name,
 					quantity: p.quantity
-				})),
-				updateResults
+				}))
 			});
 
 			// Refresh UI
@@ -1592,7 +1638,7 @@ export default function POS() {
 		} finally {
 			setProcessing(false);
 		}
-	}, [currentAppointmentId, updateAppointment, orderItems, isOrderValid, calculateProductSubtotal, calculateServiceSubtotal, calculateProductGstAmount, calculateServiceGstAmount, walkInDiscount, getAmountPaid, selectedClient, selectedStylist, customerName, createWalkInOrderMutation, createOrder, isSplitPayment, splitPayments, productGstRate, serviceGstRate, salonProducts, consumptionPurpose, consumptionNotes, requisitionVoucherNo, fetchBalanceStockData, resetFormState, navigate, queryClient, directUpdateStockQuantity, createClientAsync, newClientPhone, newClientEmail]); // Changed createClient to createClientAsync here as well
+	}, [currentAppointmentId, updateAppointment, orderItems, isOrderValid, calculateProductSubtotal, calculateServiceSubtotal, calculateProductGstAmount, calculateServiceGstAmount, walkInDiscount, getAmountPaid, selectedClient, selectedStylist, customerName, createWalkInOrderMutation, createOrder, isSplitPayment, splitPayments, productGstRate, serviceGstRate, salonProducts, consumptionPurpose, consumptionNotes, requisitionVoucherNo, fetchBalanceStockData, resetFormState, navigate, queryClient, directUpdateStockQuantity, createClientAsync, newClientPhone, newClientEmail, salonConsumptionDate]); // Changed createClient to createClientAsync here as well
 
 	const handleRemoveFromOrder = useCallback((itemId: string) => {
 		setOrderItems((prevItems) => prevItems.filter((item) => item.id !== itemId));
@@ -1824,19 +1870,40 @@ export default function POS() {
 					/>
 				</Box>
 
-				<Grid item xs={12}>
-					<TextField
-						fullWidth
-						label="Consumption Purpose"
-						variant="outlined"
-							placeholder="E.g., Stylist workstation, Salon display, Client consultation"
-						value={consumptionPurpose || ""}
-						onChange={(e: React.ChangeEvent<HTMLInputElement>) => setConsumptionPurpose(e.target.value)}
-						helperText="Specify the purpose of this salon consumption"
-						required
-						sx={{ mb: 3, '& .MuiOutlinedInput-root': { borderRadius: '8px' } }}
-					/>
-				</Grid>
+				<Grid container spacing={2}> {/* Add Grid container here */}
+					<Grid item xs={12} sm={6}>
+						<TextField
+							fullWidth
+							label="Consumption Purpose"
+							variant="outlined"
+								placeholder="E.g., Stylist workstation, Salon display, Client consultation"
+							value={consumptionPurpose || ""}
+							onChange={(e: React.ChangeEvent<HTMLInputElement>) => setConsumptionPurpose(e.target.value)}
+							helperText="Specify the purpose of this salon consumption"
+							required
+							sx={{ mb: 3, '& .MuiOutlinedInput-root': { borderRadius: '8px' } }}
+						/>
+					</Grid>
+					<Grid item xs={12} sm={6}>
+						<LocalizationProvider dateAdapter={AdapterDateFns}>
+							<DatePicker
+								label="Consumption Date"
+								value={salonConsumptionDate}
+								onChange={(newDate) => setSalonConsumptionDate(newDate)}
+								renderInput={(params) => (
+									<TextField
+										{...params}
+										fullWidth
+										variant="outlined"
+										size="small"
+										helperText="Select the date for this consumption"
+										sx={{ mb: 3, '& .MuiOutlinedInput-root': { borderRadius: '8px' } }}
+									/>
+								)}
+							/>
+						</LocalizationProvider>
+					</Grid>
+				</Grid> {/* Close Grid container */}
 
 				{/* Replace product cards with dropdown */}
 				<Box sx={{ mb: 4 }}>
@@ -2302,7 +2369,7 @@ export default function POS() {
 	// ====================================================
 	// 5. LOADING CHECK (AFTER ALL HOOKS)
 	// ====================================================
-	const isInitialLoading = loadingClients || loadingStylists || loadingAppointments || loadingInventoryProducts || loadingServices || loadingMemberships;
+	const isInitialLoading = loadingClients || loadingStylists || loadingAppointments || loadingInventoryProducts || loadingServices || loadingMemberships || isLoadingOrders; // Added isLoadingOrders
 	// Add check for other essential data if needed
 
 	if (isInitialLoading) {
@@ -2586,6 +2653,31 @@ export default function POS() {
 											{selectedClient.pending_payment && selectedClient.pending_payment > 0
 												? <Chip label={formatCurrency(selectedClient.pending_payment)} color="warning" />
 												: <Typography color="text.secondary">No pending amount</Typography>}
+										</Grid>
+										{/* Added Gender, Birth Date, Anniversary Date, Lifetime Visits */}
+										<Grid item xs={12} sm={6}>
+											<Typography variant="subtitle2">Gender</Typography>
+											<Typography>{selectedClient.gender || 'N/A'}</Typography>
+										</Grid>
+										<Grid item xs={12} sm={6}>
+											<Typography variant="subtitle2">Birth Date</Typography>
+											<Typography>{selectedClient.birth_date ? format(new Date(selectedClient.birth_date), 'dd/MM/yyyy') : 'N/A'}</Typography>
+										</Grid>
+										<Grid item xs={12} sm={6}>
+											<Typography variant="subtitle2">Anniversary Date</Typography>
+											<Typography>{selectedClient.anniversary_date ? format(new Date(selectedClient.anniversary_date), 'dd/MM/yyyy') : 'N/A'}</Typography>
+										</Grid>
+										<Grid item xs={12} sm={6}>
+											<Typography variant="subtitle2">Lifetime Visits</Typography>
+											<Typography>
+												{selectedClient && orders ? orders.filter(
+													order => 
+														((order as any).client_name === selectedClient.full_name || (order as any).customer_name === selectedClient.full_name) && 
+														(order as any).status !== 'cancelled' && 
+														!(order as any).consumption_purpose && 
+														(order as any).client_name !== 'Salon Consumption'
+												).length : 0}
+											</Typography>
 										</Grid>
 									</Grid>
 								</>

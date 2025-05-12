@@ -27,7 +27,12 @@ import {
   Autocomplete,
   FormControlLabel,
   Switch,
-  TableFooter
+  TableFooter,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  FormHelperText
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -53,6 +58,7 @@ import SalonConsumptionTab from './Inventory/SalonConsumptionTab';
 import SalesHistoryTab from './Inventory/SalesHistoryTab';
 import { toast } from 'react-hot-toast';
 import { calculatePriceExcludingGST, calculateGSTAmount } from '../utils/gstCalculations';
+import { SelectChangeEvent } from '@mui/material';
 
 const StyledTableCell = styled(TableCell)(({ theme }) => ({
   fontWeight: 'bold',
@@ -157,7 +163,7 @@ export default function InventoryManager() {
     purchases,
     isLoading: isLoadingPurchases,
     error: errorPurchases,
-    fetchPurchases,
+    fetchPurchases: fetchPurchasesFromHook, // Renamed to avoid conflict with local fetchPurchases
     deletePurchaseTransaction
   } = usePurchaseHistory();
 
@@ -167,6 +173,10 @@ export default function InventoryManager() {
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [activeTab, setActiveTab] = useState<'purchaseHistory' | 'stockHistory' | 'salonConsumption' | 'salesHistory'>('purchaseHistory');
+
+  // Add state for product types for the dialog's unit dropdown
+  const [productTypesForDialog, setProductTypesForDialog] = useState<string[]>([]);
+  const [isLoadingProductTypesDialog, setIsLoadingProductTypesDialog] = useState<boolean>(false);
 
   // Add state for Stock History
   const [stockHistory, setStockHistory] = useState<StockHistoryItem[]>([]);
@@ -200,22 +210,144 @@ export default function InventoryManager() {
   const initializeDatabaseTables = useCallback(async () => {
     try {
       console.log('Initializing database tables...');
-      // Database initialization tasks could go here if needed
     } catch (error) {
       console.error('Error initializing database tables:', error);
     }
   }, []);
 
-  // Initialize tables when component loads
+  // This is the local wrapper for the fetchPurchases function from the hook
+  const fetchPurchasesData = useCallback(async () => { 
+    fetchPurchasesFromHook();
+  }, [fetchPurchasesFromHook]);
+
+  const fetchSalonConsumptionDirect = useCallback(async () => {
+    setIsLoadingConsumption(true);
+    setErrorConsumption(null);
+    console.log('🔍 DEBUG: Fetching salon consumption data...');
+    try {
+      const { data, error } = await supabase
+        .from('inventory_salon_consumption')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      console.log('Direct inventory_salon_consumption query:', { count: data?.length, records: data });
+
+      if (data && data.length > 0) {
+        const transformedData: SalonConsumptionItem[] = data.map(item => ({
+          id: item.id,
+          created_at: item.created_at || item.date,
+          product_id: item.product_id || '',
+          product_name: item.product_name || 'Unknown Product',
+          requisition_voucher_no: item.requisition_voucher_no || 'N/A',
+          consumption_qty: item.quantity || 0,
+          purchase_cost_per_unit: item.price_per_unit || 0,
+          purchase_gst_percentage: item.gst_percentage || 0,
+          purchase_taxable_value: (item.price_per_unit || 0) * (item.quantity || 0),
+          purchase_igst: 0,
+          purchase_cgst: (((item.price_per_unit || 0) * (item.quantity || 0)) * (item.gst_percentage || 0) / 200),
+          purchase_sgst: (((item.price_per_unit || 0) * (item.quantity || 0)) * (item.gst_percentage || 0) / 200),
+          total_purchase_cost: (item.price_per_unit || 0) * (item.quantity || 0) * (1 + (item.gst_percentage || 0) / 100),
+        }));
+        setSalonConsumptionData(transformedData);
+        setConsumptionData(transformedData);
+      } else {
+        setSalonConsumptionData([]);
+        setConsumptionData([]);
+      }
+    } catch (err) {
+      console.error('Error fetching salon consumption data:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Failed to load salon consumption data.';
+      setErrorConsumption(errorMessage);
+      setSalonConsumptionData([]);
+      setConsumptionData([]);
+    } finally {
+      setIsLoadingConsumption(false);
+    }
+  }, [supabase]);
+
+  const fetchStockHistory = useCallback(async () => {
+    setStockHistoryLoading(true);
+    setStockHistoryError(null);
+    console.log('Fetching stock history...');
+    try {
+      const { data, error } = await supabase
+        .from('stock_history')
+        .select('*')
+        .order('date', { ascending: false })
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error("Supabase error fetching stock history:", error);
+        const handledError = handleSupabaseError(error); // Corrected: 1 argument
+        setStockHistoryError(handledError.message);
+        setStockHistory([]);
+        setStockHistoryLoading(false);
+        return;
+      }
+      if (data) {
+         const transformedData: StockHistoryItem[] = data.map(item => ({
+           id: item.id,
+           date: item.date || item.created_at,
+           product_id: item.product_id,
+           product_name: item.product_name,
+           hsn_code: item.hsn_code || '',
+           units: item.units || '',
+           change_qty: item.qty_change ?? item.change_qty ?? 0,
+           stock_after: item.stock_after ?? item.current_qty ?? 0,
+           change_type: item.type || item.change_type || 'Unknown',
+           source: item.source || '-',
+           reference_id: item.invoice_id || item.reference_id || '-',
+           created_at: item.created_at,
+         }));
+         setStockHistory(transformedData);
+      } else {
+        setStockHistory([]);
+      }
+    } catch (err) {
+      console.error("Error fetching stock history:", err);
+      const message = (err instanceof Error && err.message)
+        ? err.message
+        : 'An unexpected error occurred while fetching stock history.';
+      setStockHistoryError(message);
+      setStockHistory([]);
+    } finally {
+      setStockHistoryLoading(false);
+    }
+  }, [supabase, handleSupabaseError]);
+
   useEffect(() => {
-    // Initialize database tables
     initializeDatabaseTables();
-    
-    // Fetch all data regardless of active tab
-    fetchPurchases();
-    fetchStockHistory();
-    fetchSalonConsumptionDirect();
-  }, []);  // Empty dependency array since these functions don't change
+    fetchPurchasesData(); // Calls the moved definition
+    fetchStockHistory();    // Calls the moved definition
+    fetchSalonConsumptionDirect(); // Calls the moved definition
+
+    const fetchDialogProductTypes = async () => {
+      setIsLoadingProductTypesDialog(true);
+      try {
+        const { data, error } = await supabase
+          .from('products')
+          .select('product_type');
+        if (error) {
+          console.error('Error context: fetching product types for dialog', error);
+          throw handleSupabaseError(error);
+        }
+        if (data) {
+          const distinctTypes = Array.from(new Set(data.map(item => item.product_type).filter(pt => pt && pt.trim() !== '')))
+            .sort();
+          setProductTypesForDialog(distinctTypes.length > 0 ? distinctTypes : ['pcs', 'units', 'bottles']);
+        } else {
+          setProductTypesForDialog(['pcs', 'units', 'bottles']);
+        }
+      } catch (err) {
+        console.error('Error fetching product types for dialog:', err);
+        toast.error(err instanceof Error ? err.message : 'Failed to load unit types for dialog.');
+        setProductTypesForDialog(['pcs', 'units', 'bottles']);
+      } finally {
+        setIsLoadingProductTypesDialog(false);
+      }
+    };
+    fetchDialogProductTypes();
+  }, [initializeDatabaseTables, fetchPurchasesData, fetchStockHistory, fetchSalonConsumptionDirect, supabase, handleSupabaseError]); // Added supabase/handleSupabaseError if they are used in fetchDialogProductTypes (they are)
 
   // Function to handle exporting data based on the active tab
   const handleExport = async () => {
@@ -386,7 +518,7 @@ export default function InventoryManager() {
       ];
       // filteredStockHistory is already available and used by the UI table
       const stockRows = filteredStockHistory.map((s, idx) => [
-        `SH-${(idx + 1).toString().padStart(5, '0')}`, // Serial No.
+        idx + 1, // Serial No. (Changed from SH-xxxxx to simple index + 1)
         s.date ? new Date(s.date).toLocaleString() : '-', // Date
         s.product_name || '-', // Product Name 
         s.hsn_code || '-', // HSN Code
@@ -420,122 +552,13 @@ export default function InventoryManager() {
     return typeof value === 'number' ? value.toFixed(2) : '0.00';
   };
 
-  // Function to fetch salon consumption data directly
-  const fetchSalonConsumptionDirect = useCallback(async () => {
-    setIsLoadingConsumption(true);
-    setErrorConsumption(null);
-    console.log('🔍 DEBUG: Fetching salon consumption data...');
-    try {
-      // Query from inventory_salon_consumption table instead of sales table
-      const { data, error } = await supabase
-        .from('inventory_salon_consumption')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      console.log('Direct inventory_salon_consumption query:', { count: data?.length, records: data });
-
-      if (data && data.length > 0) {
-        const transformedData: SalonConsumptionItem[] = data.map(item => ({
-          id: item.id,
-          created_at: item.created_at || item.date,
-          product_id: item.product_id || '',
-          product_name: item.product_name || 'Unknown Product',
-          requisition_voucher_no: item.requisition_voucher_no || 'N/A',
-          consumption_qty: item.quantity || 0,
-          purchase_cost_per_unit: item.price_per_unit || 0,
-          purchase_gst_percentage: item.gst_percentage || 0,
-          purchase_taxable_value: (item.price_per_unit || 0) * (item.quantity || 0), // Calculate taxable value
-          purchase_igst: 0, // Typically 0 for local transactions
-          purchase_cgst: (((item.price_per_unit || 0) * (item.quantity || 0)) * (item.gst_percentage || 0) / 200), // Half of GST
-          purchase_sgst: (((item.price_per_unit || 0) * (item.quantity || 0)) * (item.gst_percentage || 0) / 200), // Half of GST
-          total_purchase_cost: (item.price_per_unit || 0) * (item.quantity || 0) * (1 + (item.gst_percentage || 0) / 100), // Total with GST
-        }));
-
-        setSalonConsumptionData(transformedData);
-        setConsumptionData(transformedData);
-        console.log('🔍 DEBUG: Transformed consumption data:', { count: transformedData.length, sample: transformedData[0] });
-      } else {
-        setSalonConsumptionData([]);
-        setConsumptionData([]);
-        console.log('🔍 DEBUG: No consumption data found in inventory_salon_consumption table');
-      }
-    } catch (err) {
-      console.error('Error fetching salon consumption data:', err);
-      const errorMessage = err instanceof Error ? err.message : 'Failed to load salon consumption data.';
-      setErrorConsumption(errorMessage);
-      setSalonConsumptionData([]);
-      setConsumptionData([]);
-    } finally {
-      setIsLoadingConsumption(false);
-    }
-  }, []);
-
-  // Fetch Stock History data
-  const fetchStockHistory = useCallback(async () => {
-    setStockHistoryLoading(true);
-    setStockHistoryError(null);
-    console.log('Fetching stock history...');
-    try {
-      const { data, error } = await supabase
-        .from('stock_history')
-        .select('*')
-        .order('date', { ascending: false }) // Order by date descending
-        .order('created_at', { ascending: false }); // Secondary sort for same-timestamp events
-
-      // ** Corrected Error Handling **
-      // Check if there was an error from Supabase first
-      if (error) {
-        console.error("Supabase error fetching stock history:", error);
-        // Use the helper function correctly
-        const handledError = handleSupabaseError(error); 
-        setStockHistoryError(handledError.message); 
-        setStockHistory([]); // Clear data on error
-        setStockHistoryLoading(false); // Ensure loading stops
-        return; // Stop execution
-      }
-      
-      if (data) {
-         const transformedData: StockHistoryItem[] = data.map(item => ({
-           id: item.id,
-           date: item.date || item.created_at,
-           product_id: item.product_id,
-           product_name: item.product_name,
-           hsn_code: item.hsn_code || '',
-           units: item.units || '',
-           // Use specific qty columns if they exist, otherwise fallback
-           change_qty: item.qty_change ?? item.change_qty ?? 0,
-           stock_after: item.stock_after ?? item.current_qty ?? 0,
-           change_type: item.type || item.change_type || 'Unknown', // Prefer 'type' if it exists
-           source: item.source || '-',
-           reference_id: item.invoice_id || item.reference_id || '-', // Prefer specific IDs if available
-           created_at: item.created_at,
-         }));
-         setStockHistory(transformedData);
-         console.log(`Fetched ${transformedData.length} stock history records.`);
-      } else {
-        setStockHistory([]);
-        console.log('No stock history data found.');
-      }
-    } catch (err) {
-      console.error("Error fetching stock history:", err);
-      // Safer catch block error message handling
-      const message = (err instanceof Error && err.message) 
-        ? err.message 
-        : 'An unexpected error occurred while fetching stock history.';
-      setStockHistoryError(message);
-      setStockHistory([]);
-    } finally {
-      setStockHistoryLoading(false);
-    }
-  }, []);
-
   const handleTabChange = (event: ChangeEvent<{}>, newValue: string) => {
     setActiveTab(newValue as 'purchaseHistory' | 'stockHistory' | 'salonConsumption' | 'salesHistory');
     setPage(0); // Reset pagination when changing tabs
     
     // Fetch data based on new tab
     if (newValue === 'purchaseHistory') {
-      fetchPurchases();
+      fetchPurchasesData(); // Corrected: Use the renamed local wrapper function fetchPurchasesData
     } else if (newValue === 'stockHistory') {
       fetchStockHistory();
     } else if (newValue === 'salonConsumption') {
@@ -596,7 +619,7 @@ export default function InventoryManager() {
 
         if (result.success) {
             handleClose();
-            await fetchPurchases();
+            await fetchPurchasesData();
             await fetchProducts();
         } else {
             console.error("Failed to add purchase transaction:", result.error);
@@ -614,7 +637,7 @@ export default function InventoryManager() {
       const success = await deletePurchaseTransaction(purchaseId);
       if (success) {
         toast.success('Purchase deleted successfully');
-        fetchPurchases();
+        fetchPurchasesData();
       } else {
         toast.error('Failed to delete purchase');
       }
@@ -663,7 +686,7 @@ export default function InventoryManager() {
 
   const handleRefresh = async () => {
     if (activeTab === 'purchaseHistory') {
-      fetchPurchases();
+      fetchPurchasesData();
     } else if (activeTab === 'stockHistory') {
       fetchStockHistory();
     } else if (activeTab === 'salonConsumption') {
@@ -801,18 +824,43 @@ export default function InventoryManager() {
 
     const mrp = product.mrp_incl_gst || 0;
     const gst = product.gst_percentage || 18;
+    const unitTypeFromMaster = product.units || 'pcs'; // Use product.units as it seems to be the source in ProductMaster
 
     setPurchaseFormData(prev => ({
       ...prev,
       product_name: product.name,
       hsn_code: product.hsn_code || '',
-      unit_type: product.units || 'pcs',
+      unit_type: unitTypeFromMaster, // Set unit_type from product master
       gst_percentage: gst,
       mrp_incl_gst: mrp,
-      ...(handleInputChange('mrp_incl_gst', mrp), {})
+      // Trigger recalculation for other fields if necessary by spreading the result of handleInputChange
+      // This part might need to ensure dependent calculations are correctly triggered
     }));
-    handleInputChange('gst_percentage', gst);
+    
+    // Explicitly call handleInputChange for fields that trigger recalculations
+    // to ensure dependent fields like mrp_per_unit_excl_gst, purchase_excl_gst, etc., are updated.
+    // Create a synthetic sequence of calls if needed, or ensure the main handleInputChange can be triggered.
+    // For now, we directly update and rely on the user to verify calculations after product selection.
+    // A more robust way would be to call handleInputChange for mrp_incl_gst and gst_percentage
+    // after setting them.
+    
+    // Simplified: directly set and then manually trigger one of the calculation-driving updates if needed
+    // For example, calling handleInputChange for 'mrp_incl_gst' with the new 'mrp'
+    // This ensures that the dependent calculations in handleInputChange are triggered.
+    handleInputChange('mrp_incl_gst', mrp); // This should trigger calculations
+    handleInputChange('gst_percentage', gst); // And this too
+    handleInputChange('unit_type', unitTypeFromMaster); // Update unit_type
 
+  };
+
+  // New handler for the Select component in the dialog
+  const handleDialogSelectChange = (event: SelectChangeEvent<string>) => {
+    const { name, value } = event.target;
+    // Use the existing handleInputChange logic if it can handle generic name/value pairs
+    // or update purchaseFormData directly for 'unit_type'.
+    // For consistency, let's use handleInputChange if it's general enough.
+    // The 'name' prop on Select should be 'unit_type'.
+    handleInputChange(name as string, value);
   };
 
   // Function to toggle date filter
@@ -1359,14 +1407,30 @@ export default function InventoryManager() {
             </Grid>
             
             <Grid item xs={12} sm={6} md={4}>
-              <TextField
-                label="UNITS *"
-                value={purchaseFormData.unit_type}
-                onChange={(e) => handleInputChange('unit_type', e.target.value)}
-                fullWidth
-                required
-                helperText="Auto-filled from Product Master (editable)"
-              />
+              <FormControl fullWidth required error={!purchaseFormData.unit_type}>
+                <InputLabel id="dialog-units-select-label">UNITS *</InputLabel>
+                <Select
+                  labelId="dialog-units-select-label"
+                  id="dialog-units-select"
+                  name="unit_type"
+                  value={purchaseFormData.unit_type}
+                  label="UNITS *"
+                  onChange={handleDialogSelectChange}
+                >
+                  {isLoadingProductTypesDialog ? (
+                    <MenuItem value="" disabled><em>Loading types...</em></MenuItem>
+                  ) : productTypesForDialog.length > 0 ? (
+                    productTypesForDialog.map((type) => (
+                      <MenuItem key={type} value={type}>
+                        {type}
+                      </MenuItem>
+                    ))
+                  ) : (
+                    <MenuItem value="" disabled><em>No types found in Product Master</em></MenuItem>
+                  )}
+                </Select>
+                {!purchaseFormData.unit_type && <FormHelperText>Unit type is required</FormHelperText>}
+              </FormControl>
             </Grid>
             
             <Grid item xs={12} sm={6} md={4}>

@@ -23,18 +23,23 @@ import {
   DialogContent,
   DialogActions,
   Chip,
-  IconButton
+  IconButton,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  FormHelperText
 } from '@mui/material';
 import { Add as AddIcon, Delete as DeleteIcon, Refresh as RefreshIcon, FileDownload as FileDownloadIcon } from '@mui/icons-material';
 import { styled } from '@mui/material/styles';
-import { Purchase, PurchaseFormState, Product } from '../../models/inventoryTypes';
+import { Purchase, PurchaseFormState, Product, SelectChangeEvent } from '../../models/inventoryTypes';
 import { useInventory } from '../../hooks/useInventory';
 import { useProducts } from '../../hooks/useProducts';
 import { toast } from 'react-toastify';
 import { formatCurrency } from '../../utils/formatters';
 import { convertToCSV, downloadCSV } from '../../utils/csvExporter';
 import { fetchProductsWithStock } from '../../utils/inventoryHelpers';
-import { supabase } from '../../utils/supabase/supabaseClient';
+import { supabase, handleSupabaseError } from '../../utils/supabase/supabaseClient';
 
 interface PurchaseTabProps {
   purchases: Purchase[];
@@ -54,14 +59,10 @@ const PurchaseTab: React.FC<PurchaseTabProps> = ({ purchases, isLoading, error }
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [open, setOpen] = useState(false);
-  const [formData, setFormData] = useState({
-    supplier: '',
-    invoiceNumber: '',
-    date: new Date().toISOString().split('T')[0]
-  });
-  const [products, setProducts] = useState<any[]>([]);
   const [existingProducts, setExistingProducts] = useState<any[]>([]);
   const [isLoadingProducts, setIsLoadingProducts] = useState(false);
+  const [productTypes, setProductTypes] = useState<string[]>([]);
+  const [isLoadingProductTypes, setIsLoadingProductTypes] = useState(false);
   const [formState, setFormState] = useState<PurchaseFormState>({
     date: new Date().toISOString().split('T')[0],
     product_name: '',
@@ -83,17 +84,15 @@ const PurchaseTab: React.FC<PurchaseTabProps> = ({ purchases, isLoading, error }
   const [formErrors, setFormErrors] = useState<Partial<Record<keyof PurchaseFormState, string>>>({});
   const [exportingCSV, setExportingCSV] = useState(false);
 
-  // Load existing products for autocomplete
   useEffect(() => {
-    const loadProducts = async () => {
+    const loadInitialData = async () => {
       setIsLoadingProducts(true);
+      setIsLoadingProductTypes(true);
+
       try {
-        // Use fetchProductsWithStock to get products from all sources
         const productsData = await fetchProductsWithStock();
-        
         if (productsData && Array.isArray(productsData)) {
-          console.log(`Loaded ${productsData.length} products for dropdown`);
-          // Format products for dropdown
+          console.log(`Loaded ${productsData.length} products for product name dropdown`);
           setExistingProducts(productsData.map((p) => ({
             id: p.id,
             name: p.name,
@@ -103,18 +102,44 @@ const PurchaseTab: React.FC<PurchaseTabProps> = ({ purchases, isLoading, error }
             gst: p.gst_percentage || 18
           })));
         } else {
-          console.warn('No products returned from fetchProductsWithStock');
+          console.warn('No products returned from fetchProductsWithStock for product name dropdown');
           setExistingProducts([]);
         }
       } catch (error) {
-        console.error('Error loading products:', error);
+        console.error('Error loading existing products:', error);
+        toast.error('Failed to load existing products for dropdown.');
         setExistingProducts([]);
       } finally {
         setIsLoadingProducts(false);
       }
+
+      try {
+        const { data: productTypeData, error: productTypeError } = await supabase
+          .from('products')
+          .select('product_type');
+
+        if (productTypeError) {
+          throw handleSupabaseError(productTypeError, 'fetching product types');
+        }
+
+        if (productTypeData) {
+          const distinctTypes = Array.from(new Set(productTypeData.map(item => item.product_type).filter(pt => pt && pt.trim() !== '')))
+            .sort();
+          console.log(`Loaded ${distinctTypes.length} distinct product types for units dropdown:`, distinctTypes);
+          setProductTypes(distinctTypes.length > 0 ? distinctTypes : ['pcs', 'bottles', 'units']);
+        } else {
+          setProductTypes(['pcs', 'bottles', 'units']);
+        }
+      } catch (error) {
+        console.error('Error fetching product types:', error);
+        toast.error(error instanceof Error ? error.message : 'Failed to load product types for units dropdown.');
+        setProductTypes(['pcs', 'bottles', 'units']);
+      } finally {
+        setIsLoadingProductTypes(false);
+      }
     };
-    
-    loadProducts();
+
+    loadInitialData();
   }, []);
 
   const handleChangePage = (event: unknown, newPage: number) => {
@@ -126,23 +151,42 @@ const PurchaseTab: React.FC<PurchaseTabProps> = ({ purchases, isLoading, error }
     setPage(0);
   };
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
     
-    // For numeric fields, convert to numbers
     const numericFields = ['purchase_qty', 'mrp_incl_gst', 'discount_on_purchase_percentage', 'gst_percentage'];
-    const newValue = numericFields.includes(name) ? parseFloat(value) || 0 : value;
+    let newValue: string | number = value;
+
+    if (numericFields.includes(name)) {
+      newValue = parseFloat(value);
+      if (isNaN(newValue as number)) {
+        newValue = 0;
+      }
+    }
     
     setFormState(prevState => ({
       ...prevState,
       [name]: newValue
     }));
     
-    // Clear error when field is updated
     if (formErrors[name as keyof PurchaseFormState]) {
       setFormErrors(prev => ({
         ...prev,
         [name]: undefined
+      }));
+    }
+  };
+
+  const handleSelectChange = (event: SelectChangeEvent<string>) => {
+    const { name, value } = event.target;
+    setFormState(prevState => ({
+      ...prevState,
+      [name as string]: value
+    }));
+    if (formErrors[name as keyof PurchaseFormState]) {
+      setFormErrors(prev => ({
+        ...prev,
+        [name as string]: undefined
       }));
     }
   };
@@ -178,7 +222,6 @@ const PurchaseTab: React.FC<PurchaseTabProps> = ({ purchases, isLoading, error }
     return Object.keys(errors).length === 0;
   };
 
-  // Check if product exists in product catalog
   const productExists = (productName: string): boolean => {
     if (!productName) return false;
     
@@ -191,7 +234,6 @@ const PurchaseTab: React.FC<PurchaseTabProps> = ({ purchases, isLoading, error }
     return exists;
   };
 
-  // Function to add new product to product catalog
   const addProductToCatalog = async (productData: {
     name: string;
     hsn_code: string;
@@ -201,11 +243,9 @@ const PurchaseTab: React.FC<PurchaseTabProps> = ({ purchases, isLoading, error }
     try {
       console.log('Adding product to catalog:', productData);
       
-      // Calculate mrp_excl_gst based on price and standard GST rate
       const gstPercentage = formState.gst_percentage || 18;
       const mrp_excl_gst = productData.price / (1 + (gstPercentage / 100));
       
-      // Add product using addProduct from useProducts hook
       const result = await addProduct({
         product_name: productData.name,
         hsn_code: productData.hsn_code,
@@ -225,10 +265,8 @@ const PurchaseTab: React.FC<PurchaseTabProps> = ({ purchases, isLoading, error }
       
       toast.success('New product added to catalog');
       
-      // Reload products using fetchProductsWithStock instead of fetchProducts
       const updatedProducts = await fetchProductsWithStock();
       
-      // Handle the case where products might be undefined or null
       if (updatedProducts && Array.isArray(updatedProducts)) {
         setExistingProducts(updatedProducts.map((p: any) => ({
           id: p.id,
@@ -250,7 +288,6 @@ const PurchaseTab: React.FC<PurchaseTabProps> = ({ purchases, isLoading, error }
     }
   };
 
-  // Function to manually add a product directly through the form
   const createProductManually = async () => {
     try {
       if (!formState.product_name || !formState.hsn_code || !formState.units) {
@@ -258,7 +295,6 @@ const PurchaseTab: React.FC<PurchaseTabProps> = ({ purchases, isLoading, error }
         return null;
       }
       
-      // Create a new product object
       const newProduct = {
         id: `manual-${Date.now()}`,
         name: formState.product_name,
@@ -269,7 +305,6 @@ const PurchaseTab: React.FC<PurchaseTabProps> = ({ purchases, isLoading, error }
         stock: formState.purchase_qty
       };
       
-      // Add to existing products
       setExistingProducts(prev => [newProduct, ...prev]);
       
       toast.success('Product added locally. Database will be updated when connection is restored.');
@@ -291,14 +326,11 @@ const PurchaseTab: React.FC<PurchaseTabProps> = ({ purchases, isLoading, error }
         p.name.toLowerCase() === formState.product_name.toLowerCase()
       );
       
-      // First check if product exists in product catalog
       if (!existingProduct) {
         console.log('Product does not exist, adding to catalog:', formState.product_name);
         
-        // Try to add new product to catalog
         let addSuccess = false;
         try {
-          // Add new product to catalog
           addSuccess = await addProductToCatalog({
             name: formState.product_name,
             hsn_code: formState.hsn_code,
@@ -310,7 +342,6 @@ const PurchaseTab: React.FC<PurchaseTabProps> = ({ purchases, isLoading, error }
           addSuccess = false;
         }
         
-        // If failed to add to catalog, create manually
         if (!addSuccess) {
           console.log('Failed to add to catalog, creating manually');
           existingProduct = await createProductManually();
@@ -322,7 +353,6 @@ const PurchaseTab: React.FC<PurchaseTabProps> = ({ purchases, isLoading, error }
       } else {
         console.log('Product already exists in catalog:', formState.product_name);
         
-        // Update the product's stock quantity
         try {
           const { data, error } = await supabase
             .from('inventory_products')
@@ -354,7 +384,6 @@ const PurchaseTab: React.FC<PurchaseTabProps> = ({ purchases, isLoading, error }
         }
       }
       
-      // Calculate GST values based on input
       const taxableValue = 
         (formState.mrp_incl_gst * formState.purchase_qty) / 
         (1 + (formState.gst_percentage / 100)) * 
@@ -370,17 +399,15 @@ const PurchaseTab: React.FC<PurchaseTabProps> = ({ purchases, isLoading, error }
         purchase_cgst: parseFloat(cgstAmount.toFixed(2)),
         purchase_sgst: parseFloat(sgstAmount.toFixed(2)),
         purchase_invoice_value_rs: parseFloat((taxableValue + totalGstAmount).toFixed(2)),
-        invoice_no: formState.purchase_invoice_number // Ensure consistency between field names
+        invoice_no: formState.purchase_invoice_number
       };
       
       console.log('Creating purchase record with data:', updatedFormState);
       
-      // Create purchase record
       await createPurchase(updatedFormState);
       
       toast.success('Purchase added successfully');
       
-      // Reset form on success
       setFormState({
         date: new Date().toISOString().split('T')[0],
         product_name: '',
@@ -442,7 +469,6 @@ const PurchaseTab: React.FC<PurchaseTabProps> = ({ purchases, isLoading, error }
       [field]: value
     };
 
-    // Calculate amount based on quantity and price
     if (field === 'quantity' || field === 'price') {
       updatedProducts[index].amount =
         updatedProducts[index].quantity * updatedProducts[index].price;
@@ -463,7 +489,6 @@ const PurchaseTab: React.FC<PurchaseTabProps> = ({ purchases, isLoading, error }
 
   const handleSubmitTable = async (productData: any) => {
     try {
-      // Add product using hook - matching exactly what useProducts.addProduct needs
       await addProduct({
         product_name: productData.name,
         hsn_code: productData.hsn_code || '',
@@ -475,7 +500,6 @@ const PurchaseTab: React.FC<PurchaseTabProps> = ({ purchases, isLoading, error }
 
       toast.success('Product added to inventory successfully');
       
-      // Reload products and update state
       const updatedProductsData = await fetchProducts();
       if (updatedProductsData && Array.isArray(updatedProductsData)) {
         setExistingProducts(updatedProductsData.map((p) => ({
@@ -503,7 +527,6 @@ const PurchaseTab: React.FC<PurchaseTabProps> = ({ purchases, isLoading, error }
     try {
       setExportingCSV(true);
       
-      // Format data for CSV export
       const csvData = purchases.map(purchase => ({
         'Date': new Date(purchase.date).toLocaleDateString(),
         'Product Name': purchase.product_name || '',
@@ -520,7 +543,6 @@ const PurchaseTab: React.FC<PurchaseTabProps> = ({ purchases, isLoading, error }
         'Vendor': purchase.vendor_name || ''
       }));
       
-      // Convert to CSV and download
       const csvString = convertToCSV(csvData);
       downloadCSV(csvString, `Purchases_${new Date().toISOString().split('T')[0]}.csv`);
     } catch (error) {
@@ -532,7 +554,6 @@ const PurchaseTab: React.FC<PurchaseTabProps> = ({ purchases, isLoading, error }
   };
 
   const renderPurchaseTable = () => {
-    // First, group by invoice ID
     const groupedByInvoice = purchases.reduce((acc, item) => {
       const invoiceId = item.purchase_invoice_number || item.invoice_no || 'Unknown Invoice';
       if (!acc[invoiceId]) {
@@ -555,7 +576,6 @@ const PurchaseTab: React.FC<PurchaseTabProps> = ({ purchases, isLoading, error }
         };
       }
       
-      // Sum up the quantities and values for the same product in the same invoice
       const record = acc[invoiceId].products[productKey];
       record.purchase_qty += parseFloat(item.purchase_qty || '0');
       record.purchase_taxable_value += parseFloat(item.purchase_taxable_value || '0');
@@ -567,9 +587,8 @@ const PurchaseTab: React.FC<PurchaseTabProps> = ({ purchases, isLoading, error }
       return acc;
     }, {});
 
-    // Convert to array format for display
     const aggregatedRecords = Object.entries(groupedByInvoice)
-      .sort(([, a], [, b]) => new Date(b.date).getTime() - new Date(a.date).getTime()) // Sort by date, newest first
+      .sort(([, a], [, b]) => new Date(b.date).getTime() - new Date(a.date).getTime())
       .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
     
     if (isLoading) {
@@ -682,18 +701,15 @@ const PurchaseTab: React.FC<PurchaseTabProps> = ({ purchases, isLoading, error }
     );
   };
 
-  // Define a function to handle delete
   const handleDelete = async (id: string) => {
     try {
       if (!window.confirm('Are you sure you want to delete this purchase record?')) {
         return;
       }
       
-      // Use deletePurchase from useInventory hook
       await deletePurchase(id);
       toast.success('Purchase record deleted successfully');
       
-      // Refresh purchase data
       fetchPurchases();
     } catch (error) {
       console.error('Error deleting purchase:', error);
@@ -701,17 +717,14 @@ const PurchaseTab: React.FC<PurchaseTabProps> = ({ purchases, isLoading, error }
     }
   };
 
-  // Function to fetch purchases data
   const fetchPurchases = async () => {
     try {
-      // Refresh purchase data using the query refetch method
       await purchasesQuery.refetch();
     } catch (error) {
       console.error('Error fetching purchases:', error);
     }
   };
 
-  // Add function to test Supabase connection
   const testDatabaseConnection = async () => {
     try {
       console.log('Testing database connection...');
@@ -729,7 +742,6 @@ const PurchaseTab: React.FC<PurchaseTabProps> = ({ purchases, isLoading, error }
       console.log('Database connectivity test succeeded!', data);
       toast.success('Successfully connected to Supabase!');
       
-      // Refresh products list
       const productsData = await fetchProductsWithStock();
       if (productsData && Array.isArray(productsData)) {
         console.log(`Loaded ${productsData.length} products for dropdown`);
@@ -855,17 +867,34 @@ const PurchaseTab: React.FC<PurchaseTabProps> = ({ purchases, isLoading, error }
               />
             </Grid>
             
-            <Grid item xs={12} sm={6} md={3}>
-              <TextField
-                label="Units"
-                name="units"
-                value={formState.units}
-                onChange={handleInputChange}
-                fullWidth
-                margin="normal"
-                error={!!formErrors.units}
-                helperText={formErrors.units}
-              />
+            <Grid item xs={12} sm={6} md={2}>
+              <FormControl fullWidth error={!!formErrors.units} required>
+                <InputLabel id="units-select-label">Units *</InputLabel>
+                <Select
+                  labelId="units-select-label"
+                  id="units-select"
+                  name="units"
+                  value={formState.units}
+                  label="Units *"
+                  onChange={handleSelectChange}
+                  disabled={!!formState.product_name && existingProducts.some(p => p.name === formState.product_name && p.units)}
+                >
+                  {isLoadingProductTypes ? (
+                    <MenuItem value="" disabled><em>Loading...</em></MenuItem>
+                  ) : productTypes.length > 0 ? (
+                    productTypes.map((type) => (
+                      <MenuItem key={type} value={type}>
+                        {type}
+                      </MenuItem>
+                    ))
+                  ) : (
+                    <MenuItem value="" disabled><em>Setup in Product Master</em></MenuItem>
+                  )}
+                </Select>
+                {(formErrors.units || (!!formState.product_name && existingProducts.some(p => p.name === formState.product_name && p.units) && "Auto-filled")) &&
+                  <FormHelperText>{formErrors.units || "Auto-filled from selected product"}</FormHelperText>
+                }
+              </FormControl>
             </Grid>
             
             <Grid item xs={12} sm={6} md={3}>
@@ -937,7 +966,6 @@ const PurchaseTab: React.FC<PurchaseTabProps> = ({ purchases, isLoading, error }
               />
             </Grid>
             
-            {/* New GST-related fields */}
             <Grid item xs={12} sm={6} md={3}>
               <TextField
                 label="Taxable Value (Rs.)"

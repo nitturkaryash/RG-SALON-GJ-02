@@ -14,7 +14,6 @@ import ErrorBoundary from './components/ErrorBoundary';
 
 // Eagerly loaded pages
 import Dashboard from './pages/Dashboard';
-import Members from './pages/Members';
 
 // Lazy-loaded components
 const Appointments = lazy(() => import('./pages/Appointments'));
@@ -67,7 +66,6 @@ function App() {
             } />
             <Route path="services" element={<ServiceCollections />} />
             <Route path="services/:id" element={<ServiceCollectionDetail />} />
-            <Route path="members" element={<Members />} />
             <Route path="membership-tiers" element={
               <ErrorBoundary>
                 <MembershipTiers />
