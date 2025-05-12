@@ -839,7 +839,7 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
     }
   };
 
-  // Calculate the position (top offset) based on time
+  // Calculate the position (top offset) based on time - precision to the pixel
   const getAppointmentPosition = (startTime: string) => {
     try {
       const normalizedStartTime = normalizeDateTime(startTime);
@@ -852,26 +852,30 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
       // Calculate total minutes since business hours start
       const totalMinutes = (hours * 60) + minutes;
       
-      // Convert to pixels (each 15-minute slot is TIME_SLOT_HEIGHT pixels tall)
-      const position = (totalMinutes / 15) * TIME_SLOT_HEIGHT;
+      // Convert to pixels based on 15-minute slots
+      // TIME_SLOT_HEIGHT for each 15-minute slot, so divide by 15 to get height per minute
+      const positionExact = (totalMinutes / 15) * TIME_SLOT_HEIGHT;
       
-      // Debug log to help troubleshoot positioning issues
-      console.log(`Position calculation for ${new Date(startTime).toLocaleTimeString()}: `, {
-        normalizedTime: normalizedStartTime.toLocaleTimeString(),
-        hours,
-        minutes,
-        totalMinutes,
-        position
-      });
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`Position for ${new Date(startTime).toLocaleTimeString()}:`, {
+          normalizedTime: normalizedStartTime.toLocaleTimeString(),
+          hours,
+          minutes,
+          totalMinutes,
+          positionExact,
+          roundedPosition: Math.round(positionExact)
+        });
+      }
       
-      return position;
+      // Return exact position to the pixel for precise placement
+      return positionExact;
     } catch (error) {
       console.error('Error calculating appointment position:', error, startTime);
       return 0; // Default to top
     }
   };
   
-  // Calculate the height (duration) of an appointment or break in pixels
+  // Calculate the height (duration) of an appointment or break in pixels with precision
   const getAppointmentDuration = (startTime: string, endTime: string) => {
     try {
       const start = normalizeDateTime(startTime);
@@ -888,11 +892,22 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
       const durationMs = endDate.getTime() - start.getTime();
       // Convert to minutes
       const durationMinutes = durationMs / (1000 * 60);
-      // Convert to 15-minute slots and multiply by the height of each slot
-      const height = (durationMinutes / 15) * TIME_SLOT_HEIGHT;
+      // Convert to pixels based on 15-minute slots
+      const heightExact = (durationMinutes / 15) * TIME_SLOT_HEIGHT;
       
-      // Ensure a minimum height for very short appointments
-      return Math.max(height, TIME_SLOT_HEIGHT);
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`Duration calc for ${new Date(startTime).toLocaleTimeString()} - ${new Date(endTime).toLocaleTimeString()}:`, {
+          startTime: start.toLocaleTimeString(),
+          endTime: endDate.toLocaleTimeString(),
+          durationMinutes,
+          heightExact,
+          roundedHeight: Math.ceil(heightExact)
+        });
+      }
+      
+      // Ensure a minimum height for very short appointments/breaks
+      // Use exact pixel heights for precise positioning
+      return Math.max(heightExact, TIME_SLOT_HEIGHT / 2);
     } catch (error) {
       console.error('Error calculating appointment duration:', error);
       // Return a default height if calculation fails
@@ -1213,17 +1228,17 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
     position: 'absolute',
     left: theme.spacing(0.5),
     right: theme.spacing(0.5),
-    backgroundColor: 'rgba(255, 205, 86, 0.9)', // More opaque yellow
+    backgroundColor: 'rgba(220, 53, 69, 0.85)', // Red background
     borderRadius: theme.spacing(1),
     padding: theme.spacing(0.5),
-    border: '2px solid rgba(255, 184, 0, 0.8)', // Thicker border
-    boxShadow: '0 2px 6px rgba(0, 0, 0, 0.25)', // Stronger shadow
+    border: '2px solid rgba(220, 0, 0, 0.8)', // Red border
+    boxShadow: '0 2px 6px rgba(0, 0, 0, 0.25)', // Shadow
     zIndex: 4, // Higher z-index to ensure it's on top
-    color: '#000', // Black text for better contrast
+    color: '#fff', // White text for better contrast on red background
     overflow: 'hidden',
     transition: 'all 0.2s ease',
     '&:hover': {
-      backgroundColor: 'rgba(255, 205, 86, 1)',
+      backgroundColor: 'rgba(220, 53, 69, 0.95)',
       boxShadow: '0 4px 10px rgba(0, 0, 0, 0.3)',
     },
     pointerEvents: 'auto', // Make sure it captures mouse events
@@ -1757,12 +1772,12 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
                     borderRight: 'none'
                   }),
                   ...(isBreakTime(stylist.id, slot.hour, slot.minute) && { 
-                    backgroundColor: 'rgba(255, 217, 102, 0.6)', // More vibrant yellow background
-                    backgroundImage: 'repeating-linear-gradient(135deg, transparent, transparent 6px, rgba(255, 184, 0, 0.6) 6px, rgba(255, 184, 0, 0.6) 12px)', // Stronger diagonal stripes
-                    border: '1px dashed rgba(255, 153, 0, 0.8)', // Add dashed border for break slots
+                    backgroundColor: 'rgba(220, 53, 69, 0.3)', // Light red background
+                    backgroundImage: 'repeating-linear-gradient(135deg, transparent, transparent 6px, rgba(220, 53, 69, 0.5) 6px, rgba(220, 53, 69, 0.5) 12px)', // Red stripes
+                    border: '1px dashed rgba(220, 0, 0, 0.8)', // Red dashed border
                     cursor: 'not-allowed',
                     '&:hover': {
-                      backgroundColor: 'rgba(255, 217, 102, 0.7)' // Slightly darker on hover
+                      backgroundColor: 'rgba(220, 53, 69, 0.4)' // Slightly darker on hover
                     }
                   })
                 }}
@@ -1805,12 +1820,12 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
                       left: 0,
                       right: 0,
                       padding: '3px 0',
-                      backgroundColor: 'rgba(255, 153, 0, 0.85)',
+                      backgroundColor: 'rgba(220, 0, 0, 0.9)',
                       textAlign: 'center',
                       borderBottom: '1px solid rgba(0,0,0,0.1)'
                     }}
                   >
-                    <Typography variant="subtitle2" sx={{ fontWeight: 'bold', fontSize: '0.85rem', letterSpacing: '0.5px' }}>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 'bold', fontSize: '0.85rem', letterSpacing: '0.5px', color: '#fff' }}>
                       BREAK
                     </Typography>
                   </Box>
