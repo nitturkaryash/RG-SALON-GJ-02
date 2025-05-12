@@ -818,58 +818,86 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
     return isSameDay(appointmentDate, currentDate);
   });
   
-  // Add a helper function to ensure dates are consistently handled
+  // Make sure date-times are normalized to the current date to ensure consistent display
   const normalizeDateTime = (dateTimeString: string) => {
-    // Parse the input date string
-    const dateTime = new Date(dateTimeString);
-    
-    // Create a new date object with the current date but time from the appointment
-    const normalized = new Date(
-      currentDate.getFullYear(),
-      currentDate.getMonth(),
-      currentDate.getDate(),
-      dateTime.getHours(),
-      dateTime.getMinutes(),
-      0,
-      0
-    );
-    
-    return normalized;
+    try {
+      const dateTime = new Date(dateTimeString);
+      
+      // Create a new date using the current selected date but with the time from the input
+      const normalizedDateTime = new Date(currentDate);
+      normalizedDateTime.setHours(
+        dateTime.getHours(),
+        dateTime.getMinutes(),
+        0, // Zero seconds
+        0  // Zero milliseconds
+      );
+      
+      return normalizedDateTime;
+    } catch (error) {
+      console.error('Error normalizing date time:', error, dateTimeString);
+      return new Date(); // Return current date as fallback
+    }
   };
 
-  // Update the getAppointmentPosition function to ensure precise positioning
+  // Calculate the position (top offset) based on time
   const getAppointmentPosition = (startTime: string) => {
-    // Use the normalized date to ensure consistent time interpretation
-    const time = normalizeDateTime(startTime);
-    
-    // Calculate position based on business hours and exact minutes
-    const hoursSinceStart = time.getHours() - BUSINESS_HOURS.start;
-    const minutesSinceHourStart = time.getMinutes();
-    
-    // Calculate total minutes since the start of business hours and add 30 minutes
-    const totalMinutesSinceStart = (hoursSinceStart * 60) + minutesSinceHourStart + 30;
-    
-    // Calculate position in pixels based on exact minutes
-    // This ensures appointments are positioned exactly at their scheduled time
-    const position = (totalMinutesSinceStart / 15) * TIME_SLOT_HEIGHT;
-    
-    return position;
+    try {
+      const normalizedStartTime = normalizeDateTime(startTime);
+      
+      // Calculate hours since business start time
+      const hours = normalizedStartTime.getHours() - BUSINESS_HOURS.start;
+      // Calculate minutes (0-59)
+      const minutes = normalizedStartTime.getMinutes();
+      
+      // Calculate total minutes since business hours start
+      const totalMinutes = (hours * 60) + minutes;
+      
+      // Convert to pixels (each 15-minute slot is TIME_SLOT_HEIGHT pixels tall)
+      const position = (totalMinutes / 15) * TIME_SLOT_HEIGHT;
+      
+      // Debug log to help troubleshoot positioning issues
+      console.log(`Position calculation for ${new Date(startTime).toLocaleTimeString()}: `, {
+        normalizedTime: normalizedStartTime.toLocaleTimeString(),
+        hours,
+        minutes,
+        totalMinutes,
+        position
+      });
+      
+      return position;
+    } catch (error) {
+      console.error('Error calculating appointment position:', error, startTime);
+      return 0; // Default to top
+    }
   };
   
-  // Update the getAppointmentDuration function to work with the new time slot height
+  // Calculate the height (duration) of an appointment or break in pixels
   const getAppointmentDuration = (startTime: string, endTime: string) => {
-    // Use normalized dates to ensure consistent time interpretation
-    const start = normalizeDateTime(startTime);
-    const end = normalizeDateTime(endTime);
-    
-    // Calculate duration in minutes
-    const durationInMinutes = (end.getTime() - start.getTime()) / (1000 * 60);
-    
-    // Calculate height in pixels based on exact minutes (not intervals)
-    // This ensures appointments have the exact height for their duration
-    const height = (durationInMinutes / 15) * TIME_SLOT_HEIGHT;
-    
-    return height;
+    try {
+      const start = normalizeDateTime(startTime);
+      const end = normalizeDateTime(endTime);
+      
+      // Handle overnight appointments that cross midnight
+      let endDate = end;
+      if (end < start) {
+        endDate = new Date(end);
+        endDate.setDate(endDate.getDate() + 1);
+      }
+      
+      // Calculate duration in milliseconds
+      const durationMs = endDate.getTime() - start.getTime();
+      // Convert to minutes
+      const durationMinutes = durationMs / (1000 * 60);
+      // Convert to 15-minute slots and multiply by the height of each slot
+      const height = (durationMinutes / 15) * TIME_SLOT_HEIGHT;
+      
+      // Ensure a minimum height for very short appointments
+      return Math.max(height, TIME_SLOT_HEIGHT);
+    } catch (error) {
+      console.error('Error calculating appointment duration:', error);
+      // Return a default height if calculation fails
+      return TIME_SLOT_HEIGHT * 2;
+    }
   };
 
   const navigate = useNavigate();
@@ -954,19 +982,16 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
       slotTime.setHours(hour, minute, 0, 0);
       const slotTimeValue = slotTime.getTime();
       
-      // Create a date object for the end of the slot (add 30 minutes for a full slot)
+      // Create a date object for the end of the slot (add 15 minutes for a 15-minute slot)
       const slotEndTime = new Date(currentDate);
-      slotEndTime.setHours(hour, minute + 30, 0, 0);
+      slotEndTime.setHours(hour, minute + 15, 0, 0);
       const slotEndTimeValue = slotEndTime.getTime();
       
       // Get only breaks for the current day to improve performance
-      const todayBreaks = stylist.breaks.filter((breakItem: StylistBreak) => {
-        const breakDate = new Date(breakItem.startTime);
-        return isSameDay(breakDate, currentDate);
-      });
+      const todayBreaks = getStylistBreaks(stylistId);
       
-      // Debug log for specific hour to track issues
-      if (hour === 11) {
+      // Debug log for specific slots to track issues
+      if (hour === 11 && minute === 0) {
         console.log('Checking break at 11:00:', {
           stylistId,
           hour,
@@ -974,6 +999,7 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
           slotTime: slotTime.toLocaleTimeString(),
           slotEndTime: slotEndTime.toLocaleTimeString(),
           breaks: todayBreaks.map((b: StylistBreak) => ({
+            id: b.id,
             startTime: new Date(b.startTime).toLocaleTimeString(),
             endTime: new Date(b.endTime).toLocaleTimeString(),
             normalizedStart: normalizeDateTime(b.startTime).toLocaleTimeString(),
@@ -1185,19 +1211,22 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
 
   const BreakBlock = styled(Box)(({ theme }) => ({
     position: 'absolute',
-    left: theme.spacing(0.75),
-    right: theme.spacing(0.75),
-    backgroundColor: theme.palette.error.main,
-    color: theme.palette.error.contrastText,
-    padding: theme.spacing(1),
-    zIndex: 10,
-    borderRadius: theme.shape.borderRadius,
-    borderLeft: `4px solid ${theme.palette.error.dark}`,
-    boxShadow: theme.shadows[2],
+    left: theme.spacing(0.5),
+    right: theme.spacing(0.5),
+    backgroundColor: 'rgba(255, 205, 86, 0.9)', // More opaque yellow
+    borderRadius: theme.spacing(1),
+    padding: theme.spacing(0.5),
+    border: '2px solid rgba(255, 184, 0, 0.8)', // Thicker border
+    boxShadow: '0 2px 6px rgba(0, 0, 0, 0.25)', // Stronger shadow
+    zIndex: 4, // Higher z-index to ensure it's on top
+    color: '#000', // Black text for better contrast
     overflow: 'hidden',
+    transition: 'all 0.2s ease',
     '&:hover': {
-      backgroundColor: theme.palette.error.dark,
+      backgroundColor: 'rgba(255, 205, 86, 1)',
+      boxShadow: '0 4px 10px rgba(0, 0, 0, 0.3)',
     },
+    pointerEvents: 'auto', // Make sure it captures mouse events
   }));
 
   // Update the time column rendering
@@ -1728,11 +1757,12 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
                     borderRight: 'none'
                   }),
                   ...(isBreakTime(stylist.id, slot.hour, slot.minute) && { 
-                    backgroundColor: 'transparent', // Completely transparent
+                    backgroundColor: 'rgba(255, 217, 102, 0.6)', // More vibrant yellow background
+                    backgroundImage: 'repeating-linear-gradient(135deg, transparent, transparent 6px, rgba(255, 184, 0, 0.6) 6px, rgba(255, 184, 0, 0.6) 12px)', // Stronger diagonal stripes
+                    border: '1px dashed rgba(255, 153, 0, 0.8)', // Add dashed border for break slots
                     cursor: 'not-allowed',
-                    pointerEvents: 'none', // Prevent mouse events
                     '&:hover': {
-                      backgroundColor: 'transparent' // No hover effect
+                      backgroundColor: 'rgba(255, 217, 102, 0.7)' // Slightly darker on hover
                     }
                   })
                 }}
@@ -1750,17 +1780,6 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
               const breakStartTime = normalizeDateTime(breakItem.startTime);
               const breakEndTime = normalizeDateTime(breakItem.endTime);
               
-              // Log the break times for debugging
-              console.log('Break rendering:', {
-                id: breakItem.id,
-                startISOString: breakItem.startTime,
-                endISOString: breakItem.endTime,
-                normalizedStartTime: breakStartTime.toLocaleTimeString(),
-                normalizedEndTime: breakEndTime.toLocaleTimeString(),
-                startHour: breakStartTime.getHours(),
-                startMinute: breakStartTime.getMinutes()
-              });
-
               const top = getAppointmentPosition(breakItem.startTime);
               const height = getAppointmentDuration(breakItem.startTime, breakItem.endTime);
 
@@ -1773,40 +1792,74 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
                     display: 'flex',
                     flexDirection: 'column',
                     justifyContent: 'flex-start',
+                    alignItems: 'center',
                     gap: 0.5,
-                    cursor: 'pointer', // Add pointer cursor
-                    position: 'relative' // Ensure we can position buttons inside
+                    cursor: 'pointer'
                   }}
-                  onClick={() => handleEditBreakDialogOpen(breakItem)} // Add click handler
+                  onClick={() => handleEditBreakDialogOpen(breakItem)}
                 >
-                  <Typography variant="subtitle2" sx={{ fontWeight: 'bold', fontSize: '0.75rem' }}>
-                    Break Time
-                  </Typography>
-                  <Typography variant="caption" sx={{ fontSize: '0.7rem' }}>
-                    {formatTime(breakStartTime)} - {formatTime(breakEndTime)}
-                  </Typography>
-                  {breakItem.reason && (
-                    <Typography variant="caption" sx={{ fontSize: '0.7rem', opacity: 0.9 }}>
-                      {breakItem.reason}
+                  <Box 
+                    sx={{ 
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      padding: '3px 0',
+                      backgroundColor: 'rgba(255, 153, 0, 0.85)',
+                      textAlign: 'center',
+                      borderBottom: '1px solid rgba(0,0,0,0.1)'
+                    }}
+                  >
+                    <Typography variant="subtitle2" sx={{ fontWeight: 'bold', fontSize: '0.85rem', letterSpacing: '0.5px' }}>
+                      BREAK
                     </Typography>
-                  )}
+                  </Box>
+                  
+                  <Box sx={{ width: '100%', mt: 4, px: 1, textAlign: 'center' }}>
+                    <Typography variant="caption" sx={{ 
+                      fontSize: '0.8rem', 
+                      fontWeight: 'bold', 
+                      display: 'block',
+                      bgcolor: 'rgba(255, 255, 255, 0.7)',
+                      borderRadius: '4px',
+                      padding: '2px 4px',
+                      mx: 'auto',
+                      width: 'fit-content'
+                    }}>
+                      {formatTime(breakStartTime)} - {formatTime(breakEndTime)}
+                    </Typography>
+                    {breakItem.reason && (
+                      <Typography variant="caption" sx={{ 
+                        fontSize: '0.75rem', 
+                        display: 'block', 
+                        mt: 0.5, 
+                        fontStyle: 'italic',
+                        maxWidth: '100%',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap'
+                      }}>
+                        "{breakItem.reason}"
+                      </Typography>
+                    )}
+                  </Box>
                   
                   {/* Add edit and delete buttons directly on the break card */}
                   <Box 
                     sx={{ 
                       position: 'absolute', 
-                      top: 4, 
+                      bottom: 4, 
                       right: 4, 
                       display: 'flex', 
                       gap: 0.5,
-                      opacity: 0.7,
+                      opacity: 0.9,
                       '&:hover': { opacity: 1 }
                     }}
                     onClick={e => e.stopPropagation()} // Prevent opening edit dialog when clicking buttons
                   >
                     <IconButton 
                       size="small" 
-                      sx={{ padding: 0.3, backgroundColor: 'rgba(255,255,255,0.3)' }}
+                      sx={{ padding: 0.3, backgroundColor: 'rgba(255,255,255,0.6)', boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }}
                       onClick={(e) => {
                         e.stopPropagation();
                         handleEditBreakDialogOpen(breakItem);
@@ -1816,7 +1869,7 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
                     </IconButton>
                     <IconButton 
                       size="small" 
-                      sx={{ padding: 0.3, backgroundColor: 'rgba(255,255,255,0.3)' }}
+                      sx={{ padding: 0.3, backgroundColor: 'rgba(255,255,255,0.6)', boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }}
                       onClick={(e) => {
                         e.stopPropagation();
                         handleDeleteBreak(breakItem.id);
