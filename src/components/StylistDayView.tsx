@@ -1237,7 +1237,10 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
     // Use collectionServices if available, otherwise fall back to services
     const allServices = collectionServices || services || [];
     
-    let filteredServices = [...allServices];
+    // First filter by active status
+    let filteredServices = allServices.filter(service => 
+      service.active !== false
+    );
     
     // Filter by collection if one is selected
     if (selectedServiceCollection) {

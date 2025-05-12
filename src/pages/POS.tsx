@@ -162,6 +162,7 @@ interface POSService {
 	stock_quantity?: number;
 	gst_percentage?: number;
 	category?: string;
+	active?: boolean;
 }
 
 // Define POSMembership interface
@@ -755,16 +756,34 @@ export default function POS() {
 
 	// Filtered products and services based on search terms
 	const filteredProducts = useMemo(() => {
-		if (!productSearchTerm.trim()) return allProducts;
+		if (!productSearchTerm.trim()) {
+			// Only show products with stock and active status
+			return allProducts.filter(product => 
+				(product.stock_quantity === undefined || // Keep undefined stock for backward compatibility
+				product.stock_quantity === null || 
+				product.stock_quantity > 0) &&
+				product.active !== false // Only show products that are active or where active is undefined
+			);
+		}
 		return allProducts.filter(product => 
-			product.name.toLowerCase().includes(productSearchTerm.toLowerCase()) ||
-			(product.description && product.description.toLowerCase().includes(productSearchTerm.toLowerCase()))
+			(product.name.toLowerCase().includes(productSearchTerm.toLowerCase()) ||
+			(product.description && product.description.toLowerCase().includes(productSearchTerm.toLowerCase()))) &&
+			(product.stock_quantity === undefined || // Keep undefined stock for backward compatibility
+			product.stock_quantity === null || 
+			product.stock_quantity > 0) &&
+			product.active !== false // Only show products that are active or where active is undefined
 		);
 	}, [allProducts, productSearchTerm]);
 
 	const filteredServices = useMemo(() => {
-		if (!serviceSearchTerm.trim()) return services || [];
-		return (services || []).filter(service => 
+		// First filter by active status, then by search term
+		const activeServices = (services || []).filter(service => 
+			service.active !== false // Show services that are active or where active is undefined
+		);
+		
+		if (!serviceSearchTerm.trim()) return activeServices;
+		
+		return activeServices.filter(service => 
 			service.name.toLowerCase().includes(serviceSearchTerm.toLowerCase()) ||
 			(service.description && service.description.toLowerCase().includes(serviceSearchTerm.toLowerCase()))
 		);
@@ -881,7 +900,7 @@ export default function POS() {
 			// Get stock data directly from the products table
 			const { data, error } = await supabase
 				.from('products')
-				.select('id, name, stock_quantity, hsn_code, units');
+				.select('id, name, stock_quantity, hsn_code, units, active');
 
 			if (error) {
 				console.error("Error fetching product stock data:", error);
@@ -907,9 +926,13 @@ export default function POS() {
 
 						// If matching product found, update stock quantity
 						if (stockItem && stockItem.stock_quantity !== undefined) {
-							if (product.stock_quantity !== stockItem.stock_quantity) {
-								console.log(`Updating stock for ${product.name} from ${product.stock_quantity} to ${stockItem.stock_quantity}`);
-								return { ...product, stock_quantity: stockItem.stock_quantity };
+							if (product.stock_quantity !== stockItem.stock_quantity || product.active !== stockItem.active) {
+								console.log(`Updating product ${product.name} - Stock: ${product.stock_quantity} → ${stockItem.stock_quantity}, Active: ${product.active} → ${stockItem.active}`);
+								return { 
+									...product, 
+									stock_quantity: stockItem.stock_quantity,
+									active: stockItem.active
+								};
 							}
 						}
 
@@ -943,7 +966,8 @@ export default function POS() {
 					hsn_code: product.hsn_code,
 					units: product.units,
 					gst_percentage: product.gst_percentage,
-					stock_quantity: product.stock_quantity || 0
+					stock_quantity: product.stock_quantity || 0,
+					active: product.active
 				}));
 				allLoadedProducts = [...mappedProducts];
 			}

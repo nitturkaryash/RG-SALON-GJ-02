@@ -123,6 +123,11 @@ export default function Appointments() {
   const { clients: allClients = [], isLoading: loadingClients, updateClientFromAppointment } = useClients();
   const { serviceCollections = [], isLoading: loadingCollections } = useServiceCollections();
 
+  // Frontend filtering of services to use
+  const activeServices = useMemo(() => {
+    return (allServices || []).filter(service => service.active !== false);
+  }, [allServices]);
+
   // --- Moved Helper Function BEFORE its use in useMemo ---
   const convertStylists = (stylists: Stylist[]): any[] => {
     // Filter out stylists where available is false
@@ -773,7 +778,7 @@ export default function Appointments() {
               <Autocomplete
                 sx={{ mb: 2 }}
                 multiple
-                options={allServices || []}
+                options={activeServices}
                 getOptionLabel={(option) => `${option.name} (${formatCurrency(option.price)})`}
                 value={entry.services}
                 onChange={(event, newValue) => updateEntry(entry.id, { services: newValue })}

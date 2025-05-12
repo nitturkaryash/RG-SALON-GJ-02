@@ -15,6 +15,7 @@ export interface Product {
   mrp_per_unit_excl_gst: number;
   gst_percentage: number;
   stock_quantity: number;
+  active?: boolean; // Add active field defaulting to true
   created_at?: string;
   updated_at?: string;
 }
@@ -174,7 +175,7 @@ export const useProducts = () => {
       // Fetch products from Supabase - select only needed columns
       const { data, error: fetchError } = await supabase
         .from('products')
-        .select('id, name, price, hsn_code, units, mrp_incl_gst, mrp_excl_gst, gst_percentage, stock_quantity, created_at, updated_at') // Select specific columns
+        .select('id, name, price, hsn_code, units, mrp_incl_gst, mrp_excl_gst, gst_percentage, stock_quantity, active, created_at, updated_at') // Added active field
         .order('created_at', { ascending: false });
       
       if (fetchError) {
@@ -195,6 +196,7 @@ export const useProducts = () => {
         mrp_per_unit_excl_gst: Number(item.mrp_excl_gst) || 0, 
         gst_percentage: Number(item.gst_percentage) || 0,
         stock_quantity: Number(item.stock_quantity) || 0,
+        active: item.active, // Add active field
         created_at: item.created_at,
         updated_at: item.updated_at
       })) || [];
