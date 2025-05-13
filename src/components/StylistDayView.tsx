@@ -194,7 +194,7 @@ const AppointmentCard = styled(Box, {
   position: 'absolute',
   left: theme.spacing(0.75),
   right: theme.spacing(0.75),
-  height: `${duration}px`, // Explicitly set height in pixels
+  height: `${Math.max(duration, TIME_SLOT_HEIGHT / 2)}px`, // Ensure minimum height
   backgroundColor: 
     status === 'completed' 
       ? theme.palette.grey[400] // Grey background for completed appointments
@@ -225,6 +225,17 @@ const AppointmentCard = styled(Box, {
     transform: status === 'completed' ? 'none' : 'translateY(-2px)', // No lift on hover if completed
     zIndex: status === 'completed' ? 1 : 2, // Ensure non-completed are slightly above on hover
   },
+  '&:after': { // Debug outline
+    content: '""',
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    border: '1px dashed rgba(0,0,0,0.2)',
+    borderRadius: 8,
+    pointerEvents: 'none',
+  }
 }));
 
 // Update the BreakCard component to ensure it doesn't capture mouse events
@@ -814,9 +825,25 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
   
   // Filter appointments for the current day
   const todayAppointments = appointments.filter(appointment => {
+    // Explicitly create Date objects for clearer comparison
     const appointmentDate = new Date(appointment.start_time);
+    console.log("Comparing appointment date:", {
+      appointment_id: appointment.id,
+      appointmentDate: appointmentDate.toISOString().split('T')[0],
+      currentDate: currentDate.toISOString().split('T')[0],
+      isSameDay: isSameDay(appointmentDate, currentDate),
+      appClientName: appointment.clientDetails?.[0]?.full_name || 'Unknown'
+    });
+    
+    // Use date-fns isSameDay to correctly compare dates regardless of time
     return isSameDay(appointmentDate, currentDate);
   });
+
+  console.log("Filtered appointments:", todayAppointments.length, todayAppointments.map(a => ({ 
+    id: a.id, 
+    client: a.clientDetails?.[0]?.full_name || 'Unknown', 
+    time: `${formatTime(a.start_time)} - ${formatTime(a.end_time)}` 
+  })));
   
   // Make sure date-times are normalized to the current date to ensure consistent display
   const normalizeDateTime = (dateTimeString: string) => {
@@ -1356,19 +1383,30 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
   };
 
   const renderAppointmentsForStylist = (stylistId: string) => {
-    const stylistAppointments = appointments
+    // Filter appointments for this stylist and the current day
+    const stylistAppointments = todayAppointments
       .filter(app => app.stylist_id === stylistId)
-      .filter(app => isSameDay(new Date(app.start_time), selectedDate))
       .sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
+
+    console.log(`Rendering appointments for stylist ${stylistId}:`, stylistAppointments.length);
 
     return stylistAppointments.map(appointment => {
       const top = getAppointmentPosition(appointment.start_time);
       const duration = getAppointmentDuration(appointment.start_time, appointment.end_time);
 
+      console.log("Appointment position calculation:", {
+        id: appointment.id,
+        clientName: appointment.clientDetails?.[0]?.full_name || 'Unknown Client',
+        startTime: appointment.start_time,
+        formattedTime: formatTime(appointment.start_time),
+        topPosition: top,
+        duration: duration
+      });
+
       // Extract client and service info correctly
       const primaryClient = appointment.clientDetails?.[0];
       // Fallback to direct appointment.client_id if no clientDetails
-      const fallbackClient = allClients.find(c => c.id === appointment.client_id);
+      const fallbackClient = allClients && allClients.find(c => c.id === appointment.client_id);
       const clientName = primaryClient?.full_name || fallbackClient?.full_name || 'Unknown Client';
 
       const primaryServices = primaryClient?.services || [];
@@ -1645,6 +1683,32 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
       setSnackbarOpen(true);
     }
   };
+
+  // Debug log: Log all appointments on component mount/update
+  useEffect(() => {
+    console.log("Current appointments:", appointments.map(app => ({
+      id: app.id,
+      client: app.clientDetails?.[0]?.full_name || 'Unknown',
+      start: new Date(app.start_time).toLocaleTimeString(),
+      end: new Date(app.end_time).toLocaleTimeString(),
+      start_raw: app.start_time,
+      end_raw: app.end_time
+    })));
+    
+    // Also log the selectedDate
+    console.log("Selected date:", selectedDate, format(selectedDate, 'EEEE, MMMM d, yyyy'));
+  }, [appointments, selectedDate]);
+
+  // Keep currentDate in sync with selectedDate prop
+  useEffect(() => {
+    if (selectedDate && !isSameDay(selectedDate, currentDate)) {
+      console.log("Updating currentDate from selectedDate prop:", {
+        previousDate: currentDate.toISOString().split('T')[0],
+        newDate: selectedDate.toISOString().split('T')[0]
+      });
+      setCurrentDate(selectedDate);
+    }
+  }, [selectedDate]);
 
   return (
     <DayViewContainer>
