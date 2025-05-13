@@ -31,7 +31,8 @@ import {
   ToggleButton,
   List,
   ListItem,
-  ListItemText
+  ListItemText,
+  ListSubheader
 } from '@mui/material'
 import { useAppointments, Appointment, MergedAppointment } from '../hooks/useAppointments'
 import { useStylists, Stylist, StylistBreak } from '../hooks/useStylists'
@@ -120,6 +121,11 @@ interface ServiceWithGender extends BaseService {
   gender?: 'male' | 'female' | null;
 }
 
+// Define service option with groupHeader for the Autocomplete component
+interface ServiceOption extends BaseService {
+  groupHeader?: string;
+}
+
 // Clean up service types
 interface ExtendedClientAppointmentEntry extends Omit<ClientAppointmentEntry, 'services'> {
   services: ServiceEntry[];
@@ -147,9 +153,8 @@ export default function Appointments() {
   const [viewMode, setViewMode] = useState<'calendar' | 'list'>('calendar');
   const [serviceGenderFilter, setServiceGenderFilter] = useState<'male' | 'female' | null>('male');
   const [serviceSearchTerm, setServiceSearchTerm] = useState('');
-  const [clientDialogOpen, setClientDialogOpen] = useState(false);
-  // Add state for service dialog
-  const [serviceDialogOpen, setServiceDialogOpen] = useState(false);
+  // Removed clientDialogOpen state
+  // Removed serviceDialogOpen state
   const [selectedEntryId, setSelectedEntryId] = useState<string>('');
   const [serviceSelectedMessage, setServiceSelectedMessage] = useState<string>('');
   // Add client history state and function
@@ -422,7 +427,6 @@ export default function Appointments() {
     addServiceToEntry(selectedEntryId, service);
     setServiceSelectedMessage(`${service.name} selected!`);
     setTimeout(() => setServiceSelectedMessage(''), 2000);
-    setServiceDialogOpen(false);
   };
 
   // Add function to handle checking for existing service selection
@@ -437,11 +441,16 @@ export default function Appointments() {
       return;
     }
     
-    // Open service selection dialog
-    handleOpenServiceDialog(entryId);
+    // Set selectedEntryId - we'll use this for adding services directly from the dropdown
+    setSelectedEntryId(entryId);
   };
 
-  // Add a function to handle removing a service
+  // Add a function to handle opening service dialog
+  const handleOpenServiceDialog = (entryId: string) => {
+    setSelectedEntryId(entryId);
+  };
+
+  // Add function to handle removing a service
   const removeServiceFromEntry = (entryId: string, serviceIndex: number) => {
     const entry = clientEntries.find(e => e.id === entryId);
     if (!entry) return;
@@ -591,23 +600,20 @@ export default function Appointments() {
       for (const entry of clientEntries) {
         // Process client - create if new
         let clientId = entry.client?.id;
-        const clientName = entry.client?.full_name?.trim() || entry.client?.inputValue?.trim();
-        const clientPhone = entry.client?.phone?.trim();
-        const clientEmail = entry.client?.email?.trim();
-
-        if (!clientId && clientName && clientPhone) {
-          try {
-            const newClient = await updateClientFromAppointment(
-              clientName,
-              clientPhone,
-              clientEmail || '',
-              editingAppointment ? 'Created during appointment edit' : 'Created from appointment booking'
-            );
+        const isNewClient = !clientId && entry.client;
+        
+        // Create new client if needed
+        if (isNewClient) {
+          const newClient = await handleAddNewClient(entry);
+          if (newClient) {
             clientId = newClient.id;
-          } catch (clientError) {
-            console.error('Error creating new client:', clientError);
-            throw new Error(`Failed to create client: ${clientError instanceof Error ? clientError.message : 'Unknown error'}`);
+          } else {
+            throw new Error('Failed to create client. Please check client details and try again.');
           }
+        }
+
+        if (!clientId) {
+          throw new Error('Client ID is missing. Please select or create a client.');
         }
 
         // Generate clientDetails for the API
@@ -836,13 +842,6 @@ export default function Appointments() {
     }
   };
 
-  // Add function to handle opening service dialog
-  const handleOpenServiceDialog = (entryId: string) => {
-    setSelectedEntryId(entryId);
-    setServiceDialogOpen(true);
-    setServiceSearchTerm('');
-  };
-
   // Update handleDeleteAppointment function
   const handleDeleteAppointment = () => {
     if (!editingAppointment) return;
@@ -863,33 +862,6 @@ export default function Appointments() {
       console.error('Error deleting appointment:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       toast.error(`Delete failed: ${errorMessage}`);
-    }
-  };
-
-  // Function to add a new client
-  const handleAddNewClient = async (name: string, phone: string, email: string = '') => {
-    try {
-      const newClient = await updateClientFromAppointment(
-        name,
-        phone,
-        email,
-        'Created from appointment booking'
-      );
-      
-      // Update entry with the new client
-      updateEntry(clientEntries[0].id, { client: { ...newClient } });
-      
-      // Close client dialog
-      setClientDialogOpen(false);
-      
-      // Show success notification
-      toast.success(`Client ${name} created successfully!`);
-      return newClient;
-    } catch (error) {
-      console.error('Error creating new client:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      toast.error(`Failed to create client: ${errorMessage}`);
-      return null;
     }
   };
 
@@ -924,6 +896,39 @@ export default function Appointments() {
     setShowingClientHistory(false);
   };
 
+  // Function to add a new client
+  const handleAddNewClient = async (clientEntry: ExtendedClientAppointmentEntry) => {
+    if (!clientEntry.client) return null;
+    
+    const { full_name, phone, email = '' } = clientEntry.client;
+    
+    if (!full_name || !phone) {
+      toast.error('Name and phone are required for new clients');
+      return null;
+    }
+    
+    try {
+      const newClient = await updateClientFromAppointment(
+        full_name,
+        phone,
+        email,
+        'Created from appointment booking'
+      );
+      
+      // Update entry with the new client
+      updateEntry(clientEntry.id, { client: { ...newClient } });
+      
+      // Show success notification
+      toast.success(`Client ${full_name} created successfully!`);
+      return newClient;
+    } catch (error) {
+      console.error('Error creating new client:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      toast.error(`Failed to create client: ${errorMessage}`);
+      return null;
+    }
+  };
+
   // ============================================
   // Rendering Logic
   // ============================================
@@ -933,11 +938,6 @@ export default function Appointments() {
   }
 
   const showDrawer = !!selectedSlot || !!editingAppointment;
-
-  // Replace the handleOpenClientsList function to show a dialog instead of trying to use the hidden autocomplete
-  const handleOpenClientsList = () => {
-    setClientDialogOpen(true);
-  };
 
   return (
     <Box sx={{ 
@@ -1076,13 +1076,13 @@ export default function Appointments() {
             sx={{ position: 'absolute', left: 8 }}
           >
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M15 18L9 12L15 6" stroke="#E91E63" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              <path d="M15 18L9 12L15 6" stroke="#6B8E23" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
             </svg>
           </IconButton>
           <Typography 
             variant="h6" 
             sx={{ 
-              color: '#E91E63',
+              color: '#6B8E23',
               flex: 1,
               textAlign: 'center'
             }}
@@ -1102,7 +1102,7 @@ export default function Appointments() {
               {clientEntries[0]?.client?.id ? (
                 <Button 
                   sx={{ 
-                    color: '#E91E63', 
+                    color: '#6B8E23', 
                     textTransform: 'none' 
                   }}
                   size="small"
@@ -1110,191 +1110,156 @@ export default function Appointments() {
                 >
                   Client History
                 </Button>
-              ) : (
-                <Button 
-                  sx={{ 
-                    color: '#E91E63', 
-                    textTransform: 'none' 
-                  }}
-                  size="small"
-                  onClick={() => setClientDialogOpen(true)}
-                >
-                  Add Guest +
-                </Button>
-              )}
+              ) : null}
             </Box>
             
             {/* Client search field */}
-            <TextField
+            <Autocomplete
               fullWidth
-              placeholder="Search By Name Or No."
-              value={clientEntries[0]?.client?.full_name || ''}
-              InputProps={{
-                endAdornment: (
-                  <InputAdornment position="end">
-                    <IconButton onClick={() => setClientDialogOpen(true)}>
-                      <SearchIcon />
-                    </IconButton>
-                  </InputAdornment>
-                ),
-                sx: {
-                  borderRadius: '8px',
-                  '& .MuiOutlinedInput-notchedOutline': {
-                    borderColor: '#E0E0E0'
-                  }
+              freeSolo
+              filterOptions={(options, params) => {
+                const filtered = filterClients(options, params);
+                // Suggest the creation of a new value
+                const { inputValue } = params;
+                const isExisting = options.some((option) => inputValue === option.full_name);
+                if (inputValue !== '' && !isExisting) {
+                  filtered.push({
+                    inputValue: `Add new client: "${inputValue}"`,
+                    full_name: inputValue,
+                    id: '',
+                    phone: ''
+                  });
+                }
+                return filtered;
+              }}
+              options={allClients || []}
+              getOptionLabel={(option) => {
+                // Value selected with enter, right from the input
+                if (typeof option === 'string') {
+                  return option;
+                }
+                // Add "xxx" option created dynamically
+                if (option.inputValue) {
+                  return option.inputValue;
+                }
+                // Regular option from list
+                return `${option.full_name}${option.phone ? ` (${option.phone})` : ''}`;
+              }}
+              value={clientEntries[0]?.client}
+              onChange={(_, newValue) => {
+                if (typeof newValue === 'string') {
+                  // User typed a string, create a new client
+                  updateEntry(clientEntries[0].id, { 
+                    client: { 
+                      id: '',
+                      full_name: newValue,
+                      phone: '',
+                      email: '',
+                      created_at: ''
+                    } 
+                  });
+                } else if (newValue && newValue.inputValue) {
+                  // Create a new client from the "Add new" option
+                  updateEntry(clientEntries[0].id, { 
+                    client: { 
+                      id: '',
+                      full_name: newValue.full_name,
+                      phone: '',
+                      email: '',
+                      created_at: ''
+                    } 
+                  });
+                } else {
+                  // Regular option selected
+                  updateEntry(clientEntries[0].id, { client: newValue });
                 }
               }}
-              onClick={() => setClientDialogOpen(true)}
-              sx={{ cursor: 'pointer' }}
-            />
-
-            <Dialog 
-              open={clientDialogOpen} 
-              onClose={() => setClientDialogOpen(false)}
-              maxWidth="sm"
-              fullWidth
-            >
-              <DialogTitle>
-                Select Client
-                <IconButton
-                  aria-label="close"
-                  onClick={() => setClientDialogOpen(false)}
-                  sx={{ position: 'absolute', right: 8, top: 8 }}
-                >
-                  <CloseIcon />
-                </IconButton>
-              </DialogTitle>
-              <DialogContent dividers>
+              renderInput={(params) => (
                 <TextField
-                  autoFocus
-                  margin="dense"
-                  label="Search Clients"
-                  fullWidth
+                  {...params}
+                  placeholder="Search By Name Or No."
                   variant="outlined"
                   InputProps={{
+                    ...params.InputProps,
                     endAdornment: (
-                      <InputAdornment position="end">
-                        <SearchIcon />
-                      </InputAdornment>
-                    )
-                  }}
-                  sx={{ mb: 2 }}
-                />
-                <Box sx={{ maxHeight: '300px', overflow: 'auto' }}>
-                  <List>
-                    {allClients.map(client => (
-                      <ListItem 
-                        button 
-                        key={client.id}
-                        onClick={() => {
-                          updateEntry(clientEntries[0].id, { client: { ...client } });
-                          setClientDialogOpen(false);
-                        }}
-                      >
-                        <ListItemText 
-                          primary={client.full_name} 
-                          secondary={client.phone || 'No phone'}
-                        />
-                      </ListItem>
-                    ))}
-                  </List>
-                </Box>
-                <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 2 }}>
-                  <Button
-                    onClick={() => {
-                      // Show new client form instead of just setting an empty client
-                      const newClient = {
-                        id: '',
-                        full_name: '',
-                        phone: '',
-                        email: '',
-                        created_at: ''
-                      };
-                      updateEntry(clientEntries[0].id, { client: newClient });
-                      setClientDialogOpen(false);
-                    }}
-                    color="primary"
-                    startIcon={<AddIcon />}
-                  >
-                    Add New Client
-                  </Button>
-                </Box>
-              </DialogContent>
-            </Dialog>
-
-            {/* New Client Form (only show if client exists and has no ID) */}
-            {(clientEntries[0].client && !clientEntries[0].client.id) && (
-              <Box sx={{ mt: 2, p: 2, border: '1px solid #E0E0E0', borderRadius: 1, bgcolor: '#FAFAFA' }}>
-                <Typography variant="subtitle2" sx={{ mb: 2, color: '#E91E63' }}>
-                  New Client Details
-                </Typography>
-                <TextField
-                  label="Client Name"
-                  fullWidth
-                  required
-                  value={clientEntries[0].client.full_name || ''}
-                  onChange={(e) => updateEntry(clientEntries[0].id, { 
-                    client: { ...clientEntries[0].client!, full_name: e.target.value }
-                  })}
-                  margin="dense"
-                  variant="outlined"
-                  sx={{ mb: 2 }}
-                />
-                <Grid container spacing={2}>
-                  <Grid item xs={6}>
-                    <TextField
-                      label="Phone (Required)"
-                      fullWidth
-                      required
-                      value={clientEntries[0].client.phone || ''}
-                      onChange={(e) => updateEntry(clientEntries[0].id, { 
-                        client: { ...clientEntries[0].client!, phone: e.target.value }
-                      })}
-                      margin="dense"
-                      variant="outlined"
-                    />
-                  </Grid>
-                  <Grid item xs={6}>
-                    <TextField
-                      label="Email (Optional)"
-                      fullWidth
-                      value={clientEntries[0].client.email || ''}
-                      onChange={(e) => updateEntry(clientEntries[0].id, { 
-                        client: { ...clientEntries[0].client!, email: e.target.value }
-                      })}
-                      margin="dense"
-                      variant="outlined"
-                    />
-                  </Grid>
-                </Grid>
-                <Box sx={{ mt: 2, display: 'flex', justifyContent: 'flex-end' }}>
-                  <Button
-                    variant="contained"
-                    color="primary"
-                    onClick={() => {
-                      const { client } = clientEntries[0];
-                      if (client && client.full_name && client.phone) {
-                        handleAddNewClient(client.full_name, client.phone, client.email || '');
-                      } else {
-                        toast.error('Please fill required fields (name and phone)');
+                      <>
+                        <InputAdornment position="end">
+                          <SearchIcon />
+                        </InputAdornment>
+                        {params.InputProps.endAdornment}
+                      </>
+                    ),
+                    sx: {
+                      borderRadius: '8px',
+                      '& .MuiOutlinedInput-notchedOutline': {
+                        borderColor: '#E0E0E0'
                       }
-                    }}
-                    sx={{ 
-                      bgcolor: '#E91E63',
-                      '&:hover': { bgcolor: '#C2185B' }
-                    }}
-                  >
-                    Save Client
-                  </Button>
-                </Box>
-              </Box>
-            )}
+                    }
+                  }}
+                />
+              )}
+              renderOption={(props, option) => {
+                // Show "Add new client" option differently
+                if (option.inputValue) {
+                  return (
+                    <li {...props} style={{ fontStyle: 'italic', color: '#6B8E23' }}>
+                      {option.inputValue}
+                    </li>
+                  );
+                }
+                
+                // Regular client option
+                return (
+                  <li {...props}>
+                    <Box sx={{ display: 'flex', flexDirection: 'column' }}>
+                      <Typography variant="body1">{option.full_name}</Typography>
+                      {option.phone && (
+                        <Typography variant="body2" color="text.secondary">
+                          {option.phone}
+                        </Typography>
+                      )}
+                    </Box>
+                  </li>
+                );
+              }}
+              ListboxProps={{
+                style: { maxHeight: '250px', overflow: 'auto' },
+              }}
+            />
 
             {/* No client selected message */}
             {!clientEntries[0]?.client && (
               <Typography variant="body2" color="error" sx={{ mt: 2 }}>
                 Select guest details
               </Typography>
+            )}
+            
+            {/* Phone input for new client */}
+            {clientEntries[0]?.client && !clientEntries[0]?.client.id && (
+              <TextField
+                fullWidth
+                label="Mobile Number *"
+                value={clientEntries[0]?.client?.phone || ''}
+                onChange={(e) => {
+                  const updatedClient = {
+                    ...clientEntries[0].client,
+                    phone: e.target.value
+                  };
+                  updateEntry(clientEntries[0].id, { client: updatedClient });
+                }}
+                required
+                error={!clientEntries[0]?.client?.phone}
+                helperText={!clientEntries[0]?.client?.phone ? "Phone required for new client" : ""}
+                sx={{ mt: 2 }}
+                InputProps={{
+                  sx: {
+                    borderRadius: '8px',
+                    '& .MuiOutlinedInput-notchedOutline': {
+                      borderColor: '#E0E0E0'
+                    }
+                  }
+                }}
+              />
             )}
 
             {/* Client History Dialog */}
@@ -1304,7 +1269,7 @@ export default function Appointments() {
               maxWidth="md"
               fullWidth
             >
-              <DialogTitle sx={{ bgcolor: '#E91E63', color: 'white' }}>
+              <DialogTitle sx={{ bgcolor: '#6B8E23', color: 'white' }}>
                 Client History: {clientEntries[0]?.client?.full_name}
                 <IconButton
                   aria-label="close"
@@ -1332,7 +1297,7 @@ export default function Appointments() {
                           key={appointment.id}
                           divider
                           sx={{ 
-                            borderLeft: '4px solid #E91E63',
+                            borderLeft: '4px solid #6B8E23',
                             mb: 1,
                             borderRadius: 1,
                             bgcolor: '#F9F9F9'
@@ -1393,132 +1358,171 @@ export default function Appointments() {
               <span style={{ marginRight: '8px' }}>2.</span> Service Details
             </Typography>
             
-            {/* Service search field (keep in the UI for quick selection) */}
-            <TextField
+            {/* Service search dropdown */}
+            <Autocomplete<ServiceOption, false, false, true>
               fullWidth
-              placeholder="Search Service By Name"
-              value={serviceSearchTerm}
-              onChange={(e) => setServiceSearchTerm(e.target.value)}
-              InputProps={{
-                endAdornment: (
-                  <InputAdornment position="end">
-                    <IconButton>
-                      <SearchIcon />
-                    </IconButton>
-                  </InputAdornment>
-                ),
-                sx: {
-                  borderRadius: '8px',
-                  mb: 2,
-                  '& .MuiOutlinedInput-notchedOutline': {
-                    borderColor: '#E0E0E0'
+              freeSolo
+              disableClearable
+              value={null}
+              options={(() => {
+                // Filter services based on search and gender
+                const filteredServices = activeServices.filter(service => 
+                  (!serviceGenderFilter || (service as ServiceWithGender).gender === serviceGenderFilter || !(service as ServiceWithGender).gender) &&
+                  (!serviceSearchTerm || service.name.toLowerCase().includes(serviceSearchTerm.toLowerCase()))
+                );
+                
+                // Group by category
+                const servicesByCategory: Record<string, BaseService[]> = {};
+                filteredServices.forEach(service => {
+                  const category = service.category || 'HAIR';
+                  if (!servicesByCategory[category]) {
+                    servicesByCategory[category] = [];
                   }
+                  servicesByCategory[category].push(service);
+                });
+                
+                // Create options with category grouping
+                return Object.entries(servicesByCategory).flatMap(([category, services]) => [
+                  { groupHeader: category, id: `header-${category}`, name: category, price: 0, category } as ServiceOption,
+                  ...services
+                ]);
+              })()}
+              groupBy={(option) => option.groupHeader ? '' : (option.category || 'HAIR')}
+              getOptionLabel={(option) => typeof option === 'string' ? option : option.name}
+              renderOption={(props, option: ServiceOption) => {
+                // If it's a group header, render it differently
+                if (option.groupHeader) {
+                  return (
+                    <ListSubheader key={option.id} component="div" style={{ fontWeight: 'bold', textTransform: 'uppercase' }}>
+                      {option.groupHeader}
+                    </ListSubheader>
+                  );
+                }
+                
+                // Otherwise render a normal option
+                return (
+                  <MenuItem component="li" {...props} key={option.id}>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}>
+                      <span>{option.name}</span>
+                      <Typography variant="body2" fontWeight="medium">₹{option.price}</Typography>
+                    </Box>
+                  </MenuItem>
+                );
+              }}
+              filterOptions={(options, state) => {
+                // Filter options based on the input value
+                return options.filter(option => {
+                  // Always include group headers
+                  if (option.groupHeader) return true;
+                  // Filter by search text
+                  return option.name.toLowerCase().includes(state.inputValue.toLowerCase());
+                });
+              }}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label="Search Service By Name"
+                  value={serviceSearchTerm}
+                  onChange={(e) => setServiceSearchTerm(e.target.value)}
+                  InputProps={{
+                    ...params.InputProps,
+                    endAdornment: (
+                      <>
+                        <InputAdornment position="end">
+                          <SearchIcon />
+                        </InputAdornment>
+                        {params.InputProps.endAdornment}
+                      </>
+                    ),
+                  }}
+                  sx={{
+                    borderRadius: '8px',
+                    '& .MuiOutlinedInput-notchedOutline': {
+                      borderColor: '#E0E0E0'
+                    }
+                  }}
+                />
+              )}
+              ListboxProps={{
+                style: { 
+                  padding: 0,
+                },
+              }}
+              ListboxComponent={(props: React.HTMLAttributes<HTMLUListElement>) => (
+                <Box component="ul" {...props}>
+                  <Box 
+                    sx={{ 
+                      position: 'sticky', 
+                      top: 0, 
+                      bgcolor: 'background.paper', 
+                      zIndex: 2,
+                      py: 1.5,
+                      px: 2,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 2,
+                      borderBottom: '1px solid',
+                      borderColor: 'divider'
+                    }}
+                  >
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                      <Typography variant="body2" sx={{ fontWeight: 'medium', color: 'text.secondary' }}>
+                        Filter:
+                      </Typography>
+                      <Button 
+                        size="small" 
+                        variant={serviceGenderFilter === 'female' ? 'contained' : 'outlined'}
+                        onClick={() => setServiceGenderFilter('female')}
+                        sx={{ 
+                          minWidth: '80px',
+                          borderRadius: '20px', 
+                          textTransform: 'none',
+                          bgcolor: serviceGenderFilter === 'female' ? '#6B8E23' : 'transparent',
+                          color: serviceGenderFilter === 'female' ? 'white' : '#757575',
+                          borderColor: '#E0E0E0',
+                          '&:hover': {
+                            bgcolor: serviceGenderFilter === 'female' ? '#566E1C' : 'rgba(0,0,0,0.04)'
+                          }
+                        }}
+                      >
+                        Female
+                      </Button>
+                      <Button 
+                        size="small"
+                        variant={serviceGenderFilter === 'male' ? 'contained' : 'outlined'}
+                        onClick={() => setServiceGenderFilter('male')}
+                        sx={{ 
+                          minWidth: '80px',
+                          borderRadius: '20px', 
+                          textTransform: 'none',
+                          bgcolor: serviceGenderFilter === 'male' ? '#6B8E23' : 'transparent',
+                          color: serviceGenderFilter === 'male' ? 'white' : '#757575',
+                          borderColor: '#E0E0E0',
+                          '&:hover': {
+                            bgcolor: serviceGenderFilter === 'male' ? '#566E1C' : 'rgba(0,0,0,0.04)'
+                          }
+                        }}
+                      >
+                        Male
+                      </Button>
+                    </Box>
+                  </Box>
+                  {props.children}
+                </Box>
+              )}
+              onChange={(_, newValue) => {
+                // Handle selection
+                if (newValue && !newValue.groupHeader) {
+                  handleCheckServiceSelectionBeforeDialog(clientEntries[0].id);
+                  handleServiceSelection(newValue as BaseService);
                 }
               }}
-              onClick={() => handleCheckServiceSelectionBeforeDialog(clientEntries[0].id)}
-              sx={{ cursor: 'pointer' }}
+              onInputChange={(_, newInputValue) => {
+                setServiceSearchTerm(newInputValue);
+              }}
+              sx={{ mb: 3 }}
             />
-            
-            {/* Gender Filter Tabs */}
-            <Box sx={{ mb: 3, display: 'flex', gap: 1 }}>
-              <Button
-                variant={serviceGenderFilter === 'female' ? 'contained' : 'outlined'}
-                onClick={() => setServiceGenderFilter('female')}
-                sx={{ 
-                  borderRadius: '20px', 
-                  textTransform: 'none',
-                  bgcolor: serviceGenderFilter === 'female' ? '#E91E63' : 'transparent',
-                  color: serviceGenderFilter === 'female' ? 'white' : '#757575',
-                  borderColor: '#E0E0E0',
-                  '&:hover': {
-                    bgcolor: serviceGenderFilter === 'female' ? '#D81B60' : 'rgba(0,0,0,0.04)'
-                  },
-                }}
-              >
-                female
-              </Button>
-              <Button
-                variant={serviceGenderFilter === 'male' ? 'contained' : 'outlined'}
-                onClick={() => setServiceGenderFilter('male')}
-                sx={{ 
-                  borderRadius: '20px', 
-                  textTransform: 'none',
-                  bgcolor: serviceGenderFilter === 'male' ? '#2196F3' : 'transparent',
-                  color: serviceGenderFilter === 'male' ? 'white' : '#757575',
-                  borderColor: '#E0E0E0',
-                  '&:hover': {
-                    bgcolor: serviceGenderFilter === 'male' ? '#1E88E5' : 'rgba(0,0,0,0.04)'
-                  },
-                }}
-              >
-                male
-              </Button>
-            </Box>
-
-            {/* Service categories and items */}
-            <Box sx={{ mb: 2, borderRadius: 1, border: '1px solid #E0E0E0', bgcolor: 'white', maxHeight: '300px', overflow: 'auto' }}>
-              {(() => {
-                // Get all categories
-                const categories = Array.from(new Set(activeServices
-                  .filter(service => 
-                    (!serviceGenderFilter || (service as ServiceWithGender).gender === serviceGenderFilter || !(service as ServiceWithGender).gender) && 
-                    (!serviceSearchTerm || service.name.toLowerCase().includes(serviceSearchTerm.toLowerCase()))
-                  )
-                  .map(service => service.category || 'HAIR')
-                ));
-
-                return categories.map(category => (
-                  <Box key={category} sx={{ m: 2 }}>
-                    {/* Category Header */}
-                    <Typography 
-                      variant="subtitle2" 
-                      sx={{ 
-                        fontWeight: 'bold', 
-                        mb: 1, 
-                        textTransform: 'uppercase',
-                        color: '#424242',
-                        borderBottom: '1px solid #E0E0E0',
-                        pb: 0.5
-                      }}
-                    >
-                      {category}
-                    </Typography>
-                    
-                    {/* Services in this category */}
-                    {activeServices
-                      .filter(service => 
-                        (service.category || 'HAIR') === category && 
-                        (!serviceGenderFilter || (service as ServiceWithGender).gender === serviceGenderFilter || !(service as ServiceWithGender).gender) &&
-                        (!serviceSearchTerm || service.name.toLowerCase().includes(serviceSearchTerm.toLowerCase()))
-                      )
-                      .map(service => (
-                        <Box 
-                          key={service.id} 
-                          sx={{ 
-                            display: 'flex', 
-                            justifyContent: 'space-between', 
-                            alignItems: 'center', 
-                            p: 1.5,
-                            borderRadius: 1,
-                            mb: 1,
-                            border: '1px solid transparent',
-                            '&:hover': { 
-                              bgcolor: '#f5f5f5', 
-                              cursor: 'pointer',
-                              border: '1px solid #E0E0E0'
-                            }
-                          }}
-                          onClick={() => handleServiceSelection(service as BaseService)}
-                        >
-                          <Typography variant="body2">{service.name}</Typography>
-                          <Typography variant="body2" fontWeight="medium">₹{service.price}</Typography>
-                        </Box>
-                      ))
-                    }
-                  </Box>
-                ));
-              })()}
-            </Box>
 
             {/* Selected Services */}
             {clientEntries[0].services.map((service, serviceIndex) => (
@@ -1633,11 +1637,11 @@ export default function Appointments() {
                     textTransform: 'none', 
                     borderRadius: '20px',
                     bgcolor: 'white',
-                    borderColor: '#E91E63',
-                    color: '#E91E63',
+                    borderColor: '#6B8E23',
+                    color: '#6B8E23',
                     '&:hover': {
-                      borderColor: '#C2185B',
-                      bgcolor: 'rgba(233, 30, 99, 0.04)'
+                      borderColor: '#566E1C',
+                      bgcolor: 'rgba(107, 142, 35, 0.04)'
                     }
                   }}
                 >
@@ -1660,154 +1664,6 @@ export default function Appointments() {
                 {serviceSelectedMessage}
               </Box>
             )}
-            
-            {/* Service Selection Dialog */}
-            <Dialog
-              open={serviceDialogOpen}
-              onClose={() => setServiceDialogOpen(false)}
-              maxWidth="md"
-              fullWidth
-            >
-              <DialogTitle>
-                Select Service
-                <IconButton
-                  aria-label="close"
-                  onClick={() => setServiceDialogOpen(false)}
-                  sx={{ position: 'absolute', right: 8, top: 8 }}
-                >
-                  <CloseIcon />
-                </IconButton>
-              </DialogTitle>
-              <DialogContent dividers>
-                {/* Service search field */}
-                <TextField
-                  autoFocus
-                  fullWidth
-                  placeholder="Search Service By Name"
-                  value={serviceSearchTerm}
-                  onChange={(e) => setServiceSearchTerm(e.target.value)}
-                  InputProps={{
-                    endAdornment: (
-                      <InputAdornment position="end">
-                        <SearchIcon />
-                      </InputAdornment>
-                    ),
-                    sx: {
-                      borderRadius: '8px',
-                      mb: 2,
-                      '& .MuiOutlinedInput-notchedOutline': {
-                        borderColor: '#E0E0E0'
-                      }
-                    }
-                  }}
-                  sx={{ mb: 2 }}
-                />
-                
-                {/* Gender Filter Tabs */}
-                <Box sx={{ mb: 3, display: 'flex', gap: 1 }}>
-                  <Button
-                    variant={serviceGenderFilter === 'female' ? 'contained' : 'outlined'}
-                    onClick={() => setServiceGenderFilter('female')}
-                    sx={{ 
-                      borderRadius: '20px', 
-                      textTransform: 'none',
-                      bgcolor: serviceGenderFilter === 'female' ? '#E91E63' : 'transparent',
-                      color: serviceGenderFilter === 'female' ? 'white' : '#757575',
-                      borderColor: '#E0E0E0',
-                      '&:hover': {
-                        bgcolor: serviceGenderFilter === 'female' ? '#D81B60' : 'rgba(0,0,0,0.04)'
-                      },
-                    }}
-                  >
-                    female
-                  </Button>
-                  <Button
-                    variant={serviceGenderFilter === 'male' ? 'contained' : 'outlined'}
-                    onClick={() => setServiceGenderFilter('male')}
-                    sx={{ 
-                      borderRadius: '20px', 
-                      textTransform: 'none',
-                      bgcolor: serviceGenderFilter === 'male' ? '#2196F3' : 'transparent',
-                      color: serviceGenderFilter === 'male' ? 'white' : '#757575',
-                      borderColor: '#E0E0E0',
-                      '&:hover': {
-                        bgcolor: serviceGenderFilter === 'male' ? '#1E88E5' : 'rgba(0,0,0,0.04)'
-                      },
-                    }}
-                  >
-                    male
-                  </Button>
-                </Box>
-                
-                {/* Service categories and items */}
-                <Box sx={{ maxHeight: '400px', overflow: 'auto' }}>
-                  {(() => {
-                    // Get all categories
-                    const categories = Array.from(new Set(activeServices
-                      .filter(service => 
-                        (!serviceGenderFilter || (service as ServiceWithGender).gender === serviceGenderFilter || !(service as ServiceWithGender).gender) && 
-                        (!serviceSearchTerm || service.name.toLowerCase().includes(serviceSearchTerm.toLowerCase()))
-                      )
-                      .map(service => service.category || 'HAIR')
-                    ));
-
-                    return categories.map(category => (
-                      <Box key={category} sx={{ m: 2 }}>
-                        {/* Category Header */}
-                        <Typography 
-                          variant="subtitle2" 
-                          sx={{ 
-                            fontWeight: 'bold', 
-                            mb: 1, 
-                            textTransform: 'uppercase',
-                            color: '#424242',
-                            borderBottom: '1px solid #E0E0E0',
-                            pb: 0.5
-                          }}
-                        >
-                          {category}
-                        </Typography>
-                        
-                        {/* Services in this category */}
-                        {activeServices
-                          .filter(service => 
-                            (service.category || 'HAIR') === category && 
-                            (!serviceGenderFilter || (service as ServiceWithGender).gender === serviceGenderFilter || !(service as ServiceWithGender).gender) &&
-                            (!serviceSearchTerm || service.name.toLowerCase().includes(serviceSearchTerm.toLowerCase()))
-                          )
-                          .map(service => (
-                            <Box 
-                              key={service.id} 
-                              sx={{ 
-                                display: 'flex', 
-                                justifyContent: 'space-between', 
-                                alignItems: 'center', 
-                                p: 1.5,
-                                borderRadius: 1,
-                                mb: 1,
-                                border: '1px solid transparent',
-                                '&:hover': { 
-                                  bgcolor: '#f5f5f5', 
-                                  cursor: 'pointer',
-                                  border: '1px solid #E0E0E0'
-                                }
-                              }}
-                              onClick={() => handleServiceSelection(service as BaseService)}
-                            >
-                              <Typography variant="body2">{service.name}</Typography>
-                              <Typography variant="body2" fontWeight="medium">₹{service.price}</Typography>
-                            </Box>
-                          ))
-                        }
-                      </Box>
-                    ));
-                  })()}
-                </Box>
-              </DialogContent>
-              <DialogActions>
-                <Button onClick={() => setServiceDialogOpen(false)}>Cancel</Button>
-              </DialogActions>
-            </Dialog>
           </Box>
           
           {/* Instruction Details Section */}
@@ -1841,9 +1697,9 @@ export default function Appointments() {
             onClick={handleSaveAppointment} 
             variant="contained" 
             sx={{ 
-              bgcolor: '#E91E63', // Use theme's primary color
+              bgcolor: '#6B8E23', // Changed to olive green
               '&:hover': {
-                bgcolor: '#C2185B' // Darker shade for hover
+                bgcolor: '#566E1C' // Darker shade for hover
               },
               borderRadius: '8px',
               textTransform: 'none',
@@ -1884,19 +1740,33 @@ export default function Appointments() {
         aria-labelid="delete-appointment-title"
         aria-describedby="delete-appointment-description"
       >
-        <DialogTitle id="delete-appointment-title" sx={{ color: '#E91E63' }}>Delete Appointment?</DialogTitle>
+        <DialogTitle id="delete-appointment-title" sx={{ color: '#6B8E23' }}>Delete Appointment?</DialogTitle>
         <DialogContent>
           <DialogContentText id="delete-appointment-description">
             Are you sure you want to delete this appointment? This action cannot be undone.
           </DialogContentText>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setDeleteDialogOpen(false)} color="inherit">
+          <Button onClick={() => setDeleteDialogOpen(false)} 
+            sx={{ 
+              color: '#6B8E23',
+              borderColor: '#6B8E23',
+              '&:hover': {
+                borderColor: '#566E1C',
+                backgroundColor: 'rgba(107, 142, 35, 0.04)'
+              }
+            }}>
             Cancel
           </Button>
           <Button
             onClick={confirmDeleteAppointment}
-            color="error"
+            sx={{
+              bgcolor: '#6B8E23',
+              color: 'white',
+              '&:hover': {
+                bgcolor: '#566E1C'
+              }
+            }}
             variant="contained"
             autoFocus
           >

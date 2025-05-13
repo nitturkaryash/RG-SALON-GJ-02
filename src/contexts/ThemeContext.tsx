@@ -18,23 +18,23 @@ const getThemeOptions = (mode: ThemeMode) => ({
       ? {
           // Light mode colors
           primary: {
-            main: '#5E35B1', // Deep purple
+            main: '#6B8E23', // Olive green
           },
           secondary: {
-            main: '#FF4081', // Pink
+            main: '#D2B48C', // Tan/beige
           },
           background: {
-            default: '#F5F5F5',
+            default: '#F5F5F0', // Off-white
             paper: '#FFFFFF',
           },
         }
       : {
           // Dark mode colors
           primary: {
-            main: '#7C4DFF', // Light purple
+            main: '#8FB03E', // Lighter olive for dark mode
           },
           secondary: {
-            main: '#FF80AB', // Light pink
+            main: '#E6D5B8', // Lighter tan for dark mode
           },
           background: {
             default: '#121212',
@@ -72,9 +72,9 @@ const getThemeOptions = (mode: ThemeMode) => ({
           fontWeight: 600,
         },
         containedPrimary: {
-          boxShadow: mode === 'light' ? '0 4px 10px rgba(94, 53, 177, 0.2)' : 'none',
+          boxShadow: mode === 'light' ? '0 4px 10px rgba(107, 142, 35, 0.2)' : 'none',
           '&:hover': {
-            boxShadow: mode === 'light' ? '0 6px 12px rgba(94, 53, 177, 0.3)' : 'none',
+            boxShadow: mode === 'light' ? '0 6px 12px rgba(107, 142, 35, 0.3)' : 'none',
           },
         },
       },

@@ -647,25 +647,33 @@ export default function ProductMaster() {
               />
             </Grid>
             <Grid item xs={12} sm={6}>
-              <FormControl fullWidth>
-                <InputLabel id="units-label">Unit of Measure *</InputLabel>
-                <Select
-                  labelId="units-label"
-                  name="units"
-                  value={formData.units}
-                  onChange={handleInputChange}
-                  label="Unit of Measure *"
-                  inputProps={{
-                    readOnly: formData.fromPurchaseHistory
-                  }}
-                >
-                  {unitOptions.map((unit) => (
-                    <MenuItem key={unit} value={unit}>
-                      {unit}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
+              <Autocomplete
+                freeSolo
+                options={unitOptions}
+                value={formData.units}
+                onChange={(event, newValue) => {
+                  setFormData((prev) => ({
+                    ...prev,
+                    units: typeof newValue === 'string' ? newValue : '',
+                  }));
+                }}
+                onInputChange={(event, newInputValue, reason) => {
+                  if (reason === 'input') {
+                    setFormData((prev) => ({
+                      ...prev,
+                      units: newInputValue,
+                    }));
+                  }
+                }}
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    label="Unit of Measure *"
+                    required
+                  />
+                )}
+                disabled={formData.fromPurchaseHistory}
+              />
             </Grid>
             <Grid item xs={12} sm={6}>
               <TextField

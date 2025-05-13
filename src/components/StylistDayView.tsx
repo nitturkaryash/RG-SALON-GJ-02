@@ -2289,21 +2289,62 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
         {/* Footer with action buttons */}
         <Box sx={{ p: 3, pt: 2, display: 'flex', justifyContent: 'flex-end', gap: 2, borderTop: '1px solid', borderColor: 'divider' }}>
           {onDeleteAppointment && (
-            <Button onClick={handleDeleteAppointment} color="error" sx={{ mr: 'auto' }}>
+            <Button 
+              onClick={handleDeleteAppointment} 
+              color="error" 
+              sx={{ 
+                mr: 'auto',
+                borderColor: '#d32f2f',
+                '&:hover': {
+                  borderColor: '#b71c1c',
+                  backgroundColor: 'rgba(211, 47, 47, 0.04)'
+                }
+              }}
+              variant="outlined"
+            >
               Delete
             </Button>
           )}
           <Button 
             onClick={handleCreateBill}
-            color="success"
+            sx={{ 
+              mr: 'auto',
+              bgcolor: '#6B8E23',
+              color: 'white',
+              '&:hover': {
+                bgcolor: '#566E1C'
+              }
+            }}
+            variant="contained"
             startIcon={<Receipt />}
-            sx={{ mr: 'auto' }}
           >
             Create Bill
           </Button>
-          <Button onClick={handleEditDialogClose}>Cancel</Button>
-          <Button onClick={handleUpdateAppointment} variant="contained" color="primary">
-            Update
+          <Button 
+            onClick={handleEditDialogClose}
+            sx={{ 
+              color: '#6B8E23',
+              borderColor: '#6B8E23',
+              '&:hover': {
+                borderColor: '#566E1C',
+                backgroundColor: 'rgba(107, 142, 35, 0.04)'
+              }
+            }}
+            variant="outlined"
+          >
+            Cancel
+          </Button>
+          <Button 
+            onClick={handleUpdateAppointment} 
+            variant="contained" 
+            sx={{ 
+              bgcolor: '#6B8E23',
+              '&:hover': {
+                bgcolor: '#566E1C'
+              }
+            }}
+          >
+            Update Appointment
           </Button>
         </Box>
       </Drawer>
