@@ -26,7 +26,9 @@ import {
   DialogTitle,
   DialogContent,
   DialogContentText,
-  DialogActions
+  DialogActions,
+  ToggleButtonGroup,
+  ToggleButton
 } from '@mui/material'
 import { useAppointments, Appointment, MergedAppointment } from '../hooks/useAppointments'
 import { useStylists, Stylist, StylistBreak } from '../hooks/useStylists'
@@ -35,7 +37,8 @@ import { useClients, Client } from '../hooks/useClients'
 import { format, addDays, subDays } from 'date-fns'
 import { useServiceCollections } from '../hooks/useServiceCollections';
 import StylistDayView, { Break } from '../components/StylistDayView'
-import { Search as SearchIcon, Add as AddIcon, Delete as DeleteIcon, Close as CloseIcon, Receipt as ReceiptIcon } from '@mui/icons-material'
+import FutureAppointmentsList from '../components/FutureAppointmentsList'
+import { Search as SearchIcon, Add as AddIcon, Delete as DeleteIcon, Close as CloseIcon, Receipt as ReceiptIcon, CalendarMonth as CalendarIcon, ViewList as ListIcon } from '@mui/icons-material'
 import { formatCurrency } from '../utils/format'
 import { toast } from 'react-toastify'
 import { v4 as uuidv4 } from 'uuid'
@@ -113,6 +116,8 @@ export default function Appointments() {
   const [editingAppointment, setEditingAppointment] = useState<MergedAppointment | null>(null);
   const [isBilling, setIsBilling] = useState(false); // Kept for potential future use with button disabling
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  // Add state for view mode
+  const [viewMode, setViewMode] = useState<'calendar' | 'list'>('calendar');
 
   const timeOptions = generateTimeOptions();
   const navigate = useNavigate();
@@ -568,6 +573,16 @@ export default function Appointments() {
     setAppointmentNotes('');
   };
 
+  // Add handler for view mode toggle
+  const handleViewModeChange = (
+    event: React.MouseEvent<HTMLElement>,
+    newViewMode: 'calendar' | 'list' | null
+  ) => {
+    if (newViewMode !== null) {
+      setViewMode(newViewMode);
+    }
+  };
+
   // ============================================
   // Rendering Logic
   // ============================================
@@ -584,33 +599,84 @@ export default function Appointments() {
       height: 'calc(100vh - 64px)', 
       width: '100%',
       position: 'relative', 
-      overflow: 'hidden'
+      overflow: 'hidden',
+      flexDirection: 'column'
     }}>
-      {/* Main Content Area - Calendar */}
-      <Box 
-        sx={{ 
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          right: showDrawer ? drawerWidth : 0,
-          bottom: 0,
-          overflowY: 'auto',
-          transition: 'right 0.3s ease',
+      {/* Header with view toggle */}
+      <Box
+        sx={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          p: 2,
+          borderBottom: '1px solid',
+          borderColor: 'divider',
         }}
       >
-        <StylistDayView
-          key={selectedDate.toISOString()}
-          stylists={processedStylists}
-          appointments={appointments}
-          services={allServices}
-          selectedDate={selectedDate}
-          onSelectTimeSlot={handleDayViewSelect}
-          onAppointmentClick={handleAppointmentClick}
-          onAddBreak={handleAddBreak}
-          onDeleteBreak={handleDeleteBreak}
-          onUpdateBreak={handleUpdateBreak}
-          onDateChange={setSelectedDate}
-        />
+        <Typography variant="h5" component="h1">
+          {viewMode === 'calendar' ? 'Appointments Calendar' : 'Upcoming Appointments'}
+        </Typography>
+        <ToggleButtonGroup
+          value={viewMode}
+          exclusive
+          onChange={handleViewModeChange}
+          aria-label="view mode"
+          size="small"
+        >
+          <ToggleButton value="calendar" aria-label="calendar view">
+            <CalendarIcon sx={{ mr: 1 }} />
+            Calendar View
+          </ToggleButton>
+          <ToggleButton value="list" aria-label="list view">
+            <ListIcon sx={{ mr: 1 }} />
+            List View
+          </ToggleButton>
+        </ToggleButtonGroup>
+      </Box>
+      
+      {/* Main Content Area - Calendar or List View */}
+      <Box 
+        sx={{ 
+          position: 'relative',
+          flex: 1,
+          overflow: 'hidden',
+        }}
+      >
+        <Box 
+          sx={{ 
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: showDrawer ? drawerWidth : 0,
+            bottom: 0,
+            overflowY: 'auto',
+            transition: 'right 0.3s ease',
+          }}
+        >
+          {viewMode === 'calendar' ? (
+            <StylistDayView
+              key={selectedDate.toISOString()}
+              stylists={processedStylists}
+              appointments={appointments}
+              services={allServices}
+              selectedDate={selectedDate}
+              onSelectTimeSlot={handleDayViewSelect}
+              onAppointmentClick={handleAppointmentClick}
+              onAddBreak={handleAddBreak}
+              onDeleteBreak={handleDeleteBreak}
+              onUpdateBreak={handleUpdateBreak}
+              onDateChange={setSelectedDate}
+            />
+          ) : (
+            <FutureAppointmentsList
+              appointments={appointments || []}
+              stylists={allStylists || []}
+              services={allServices || []}
+              onDeleteAppointment={deleteAppointment}
+              onEditAppointment={handleAppointmentClick}
+            />
+          )}
+        </Box>
       </Box>
 
       {/* Right Side: Booking/Editing Drawer */}
