@@ -196,13 +196,6 @@ export default function ServiceCollections() {
                 rows={3}
                 fullWidth
               />
-              <TextField
-                label="Price (₹)"
-                type="number"
-                value={formData.price / 100}
-                onChange={(e) => setFormData({ ...formData, price: Math.round(Number(e.target.value) * 100) })}
-                fullWidth
-              />
             </Box>
           </DialogContent>
           <DialogActions>

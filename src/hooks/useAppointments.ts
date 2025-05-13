@@ -2,6 +2,11 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'react-toastify'
 import { StylistBreak } from './useStylists'
 import { supabase } from '../utils/supabase/supabaseClient'
+import { 
+  sendAppointmentNotification,
+  AppointmentNotificationData,
+  sendDirectTextMessage
+} from '../utils/whatsapp'
 
 // Import from useClients
 import { useClients } from './useClients'
@@ -168,6 +173,167 @@ interface UpdateAppointmentData {
   stylist_id?: string;
   service_id?: string;
 }
+
+interface ServiceResponse {
+  services: {
+    id: string;
+    name: string;
+    duration: number;
+    price: number;
+  };
+}
+
+interface StylistResponse {
+  stylists: {
+    name: string;
+  };
+}
+
+const prepareNotificationData = async (appointmentId: string): Promise<AppointmentNotificationData | null> => {
+  try {
+    // Fetch all necessary data for the appointment
+    const { data: appointment, error: appointmentError } = await supabase
+      .from('appointments')
+      .select('id, client_id, start_time, end_time, status, notes')
+      .eq('id', appointmentId)
+      .single();
+
+    if (appointmentError) {
+      console.error('Error fetching appointment:', appointmentError);
+      return null;
+    }
+
+    if (!appointment) {
+      console.warn('Appointment not found:', appointmentId);
+      return null;
+    }
+
+    // Fetch client details
+    const { data: clientData, error: clientError } = await supabase
+      .from('clients')
+      .select('full_name, phone')
+      .eq('id', appointment.client_id)
+      .single();
+
+    if (clientError) {
+      console.error('Error fetching client:', clientError);
+      return null;
+    }
+
+    if (!clientData) {
+      console.warn('Client not found for appointment:', appointmentId);
+      return null;
+    }
+
+    // Fetch services using appointment_services join table WITH additional service details
+    const { data: appointmentServices, error: servicesError } = await supabase
+      .from('appointment_services')
+      .select(`
+        services (
+          id, 
+          name,
+          duration,
+          price
+        )
+      `)
+      .eq('appointment_id', appointmentId);
+
+    if (servicesError) {
+      console.error('Error fetching services:', servicesError);
+    }
+    
+    console.log('DEBUG - Raw appointmentServices data structure:', 
+      JSON.stringify(appointmentServices, null, 2));
+
+    // Extract service names - fixing TypeScript errors
+    const services: string[] = [];
+    const serviceDetails: Array<{name: string; duration: number; price: number}> = [];
+
+    // Safely extract service information with proper type handling
+    if (appointmentServices && appointmentServices.length > 0) {
+      appointmentServices.forEach((item: any) => {
+        try {
+          // Handle potential nested structure based on what the console shows
+          const serviceData = item.services;
+          
+          if (serviceData) {
+            console.log('DEBUG - Processing service:', serviceData);
+            
+            // Add to service names array
+            if (typeof serviceData.name === 'string') {
+              services.push(serviceData.name);
+            }
+            
+            // Add to service details array with proper type conversion
+            serviceDetails.push({
+              name: String(serviceData.name || 'Unnamed Service'),
+              duration: parseInt(String(serviceData.duration || '60'), 10),
+              price: parseFloat(String(serviceData.price || '0'))
+            });
+          }
+        } catch (err) {
+          console.error('DEBUG - Error processing service:', err);
+        }
+      });
+    }
+
+    console.log('DEBUG - Extracted service names:', services);
+    console.log('DEBUG - Extracted service details:', serviceDetails);
+
+    // Calculate total amount
+    const totalAmount = serviceDetails.reduce((sum, service) => sum + service.price, 0);
+
+    // Fetch stylists using appointment_stylists join table
+    const { data: appointmentStylists, error: stylistsError } = await supabase
+      .from('appointment_stylists')
+      .select('stylists (name)')
+      .eq('appointment_id', appointmentId) as { data: StylistResponse[] | null, error: any };
+
+    if (stylistsError) {
+      console.error('Error fetching stylists:', stylistsError);
+    }
+
+    // Extract stylist names
+    const stylists = (appointmentStylists || [])
+      .map(ast => ast.stylists?.name)
+      .filter((name): name is string => name !== undefined && name !== null);
+
+    return {
+      clientName: clientData.full_name,
+      clientPhone: clientData.phone || '',
+      services,
+      stylists,
+      startTime: appointment.start_time,
+      endTime: appointment.end_time,
+      status: appointment.status,
+      notes: appointment.notes,
+      id: appointmentId, // Include the appointment ID
+      serviceDetails,
+      totalAmount
+    };
+  } catch (error) {
+    console.error('Error preparing notification data:', error);
+    return null;
+  }
+};
+
+// Function to check if client has interacted before and use template if needed
+const sendNotificationWithTemplateCheck = async (action: 'created' | 'updated' | 'cancelled', data: AppointmentNotificationData) => {
+  try {
+    // Always use template for first contact
+    const shouldUseTemplate = true; // In a real implementation, you'd check if this is first contact
+    
+    console.log(`DEBUG - Client phone: ${data.clientPhone}, Using template: ${shouldUseTemplate}`);
+    
+    // For now always use regular message for debugging
+    const result = await sendAppointmentNotification(action, data);
+    console.log('DEBUG - Notification sent successfully:', result);
+    return result;
+  } catch (error) {
+    console.error('DEBUG - Error in sendNotificationWithTemplateCheck:', error);
+    throw error;
+  }
+};
 
 export function useAppointments() {
   const queryClient = useQueryClient()
@@ -379,33 +545,74 @@ export function useAppointments() {
                  // Throw other errors
                 throw new Error(`Failed to link stylists for client ${clientId}: ${astError.message}`);
              }
-           }
-          console.log(` -> Finished joins for client ${clientId}`);
-        })); // End of Promise.all for client details
-
-        console.log("Successfully inserted all join table records for appointment:", newAppointmentId);
-        return newAppointment; // Return the created base appointment object
-
-      } catch (joinError) {
-         // If any join table insertion fails...
-         console.error("Error inserting into join tables:", joinError);
-         // Attempt to clean up: Delete the base appointment record
-         console.warn("Attempting to delete partially created appointment:", newAppointmentId);
-         await supabase.from('appointments').delete().match({ id: newAppointmentId });
-         console.log("Deleted base appointment due to join error.");
-         // Re-throw the error so the mutation fails
-         throw joinError;
+          }
+        }));
+      } catch (error) {
+        console.error('Error in join table inserts:', error);
+        throw error;
       }
-    },
-    onSuccess: (data) => {
-      console.log("Appointment created successfully in DB:", data);
-      // Invalidate the 'appointments' query cache to trigger a refetch
-      queryClient.invalidateQueries({ queryKey: ['appointments'] });
-      toast.success('Appointment created successfully!');
-    },
-    onError: (error) => {
-      console.error('Mutation error in createAppointment:', error);
-      toast.error(`Failed to create appointment: ${error instanceof Error ? error.message : 'Unknown error'}`);
+
+      // Try to send notification
+      try {
+        console.log('DEBUG - Starting notification preparation for new appointment...');
+        const notificationData = await prepareNotificationData(newAppointmentId);
+        console.log('DEBUG - Appointment notification data prepared:', JSON.stringify(notificationData, null, 2));
+        
+        if (notificationData && notificationData.clientPhone) {
+          console.log(`DEBUG - Client phone found: ${notificationData.clientPhone}, attempting to send notification`);
+          
+          // IMPORTANT! Direct text message might be more reliable than template
+          try {
+            // First try sending as a regular notification
+            console.log('DEBUG - Sending confirmation notification...');
+            const result = await sendAppointmentNotification('created', notificationData);
+            console.log('DEBUG - Notification API response:', JSON.stringify(result));
+            
+            // Show explicit success message
+            toast.success('✅ Appointment created and confirmation sent!');
+            console.log('✅ Appointment creation notification sent successfully');
+          } catch (whatsappError) {
+            console.error('DEBUG - First attempt failed, trying direct message as backup');
+            
+            // If regular notification fails, try direct text as fallback
+            try {
+              // Create a simple direct message
+              const directMessageText = `Hello ${notificationData.clientName},\n\nYour appointment at RG Salon has been confirmed for ${new Date(notificationData.startTime).toLocaleDateString()} at ${new Date(notificationData.startTime).toLocaleTimeString()}.\n\nService(s): ${notificationData.services.join(', ')}\n\nStylist(s): ${notificationData.stylists.join(', ')}\n\nThank you for choosing RG Salon!`;
+              
+              // Send as direct message
+              console.log('DEBUG - Attempting direct message fallback');
+              const directResult = await sendDirectTextMessage(notificationData.clientPhone, directMessageText);
+              console.log('DEBUG - Direct message response:', JSON.stringify(directResult));
+              
+              toast.success('✅ Appointment created and confirmation sent through direct message!');
+            } catch (directError) {
+              // Log both errors for debugging
+              console.error('ERROR: WhatsApp notification error:', whatsappError);
+              console.error('ERROR: Direct message fallback also failed:', directError);
+              
+              // Show error to user
+              toast.warning('⚠️ Appointment created but notification could not be sent. Please contact the client directly.');
+            }
+          }
+        } else {
+          // Log the issue when client phone is missing
+          console.warn('DEBUG - Could not send notification: Missing client data', {
+            notificationDataExists: !!notificationData,
+            clientPhoneExists: notificationData ? !!notificationData.clientPhone : false,
+            clientPhone: notificationData ? notificationData.clientPhone : 'N/A',
+            appointmentId: newAppointmentId
+          });
+          toast.warning('⚠️ Appointment created but notification could not be sent: Missing client contact information');
+        }
+      } catch (error) {
+        console.error('DEBUG - Error preparing notification data:', error);
+        if (error instanceof Error) {
+          console.error('ERROR DETAILS:', error.message, error.stack);
+        }
+        toast.warning('⚠️ Appointment created but confirmation message could not be sent');
+      }
+
+      return newAppointment;
     },
   });
 
@@ -538,6 +745,36 @@ export function useAppointments() {
         })); // End of Promise.all for client details
 
         console.log(` -> Successfully inserted new joins for appointment ${appointmentId}.`);
+
+        // Send WhatsApp notification
+        try {
+          const notificationData = await prepareNotificationData(appointmentId);
+          if (notificationData && notificationData.clientPhone) {
+            try {
+              await sendAppointmentNotification('updated', notificationData);
+              console.log('Appointment update notification sent successfully');
+            } catch (whatsappError) {
+              console.error('Failed to send appointment update notification:', whatsappError);
+              // Log the detailed error for debugging
+              if (whatsappError instanceof Error) {
+                console.error('Error details:', whatsappError.message);
+              }
+              // Don't throw error here to not affect the appointment update
+              // But we do want to show a toast notification to the user
+              toast.warning('Appointment updated but notification could not be sent. Please contact the client directly.');
+            }
+          } else {
+            console.warn('Could not send appointment update notification: Missing client data', {
+              notificationData,
+              appointmentId
+            });
+            toast.warning('Appointment updated but notification could not be sent: Missing client contact information');
+          }
+        } catch (error) {
+          console.error('Error preparing notification data for update:', error);
+          toast.warning('Appointment updated but confirmation message could not be sent');
+        }
+
       } catch (joinError) {
         // If inserting new joins fails, the base appointment is already updated.
         // This leaves the data potentially inconsistent. Transactional logic would be better.
@@ -562,25 +799,53 @@ export function useAppointments() {
 
   const deleteAppointment = useMutation({
     mutationFn: async (id: string) => {
-      console.log(`Attempting to delete appointment ${id}`);
-      // Assumes ON DELETE CASCADE is set up for foreign keys in Supabase.
-      // If not, you MUST manually delete from appointment_clients, _services, _stylists first.
-      const { error } = await supabase
-        .from('appointments')
-        .delete()
-        .eq('id', id);
+      try {
+        // Get appointment details before deletion
+        const notificationData = await prepareNotificationData(id);
+        
+        // Delete the appointment
+        const { error } = await supabase
+          .from('appointments')
+          .delete()
+          .eq('id', id);
 
-      if (error) throw new Error(`Error deleting appointment ${id}: ${error.message}`);
-      console.log(`Successfully deleted appointment ${id}`);
-      return { id }; // Return deleted ID
+        if (error) throw new Error(`Error deleting appointment ${id}: ${error.message}`);
+        
+        // Send WhatsApp notification if we have the client's data
+        if (notificationData && notificationData.clientPhone) {
+          try {
+            await sendAppointmentNotification('cancelled', notificationData);
+            console.log('Cancellation notification sent successfully');
+          } catch (whatsappError) {
+            console.error('Failed to send cancellation notification:', whatsappError);
+            // Log the detailed error for debugging
+            if (whatsappError instanceof Error) {
+              console.error('Error details:', whatsappError.message);
+            }
+            // Don't throw the error as the appointment was successfully deleted
+            toast.warning('Appointment cancelled but notification could not be sent. Please contact the client directly.');
+          }
+        } else {
+          console.warn('Could not send cancellation notification: Missing client data', {
+            notificationData,
+            appointmentId: id
+          });
+          toast.warning('Appointment cancelled but notification could not be sent: Missing client contact information');
+        }
+
+        return { id, success: true };
+      } catch (error) {
+        console.error('Error in deleteAppointment:', error);
+        throw error;
+      }
     },
     onSuccess: (data) => {
-      console.log("Appointment deleted successfully from DB:", data);
+      console.log("Appointment deleted successfully:", data);
       queryClient.invalidateQueries({ queryKey: ['appointments'] });
       toast.success('Appointment deleted successfully');
     },
     onError: (error) => {
-      console.error('Mutation error in deleteAppointment:', error);
+      console.error('Error deleting appointment:', error);
       toast.error(`Failed to delete appointment: ${error instanceof Error ? error.message : 'Unknown error'}`);
     },
   });
@@ -594,5 +859,30 @@ export function useAppointments() {
   };
 }
 
-// Remove unused type export for non-existent module
-// export type { BillingResult } from './createBillsForAppointment'; 
+/**
+ * Test function to send a manual notification directly via WhatsApp
+ * This bypasses all the template mechanisms for direct testing
+ */
+export async function sendManualNotification(appointmentId: string): Promise<void> {
+  try {
+    console.log('Attempting to send manual notification for appointment:', appointmentId);
+    
+    // Prepare notification data
+    const notificationData = await prepareNotificationData(appointmentId);
+    
+    if (notificationData && notificationData.clientPhone) {
+      console.log('Sending manual notification to:', notificationData.clientPhone);
+      
+      const response = await sendAppointmentNotification('created', notificationData);
+      console.log('Manual notification sent successfully:', response);
+      
+      toast.success('Test notification sent successfully!');
+    } else {
+      console.error('Failed to prepare notification data');
+      toast.error('Could not send test notification: Missing client data');
+    }
+  } catch (error) {
+    console.error('Error sending manual notification:', error);
+    toast.error('Failed to send test notification: ' + (error instanceof Error ? error.message : 'Unknown error'));
+  }
+}

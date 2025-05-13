@@ -153,10 +153,24 @@ export function useCollectionServices(collectionId?: string) {
 
   // Mutation to delete a service from the 'services' table
   const deleteService = useMutation({
-    mutationFn: async (serviceToDelete: ServiceItem) => {
-      const { id, collection_id } = serviceToDelete; // Get id and collection_id for invalidation
+    mutationFn: async (id: string) => {
       console.log(`Deleting service ${id} from services table`);
 
+      // First, get the service to preserve the collection_id for query invalidation
+      const { data: serviceData, error: fetchError } = await supabase
+        .from('services')
+        .select('collection_id')
+        .eq('id', id)
+        .single();
+      
+      if (fetchError) {
+        console.error('Error fetching service before deletion:', fetchError);
+        throw fetchError;
+      }
+      
+      const collection_id = serviceData?.collection_id;
+
+      // Now delete the service
       const { error } = await supabase
         .from('services')
         .delete()
@@ -191,8 +205,8 @@ export function useCollectionServices(collectionId?: string) {
   };
 
   return {
-    // Rename data to 'services' for clarity, as it now directly reflects the services table
-    services: services || [], 
+    // Rename data to 'collectionServices' to match the component expectations
+    collectionServices: services || [], 
     isLoading,
     refetch, // Expose refetch if needed
     createService: createService.mutate,

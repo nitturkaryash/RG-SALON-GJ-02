@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WhatsApp Template Setup Guide for RG Salon</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 20px;
+            max-width: 800px;
+            margin: 0 auto;
+            color: #333;
+        }
+        h1 {
+            color: #25D366;
+            border-bottom: 2px solid #25D366;
+            padding-bottom: 10px;
+        }
+        h2 {
+            color: #075E54;
+            margin-top: 30px;
+        }
+        .step {
+            background-color: #f9f9f9;
+            border-left: 4px solid #25D366;
+            padding: 15px;
+            margin: 20px 0;
+        }
+        code {
+            background-color: #f1f1f1;
+            padding: 2px 5px;
+            border-radius: 3px;
+            font-family: Consolas, monospace;
+        }
+        .template-example {
+            background-color: #DCF8C6;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 15px 0;
+        }
+        .important {
+            background-color: #FFF3CD;
+            border-left: 4px solid #FFD700;
+            padding: 15px;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>WhatsApp Template Setup Guide for RG Salon</h1>
+    
+    <div class="important">
+        <strong>Important:</strong> WhatsApp Business API requires that you use approved message templates when sending messages to clients who haven't messaged you first (or within the last 24 hours).
+    </div>
+    
+    <h2>Why Your Messages Aren't Being Received</h2>
+    <p>
+        Even though our API calls are returning success messages, WhatsApp is not delivering your messages because:
+    </p>
+    <ol>
+        <li>You're sending free-text messages to users who haven't messaged you first</li>
+        <li>For first contact, you need to use approved message templates</li>
+        <li>You don't currently have any approved templates in your WhatsApp Business account</li>
+    </ol>
+    
+    <h2>Step-by-Step Template Setup Guide</h2>
+    
+    <div class="step">
+        <h3>Step 1: Log in to Meta Business Manager</h3>
+        <p>Go to <a href="https://business.facebook.com/" target="_blank">https://business.facebook.com/</a> and log in with your account credentials.</p>
+    </div>
+    
+    <div class="step">
+        <h3>Step 2: Navigate to WhatsApp Templates</h3>
+        <p>In the Business Manager, navigate to:</p>
+        <p><strong>WhatsApp → Message Templates</strong></p>
+    </div>
+    
+    <div class="step">
+        <h3>Step 3: Create Templates for Common Scenarios</h3>
+        <p>You should create templates for the following scenarios:</p>
+        <ul>
+            <li><strong>Appointment Confirmation</strong></li>
+            <li><strong>Appointment Reminder</strong></li>
+            <li><strong>Appointment Update</strong></li>
+            <li><strong>Appointment Cancellation</strong></li>
+        </ul>
+    </div>
+    
+    <h2>Template Examples</h2>
+    
+    <h3>1. Appointment Confirmation Template</h3>
+    <div class="template-example">
+        <p><strong>Template Name:</strong> appointment_confirmation</p>
+        <p><strong>Category:</strong> APPOINTMENT_UPDATE</p>
+        <p><strong>Language:</strong> English (US)</p>
+        <p><strong>Header:</strong> Text - "Appointment Confirmed"</p>
+        <p><strong>Body:</strong></p>
+        <pre>Hello {{1}},
+
+Your appointment has been confirmed for {{2}} at {{3}}.
+
+Services: {{4}}
+
+Your stylist: {{5}}
+
+Please arrive 10 minutes before your appointment time. For any changes, please contact us at {{6}}.
+
+Thank you for choosing RG Salon!</pre>
+        <p><strong>Footer:</strong> Please reply with "HELP" if you need assistance.</p>
+    </div>
+    
+    <h3>2. Appointment Update Template</h3>
+    <div class="template-example">
+        <p><strong>Template Name:</strong> appointment_update</p>
+        <p><strong>Category:</strong> APPOINTMENT_UPDATE</p>
+        <p><strong>Language:</strong> English (US)</p>
+        <p><strong>Header:</strong> Text - "Appointment Updated"</p>
+        <p><strong>Body:</strong></p>
+        <pre>Hello {{1}},
+
+Your appointment has been updated to {{2}} at {{3}}.
+
+Updated services: {{4}}
+
+Your stylist: {{5}}
+
+If you need to make any changes, please contact us at {{6}}.
+
+Thank you for choosing RG Salon!</pre>
+        <p><strong>Footer:</strong> Please reply with "HELP" if you need assistance.</p>
+    </div>
+    
+    <h3>3. Appointment Cancellation Template</h3>
+    <div class="template-example">
+        <p><strong>Template Name:</strong> appointment_cancellation</p>
+        <p><strong>Category:</strong> APPOINTMENT_UPDATE</p>
+        <p><strong>Language:</strong> English (US)</p>
+        <p><strong>Header:</strong> Text - "Appointment Cancelled"</p>
+        <p><strong>Body:</strong></p>
+        <pre>Hello {{1}},
+
+Your appointment scheduled for {{2}} at {{3}} has been cancelled.
+
+Reason: {{4}}
+
+If you would like to reschedule, please contact us at {{5}}.
+
+Thank you for your understanding.</pre>
+        <p><strong>Footer:</strong> Please reply with "HELP" if you need assistance.</p>
+    </div>
+    
+    <div class="important">
+        <p><strong>Template Approval Note:</strong></p>
+        <p>After creating templates, they need to be approved by Meta before they can be used. This process typically takes 24-48 hours. Make sure your templates comply with WhatsApp's guidelines to increase the chances of approval.</p>
+    </div>
+    
+    <h2>Next Steps After Template Approval</h2>
+    <p>Once your templates are approved:</p>
+    <ol>
+        <li>Update the code to use these templates in the <code>sendAppointmentNotification</code> function</li>
+        <li>Use the <code>sendTemplateMessage</code> function for first-time contacts</li>
+        <li>Use direct messaging only for clients who have already messaged you within the last 24 hours</li>
+    </ol>
+    
+    <h2>Testing Your Templates</h2>
+    <p>After your templates are approved, use this command to test:</p>
+    <pre>npx node test-whatsapp-template.js</pre>
+    <p>Remember to update the template name in the script to match your approved template.</p>
+</body>
+</html> 

@@ -38,6 +38,7 @@ import {
 import { useClients, Client } from '../hooks/useClients'
 import { useOrders } from '../hooks/useOrders'
 import { formatCurrency } from '../utils/format'
+import { toast } from 'react-hot-toast'
 
 export default function Clients() {
   const { clients, isLoading, createClient, updateClient, processPendingPayment, deleteClient, deleteAllClients } = useClients()
@@ -154,12 +155,25 @@ export default function Clients() {
   
   // Handle delete client
   const handleDeleteClient = async () => {
-    if (!selectedClient) return
+    if (!selectedClient) {
+      console.error('No client selected for deletion');
+      return;
+    }
     
-    await deleteClient(selectedClient.id)
-    
-    setSelectedClient(null)
-    setOpenDeleteDialog(false)
+    try {
+      console.log('Attempting to delete client:', selectedClient.id, selectedClient.full_name);
+      
+      // Call the deleteClient function from the hook
+      await deleteClient(selectedClient.id);
+      
+      console.log('Client deletion successful');
+      setSelectedClient(null);
+      setOpenDeleteDialog(false);
+    } catch (error) {
+      console.error('Error in handleDeleteClient:', error);
+      // Keep the dialog open so user can see the error
+      toast.error(`Failed to delete client: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   }
   
   // Open delete all clients dialog

@@ -392,97 +392,209 @@ export function useClients() {
     },
   });
 
-  // Delete a client
+  // Delete a client with fallback to direct SQL if needed
   const deleteClient = useMutation({
     mutationFn: async (clientId: string) => {
       try {
-        // First, check if client has any appointments
-        const { data: appointmentsData, error: appointmentsError } = await supabase
-          .from('appointments')
-          .select('id')
-          .eq('client_id', clientId);
-          
-        if (appointmentsError) {
-          console.error('Error checking client appointments:', appointmentsError);
-          throw appointmentsError;
-        }
+        console.log('Starting client deletion process for ID:', clientId);
         
-        // Check appointment_clients table if it exists
-        const { data: appointmentClientsData, error: appointmentClientsError } = await supabase
-          .from('appointment_clients')
-          .select('id')
-          .eq('client_id', clientId);
-          
-        // If we get a 'relation does not exist' error, the table doesn't exist, which is fine
-        if (appointmentClientsError && !appointmentClientsError.message.includes('relation "appointment_clients" does not exist')) {
-          console.error('Error checking appointment_clients:', appointmentClientsError);
-          throw appointmentClientsError;
-        }
-        
-        // Check orders table
-        const { data: ordersData, error: ordersError } = await supabase
-          .from('orders')
-          .select('id')
-          .eq('client_id', clientId);
-          
-        if (ordersError) {
-          console.error('Error checking client orders:', ordersError);
-          throw ordersError;
-        }
-        
-        // If client has appointments, update them to set client_id to null
-        if (appointmentsData && appointmentsData.length > 0) {
-          const { error: updateError } = await supabase
+        // First try the standard approach with all the checks
+        try {
+          // First, check if client has any appointments
+          const { data: appointmentsData, error: appointmentsError } = await supabase
             .from('appointments')
-            .update({ client_id: null })
+            .select('id')
             .eq('client_id', clientId);
             
-          if (updateError) {
-            console.error('Error updating appointments:', updateError);
-            throw updateError;
+          if (appointmentsError) {
+            console.error('Error checking client appointments:', appointmentsError);
+            throw appointmentsError;
           }
-        }
-        
-        // Delete entries from appointment_clients if the table exists and has entries
-        if (appointmentClientsData && appointmentClientsData.length > 0) {
-          const { error: deleteJoinError } = await supabase
+          
+          console.log(`Found ${appointmentsData?.length || 0} appointments for client`);
+          
+          // Check appointment_clients table - select only the columns we know exist
+          const { data: appointmentClientsData, error: appointmentClientsError } = await supabase
             .from('appointment_clients')
+            .select('appointment_id, client_id')
+            .eq('client_id', clientId);
+            
+          if (appointmentClientsError) {
+            console.error('Error checking appointment_clients:', appointmentClientsError);
+          } else {
+            console.log(`Found ${appointmentClientsData?.length || 0} appointment client relationships`);
+            
+            // Remove appointment_clients relationships if they exist
+            if (appointmentClientsData && appointmentClientsData.length > 0) {
+              console.log('Deleting appointment_clients relationships');
+              const { error: deleteRelationshipError } = await supabase
+                .from('appointment_clients')
+                .delete()
+                .eq('client_id', clientId);
+                
+              if (deleteRelationshipError) {
+                console.error('Error deleting appointment_clients relationships:', deleteRelationshipError);
+              } else {
+                console.log('Successfully deleted appointment_clients relationships');
+              }
+            }
+          }
+          
+          // Check appointment_services table - don't select 'id' as it doesn't exist
+          const { data: appointmentServicesData, error: appointmentServicesError } = await supabase
+            .from('appointment_services')
+            .select('*')  // Use * instead of 'id' which doesn't exist
+            .eq('client_id', clientId);
+            
+          if (appointmentServicesError) {
+            console.error('Error checking appointment_services:', appointmentServicesError);
+          } else {
+            console.log(`Found ${appointmentServicesData?.length || 0} appointment services for client`);
+            
+            // Update appointment_services to remove client reference
+            if (appointmentServicesData && appointmentServicesData.length > 0) {
+              console.log('Updating appointment_services to remove client reference');
+              const { error: updateServicesError } = await supabase
+                .from('appointment_services')
+                .update({ client_id: null })
+                .eq('client_id', clientId);
+                
+              if (updateServicesError) {
+                console.error('Error updating appointment_services:', updateServicesError);
+                throw updateServicesError;
+              } else {
+                console.log('Successfully updated appointment_services');
+              }
+            }
+          }
+          
+          // Check appointment_stylists table
+          const { data: appointmentStylistsData, error: appointmentStylistsError } = await supabase
+            .from('appointment_stylists')
+            .select('*')
+            .eq('client_id', clientId);
+            
+          if (appointmentStylistsError) {
+            console.error('Error checking appointment_stylists:', appointmentStylistsError);
+          } else {
+            console.log(`Found ${appointmentStylistsData?.length || 0} appointment stylist relationships for client`);
+            
+            // Update appointment_stylists to remove client reference
+            if (appointmentStylistsData && appointmentStylistsData.length > 0) {
+              console.log('Updating appointment_stylists to remove client reference');
+              const { error: updateStylistsError } = await supabase
+                .from('appointment_stylists')
+                .update({ client_id: null })
+                .eq('client_id', clientId);
+                
+              if (updateStylistsError) {
+                console.error('Error updating appointment_stylists:', updateStylistsError);
+                throw updateStylistsError;
+              } else {
+                console.log('Successfully updated appointment_stylists');
+              }
+            }
+          }
+          
+          // If client has appointments, update them to set client_id to null
+          if (appointmentsData && appointmentsData.length > 0) {
+            console.log('Updating appointments to remove client reference');
+            const { error: updateError } = await supabase
+              .from('appointments')
+              .update({ client_id: null })
+              .eq('client_id', clientId);
+              
+            if (updateError) {
+              console.error('Error updating appointments:', updateError);
+              throw updateError;
+            }
+            console.log('Successfully updated appointments');
+          }
+          
+          // Finally delete the client
+          console.log('Attempting to delete client with ID:', clientId);
+          const { data, error } = await supabase
+            .from('clients')
             .delete()
-            .eq('client_id', clientId);
+            .eq('id', clientId)
+            .select()
+            .single();
+          
+          if (error) {
+            console.error('Error deleting client:', error);
+            throw error;
+          }
+          
+          console.log('Client deleted successfully:', data);
+          return data;
+        } catch (standardError: any) {
+          console.error('Standard deletion approach failed, trying fallback method:', standardError);
+          
+          // FALLBACK APPROACH: Try direct delete after removing all references
+          console.log('Attempting fallback deletion method...');
+          
+          try {
+            // Delete from appointment_clients table
+            const { error: deleteAppointmentClientsError } = await supabase
+              .from('appointment_clients')
+              .delete()
+              .eq('client_id', clientId);
+              
+            if (deleteAppointmentClientsError) {
+              console.warn('Error deleting from appointment_clients (may be ignorable):', deleteAppointmentClientsError);
+            }
             
-          if (deleteJoinError) {
-            console.error('Error deleting from appointment_clients:', deleteJoinError);
-            throw deleteJoinError;
+            // Update appointment_services to remove client reference
+            const { error: updateServicesError } = await supabase
+              .from('appointment_services')
+              .update({ client_id: null })
+              .eq('client_id', clientId);
+              
+            if (updateServicesError) {
+              console.warn('Error updating appointment_services (may be ignorable):', updateServicesError);
+            }
+            
+            // Update appointment_stylists to remove client reference
+            const { error: updateStylistsError } = await supabase
+              .from('appointment_stylists')
+              .update({ client_id: null })
+              .eq('client_id', clientId);
+              
+            if (updateStylistsError) {
+              console.warn('Error updating appointment_stylists (may be ignorable):', updateStylistsError);
+            }
+            
+            // Update appointments to remove client reference
+            const { error: updateAppointmentsError } = await supabase
+              .from('appointments')
+              .update({ client_id: null })
+              .eq('client_id', clientId);
+              
+            if (updateAppointmentsError) {
+              console.warn('Error updating appointments (may be ignorable):', updateAppointmentsError);
+            }
+            
+            // Let's wait a moment to ensure all updates are processed
+            await new Promise(resolve => setTimeout(resolve, 500));
+            
+            // Final attempt to delete the client - without returning the deleted record
+            const { error } = await supabase
+              .from('clients')
+              .delete()
+              .eq('id', clientId);
+              
+            if (error) {
+              console.error('Fallback deletion also failed:', error);
+              throw error;
+            }
+            
+            console.log('Client deleted successfully using fallback method');
+            return { id: clientId, success: true };
+          } catch (fallbackError) {
+            console.error('Fallback deletion approach also failed:', fallbackError);
+            throw new Error(`Failed to delete client: ${standardError.message}`);
           }
         }
-        
-        // If client has orders, update them to set client_id to null
-        if (ordersData && ordersData.length > 0) {
-          const { error: updateOrdersError } = await supabase
-            .from('orders')
-            .update({ client_id: null })
-            .eq('client_id', clientId);
-            
-          if (updateOrdersError) {
-            console.error('Error updating orders:', updateOrdersError);
-            throw updateOrdersError;
-          }
-        }
-        
-        // Finally delete the client
-        const { data, error } = await supabase
-          .from('clients')
-          .delete()
-          .eq('id', clientId)
-          .select()
-          .single();
-        
-        if (error) {
-          console.error('Error deleting client:', error);
-          throw error;
-        }
-        
-        return data;
       } catch (error) {
         console.error('Error in deleteClient mutation:', error);
         throw error;

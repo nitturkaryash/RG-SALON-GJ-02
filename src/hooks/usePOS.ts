@@ -122,6 +122,7 @@ export interface CreateServiceData {
 	price: number;
   type?: 'service' | 'product';
   gst_percentage?: number;
+  hsn_code?: string;
 }
 
 // Define a more accurate type for the data structure used in pos_orders table
@@ -351,6 +352,56 @@ export async function deleteOrder(orderId: string): Promise<{ success: boolean, 
       return { success: false, message: 'Order not found or could not be fetched' };
     }
     
+    // Before deleting the order, update client financial records
+    if (orderData && orderData.client_name && !orderData.is_salon_consumption) {
+      try {
+        // Get the client by name
+        const { data: clientData, error: clientError } = await supabase
+          .from('clients')
+          .select('*')
+          .ilike('full_name', orderData.client_name)
+          .single();
+          
+        if (!clientError && clientData) {
+          // Calculate amount to deduct from client's records
+          const orderTotal = orderData.total || 0;
+          const paymentMethod = orderData.payment_method || 'cash';
+          
+          // Prepare updated client data
+          const clientUpdateData: any = {
+            updated_at: new Date().toISOString()
+          };
+          
+          // If BNPL, reduce pending_payment, otherwise reduce total_spent
+          if (paymentMethod === 'bnpl') {
+            clientUpdateData.pending_payment = Math.max(0, (clientData.pending_payment || 0) - orderTotal);
+          } else {
+            clientUpdateData.total_spent = Math.max(0, (clientData.total_spent || 0) - orderTotal);
+          }
+          
+          // If there's an appointment count, decrement it
+          if (typeof clientData.appointment_count === 'number') {
+            clientUpdateData.appointment_count = Math.max(0, clientData.appointment_count - 1);
+          }
+          
+          // Update the client record
+          const { error: updateError } = await supabase
+            .from('clients')
+            .update(clientUpdateData)
+            .eq('id', clientData.id);
+            
+          if (updateError) {
+            console.error('Error updating client financial records:', updateError);
+          } else {
+            console.log('Successfully updated client financial records on order deletion');
+          }
+        }
+      } catch (clientError) {
+        console.error('Error handling client financial update on order deletion:', clientError);
+        // Continue with order deletion even if client update fails
+      }
+    }
+    
     // Delete associated order items to avoid foreign key conflict
     const { error: deleteItemsError } = await supabase
       .from('pos_order_items')
@@ -549,6 +600,22 @@ export async function createWalkInOrder(
       }
     }
     
+    // Update client financial records if it's not a salon consumption
+    if (!isSalonConsumption && customerName && orderResult) {
+      try {
+        // Import the necessary function or directly perform the client update
+        await updateClientFinancials(
+          customerName,
+          orderResult.total || (subtotal + tax),
+          paymentMethod,
+          orderResult.created_at || new Date().toISOString()
+        );
+      } catch (clientError) {
+        console.error('Warning: Failed to update client financial records:', clientError);
+        // Continue anyway since the order was created
+      }
+    }
+    
     return {
       success: true,
       order: orderResult,
@@ -561,6 +628,77 @@ export async function createWalkInOrder(
       message: 'An unexpected error occurred',
       error: error instanceof Error ? error : new Error(String(error))
     };
+  }
+}
+
+// Helper function to update client financial records
+async function updateClientFinancials(
+  clientName: string,
+  orderTotal: number,
+  paymentMethod: string,
+  orderDate: string
+): Promise<void> {
+  try {
+    // Find client by name (case insensitive)
+    const { data: existingClients, error: findError } = await supabase
+      .from('clients')
+      .select('*')
+      .ilike('full_name', clientName);
+    
+    if (findError) {
+      console.error('Error finding client:', findError);
+      throw findError;
+    }
+    
+    if (existingClients && existingClients.length > 0) {
+      // Update existing client
+      const client = existingClients[0];
+      const updatedClientData: any = {
+        last_visit: orderDate,
+        total_spent: paymentMethod === 'bnpl' ? client.total_spent || 0 : (client.total_spent || 0) + orderTotal,
+        pending_payment: paymentMethod === 'bnpl' ? (client.pending_payment || 0) + orderTotal : client.pending_payment || 0,
+        updated_at: new Date().toISOString()
+      };
+
+      // Only update appointment_count if the column exists to prevent errors
+      if (typeof client.appointment_count === 'number' || client.appointment_count === undefined || client.appointment_count === null) {
+        updatedClientData.appointment_count = (Number(client.appointment_count) || 0) + 1;
+      }
+      
+      const { error } = await supabase
+        .from('clients')
+        .update(updatedClientData)
+        .eq('id', client.id);
+      
+      if (error) {
+        console.error('Error updating client from order:', error);
+        throw error;
+      }
+    } else {
+      // Create new client
+      const newClient = {
+        full_name: clientName,
+        phone: '',
+        email: '',
+        notes: 'Created from order',
+        total_spent: paymentMethod === 'bnpl' ? 0 : orderTotal,
+        pending_payment: paymentMethod === 'bnpl' ? orderTotal : 0,
+        last_visit: orderDate,
+        appointment_count: 1 // Initialize lifetime visit count to 1 for new clients from orders
+      };
+      
+      const { error } = await supabase
+        .from('clients')
+        .insert([newClient]);
+      
+      if (error) {
+        console.error('Error creating client from order:', error);
+        throw error;
+      }
+    }
+  } catch (error) {
+    console.error('Error updating client financial records:', error);
+    throw error;
   }
 }
 
