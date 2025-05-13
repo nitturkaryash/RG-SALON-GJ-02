@@ -139,7 +139,7 @@ const AppointmentCard = ({ appointment, onDeleteClick, onEditClick }: Appointmen
 
 interface FutureAppointmentsListProps {
   appointments: any[];
-  onDeleteAppointment?: (id: string) => Promise<void>;
+  onDeleteAppointment?: ((id: string) => Promise<void>) | ((id: string) => void);
   onEditAppointment?: (appointment: any) => void;
   stylists?: any[];
   services?: any[];

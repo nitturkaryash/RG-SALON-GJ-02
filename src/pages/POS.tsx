@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Container, Box, Typography, Paper, Tabs, Tab, TextField, Button, Grid, Card, CardContent, CardActions, FormControl, InputLabel, Select, MenuItem, IconButton, Chip, Dialog, DialogTitle, DialogContent, DialogActions, Snackbar, Alert, CircularProgress, Collapse, Tooltip, FormHelperText } from '@mui/material';
-import { Add as AddIcon, Close as CloseIcon, RemoveShoppingCart, ShoppingBag, Check as CheckIcon, Refresh, AttachMoney, CreditCard, LocalAtm, AccountBalance, Receipt, Inventory, Search, Info as InfoIcon } from '@mui/icons-material';
+import { Add as AddIcon, Close as CloseIcon, RemoveShoppingCart, ShoppingBag, Check as CheckIcon, Refresh as RefreshIcon, AttachMoney, CreditCard, LocalAtm, AccountBalance, Receipt, Inventory, Search, Info as InfoIcon } from '@mui/icons-material';
 import { supabase } from '../utils/supabase/supabaseClient';
 import { v4 as uuidv4 } from 'uuid';
 import { PaymentMethod, usePOS, createWalkInOrder, CreateOrderData } from '../hooks/usePOS';
@@ -357,6 +357,27 @@ const directUpdateStockQuantity = async (productId: string, decrementAmount: num
   }
 };
 
+interface HistoryItem {
+	id: string;
+	service_name?: string;
+	item_name?: string;
+	price: number;
+	quantity: number;
+	type?: string;
+	pos_orders?: {
+		id: string;
+		created_at: string;
+		status: string;
+		client_name: string;
+	};
+	appointment_data?: {
+		id: string;
+		created_at: string;
+		status: string;
+		stylist_name?: string;
+	};
+}
+
 export default function POS() {
 	// ====================================================
 	// 1. HOOKS - Call ALL hooks unconditionally first
@@ -538,40 +559,175 @@ export default function POS() {
 	const fetchClientHistory = useCallback(async (clientName: string) => {
 		if (!clientName) return;
 		setIsHistoryLoading(true);
+		console.log("Fetching history for client:", clientName);
 		try {
-			const { data, error } = await supabase
-				.from('pos_order_items')
-				.select(`
-					id,
-					service_name,
-					price,
-					quantity,
-					type,
-					pos_orders!inner (
-						id,
-						created_at,
-						status,
-						client_name
-					)
-				`)
-				.eq('pos_orders.client_name', clientName)
-				.order('created_at', { referencedTable: 'pos_orders', ascending: false })
+			// First query complete pos_orders for this client
+			const { data: ordersData, error: ordersError } = await supabase
+				.from('pos_orders')
+				.select('*')
+				.eq('client_name', clientName)
+				.order('created_at', { ascending: false })
 				.limit(20);
 
-			if (error) {
-				console.error('Error fetching client history:', error);
-				toast.error('Failed to load client history');
-				setClientServiceHistory([]);
-			} else {
-				setClientServiceHistory(data || []);
+			if (ordersError) {
+				console.error('Error fetching POS orders:', ordersError);
 			}
+			
+			console.log("Found orders:", ordersData?.length || 0);
+
+			// Then query pos_order_items for these orders
+			const posItems: HistoryItem[] = [];
+			
+			if (ordersData && ordersData.length > 0) {
+				// Get all order IDs
+				const orderIds = ordersData.map(order => order.id);
+				
+				// Fetch all items for these orders
+				const { data: itemsData, error: itemsError } = await supabase
+					.from('pos_order_items')
+					.select('*')
+					.in('pos_order_id', orderIds);
+					
+				if (itemsError) {
+					console.error('Error fetching order items:', itemsError);
+				}
+				
+				// Process each item
+				if (itemsData && itemsData.length > 0) {
+					itemsData.forEach(item => {
+						// Find parent order
+						const parentOrder = ordersData.find(order => order.id === item.pos_order_id);
+						
+						if (parentOrder) {
+							posItems.push({
+								id: item.id,
+								service_name: item.service_name,
+								item_name: item.item_name || item.service_name,
+								price: item.price,
+								quantity: item.quantity,
+								type: item.type || 'product',
+								pos_orders: {
+									id: parentOrder.id,
+									created_at: parentOrder.created_at,
+									status: parentOrder.status,
+									client_name: parentOrder.client_name
+								}
+							});
+						}
+					});
+				} else {
+					// If no items found, still show the orders as single entries
+					ordersData.forEach(order => {
+						posItems.push({
+							id: order.id,
+							service_name: 'Order',
+							item_name: `Order #${order.id.slice(-6)}`,
+							price: order.total || 0,
+							quantity: 1,
+							type: 'order',
+							pos_orders: {
+								id: order.id,
+								created_at: order.created_at,
+								status: order.status,
+								client_name: order.client_name
+							}
+						});
+					});
+				}
+			}
+
+			// Then query appointments for the same client
+			const { data: appointmentData, error: appointmentError } = await supabase
+				.from('appointments')
+				.select(`
+					id,
+					start_time,
+					end_time,
+					status,
+					notes,
+					service_id,
+					stylist_id
+				`)
+				.eq('client_id', clientName)
+				.order('start_time', { ascending: false })
+				.limit(20);
+
+			if (appointmentError) {
+				console.error('Error fetching appointment history:', appointmentError);
+			}
+			
+			console.log("Found appointments:", appointmentData?.length || 0);
+
+			// Get service details for appointments
+			const appointmentItems: HistoryItem[] = [];
+			
+			// Process each appointment to get service details
+			if (appointmentData && appointmentData.length > 0) {
+				for (const appointment of appointmentData) {
+					// Get service details if available
+					let serviceName = 'Service';
+					let servicePrice = 0;
+					let stylistName = 'Unknown Stylist';
+					
+					if (appointment.service_id) {
+						const { data: serviceData } = await supabase
+							.from('services')
+							.select('name, price')
+							.eq('id', appointment.service_id)
+							.single();
+							
+						if (serviceData) {
+							serviceName = serviceData.name;
+							servicePrice = serviceData.price;
+						}
+					}
+					
+					if (appointment.stylist_id) {
+						const { data: stylistData } = await supabase
+							.from('stylists')
+							.select('name')
+							.eq('id', appointment.stylist_id)
+							.single();
+							
+						if (stylistData) {
+							stylistName = stylistData.name;
+						}
+					}
+					
+					// Create history item
+					appointmentItems.push({
+						id: appointment.id,
+						service_name: serviceName,
+						price: servicePrice,
+						quantity: 1,
+						type: 'service',
+						appointment_data: {
+							id: appointment.id,
+							created_at: appointment.start_time,
+							status: appointment.status,
+							stylist_name: stylistName
+						}
+					});
+				}
+			}
+
+			// Combine both data sources with explicit typing
+			const combinedHistory: HistoryItem[] = [...posItems, ...appointmentItems];
+			combinedHistory.sort((a, b) => {
+				const dateA = new Date(a.pos_orders?.created_at || (a.appointment_data?.created_at || ''));
+				const dateB = new Date(b.pos_orders?.created_at || (b.appointment_data?.created_at || ''));
+				return dateB.getTime() - dateA.getTime();
+			});
+			
+			console.log("Total history items:", combinedHistory.length);
+			setClientServiceHistory(combinedHistory || []);
 		} catch (err) {
 			console.error('Error in client history fetch:', err);
 			setClientServiceHistory([]);
 		} finally {
 			setIsHistoryLoading(false);
 		}
-	}, [supabase, toast, setIsHistoryLoading, setClientServiceHistory]);
+	}, [supabase, setIsHistoryLoading, setClientServiceHistory]);
 
 	// RESTORING handleClientSelect HERE
 	const handleClientSelect = useCallback((client: Client | null) => {
@@ -581,6 +737,7 @@ export default function POS() {
 			setNewClientPhone(""); 
 			setNewClientEmail("");
 			if (client.full_name) { 
+				console.log("Fetching history for client:", client.full_name);
 				fetchClientHistory(client.full_name); 
 			} else {
 				console.warn("Selected client has no name, cannot fetch history.");
@@ -792,10 +949,14 @@ export default function POS() {
 	// Derive service history for the selected client
 	const serviceHistory = useMemo(() => {
 		if (!orders || !selectedClient) return [];
-		return orders.filter(order => 
-			order.client_name === selectedClient.full_name && 
-			Array.isArray(order.services)
-		);
+		
+		return orders.filter(order => {
+			// Cast to any to access client_name and services
+			const orderAny = order as any;
+			return (orderAny.client_name === selectedClient.full_name || 
+			       orderAny.customer_name === selectedClient.full_name) && 
+			       Array.isArray(orderAny.services);
+		});
 	}, [orders, selectedClient]);
 
 	// Filtered memberships based on search term
@@ -1914,16 +2075,15 @@ export default function POS() {
 								label="Consumption Date"
 								value={salonConsumptionDate}
 								onChange={(newDate) => setSalonConsumptionDate(newDate)}
-								renderInput={(params) => (
-									<TextField
-										{...params}
-										fullWidth
-										variant="outlined"
-										size="small"
-										helperText="Select the date for this consumption"
-										sx={{ mb: 3, '& .MuiOutlinedInput-root': { borderRadius: '8px' } }}
-									/>
-								)}
+								slotProps={{
+									textField: {
+										fullWidth: true,
+										variant: "outlined",
+										size: "small",
+										helperText: "Select the date for this consumption",
+										sx: { mb: 3, '& .MuiOutlinedInput-root': { borderRadius: '8px' } }
+									}
+								}}
 							/>
 						</LocalizationProvider>
 					</Grid>
@@ -2465,7 +2625,13 @@ export default function POS() {
 										options={clients || []}
 										getOptionLabel={(option) => option.full_name || ""}
 										value={selectedClient}
-										onChange={(_, newValue) => handleClientSelect(newValue)}
+										onChange={(_, newValue) => {
+											handleClientSelect(newValue);
+											if (newValue && newValue.full_name) {
+												// Explicitly fetch client history when a client is selected
+												fetchClientHistory(newValue.full_name);
+											}
+										}}
 										renderInput={(params) => (
 											<TextField
 												{...params}
@@ -2490,6 +2656,23 @@ export default function POS() {
 										)}
 										size="small"
 									/>
+									{/* Add History button near the client autocomplete */}
+									{selectedClient && (
+										<Button
+											color="primary"
+											onClick={() => {
+												setHistoryDrawerOpen(true);
+												if (selectedClient.full_name) {
+													fetchClientHistory(selectedClient.full_name);
+												}
+											}}
+											size="small"
+											sx={{ mt: 1 }}
+											startIcon={<HistoryIcon />}
+										>
+											View History
+										</Button>
+									)}
 								</Grid>
 								<Grid item xs={12} sm={4}>
 									<TextField
@@ -3100,31 +3283,111 @@ export default function POS() {
 			</TabPanel>
 			{/* History Drawer */}
 			<Drawer anchor="right" open={historyDrawerOpen} onClose={() => setHistoryDrawerOpen(false)}>
-				<Box sx={{ width: 350, p: 2 }}>
-					<Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-						<Typography variant="h6">{selectedClient?.full_name}'s Service History</Typography>
+				<Box sx={{ width: 400, p: 2 }}>
+					<Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2, borderBottom: '1px solid rgba(0,0,0,0.12)', pb: 1 }}>
+						<Typography variant="h6" fontWeight="bold">{selectedClient?.full_name}'s Service History</Typography>
 						<IconButton onClick={() => setHistoryDrawerOpen(false)} size="small">
 							<CloseIcon />
 						</IconButton>
 					</Box>
+					
 					{isHistoryLoading ? (
-						<Box display="flex" justifyContent="center"><CircularProgress /></Box>
+						<Box display="flex" justifyContent="center" p={3}><CircularProgress /></Box>
 					) : clientServiceHistory.length === 0 ? (
-						<Typography>No previous services found for this client.</Typography>
+						<Box sx={{ p: 3, textAlign: 'center', bgcolor: 'background.paper', borderRadius: 1 }}>
+							<Typography color="text.secondary">No previous services found for this client.</Typography>
+							<Button 
+								variant="contained" 
+								size="small" 
+								startIcon={<RefreshIcon />}
+								onClick={() => {
+									if (selectedClient?.full_name) {
+										setIsHistoryLoading(true);
+										fetchClientHistory(selectedClient.full_name);
+									}
+								}}
+								sx={{ mt: 2 }}
+							>
+								Refresh History
+							</Button>
+						</Box>
 					) : (
-						<List>
-							{clientServiceHistory.map((item: any) => (
-								<React.Fragment key={item.id}>
-									<ListItem>
-										<ListItemText
-											primary={`${item.service_name || item.item_name || 'Unknown Item'} — ₹${item.price}`} // Updated to use service_name, with fallback
-											secondary={`${item.pos_orders?.created_at ? format(new Date(item.pos_orders.created_at), 'dd/MM/yyyy') : 'N/A'} — Order #${item.pos_orders?.id?.slice(-4) || 'N/A'} — Qty: ${item.quantity}`}
-										/>
-									</ListItem>
-									<Divider />
-								</React.Fragment>
-							))}
-						</List>
+						<>
+							<Box sx={{ mb: 2, display: 'flex', justifyContent: 'flex-end' }}>
+								<Button 
+									variant="contained"
+									color="primary"
+									startIcon={<RefreshIcon />} 
+									size="small"
+									onClick={() => {
+										if (selectedClient?.full_name) {
+											setIsHistoryLoading(true);
+											fetchClientHistory(selectedClient.full_name);
+										}
+									}}
+								>
+									Refresh History
+								</Button>
+							</Box>
+							<List sx={{ 
+								maxHeight: 'calc(100vh - 120px)', 
+								overflowY: 'auto',
+								bgcolor: 'background.paper',
+								borderRadius: 1,
+								border: '1px solid rgba(0,0,0,0.12)'
+							}}>
+								{clientServiceHistory.map((item: any, index) => (
+									<React.Fragment key={item.id || `item-${index}`}>
+										<ListItem>
+											<ListItemText
+												primary={
+													<Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+														<Typography variant="body1" fontWeight="medium">
+															{item.service_name || item.item_name || 'Unknown Item'}
+															{item.quantity > 1 && <Typography component="span" variant="body2" sx={{ ml: 0.5 }}>
+																(x{item.quantity})
+															</Typography>}
+														</Typography>
+														<Typography fontWeight="medium">₹{item.price}</Typography>
+													</Box>
+												}
+												secondary={
+													<>
+														<Typography variant="body2">
+															{item.pos_orders?.created_at 
+																? format(new Date(item.pos_orders.created_at), 'dd/MM/yyyy') 
+																: item.appointment_data?.created_at 
+																	? format(new Date(item.appointment_data.created_at), 'dd/MM/yyyy')
+																	: 'N/A'}
+														</Typography>
+														<Typography variant="body2" color="textSecondary">
+															{item.pos_orders
+																? `POS Order - ${item.type === 'product' ? 'Product' : 'Service'}`
+																: item.appointment_data
+																	? `Appointment with ${item.appointment_data.stylist_name || 'Unknown Stylist'}`
+																	: ''}
+														</Typography>
+													</>
+												}
+											/>
+											<Chip 
+												size="small" 
+												color={
+													(item.pos_orders?.status === 'completed' || item.appointment_data?.status === 'completed') 
+														? 'success' 
+														: (item.pos_orders?.status === 'cancelled' || item.appointment_data?.status === 'cancelled') 
+															? 'error' 
+															: 'default'
+												}
+												label={item.pos_orders?.status || item.appointment_data?.status || 'N/A'}
+												sx={{ ml: 1 }}
+											/>
+										</ListItem>
+										<Divider />
+									</React.Fragment>
+								))}
+							</List>
+						</>
 					)}
 				</Box>
 			</Drawer>

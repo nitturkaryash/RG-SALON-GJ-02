@@ -17,6 +17,7 @@ import Dashboard from './pages/Dashboard';
 
 // Lazy-loaded components
 const Appointments = lazy(() => import('./pages/Appointments'));
+const CreateAppointment = lazy(() => import('./pages/CreateAppointment'));
 const Clients = lazy(() => import('./pages/Clients'));
 const Stylists = lazy(() => import('./pages/Stylists'));
 const ServiceCollections = lazy(() => import('./pages/ServiceCollections'));
@@ -58,6 +59,7 @@ function App() {
             <Route index element={<Navigate to="/dashboard" replace />} />
             <Route path="dashboard" element={<Dashboard />} />
             <Route path="appointments" element={<Appointments />} />
+            <Route path="create-appointment" element={<CreateAppointment />} />
             <Route path="clients" element={<Clients />} />
             <Route path="stylists" element={
               <ErrorBoundary>

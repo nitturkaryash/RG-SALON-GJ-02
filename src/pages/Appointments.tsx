@@ -28,11 +28,14 @@ import {
   DialogContentText,
   DialogActions,
   ToggleButtonGroup,
-  ToggleButton
+  ToggleButton,
+  List,
+  ListItem,
+  ListItemText
 } from '@mui/material'
 import { useAppointments, Appointment, MergedAppointment } from '../hooks/useAppointments'
 import { useStylists, Stylist, StylistBreak } from '../hooks/useStylists'
-import { useServices, Service } from '../hooks/useServices'
+import { useServices, Service as BaseService } from '../hooks/useServices'
 import { useClients, Client } from '../hooks/useClients'
 import { format, addDays, subDays } from 'date-fns'
 import { useServiceCollections } from '../hooks/useServiceCollections';
@@ -49,6 +52,7 @@ import interactionPlugin from '@fullcalendar/interaction'
 import { DateSelectArg } from '@fullcalendar/core'
 import { createFilterOptions } from '@mui/material/Autocomplete'
 import { useNavigate } from 'react-router-dom'
+import { useCallback } from 'react'
 
 // Define Drawer width as a constant
 const drawerWidth = 500;
@@ -91,23 +95,46 @@ interface ServiceCollection {
 }
 
 // Interface for a single client entry in the new state
+interface ServiceEntry {
+  id: string;
+  name: string;
+  price: number;
+  stylistId: string;
+  stylistName: string;
+  fromTime: string; 
+  toTime: string;
+}
+
 interface ClientAppointmentEntry {
   id: string;
-  client: (Client & { inputValue?: string }) | null; // Allow storing inputValue for new clients
-  services: Service[];
+  client: (Client & { inputValue?: string }) | null;
+  services: ServiceEntry[];
   stylists: Pick<Stylist, 'id' | 'name'>[];
 }
 
 // Define filter for freeSolo client options
 const filterClients = createFilterOptions<{ id: string; full_name: string; phone?: string; email?: string; created_at?: string; inputValue?: string }>();
 
+// Extend the Service interface to include gender property
+interface ServiceWithGender extends BaseService {
+  gender?: 'male' | 'female' | null;
+}
+
+// Clean up service types
+interface ExtendedClientAppointmentEntry extends Omit<ClientAppointmentEntry, 'services'> {
+  services: ServiceEntry[];
+}
+
 export default function Appointments() {
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [selectedSlot, setSelectedSlot] = useState<DateSelectArg | null>(null);
   const [selectedStylistId, setSelectedStylistId] = useState<string | null>(null);
-  const [clientEntries, setClientEntries] = useState<ClientAppointmentEntry[]>([
-    { id: uuidv4(), client: null, services: [], stylists: [] }
-  ]);
+  const [clientEntries, setClientEntries] = useState<ExtendedClientAppointmentEntry[]>([{ 
+    id: uuidv4(), 
+    client: null, 
+    services: [], 
+    stylists: [] 
+  }]);
   const [appointmentTime, setAppointmentTime] = useState({ startTime: '', endTime: '' });
   const [appointmentNotes, setAppointmentNotes] = useState('');
   const [snackbarOpen, setSnackbarOpen] = useState(false);
@@ -118,10 +145,22 @@ export default function Appointments() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   // Add state for view mode
   const [viewMode, setViewMode] = useState<'calendar' | 'list'>('calendar');
+  const [serviceGenderFilter, setServiceGenderFilter] = useState<'male' | 'female' | null>('male');
+  const [serviceSearchTerm, setServiceSearchTerm] = useState('');
+  const [clientDialogOpen, setClientDialogOpen] = useState(false);
+  // Add state for service dialog
+  const [serviceDialogOpen, setServiceDialogOpen] = useState(false);
+  const [selectedEntryId, setSelectedEntryId] = useState<string>('');
+  const [serviceSelectedMessage, setServiceSelectedMessage] = useState<string>('');
+  // Add client history state and function
+  const [showingClientHistory, setShowingClientHistory] = useState(false);
+  const [clientHistory, setClientHistory] = useState<MergedAppointment[]>([]);
 
+  // Timesoptions initialization
   const timeOptions = generateTimeOptions();
   const navigate = useNavigate();
 
+  // Hook calls
   const { appointments = [], isLoading: loadingAppointments, updateAppointment, createAppointment, deleteAppointment } = useAppointments();
   const { services: allServices = [], isLoading: loadingServices } = useServices();
   const { stylists: allStylists = [], isLoading: loadingStylists, updateStylist } = useStylists();
@@ -155,23 +194,43 @@ export default function Appointments() {
 
   // --- Other Helper Functions ---
   const addBlankEntry = () => {
-    setClientEntries(prev => [...prev, { id: uuidv4(), client: null, services: [], stylists: [] }]);
+    setClientEntries(prev => [...prev, {
+      id: uuidv4(),
+      client: null,
+      services: [],
+      stylists: []
+    }]);
   };
 
   const removeEntry = (id: string) => {
     setClientEntries(prev => prev.filter(e => e.id !== id));
   };
 
-  const updateEntry = (id: string, changes: Partial<ClientAppointmentEntry>) => {
-    setClientEntries(prev =>
-      prev.map(e => {
-        if (e.id === id) {
-          const updatedEntry = { ...e, ...changes };
-          return updatedEntry;
+  const updateEntry = (id: string, updates: Partial<ExtendedClientAppointmentEntry>) => {
+    setClientEntries(prev => prev.map(entry => {
+      if (entry.id === id) {
+        // Handle conversion from Service[] to ServiceEntry[] if needed
+        if (updates.services && Array.isArray(updates.services)) {
+          const services = updates.services as unknown as (ServiceWithGender[] | ServiceEntry[]);
+          // Check if the first item is a Service by seeing if it lacks ServiceEntry properties
+          if (services.length > 0 && !('stylistId' in services[0]) && !('fromTime' in services[0])) {
+            // Convert Service objects to ServiceEntry objects
+            const convertedServices: ServiceEntry[] = (services as ServiceWithGender[]).map(service => ({
+              id: service.id,
+              name: service.name,
+              price: service.price || 0,
+              stylistId: '',
+              stylistName: '',
+              fromTime: appointmentTime.startTime || '10:00',
+              toTime: appointmentTime.endTime || '11:00'
+            }));
+            return { ...entry, ...updates, services: convertedServices };
+          }
         }
-        return e;
-      })
-    );
+        return { ...entry, ...updates };
+      }
+      return entry;
+    }));
   };
 
   const handleSelect = (selectInfo: DateSelectArg) => {
@@ -191,7 +250,7 @@ export default function Appointments() {
     setEditingAppointment(appointment);
     setSelectedSlot(null);
 
-    const clientEntriesToSet = (appointment.clientDetails || []).map((clientDetail): ClientAppointmentEntry | null => {
+    const clientEntriesToSet = (appointment.clientDetails || []).map((clientDetail): ExtendedClientAppointmentEntry | null => {
       const client: Client | null = (allClients || []).find(c => c.id === clientDetail.id) || null;
       if (!client) {
         console.warn(`Client data not found locally for ID: ${clientDetail.id}`);
@@ -199,20 +258,50 @@ export default function Appointments() {
         // return null;
       }
 
+      // Convert Service array to ServiceEntry array
+      const serviceEntries: ServiceEntry[] = (clientDetail.services || []).map(service => {
+        // Create a date object for start and end times
+        const startDate = new Date(appointment.start_time);
+        const endDate = new Date(appointment.end_time);
+        
+        // Format times in HH:MM format
+        const startHour = startDate.getHours();
+        const startMinute = startDate.getMinutes();
+        const endHour = endDate.getHours();
+        const endMinute = endDate.getMinutes();
+        
+        const fromTime = `${startHour}:${startMinute.toString().padStart(2, '0')}`;
+        const toTime = `${endHour}:${endMinute.toString().padStart(2, '0')}`;
+        
+        // Find the stylist for this service
+        const stylist = allStylists.find(s => s.id === appointment.stylist_id) || { id: '', name: 'Unknown' };
+
+        // Return a properly formatted ServiceEntry
+        return {
+          id: service.id,
+          name: service.name,
+          price: service.price || 0,
+          stylistId: stylist.id,
+          stylistName: stylist.name,
+          fromTime,
+          toTime
+        };
+      });
+
       return {
         id: uuidv4(),
         client: client ? { ...client } : null, // Ensure client exists before spreading
-        services: clientDetail.services || [], 
+        services: serviceEntries,
         stylists: clientDetail.stylists || [], 
       };
-    }).filter((entry): entry is ClientAppointmentEntry => entry !== null);
+    }).filter((entry): entry is ExtendedClientAppointmentEntry => entry !== null);
 
     if (clientEntriesToSet.length === 0 && appointment.clientDetails?.length > 0) {
       console.warn("Appointment data missing nested client details after filtering. Check data consistency.");
       setClientEntries([{ id: uuidv4(), client: null, services: [], stylists: [] }]);
     } else if (clientEntriesToSet.length === 0) {
-       console.log("Setting default blank entry as clientDetails was empty.")
-       setClientEntries([{ id: uuidv4(), client: null, services: [], stylists: [] }]);
+      console.log("Setting default blank entry as clientDetails was empty.")
+      setClientEntries([{ id: uuidv4(), client: null, services: [], stylists: [] }]);
     } else {
       setClientEntries(clientEntriesToSet);
     }
@@ -257,6 +346,214 @@ export default function Appointments() {
     setAppointmentTime(prev => ({ ...prev, [field]: event.target.value }));
   };
 
+  // Fix addServiceToEntry function to properly assign service and calculate times
+  const addServiceToEntry = (entryId: string, service: BaseService) => {
+    // Find the entry
+    const entry = clientEntries.find(e => e.id === entryId);
+    if (!entry) return;
+
+    // Calculate default from/to times
+    const lastService = entry.services[entry.services.length - 1];
+    
+    // Default times if no previous service exists
+    let fromTime = appointmentTime.startTime || '10:00';
+    
+    // If appointment time is set, use that
+    if (appointmentTime.startTime) {
+      fromTime = appointmentTime.startTime;
+    }
+    
+    // Get current time if neither is set
+    if (!appointmentTime.startTime && !lastService) {
+      const now = new Date();
+      const hour = now.getHours();
+      const roundedMinutes = Math.ceil(now.getMinutes() / 15) * 15;
+      fromTime = `${hour}:${roundedMinutes === 60 ? '00' : roundedMinutes.toString().padStart(2, '0')}`;
+    }
+    
+    if (lastService) {
+      // If there's a previous service, set start time as the end time of the last service
+      fromTime = lastService.toTime;
+    }
+    
+    // Calculate the end time by adding the service duration to the start time
+    const [fromHour, fromMinute] = fromTime.split(':').map(Number);
+    const serviceDuration = service.duration || 60; // Default to 60 minutes if not specified
+    
+    // Calculate new end time in minutes
+    let totalMinutes = (fromHour * 60) + fromMinute + serviceDuration;
+    const toHour = Math.floor(totalMinutes / 60);
+    const toMinute = totalMinutes % 60;
+    
+    // Format end time
+    const toTime = `${toHour}:${toMinute.toString().padStart(2, '0')}`;
+    
+    // Try to use the same stylist from previous service as default, if available
+    let stylistId = '';
+    let stylistName = '';
+    
+    if (lastService && lastService.stylistId) {
+      stylistId = lastService.stylistId;
+      stylistName = lastService.stylistName;
+    } else if (entry.stylists && entry.stylists.length > 0) {
+      stylistId = entry.stylists[0].id;
+      stylistName = entry.stylists[0].name;
+    }
+
+    // Create new service entry
+    const newService: ServiceEntry = {
+      id: service.id,
+      name: service.name,
+      price: service.price || 0,
+      stylistId, 
+      stylistName,
+      fromTime,
+      toTime
+    };
+
+    // Update the entry with the new service
+    updateEntry(entryId, {
+      services: [...entry.services, newService]
+    });
+  };
+
+  // Update handleServiceSelection function to simply call addServiceToEntry
+  const handleServiceSelection = (service: BaseService) => {
+    addServiceToEntry(selectedEntryId, service);
+    setServiceSelectedMessage(`${service.name} selected!`);
+    setTimeout(() => setServiceSelectedMessage(''), 2000);
+    setServiceDialogOpen(false);
+  };
+
+  // Add function to handle checking for existing service selection
+  const handleCheckServiceSelectionBeforeDialog = (entryId: string) => {
+    const entry = clientEntries.find(e => e.id === entryId);
+    
+    // Check if any service has missing stylist
+    const hasMissingStylist = entry?.services.some(service => !service.stylistId);
+    
+    if (hasMissingStylist) {
+      toast.warn("Please assign an expert to all services before adding a new one");
+      return;
+    }
+    
+    // Open service selection dialog
+    handleOpenServiceDialog(entryId);
+  };
+
+  // Add a function to handle removing a service
+  const removeServiceFromEntry = (entryId: string, serviceIndex: number) => {
+    const entry = clientEntries.find(e => e.id === entryId);
+    if (!entry) return;
+    
+    const updatedServices = [...entry.services];
+    updatedServices.splice(serviceIndex, 1);
+    
+    // Recalculate times for services after the removed one
+    for (let i = serviceIndex; i < updatedServices.length; i++) {
+      if (i === 0) {
+        updatedServices[i].fromTime = appointmentTime.startTime;
+      } else {
+        updatedServices[i].fromTime = updatedServices[i-1].toTime;
+      }
+      
+      // Calculate end time based on service duration
+      const [fromHour, fromMinute] = updatedServices[i].fromTime.split(':').map(Number);
+      const service = activeServices.find(s => s.id === updatedServices[i].id);
+      const serviceDuration = service?.duration || 60;
+      
+      let totalMinutes = (fromHour * 60) + fromMinute + serviceDuration;
+      const toHour = Math.floor(totalMinutes / 60);
+      const toMinute = totalMinutes % 60;
+      
+      updatedServices[i].toTime = `${toHour}:${toMinute.toString().padStart(2, '0')}`;
+    }
+    
+    updateEntry(entryId, { services: updatedServices });
+  };
+
+  // Add function to handle stylist selection for a specific service
+  const updateServiceStylist = (entryId: string, serviceIndex: number, stylist: Stylist) => {
+    const entry = clientEntries.find(e => e.id === entryId);
+    if (!entry) return;
+    
+    const updatedServices = [...entry.services];
+    updatedServices[serviceIndex] = {
+      ...updatedServices[serviceIndex],
+      stylistId: stylist.id,
+      stylistName: stylist.name
+    };
+    
+    updateEntry(entryId, { services: updatedServices });
+  };
+
+  // Add function to update service times
+  const updateServiceTime = (entryId: string, serviceIndex: number, field: 'fromTime' | 'toTime', value: string) => {
+    const entry = clientEntries.find(e => e.id === entryId);
+    if (!entry) return;
+    
+    const updatedServices = [...entry.services];
+    updatedServices[serviceIndex] = {
+      ...updatedServices[serviceIndex],
+      [field]: value
+    };
+    
+    // If changing start time and there are following services, recalculate their times
+    if (field === 'fromTime' && serviceIndex < updatedServices.length - 1) {
+      // Calculate duration of current service
+      const [fromHour, fromMinute] = value.split(':').map(Number);
+      const [toHour, toMinute] = updatedServices[serviceIndex].toTime.split(':').map(Number);
+      const durationMinutes = ((toHour * 60) + toMinute) - ((fromHour * 60) + fromMinute);
+      
+      // Update end time of current service based on new start time and duration
+      let totalMinutes = (fromHour * 60) + fromMinute + durationMinutes;
+      const newToHour = Math.floor(totalMinutes / 60);
+      const newToMinute = totalMinutes % 60;
+      updatedServices[serviceIndex].toTime = `${newToHour}:${newToMinute.toString().padStart(2, '0')}`;
+      
+      // Update all subsequent services
+      for (let i = serviceIndex + 1; i < updatedServices.length; i++) {
+        updatedServices[i].fromTime = updatedServices[i-1].toTime;
+        
+        // Calculate new end time
+        const [nextFromHour, nextFromMinute] = updatedServices[i].fromTime.split(':').map(Number);
+        const service = activeServices.find(s => s.id === updatedServices[i].id);
+        const serviceDuration = service?.duration || 60;
+        
+        totalMinutes = (nextFromHour * 60) + nextFromMinute + serviceDuration;
+        const nextToHour = Math.floor(totalMinutes / 60);
+        const nextToMinute = totalMinutes % 60;
+        
+        updatedServices[i].toTime = `${nextToHour}:${nextToMinute.toString().padStart(2, '0')}`;
+      }
+    }
+    
+    // If changing end time and there are following services, recalculate their times
+    if (field === 'toTime' && serviceIndex < updatedServices.length - 1) {
+      // Update all subsequent services
+      for (let i = serviceIndex + 1; i < updatedServices.length; i++) {
+        if (i === serviceIndex + 1) {
+          updatedServices[i].fromTime = value;
+        } else {
+          updatedServices[i].fromTime = updatedServices[i-1].toTime;
+        }
+        
+        // Calculate new end time
+        const [nextFromHour, nextFromMinute] = updatedServices[i].fromTime.split(':').map(Number);
+        const service = activeServices.find(s => s.id === updatedServices[i].id);
+        const serviceDuration = service?.duration || 60;
+        
+        const totalMinutes = (nextFromHour * 60) + nextFromMinute + serviceDuration;
+        const nextToHour = Math.floor(totalMinutes / 60);
+        const nextToMinute = totalMinutes % 60;
+        
+        updatedServices[i].toTime = `${nextToHour}:${nextToMinute.toString().padStart(2, '0')}`;
+      }
+    }
+    
+    updateEntry(entryId, { services: updatedServices });
+  };
+
   // Combined function for booking or updating
   const handleSaveAppointment = async () => {
     // --- Validation ---
@@ -278,29 +575,7 @@ export default function Appointments() {
         console.error(`Validation Error: No services selected for entry ${idx + 1}`);
         isValid = false;
       }
-      if (entry.stylists.length === 0) {
-        console.error(`Validation Error: No stylists selected for entry ${idx + 1}`);
-        isValid = false;
-      }
     });
-    if (!appointmentTime.startTime || !appointmentTime.endTime) {
-      console.error("Validation Error: Start or End time missing.");
-      isValid = false;
-    }
-    
-    // Validate that start time is before end time
-    if (appointmentTime.startTime && appointmentTime.endTime) {
-      const [startHour, startMinute] = appointmentTime.startTime.split(':').map(Number);
-      const [endHour, endMinute] = appointmentTime.endTime.split(':').map(Number);
-      
-      if (endHour < startHour || (endHour === startHour && endMinute <= startMinute)) {
-        console.error("Validation Error: End time must be after start time");
-        setSnackbarMessage('End time must be after start time');
-        setSnackbarSeverity('error');
-        setSnackbarOpen(true);
-        return;
-      }
-    }
     
     if (!isValid) {
       setSnackbarMessage('Validation failed. Ensure all required fields are filled correctly.');
@@ -310,177 +585,153 @@ export default function Appointments() {
     }
     // --- End Validation ---
 
-    // --- Time Calculation ---
-    const baseDate = editingAppointment ? new Date(editingAppointment.start_time) : (selectedSlot ? new Date(selectedSlot.start) : new Date(selectedDate));
-    baseDate.setHours(0, 0, 0, 0);
-    const [startHour, startMinute] = appointmentTime.startTime.split(':').map(Number);
-    const [endHour, endMinute] = appointmentTime.endTime.split(':').map(Number);
-    const startTime = new Date(baseDate);
-    startTime.setHours(startHour, startMinute, 0, 0);
-    const endTime = new Date(baseDate);
-    endTime.setHours(endHour, endMinute, 0, 0);
-    if (endTime <= startTime) endTime.setDate(endTime.getDate() + 1);
-    // --- End Time Calculation ---
-    
-    // --- Check for break conflicts ---
+    // --- Process client entries and create appointments ---
     try {
+      // Process each client entry to create appointments
       for (const entry of clientEntries) {
-        for (const stylist of entry.stylists) {
-          // Find the stylist's breaks
-          const stylistData = allStylists.find(s => s.id === stylist.id);
-          if (!stylistData) continue;
-          
-          // Check for break conflicts
-          const hasBreakConflict = (stylistData.breaks || []).some(breakItem => {
-            const breakStart = new Date(breakItem.startTime);
-            const breakEnd = new Date(breakItem.endTime);
-            
-            // Only check breaks on the same day
-            if (breakStart.getDate() !== startTime.getDate() ||
-                breakStart.getMonth() !== startTime.getMonth() ||
-                breakStart.getFullYear() !== startTime.getFullYear()) {
-              return false;
-            }
-            
-            // Check for overlap
-            return (
-              (startTime >= breakStart && startTime < breakEnd) || // Start during break
-              (endTime > breakStart && endTime <= breakEnd) || // End during break
-              (startTime <= breakStart && endTime >= breakEnd) // Break is within appointment
+        // Process client - create if new
+        let clientId = entry.client?.id;
+        const clientName = entry.client?.full_name?.trim() || entry.client?.inputValue?.trim();
+        const clientPhone = entry.client?.phone?.trim();
+        const clientEmail = entry.client?.email?.trim();
+
+        if (!clientId && clientName && clientPhone) {
+          try {
+            const newClient = await updateClientFromAppointment(
+              clientName,
+              clientPhone,
+              clientEmail || '',
+              editingAppointment ? 'Created during appointment edit' : 'Created from appointment booking'
             );
-          });
+            clientId = newClient.id;
+          } catch (clientError) {
+            console.error('Error creating new client:', clientError);
+            throw new Error(`Failed to create client: ${clientError instanceof Error ? clientError.message : 'Unknown error'}`);
+          }
+        }
+
+        // Generate clientDetails for the API
+        const clientDetails = entry.services.map(service => ({
+          clientId: clientId!,
+          serviceIds: [service.id],
+          stylistIds: [service.stylistId]
+        }));
+
+        // If editing an existing appointment
+        if (editingAppointment) {
+          // Create update data for the first service
+          // Using the first service as the primary one in the appointment table
+          const firstService = entry.services[0];
+          if (!firstService) continue;
+
+          // Parse times
+          const [startHour, startMinute] = firstService.fromTime.split(':').map(Number);
+          const [endHour, endMinute] = firstService.toTime.split(':').map(Number);
           
-          if (hasBreakConflict) {
-            console.error(`Break conflict detected for stylist: ${stylist.name}`);
-            setSnackbarMessage(`Cannot book appointment: ${stylist.name} has a break scheduled during this time.`);
-            setSnackbarSeverity('error');
-            setSnackbarOpen(true);
-            return;
-          }
-        }
-      }
-      
-      // Check for overlapping appointments
-      const conflictingAppointments = appointments.filter(app => {
-        // Skip the current appointment being edited
-        if (editingAppointment && app.id === editingAppointment.id) return false;
-        
-        // Convert to Date objects
-        const appStart = new Date(app.start_time);
-        const appEnd = new Date(app.end_time);
-        
-        // Only check appointments on the same day
-        if (appStart.getDate() !== startTime.getDate() ||
-            appStart.getMonth() !== startTime.getMonth() ||
-            appStart.getFullYear() !== startTime.getFullYear()) {
-          return false;
-        }
-        
-        // Check if the appointment overlaps with the time range
-        return (
-          (startTime >= appStart && startTime < appEnd) || // Start during another appointment
-          (endTime > appStart && endTime <= appEnd) || // End during another appointment
-          (startTime <= appStart && endTime >= appEnd) // Another appointment is within this one
-        );
-      });
-      
-      // Filter for conflicting stylists
-      for (const entry of clientEntries) {
-        const selectedStylistIds = entry.stylists.map(s => s.id);
-        
-        const stylistConflicts = conflictingAppointments.filter(app => {
-          // Check if any of the selected stylists are already booked
-          return selectedStylistIds.includes(app.stylist_id);
-        });
-        
-        if (stylistConflicts.length > 0) {
-          const conflictingStylist = allStylists.find(s => s.id === stylistConflicts[0].stylist_id);
-          setSnackbarMessage(`Scheduling conflict: ${conflictingStylist ? conflictingStylist.name : 'A stylist'} is already booked during this time.`);
-          setSnackbarSeverity('error');
-          setSnackbarOpen(true);
-          return;
-        }
-      }
+          // Create date objects
+          const baseDate = new Date(editingAppointment.start_time);
+          baseDate.setHours(0, 0, 0, 0);
+          
+          const startTime = new Date(baseDate);
+          startTime.setHours(startHour, startMinute, 0, 0);
+          
+          const endTime = new Date(baseDate);
+          endTime.setHours(endHour, endMinute, 0, 0);
+          if (endTime <= startTime) endTime.setDate(endTime.getDate() + 1);
 
-      // --- Create/Update Clients ---
-      const processedClientDetails = await Promise.all(
-        clientEntries.map(async (entry, idx) => {
-          let finalClientId = entry.client?.id || '';
-          const clientName = entry.client?.full_name?.trim() || entry.client?.inputValue?.trim();
-          const clientPhone = entry.client?.phone?.trim();
-          const clientEmail = entry.client?.email?.trim();
-
-          if (!finalClientId && clientName && clientPhone) { // Create new client
-            try {
-              const newClient = await updateClientFromAppointment(
-                clientName,
-                clientPhone,
-                clientEmail || '',
-                editingAppointment ? 'Created during appointment edit' : 'Created from appointment booking'
-              );
-              finalClientId = newClient.id;
-            } catch (clientError) {
-              console.error(`Error creating new client for entry ${idx + 1}:`, clientError);
-              throw new Error(`Failed to create new client: ${clientError instanceof Error ? clientError.message : 'Unknown error'}`);
-            }
-          } else if (!finalClientId) {
-              throw new Error(`Could not determine Client ID for entry ${idx + 1}. Name: ${clientName}, Phone: ${clientPhone}`);
-          }
-
-          return {
-            clientId: finalClientId,
-            serviceIds: entry.services.map(s => s.id),
-            stylistIds: entry.stylists.map(st => st.id),
+          // Update the appointment
+          const updateData = {
+            id: editingAppointment.id,
+            start_time: startTime.toISOString(),
+            end_time: endTime.toISOString(),
+            notes: appointmentNotes,
+            status: editingAppointment.status,
+            client_id: clientId!,
+            stylist_id: firstService.stylistId,
+            service_id: firstService.id,
+            clientDetails
           };
-        })
-      );
-      // --- End Create/Update Clients ---
-
-      if (processedClientDetails.some(d => !d.clientId)) {
-        throw new Error("Could not resolve client ID for one or more entries.");
+          
+          await updateAppointment(updateData);
+          
+          // If there are multiple services, create separate appointments for each additional service
+          for (let i = 1; i < entry.services.length; i++) {
+            const service = entry.services[i];
+            
+            // Parse times for this service
+            const [svcStartHour, svcStartMinute] = service.fromTime.split(':').map(Number);
+            const [svcEndHour, svcEndMinute] = service.toTime.split(':').map(Number);
+            
+            // Create date objects
+            const serviceStartTime = new Date(baseDate);
+            serviceStartTime.setHours(svcStartHour, svcStartMinute, 0, 0);
+            
+            const serviceEndTime = new Date(baseDate);
+            serviceEndTime.setHours(svcEndHour, svcEndMinute, 0, 0);
+            if (serviceEndTime <= serviceStartTime) serviceEndTime.setDate(serviceEndTime.getDate() + 1);
+            
+            // Create a new appointment for this service
+            const serviceAppData = {
+              start_time: serviceStartTime.toISOString(),
+              end_time: serviceEndTime.toISOString(),
+              notes: appointmentNotes,
+              status: 'scheduled' as const,
+              client_id: clientId!,
+              stylist_id: service.stylistId,
+              service_id: service.id,
+              clientDetails: [{
+                clientId: clientId!,
+                serviceIds: [service.id],
+                stylistIds: [service.stylistId]
+              }]
+            };
+            
+            await createAppointment(serviceAppData);
+          }
+        } 
+        // Creating new appointments
+        else {
+          // Create separate appointments for each service
+          for (const service of entry.services) {
+            // Parse times
+            const [startHour, startMinute] = service.fromTime.split(':').map(Number);
+            const [endHour, endMinute] = service.toTime.split(':').map(Number);
+            
+            // Create date objects  
+            const baseDate = selectedSlot ? new Date(selectedSlot.start) : new Date(selectedDate);
+            baseDate.setHours(0, 0, 0, 0);
+            
+            const startTime = new Date(baseDate);
+            startTime.setHours(startHour, startMinute, 0, 0);
+            
+            const endTime = new Date(baseDate);
+            endTime.setHours(endHour, endMinute, 0, 0);
+            if (endTime <= startTime) endTime.setDate(endTime.getDate() + 1);
+            
+            // Create the appointment
+            const appointmentData = {
+              start_time: startTime.toISOString(),
+              end_time: endTime.toISOString(),
+              notes: appointmentNotes,
+              status: 'scheduled' as const,
+              client_id: clientId!,
+              stylist_id: service.stylistId,
+              service_id: service.id,
+              clientDetails: [{
+                clientId: clientId!,
+                serviceIds: [service.id],
+                stylistIds: [service.stylistId]
+              }]
+            };
+            
+            await createAppointment(appointmentData);
+          }
+        }
       }
-
-      // --- Prepare Data for Backend ---
-      const baseAppointmentData = {
-        start_time: startTime.toISOString(),
-        end_time: endTime.toISOString(),
-        notes: appointmentNotes,
-        status: editingAppointment ? editingAppointment.status : 'scheduled' as Appointment['status'],
-        client_id: processedClientDetails[0].clientId,
-        stylist_id: processedClientDetails[0].stylistIds[0],
-        service_id: processedClientDetails[0].serviceIds[0],
-      };
-
-      // The detailed structure expected by the backend hook { clientId, serviceIds, stylistIds }[]
-      // We already have this structure in processedClientDetails from the client creation step
-      const clientDetailsForHook = processedClientDetails; 
-
-      if (editingAppointment) {
-        // --- Update Appointment ---
-        const updateData = {
-          id: editingAppointment.id,
-          ...baseAppointmentData,
-          // Make sure updateAppointment also expects this structure for clientDetails
-          // If not, it needs modification in useAppointments.ts
-          clientDetails: clientDetailsForHook 
-        };
-        console.log("Sending update data:", updateData);
-        await updateAppointment(updateData);
-        toast.success('Appointment updated successfully!');
-      } else {
-        // --- Create Appointment ---
-        const createData = {
-          ...baseAppointmentData,
-          // Ensure createAppointment expects this structure
-          clientDetails: clientDetailsForHook 
-        };
-        console.log("Sending create data:", createData);
-        await createAppointment(createData);
-        toast.success('Appointment booked successfully!');
-      }
-
+      
+      toast.success(editingAppointment ? 'Appointment updated successfully!' : 'Appointment booked successfully!');
       handleCloseDrawer();
-
+      
     } catch (error) {
       const action = editingAppointment ? 'Update' : 'Booking';
       console.error(`Error during appointment ${action.toLowerCase()}:`, error);
@@ -571,6 +822,8 @@ export default function Appointments() {
     setClientEntries([{ id: uuidv4(), client: null, services: [], stylists: [] }]);
     setAppointmentTime({ startTime: '', endTime: '' });
     setAppointmentNotes('');
+    setServiceSearchTerm('');
+    setServiceGenderFilter('male');
   };
 
   // Add handler for view mode toggle
@@ -583,6 +836,94 @@ export default function Appointments() {
     }
   };
 
+  // Add function to handle opening service dialog
+  const handleOpenServiceDialog = (entryId: string) => {
+    setSelectedEntryId(entryId);
+    setServiceDialogOpen(true);
+    setServiceSearchTerm('');
+  };
+
+  // Update handleDeleteAppointment function
+  const handleDeleteAppointment = () => {
+    if (!editingAppointment) return;
+    
+    setDeleteDialogOpen(true);
+  };
+  
+  // Function to confirm and execute appointment deletion
+  const confirmDeleteAppointment = async () => {
+    if (!editingAppointment) return;
+    
+    try {
+      await deleteAppointment(editingAppointment.id);
+      toast.success('Appointment deleted successfully');
+      setDeleteDialogOpen(false);
+      handleCloseDrawer();
+    } catch (error) {
+      console.error('Error deleting appointment:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      toast.error(`Delete failed: ${errorMessage}`);
+    }
+  };
+
+  // Function to add a new client
+  const handleAddNewClient = async (name: string, phone: string, email: string = '') => {
+    try {
+      const newClient = await updateClientFromAppointment(
+        name,
+        phone,
+        email,
+        'Created from appointment booking'
+      );
+      
+      // Update entry with the new client
+      updateEntry(clientEntries[0].id, { client: { ...newClient } });
+      
+      // Close client dialog
+      setClientDialogOpen(false);
+      
+      // Show success notification
+      toast.success(`Client ${name} created successfully!`);
+      return newClient;
+    } catch (error) {
+      console.error('Error creating new client:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      toast.error(`Failed to create client: ${errorMessage}`);
+      return null;
+    }
+  };
+
+  // Function to view client history
+  const handleViewClientHistory = useCallback(async () => {
+    // Only proceed if we have a selected client with ID
+    const selectedClient = clientEntries[0]?.client;
+    if (!selectedClient?.id) return;
+    
+    try {
+      // Filter appointments for this client
+      const clientAppointments = appointments.filter(
+        appointment => appointment.client_id === selectedClient.id
+      );
+      
+      // Sort by date (newest first)
+      clientAppointments.sort((a, b) => 
+        new Date(b.start_time).getTime() - new Date(a.start_time).getTime()
+      );
+      
+      // Set client history
+      setClientHistory(clientAppointments);
+      setShowingClientHistory(true);
+    } catch (error) {
+      console.error('Error fetching client history:', error);
+      toast.error('Could not load client history');
+    }
+  }, [clientEntries, appointments]);
+
+  // Close client history panel
+  const handleCloseClientHistory = () => {
+    setShowingClientHistory(false);
+  };
+
   // ============================================
   // Rendering Logic
   // ============================================
@@ -592,6 +933,11 @@ export default function Appointments() {
   }
 
   const showDrawer = !!selectedSlot || !!editingAppointment;
+
+  // Replace the handleOpenClientsList function to show a dialog instead of trying to use the hidden autocomplete
+  const handleOpenClientsList = () => {
+    setClientDialogOpen(true);
+  };
 
   return (
     <Box sx={{ 
@@ -616,22 +962,32 @@ export default function Appointments() {
         <Typography variant="h5" component="h1">
           {viewMode === 'calendar' ? 'Appointments Calendar' : 'Upcoming Appointments'}
         </Typography>
-        <ToggleButtonGroup
-          value={viewMode}
-          exclusive
-          onChange={handleViewModeChange}
-          aria-label="view mode"
-          size="small"
-        >
-          <ToggleButton value="calendar" aria-label="calendar view">
-            <CalendarIcon sx={{ mr: 1 }} />
-            Calendar View
-          </ToggleButton>
-          <ToggleButton value="list" aria-label="list view">
-            <ListIcon sx={{ mr: 1 }} />
-            List View
-          </ToggleButton>
-        </ToggleButtonGroup>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+          <Button
+            variant="contained"
+            color="primary"
+            startIcon={<AddIcon />}
+            onClick={() => navigate('/create-appointment')}
+          >
+            Create Appointment
+          </Button>
+          <ToggleButtonGroup
+            value={viewMode}
+            exclusive
+            onChange={handleViewModeChange}
+            aria-label="view mode"
+            size="small"
+          >
+            <ToggleButton value="calendar" aria-label="calendar view">
+              <CalendarIcon sx={{ mr: 1 }} />
+              Calendar View
+            </ToggleButton>
+            <ToggleButton value="list" aria-label="list view">
+              <ListIcon sx={{ mr: 1 }} />
+              List View
+            </ToggleButton>
+          </ToggleButtonGroup>
+        </Box>
       </Box>
       
       {/* Main Content Area - Calendar or List View */}
@@ -704,272 +1060,814 @@ export default function Appointments() {
           },
         }}
       >
-        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', p: 2, borderBottom: '1px solid', borderColor: 'divider' }}>
-          <Typography variant="h6">
-            {editingAppointment ? 'Edit Appointment' : 'New Appointment'}
+        {/* Header with back button and title */}
+        <Box 
+          sx={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            p: 2, 
+            borderBottom: '1px solid', 
+            borderColor: 'divider', 
+            position: 'relative'
+          }}
+        >
+          <IconButton 
+            onClick={handleCloseDrawer} 
+            sx={{ position: 'absolute', left: 8 }}
+          >
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M15 18L9 12L15 6" stroke="#E91E63" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </IconButton>
+          <Typography 
+            variant="h6" 
+            sx={{ 
+              color: '#E91E63',
+              flex: 1,
+              textAlign: 'center'
+            }}
+          >
+            Create Appointment
           </Typography>
-          <Box>
-            {editingAppointment && (
-              <Tooltip title="Delete Appointment">
-                <IconButton
-                  onClick={() => setDeleteDialogOpen(true)}
-                  color="error"
-                  sx={{ mr: 1 }}
-                >
-                  <DeleteIcon />
-                </IconButton>
-              </Tooltip>
-            )}
-            <IconButton onClick={handleCloseDrawer}>
-              <CloseIcon />
-            </IconButton>
-          </Box>
         </Box>
 
         {/* Form Content Area - Allow Scrolling */}
-        <Box sx={{ p: 3, overflowY: 'auto', flexGrow: 1 }}>
-          <Typography variant="subtitle1" gutterBottom>
-            Time: {selectedSlot ? format(selectedSlot.start, 'PP p') : editingAppointment ? format(new Date(editingAppointment.start_time), 'PP p') : 'Select slot'}
-          </Typography>
-          <Grid container spacing={2} sx={{ mb: 3 }}>
-            <Grid item xs={6}>
-              <FormControl fullWidth>
-                <InputLabel id="start-time-label">Start Time</InputLabel>
-                <Select
-                  labelId="start-time-label"
-                  value={appointmentTime.startTime}
-                  label="Start Time"
-                  onChange={(e) => handleTimeChange(e, 'startTime')}
+        <Box sx={{ p: 3, overflowY: 'auto', flexGrow: 1, bgcolor: '#F5F5F5' }}>
+          {/* Guest Details Section */}
+          <Box sx={{ mb: 3, bgcolor: 'white', p: 3, borderRadius: 2 }}>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+              <Typography variant="body1" fontWeight="medium">
+                <span style={{ marginRight: '8px' }}>1.</span> Guest Details
+              </Typography>
+              {clientEntries[0]?.client?.id ? (
+                <Button 
+                  sx={{ 
+                    color: '#E91E63', 
+                    textTransform: 'none' 
+                  }}
+                  size="small"
+                  onClick={handleViewClientHistory}
                 >
-                  {timeOptions.map(option => <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>)}
-                </Select>
-              </FormControl>
-            </Grid>
-            <Grid item xs={6}>
-              <FormControl fullWidth>
-                <InputLabel id="end-time-label">End Time</InputLabel>
-                <Select
-                  labelId="end-time-label"
-                  value={appointmentTime.endTime}
-                  label="End Time"
-                  onChange={(e) => handleTimeChange(e, 'endTime')}
+                  Client History
+                </Button>
+              ) : (
+                <Button 
+                  sx={{ 
+                    color: '#E91E63', 
+                    textTransform: 'none' 
+                  }}
+                  size="small"
+                  onClick={() => setClientDialogOpen(true)}
                 >
-                  {timeOptions.map(option => <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>)}
-                </Select>
-              </FormControl>
-            </Grid>
-          </Grid>
-
-          {clientEntries.map((entry, index) => (
-            <Paper key={entry.id} elevation={2} sx={{ p: 2, mb: 2 }}>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                <Typography variant="subtitle2">Client {index + 1}</Typography>
-                {clientEntries.length > 1 && (
-                  <Tooltip title="Remove Client">
-                    <IconButton size="small" onClick={() => removeEntry(entry.id)} color="error"><DeleteIcon fontSize="small" /></IconButton>
-                  </Tooltip>
-                )}
-              </Box>
-
-              <Autocomplete
-                sx={{ mb: 2 }}
-                options={allClients}
-                getOptionLabel={(option) => typeof option === 'string' ? option : `${option.full_name}${option.phone ? ` (${option.phone})` : ''}`}
-                value={entry.client}
-                onChange={(event, newValue) => {
-                  if (typeof newValue === 'string') {
-                    // Ensure phone is initialized as empty string for new client object literal
-                    const currentPhone = entry.client?.phone || ''; 
-                    const currentEmail = entry.client?.email || ''; // Also handle email
-                    updateEntry(entry.id, { 
-                      client: { 
-                        // ...(entry.client || {}), // Avoid spreading potentially incompatible partial types
-                        id: '', 
-                        full_name: newValue, 
-                        inputValue: newValue, 
-                        phone: currentPhone, // Provide string default
-                        email: currentEmail,  // Provide string default
-                        // Ensure all other required fields from Client type have defaults if needed
-                        created_at: '' // Example default if needed by Client type
-                      } 
-                    });
-                  } else {
-                    // newValue is a Client object or null
-                    updateEntry(entry.id, { client: newValue ? { ...newValue } : null });
+                  Add Guest +
+                </Button>
+              )}
+            </Box>
+            
+            {/* Client search field */}
+            <TextField
+              fullWidth
+              placeholder="Search By Name Or No."
+              value={clientEntries[0]?.client?.full_name || ''}
+              InputProps={{
+                endAdornment: (
+                  <InputAdornment position="end">
+                    <IconButton onClick={() => setClientDialogOpen(true)}>
+                      <SearchIcon />
+                    </IconButton>
+                  </InputAdornment>
+                ),
+                sx: {
+                  borderRadius: '8px',
+                  '& .MuiOutlinedInput-notchedOutline': {
+                    borderColor: '#E0E0E0'
                   }
-                }}
-                filterOptions={(options, params) => {
-                  const filtered = filterClients(options, params);
-                  if (params.inputValue !== '' && !options.some(option => option.full_name === params.inputValue)) {
-                    filtered.push({
-                      inputValue: params.inputValue,
-                      full_name: `Add "${params.inputValue}"`,
-                      id: '',
-                      phone: ''
-                    });
-                  }
-                  return filtered;
-                }}
-                renderInput={(params) => <TextField {...params} label="Select or Add Client" variant="outlined" />}
-                isOptionEqualToValue={(option, value) => option.id === value?.id}
-                freeSolo
-                selectOnFocus
-                clearOnBlur
-                handleHomeEndKeys
-              />
+                }
+              }}
+              onClick={() => setClientDialogOpen(true)}
+              sx={{ cursor: 'pointer' }}
+            />
 
-              {/* Phone and Email for New Client (only show if client exists and has no ID) */}
-              {(entry.client && !entry.client.id) && (
-                <Grid container spacing={2} sx={{ mb: 2 }}>
+            <Dialog 
+              open={clientDialogOpen} 
+              onClose={() => setClientDialogOpen(false)}
+              maxWidth="sm"
+              fullWidth
+            >
+              <DialogTitle>
+                Select Client
+                <IconButton
+                  aria-label="close"
+                  onClick={() => setClientDialogOpen(false)}
+                  sx={{ position: 'absolute', right: 8, top: 8 }}
+                >
+                  <CloseIcon />
+                </IconButton>
+              </DialogTitle>
+              <DialogContent dividers>
+                <TextField
+                  autoFocus
+                  margin="dense"
+                  label="Search Clients"
+                  fullWidth
+                  variant="outlined"
+                  InputProps={{
+                    endAdornment: (
+                      <InputAdornment position="end">
+                        <SearchIcon />
+                      </InputAdornment>
+                    )
+                  }}
+                  sx={{ mb: 2 }}
+                />
+                <Box sx={{ maxHeight: '300px', overflow: 'auto' }}>
+                  <List>
+                    {allClients.map(client => (
+                      <ListItem 
+                        button 
+                        key={client.id}
+                        onClick={() => {
+                          updateEntry(clientEntries[0].id, { client: { ...client } });
+                          setClientDialogOpen(false);
+                        }}
+                      >
+                        <ListItemText 
+                          primary={client.full_name} 
+                          secondary={client.phone || 'No phone'}
+                        />
+                      </ListItem>
+                    ))}
+                  </List>
+                </Box>
+                <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 2 }}>
+                  <Button
+                    onClick={() => {
+                      // Show new client form instead of just setting an empty client
+                      const newClient = {
+                        id: '',
+                        full_name: '',
+                        phone: '',
+                        email: '',
+                        created_at: ''
+                      };
+                      updateEntry(clientEntries[0].id, { client: newClient });
+                      setClientDialogOpen(false);
+                    }}
+                    color="primary"
+                    startIcon={<AddIcon />}
+                  >
+                    Add New Client
+                  </Button>
+                </Box>
+              </DialogContent>
+            </Dialog>
+
+            {/* New Client Form (only show if client exists and has no ID) */}
+            {(clientEntries[0].client && !clientEntries[0].client.id) && (
+              <Box sx={{ mt: 2, p: 2, border: '1px solid #E0E0E0', borderRadius: 1, bgcolor: '#FAFAFA' }}>
+                <Typography variant="subtitle2" sx={{ mb: 2, color: '#E91E63' }}>
+                  New Client Details
+                </Typography>
+                <TextField
+                  label="Client Name"
+                  fullWidth
+                  required
+                  value={clientEntries[0].client.full_name || ''}
+                  onChange={(e) => updateEntry(clientEntries[0].id, { 
+                    client: { ...clientEntries[0].client!, full_name: e.target.value }
+                  })}
+                  margin="dense"
+                  variant="outlined"
+                  sx={{ mb: 2 }}
+                />
+                <Grid container spacing={2}>
                   <Grid item xs={6}>
                     <TextField
-                      label="Phone (Required for New)"
+                      label="Phone (Required)"
                       fullWidth
-                      required // Mark as required visually
-                      value={entry.client.phone || ''}
-                      onChange={(e) => updateEntry(entry.id, { client: { ...entry.client!, phone: e.target.value } })}
+                      required
+                      value={clientEntries[0].client.phone || ''}
+                      onChange={(e) => updateEntry(clientEntries[0].id, { 
+                        client: { ...clientEntries[0].client!, phone: e.target.value }
+                      })}
+                      margin="dense"
+                      variant="outlined"
                     />
-                 </Grid>
+                  </Grid>
                   <Grid item xs={6}>
-                     <TextField
+                    <TextField
                       label="Email (Optional)"
-                       fullWidth
-                      value={entry.client.email || ''}
-                      onChange={(e) => updateEntry(entry.id, { client: { ...entry.client!, email: e.target.value } })}
+                      fullWidth
+                      value={clientEntries[0].client.email || ''}
+                      onChange={(e) => updateEntry(clientEntries[0].id, { 
+                        client: { ...clientEntries[0].client!, email: e.target.value }
+                      })}
+                      margin="dense"
+                      variant="outlined"
                     />
                   </Grid>
                 </Grid>
-              )}
-
-              <Autocomplete
-                sx={{ mb: 2 }}
-                multiple
-                options={activeServices}
-                getOptionLabel={(option) => `${option.name} (${formatCurrency(option.price)})`}
-                value={entry.services}
-                onChange={(event, newValue) => updateEntry(entry.id, { services: newValue })}
-                renderInput={(params) => <TextField {...params} label="Select Services" variant="outlined" />}
-                renderTags={(value, getTagProps) => value.map((option, index) => <Chip variant="outlined" label={option.name} {...getTagProps({ index })} />)}
-                isOptionEqualToValue={(option, value) => option.id === value.id}
-              />
-
-              <Autocomplete
-                sx={{ mb: 2 }}
-                multiple
-                options={(allStylists || []).map(st => ({ id: st.id, name: st.name }))}
-                getOptionLabel={(option) => option.name}
-                value={entry.stylists}
-                onChange={(event, newValue) => updateEntry(entry.id, { stylists: newValue })}
-                renderInput={(params) => <TextField {...params} label="Select Stylists" variant="outlined" />}
-                renderTags={(value, getTagProps) => value.map((option, index) => <Chip variant="outlined" label={option.name} {...getTagProps({ index })} />)}
-                isOptionEqualToValue={(option, value) => option.id === value.id}
-              />
-
-              {/* Add per-client Create Bill button when editing an existing appointment */}
-              {editingAppointment && entry.client && entry.services.length > 0 && entry.stylists.length > 0 && (
-                <Box sx={{ textAlign: 'right', mb: 2 }}>
+                <Box sx={{ mt: 2, display: 'flex', justifyContent: 'flex-end' }}>
                   <Button
                     variant="contained"
-                    startIcon={<ReceiptIcon />}
-                    disabled={isBilling}
+                    color="primary"
                     onClick={() => {
-                      setIsBilling(true);
-                      const clientName = entry.client?.full_name || entry.client?.inputValue || '';
-                      const stylistId = entry.stylists[0].id;
-                      const servicesForPOS = entry.services.map(s => ({
-                        id: s.id,
-                        name: s.name,
-                        price: s.price,
-                        type: 'service'
-                      }));
-
-                      navigate('/pos', {
-                        state: {
-                          appointmentData: {
-                            id: editingAppointment.id,
-                            clientName,
-                            stylistId,
-                            services: servicesForPOS,
-                            type: 'service_collection',
-                            step: 2
-                          }
-                        }
-                      });
-                      handleCloseDrawer();
+                      const { client } = clientEntries[0];
+                      if (client && client.full_name && client.phone) {
+                        handleAddNewClient(client.full_name, client.phone, client.email || '');
+                      } else {
+                        toast.error('Please fill required fields (name and phone)');
+                      }
+                    }}
+                    sx={{ 
+                      bgcolor: '#E91E63',
+                      '&:hover': { bgcolor: '#C2185B' }
                     }}
                   >
-                    Create Bill for Client {index + 1}
+                    Save Client
                   </Button>
                 </Box>
-              )}
-            </Paper>
-          ))}
+              </Box>
+            )}
 
-          <Button startIcon={<AddIcon />} onClick={addBlankEntry} sx={{ mb: 3 }}>Add Another Client</Button>
+            {/* No client selected message */}
+            {!clientEntries[0]?.client && (
+              <Typography variant="body2" color="error" sx={{ mt: 2 }}>
+                Select guest details
+              </Typography>
+            )}
 
-          <TextField
-            label="Notes"
-            multiline
-            rows={3}
-            fullWidth
-            value={appointmentNotes}
-            onChange={(e) => setAppointmentNotes(e.target.value)}
-            variant="outlined"
-            sx={{ mb: 3 }}
-          />
+            {/* Client History Dialog */}
+            <Dialog
+              open={showingClientHistory}
+              onClose={handleCloseClientHistory}
+              maxWidth="md"
+              fullWidth
+            >
+              <DialogTitle sx={{ bgcolor: '#E91E63', color: 'white' }}>
+                Client History: {clientEntries[0]?.client?.full_name}
+                <IconButton
+                  aria-label="close"
+                  onClick={handleCloseClientHistory}
+                  sx={{ position: 'absolute', right: 8, top: 8, color: 'white' }}
+                >
+                  <CloseIcon />
+                </IconButton>
+              </DialogTitle>
+              <DialogContent dividers>
+                {clientHistory.length === 0 ? (
+                  <Typography variant="body1" sx={{ textAlign: 'center', py: 4 }}>
+                    No previous appointments found for this client
+                  </Typography>
+                ) : (
+                  <List>
+                    {clientHistory.map(appointment => {
+                      // Find service details
+                      const service = allServices.find(s => s.id === appointment.service_id);
+                      // Find stylist details
+                      const stylist = allStylists.find(s => s.id === appointment.stylist_id);
+                      
+                      return (
+                        <ListItem
+                          key={appointment.id}
+                          divider
+                          sx={{ 
+                            borderLeft: '4px solid #E91E63',
+                            mb: 1,
+                            borderRadius: 1,
+                            bgcolor: '#F9F9F9'
+                          }}
+                        >
+                          <Grid container spacing={2}>
+                            <Grid item xs={12} sm={3}>
+                              <Typography variant="subtitle2">Date & Time</Typography>
+                              <Typography variant="body2">
+                                {format(new Date(appointment.start_time), 'MMM dd, yyyy')}
+                              </Typography>
+                              <Typography variant="body2">
+                                {format(new Date(appointment.start_time), 'hh:mm a')} - 
+                                {format(new Date(appointment.end_time), 'hh:mm a')}
+                              </Typography>
+                            </Grid>
+                            <Grid item xs={12} sm={3}>
+                              <Typography variant="subtitle2">Service</Typography>
+                              <Typography variant="body2">{service?.name || 'Unknown Service'}</Typography>
+                              <Typography variant="body2">₹{service?.price || 0}</Typography>
+                            </Grid>
+                            <Grid item xs={12} sm={3}>
+                              <Typography variant="subtitle2">Expert</Typography>
+                              <Typography variant="body2">{stylist?.name || 'Unknown Expert'}</Typography>
+                            </Grid>
+                            <Grid item xs={12} sm={3}>
+                              <Typography variant="subtitle2">Status</Typography>
+                              <Chip 
+                                label={appointment.status} 
+                                size="small"
+                                color={
+                                  appointment.status === 'completed' 
+                                    ? 'success' 
+                                    : appointment.status === 'cancelled' 
+                                      ? 'error' 
+                                      : 'primary'
+                                }
+                              />
+                              {appointment.notes && (
+                                <Typography variant="body2" sx={{ mt: 1, fontSize: '0.8rem' }}>
+                                  Note: {appointment.notes}
+                                </Typography>
+                              )}
+                            </Grid>
+                          </Grid>
+                        </ListItem>
+                      );
+                    })}
+                  </List>
+                )}
+              </DialogContent>
+            </Dialog>
+          </Box>
+
+          {/* Service Details Section */}
+          <Box sx={{ mb: 3, bgcolor: 'white', p: 3, borderRadius: 2 }}>
+            <Typography variant="body1" fontWeight="medium" mb={2}>
+              <span style={{ marginRight: '8px' }}>2.</span> Service Details
+            </Typography>
+            
+            {/* Service search field (keep in the UI for quick selection) */}
+            <TextField
+              fullWidth
+              placeholder="Search Service By Name"
+              value={serviceSearchTerm}
+              onChange={(e) => setServiceSearchTerm(e.target.value)}
+              InputProps={{
+                endAdornment: (
+                  <InputAdornment position="end">
+                    <IconButton>
+                      <SearchIcon />
+                    </IconButton>
+                  </InputAdornment>
+                ),
+                sx: {
+                  borderRadius: '8px',
+                  mb: 2,
+                  '& .MuiOutlinedInput-notchedOutline': {
+                    borderColor: '#E0E0E0'
+                  }
+                }
+              }}
+              onClick={() => handleCheckServiceSelectionBeforeDialog(clientEntries[0].id)}
+              sx={{ cursor: 'pointer' }}
+            />
+            
+            {/* Gender Filter Tabs */}
+            <Box sx={{ mb: 3, display: 'flex', gap: 1 }}>
+              <Button
+                variant={serviceGenderFilter === 'female' ? 'contained' : 'outlined'}
+                onClick={() => setServiceGenderFilter('female')}
+                sx={{ 
+                  borderRadius: '20px', 
+                  textTransform: 'none',
+                  bgcolor: serviceGenderFilter === 'female' ? '#E91E63' : 'transparent',
+                  color: serviceGenderFilter === 'female' ? 'white' : '#757575',
+                  borderColor: '#E0E0E0',
+                  '&:hover': {
+                    bgcolor: serviceGenderFilter === 'female' ? '#D81B60' : 'rgba(0,0,0,0.04)'
+                  },
+                }}
+              >
+                female
+              </Button>
+              <Button
+                variant={serviceGenderFilter === 'male' ? 'contained' : 'outlined'}
+                onClick={() => setServiceGenderFilter('male')}
+                sx={{ 
+                  borderRadius: '20px', 
+                  textTransform: 'none',
+                  bgcolor: serviceGenderFilter === 'male' ? '#2196F3' : 'transparent',
+                  color: serviceGenderFilter === 'male' ? 'white' : '#757575',
+                  borderColor: '#E0E0E0',
+                  '&:hover': {
+                    bgcolor: serviceGenderFilter === 'male' ? '#1E88E5' : 'rgba(0,0,0,0.04)'
+                  },
+                }}
+              >
+                male
+              </Button>
+            </Box>
+
+            {/* Service categories and items */}
+            <Box sx={{ mb: 2, borderRadius: 1, border: '1px solid #E0E0E0', bgcolor: 'white', maxHeight: '300px', overflow: 'auto' }}>
+              {(() => {
+                // Get all categories
+                const categories = Array.from(new Set(activeServices
+                  .filter(service => 
+                    (!serviceGenderFilter || (service as ServiceWithGender).gender === serviceGenderFilter || !(service as ServiceWithGender).gender) && 
+                    (!serviceSearchTerm || service.name.toLowerCase().includes(serviceSearchTerm.toLowerCase()))
+                  )
+                  .map(service => service.category || 'HAIR')
+                ));
+
+                return categories.map(category => (
+                  <Box key={category} sx={{ m: 2 }}>
+                    {/* Category Header */}
+                    <Typography 
+                      variant="subtitle2" 
+                      sx={{ 
+                        fontWeight: 'bold', 
+                        mb: 1, 
+                        textTransform: 'uppercase',
+                        color: '#424242',
+                        borderBottom: '1px solid #E0E0E0',
+                        pb: 0.5
+                      }}
+                    >
+                      {category}
+                    </Typography>
+                    
+                    {/* Services in this category */}
+                    {activeServices
+                      .filter(service => 
+                        (service.category || 'HAIR') === category && 
+                        (!serviceGenderFilter || (service as ServiceWithGender).gender === serviceGenderFilter || !(service as ServiceWithGender).gender) &&
+                        (!serviceSearchTerm || service.name.toLowerCase().includes(serviceSearchTerm.toLowerCase()))
+                      )
+                      .map(service => (
+                        <Box 
+                          key={service.id} 
+                          sx={{ 
+                            display: 'flex', 
+                            justifyContent: 'space-between', 
+                            alignItems: 'center', 
+                            p: 1.5,
+                            borderRadius: 1,
+                            mb: 1,
+                            border: '1px solid transparent',
+                            '&:hover': { 
+                              bgcolor: '#f5f5f5', 
+                              cursor: 'pointer',
+                              border: '1px solid #E0E0E0'
+                            }
+                          }}
+                          onClick={() => handleServiceSelection(service as BaseService)}
+                        >
+                          <Typography variant="body2">{service.name}</Typography>
+                          <Typography variant="body2" fontWeight="medium">₹{service.price}</Typography>
+                        </Box>
+                      ))
+                    }
+                  </Box>
+                ));
+              })()}
+            </Box>
+
+            {/* Selected Services */}
+            {clientEntries[0].services.map((service, serviceIndex) => (
+              <Box key={serviceIndex} sx={{ mb: 3, border: '1px solid', borderColor: '#E0E0E0', borderRadius: 1, overflow: 'hidden' }}>
+                <Box sx={{ 
+                  p: 2, 
+                  bgcolor: '#F5F5F5',
+                  display: 'flex', 
+                  justifyContent: 'space-between', 
+                  alignItems: 'center'
+                }}>
+                  <Box>
+                    <Typography variant="body2" fontWeight="medium">{service.name}</Typography>
+                  </Box>
+                  <IconButton 
+                    size="small" 
+                    color="default"
+                    onClick={() => removeServiceFromEntry(clientEntries[0].id, serviceIndex)}
+                  >
+                    <CloseIcon fontSize="small" />
+                  </IconButton>
+                </Box>
+                
+                {/* Expert selection */}
+                <Box sx={{ p: 2 }}>
+                  <FormControl fullWidth sx={{ mb: 2 }}>
+                    <InputLabel>Expert</InputLabel>
+                    <Select
+                      value={service.stylistId}
+                      label="Expert"
+                      onChange={(e) => {
+                        const stylist = allStylists.find(s => s.id === e.target.value);
+                        if (stylist) {
+                          updateServiceStylist(clientEntries[0].id, serviceIndex, stylist);
+                        }
+                      }}
+                      endAdornment={
+                        <Box component="span" sx={{ display: 'flex', marginRight: 1, pointerEvents: 'none' }}>
+                          <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                            <path d="M6 9L12 15L18 9" stroke="#757575" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                          </svg>
+                        </Box>
+                      }
+                    >
+                      {allStylists
+                        .filter(stylist => stylist.available !== false)
+                        .map(stylist => (
+                          <MenuItem key={stylist.id} value={stylist.id}>{stylist.name}</MenuItem>
+                        ))
+                      }
+                    </Select>
+                  </FormControl>
+                  
+                  {/* From/To Time Selection */}
+                  <Grid container spacing={2}>
+                    <Grid item xs={6}>
+                      <FormControl fullWidth>
+                        <InputLabel>From Time</InputLabel>
+                        <Select
+                          value={service.fromTime}
+                          label="From Time"
+                          onChange={(e) => updateServiceTime(clientEntries[0].id, serviceIndex, 'fromTime', e.target.value)}
+                          endAdornment={
+                            <Box component="span" sx={{ display: 'flex', marginRight: 1, pointerEvents: 'none' }}>
+                              <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                                <path d="M6 9L12 15L18 9" stroke="#757575" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                              </svg>
+                            </Box>
+                          }
+                        >
+                          {timeOptions.map(option => (
+                            <MenuItem key={`from-${option.value}`} value={option.value}>{option.label}</MenuItem>
+                          ))}
+                        </Select>
+                      </FormControl>
+                    </Grid>
+                    <Grid item xs={6}>
+                      <FormControl fullWidth>
+                        <InputLabel>To Time</InputLabel>
+                        <Select
+                          value={service.toTime}
+                          label="To Time"
+                          onChange={(e) => updateServiceTime(clientEntries[0].id, serviceIndex, 'toTime', e.target.value)}
+                          endAdornment={
+                            <Box component="span" sx={{ display: 'flex', marginRight: 1, pointerEvents: 'none' }}>
+                              <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                                <path d="M6 9L12 15L18 9" stroke="#757575" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                              </svg>
+                            </Box>
+                          }
+                        >
+                          {timeOptions.map(option => (
+                            <MenuItem key={`to-${option.value}`} value={option.value}>{option.label}</MenuItem>
+                          ))}
+                        </Select>
+                      </FormControl>
+                    </Grid>
+                  </Grid>
+                </Box>
+              </Box>
+            ))}
+            
+            {/* Add New Service Button - Only show if at least one service is already selected */}
+            {clientEntries[0].services.length > 0 && (
+              <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
+                <Button
+                  variant="outlined"
+                  color="primary"
+                  endIcon={<AddIcon />}
+                  onClick={() => handleCheckServiceSelectionBeforeDialog(clientEntries[0].id)}
+                  sx={{ 
+                    textTransform: 'none', 
+                    borderRadius: '20px',
+                    bgcolor: 'white',
+                    borderColor: '#E91E63',
+                    color: '#E91E63',
+                    '&:hover': {
+                      borderColor: '#C2185B',
+                      bgcolor: 'rgba(233, 30, 99, 0.04)'
+                    }
+                  }}
+                >
+                  Add New Service
+                </Button>
+              </Box>
+            )}
+
+            {/* Service Selected Message */}
+            {serviceSelectedMessage && (
+              <Box sx={{ 
+                mt: 2, 
+                p: 1, 
+                bgcolor: '#E8F5E9', 
+                color: '#2E7D32', 
+                borderRadius: 1, 
+                textAlign: 'center',
+                fontWeight: 'medium'
+              }}>
+                {serviceSelectedMessage}
+              </Box>
+            )}
+            
+            {/* Service Selection Dialog */}
+            <Dialog
+              open={serviceDialogOpen}
+              onClose={() => setServiceDialogOpen(false)}
+              maxWidth="md"
+              fullWidth
+            >
+              <DialogTitle>
+                Select Service
+                <IconButton
+                  aria-label="close"
+                  onClick={() => setServiceDialogOpen(false)}
+                  sx={{ position: 'absolute', right: 8, top: 8 }}
+                >
+                  <CloseIcon />
+                </IconButton>
+              </DialogTitle>
+              <DialogContent dividers>
+                {/* Service search field */}
+                <TextField
+                  autoFocus
+                  fullWidth
+                  placeholder="Search Service By Name"
+                  value={serviceSearchTerm}
+                  onChange={(e) => setServiceSearchTerm(e.target.value)}
+                  InputProps={{
+                    endAdornment: (
+                      <InputAdornment position="end">
+                        <SearchIcon />
+                      </InputAdornment>
+                    ),
+                    sx: {
+                      borderRadius: '8px',
+                      mb: 2,
+                      '& .MuiOutlinedInput-notchedOutline': {
+                        borderColor: '#E0E0E0'
+                      }
+                    }
+                  }}
+                  sx={{ mb: 2 }}
+                />
+                
+                {/* Gender Filter Tabs */}
+                <Box sx={{ mb: 3, display: 'flex', gap: 1 }}>
+                  <Button
+                    variant={serviceGenderFilter === 'female' ? 'contained' : 'outlined'}
+                    onClick={() => setServiceGenderFilter('female')}
+                    sx={{ 
+                      borderRadius: '20px', 
+                      textTransform: 'none',
+                      bgcolor: serviceGenderFilter === 'female' ? '#E91E63' : 'transparent',
+                      color: serviceGenderFilter === 'female' ? 'white' : '#757575',
+                      borderColor: '#E0E0E0',
+                      '&:hover': {
+                        bgcolor: serviceGenderFilter === 'female' ? '#D81B60' : 'rgba(0,0,0,0.04)'
+                      },
+                    }}
+                  >
+                    female
+                  </Button>
+                  <Button
+                    variant={serviceGenderFilter === 'male' ? 'contained' : 'outlined'}
+                    onClick={() => setServiceGenderFilter('male')}
+                    sx={{ 
+                      borderRadius: '20px', 
+                      textTransform: 'none',
+                      bgcolor: serviceGenderFilter === 'male' ? '#2196F3' : 'transparent',
+                      color: serviceGenderFilter === 'male' ? 'white' : '#757575',
+                      borderColor: '#E0E0E0',
+                      '&:hover': {
+                        bgcolor: serviceGenderFilter === 'male' ? '#1E88E5' : 'rgba(0,0,0,0.04)'
+                      },
+                    }}
+                  >
+                    male
+                  </Button>
+                </Box>
+                
+                {/* Service categories and items */}
+                <Box sx={{ maxHeight: '400px', overflow: 'auto' }}>
+                  {(() => {
+                    // Get all categories
+                    const categories = Array.from(new Set(activeServices
+                      .filter(service => 
+                        (!serviceGenderFilter || (service as ServiceWithGender).gender === serviceGenderFilter || !(service as ServiceWithGender).gender) && 
+                        (!serviceSearchTerm || service.name.toLowerCase().includes(serviceSearchTerm.toLowerCase()))
+                      )
+                      .map(service => service.category || 'HAIR')
+                    ));
+
+                    return categories.map(category => (
+                      <Box key={category} sx={{ m: 2 }}>
+                        {/* Category Header */}
+                        <Typography 
+                          variant="subtitle2" 
+                          sx={{ 
+                            fontWeight: 'bold', 
+                            mb: 1, 
+                            textTransform: 'uppercase',
+                            color: '#424242',
+                            borderBottom: '1px solid #E0E0E0',
+                            pb: 0.5
+                          }}
+                        >
+                          {category}
+                        </Typography>
+                        
+                        {/* Services in this category */}
+                        {activeServices
+                          .filter(service => 
+                            (service.category || 'HAIR') === category && 
+                            (!serviceGenderFilter || (service as ServiceWithGender).gender === serviceGenderFilter || !(service as ServiceWithGender).gender) &&
+                            (!serviceSearchTerm || service.name.toLowerCase().includes(serviceSearchTerm.toLowerCase()))
+                          )
+                          .map(service => (
+                            <Box 
+                              key={service.id} 
+                              sx={{ 
+                                display: 'flex', 
+                                justifyContent: 'space-between', 
+                                alignItems: 'center', 
+                                p: 1.5,
+                                borderRadius: 1,
+                                mb: 1,
+                                border: '1px solid transparent',
+                                '&:hover': { 
+                                  bgcolor: '#f5f5f5', 
+                                  cursor: 'pointer',
+                                  border: '1px solid #E0E0E0'
+                                }
+                              }}
+                              onClick={() => handleServiceSelection(service as BaseService)}
+                            >
+                              <Typography variant="body2">{service.name}</Typography>
+                              <Typography variant="body2" fontWeight="medium">₹{service.price}</Typography>
+                            </Box>
+                          ))
+                        }
+                      </Box>
+                    ));
+                  })()}
+                </Box>
+              </DialogContent>
+              <DialogActions>
+                <Button onClick={() => setServiceDialogOpen(false)}>Cancel</Button>
+              </DialogActions>
+            </Dialog>
+          </Box>
+          
+          {/* Instruction Details Section */}
+          <Box sx={{ mb: 3, bgcolor: 'white', p: 3, borderRadius: 2 }}>
+            <Typography variant="body1" fontWeight="medium" mb={2}>
+              <span style={{ marginRight: '8px' }}>3.</span> Instruction Details
+            </Typography>
+            
+            <TextField
+              placeholder="Enter Appointment Instruction"
+              multiline
+              fullWidth
+              value={appointmentNotes}
+              onChange={(e) => setAppointmentNotes(e.target.value)}
+              variant="outlined"
+              InputProps={{
+                sx: {
+                  borderRadius: '8px',
+                  '& .MuiOutlinedInput-notchedOutline': {
+                    borderColor: '#E0E0E0'
+                  }
+                }
+              }}
+            />
+          </Box>
         </Box>
 
         {/* Footer with action buttons */}
         <Box sx={{ p: 3, pt: 2, display: 'flex', flexDirection: 'column', gap: 2, borderTop: '1px solid', borderColor: 'divider' }}>
-          {editingAppointment && (() => {
-            // Footer Create Bill: pass POS the exact shape it needs
-            const primaryClientDetail = editingAppointment.clientDetails?.[0];
-            if (!primaryClientDetail) return null;
-            const servicesForPOS = primaryClientDetail.services.map(s => ({
-              id: s.id,
-              name: s.name,
-              price: s.price,
-              type: 'service'
-            }));
-
-            return (
-              <Button
-                variant="contained"
-                color="success"
-                startIcon={<ReceiptIcon />}
-                fullWidth
-                disabled={isBilling}
-                onClick={() => {
-                  setIsBilling(true);
-                  const clientName = primaryClientDetail.full_name;
-                  const stylistId = editingAppointment.stylist_id;
-                  navigate('/pos', {
-                    state: {
-                      appointmentData: {
-                        id: editingAppointment.id,
-                        clientName,
-                        stylistId,
-                        services: servicesForPOS,
-                        type: 'service_collection',
-                        step: 2
-                      }
-                    }
-                  });
-                  handleCloseDrawer();
-                }}
-                sx={{ mb: 1 }}
-              >
-                Create Bill
-              </Button>
-            );
-          })()}
-
-          <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 2 }}>
-            <Button onClick={handleCloseDrawer} variant="outlined">Cancel</Button>
-            <Button onClick={handleSaveAppointment} variant="contained" color="primary">
-              {editingAppointment ? 'Update Appointment' : 'Book Appointment'}
+          <Button 
+            onClick={handleSaveAppointment} 
+            variant="contained" 
+            sx={{ 
+              bgcolor: '#E91E63', // Use theme's primary color
+              '&:hover': {
+                bgcolor: '#C2185B' // Darker shade for hover
+              },
+              borderRadius: '8px',
+              textTransform: 'none',
+              py: 1.5
+            }}
+          >
+            {editingAppointment ? 'Update Appointment' : 'Book Appointment'}
+          </Button>
+          
+          {/* Only show delete button when editing an existing appointment */}
+          {editingAppointment && (
+            <Button 
+              onClick={handleDeleteAppointment} 
+              variant="outlined" 
+              color="error"
+              sx={{ 
+                borderRadius: '8px',
+                textTransform: 'none',
+                py: 1.5
+              }}
+            >
+              Delete Appointment
             </Button>
-          </Box>
+          )}
         </Box>
       </Drawer>
 
@@ -986,25 +1884,18 @@ export default function Appointments() {
         aria-labelid="delete-appointment-title"
         aria-describedby="delete-appointment-description"
       >
-        <DialogTitle id="delete-appointment-title">Delete Appointment?</DialogTitle>
+        <DialogTitle id="delete-appointment-title" sx={{ color: '#E91E63' }}>Delete Appointment?</DialogTitle>
         <DialogContent>
           <DialogContentText id="delete-appointment-description">
             Are you sure you want to delete this appointment? This action cannot be undone.
           </DialogContentText>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setDeleteDialogOpen(false)} color="primary">
+          <Button onClick={() => setDeleteDialogOpen(false)} color="inherit">
             Cancel
           </Button>
           <Button
-            onClick={async () => {
-              if (editingAppointment) {
-                await deleteAppointment(editingAppointment.id);
-                setDeleteDialogOpen(false);
-                handleCloseDrawer();
-                toast.success('Appointment deleted successfully');
-              }
-            }}
+            onClick={confirmDeleteAppointment}
             color="error"
             variant="contained"
             autoFocus
