@@ -11,6 +11,13 @@ export interface StylistBreak {
   reason?: string;
 }
 
+// Define holiday interface
+export interface StylistHoliday {
+  id: string;
+  date: string;      // ISO date string (just the date part)
+  reason?: string;   // Reason for holiday
+}
+
 export interface Stylist {
   id: string;
   name: string;
@@ -22,6 +29,7 @@ export interface Stylist {
   email?: string;
   phone?: string;
   breaks?: StylistBreak[]; // Add breaks array to stylist
+  holidays?: StylistHoliday[]; // Add holidays array to stylist
 }
 
 export function useStylists() {
@@ -58,7 +66,8 @@ export function useStylists() {
             imageUrl: stylist.image_url || '', // Convert snake_case to camelCase
             email: stylist.email || '',
             phone: stylist.phone || '',
-            breaks: stylist.breaks || []
+            breaks: stylist.breaks || [],
+            holidays: stylist.holidays || []
           })) as Stylist[];
         } else {
           console.warn('No stylists found in the database.');
@@ -92,6 +101,7 @@ export function useStylists() {
         email: newStylist.email || '',
         phone: newStylist.phone || '',
         breaks: newStylist.breaks || [],
+        holidays: newStylist.holidays || [],
         created_at: new Date().toISOString()
       };
       

@@ -65,6 +65,7 @@ const menuLinks: MenuLink[] = [
   { text: 'Inventory Manager', path: '/products', icon: <StoreIcon /> },
   { text: 'Product Master', path: '/product-master', icon: <InventoryRounded /> },
   { text: 'Membership Tiers', path: '/membership-tiers', icon: <CardMembership /> },
+  { text: 'Members', path: '/members', icon: <CardMembership /> },
 ]
 
 const ListItemStyled = styled(ListItem)(({ theme }) => ({

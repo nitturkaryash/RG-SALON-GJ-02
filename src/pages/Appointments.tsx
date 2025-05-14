@@ -443,6 +443,13 @@ export default function Appointments() {
     
     // Set selectedEntryId - we'll use this for adding services directly from the dropdown
     setSelectedEntryId(entryId);
+    
+    // Focus and open the service search dropdown
+    const serviceSearchInput = document.querySelector('input[placeholder="Search Service By Name"]') as HTMLInputElement;
+    if (serviceSearchInput) {
+      serviceSearchInput.focus();
+      serviceSearchInput.click();
+    }
   };
 
   // Add a function to handle opening service dialog
@@ -963,14 +970,6 @@ export default function Appointments() {
           {viewMode === 'calendar' ? 'Appointments Calendar' : 'Upcoming Appointments'}
         </Typography>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-          <Button
-            variant="contained"
-            color="primary"
-            startIcon={<AddIcon />}
-            onClick={() => navigate('/create-appointment')}
-          >
-            Create Appointment
-          </Button>
           <ToggleButtonGroup
             value={viewMode}
             exclusive
@@ -1632,7 +1631,34 @@ export default function Appointments() {
                   variant="outlined"
                   color="primary"
                   endIcon={<AddIcon />}
-                  onClick={() => handleCheckServiceSelectionBeforeDialog(clientEntries[0].id)}
+                  onClick={() => {
+                    // Set the selected entry ID first
+                    const entry = clientEntries.find(e => e.id === clientEntries[0].id);
+                    
+                    // Check if any service has missing stylist
+                    const hasMissingStylist = entry?.services.some(service => !service.stylistId);
+                    
+                    if (hasMissingStylist) {
+                      toast.warn("Please assign an expert to all services before adding a new one");
+                      return;
+                    }
+
+                    // Find a default service from the list - use the first available service
+                    const defaultService = activeServices.find(service => 
+                      (!serviceGenderFilter || (service as ServiceWithGender).gender === serviceGenderFilter || !(service as ServiceWithGender).gender)
+                    );
+
+                    if (defaultService) {
+                      // Directly add the service to the entry - this will auto-calculate times
+                      addServiceToEntry(clientEntries[0].id, defaultService);
+                      
+                      // Show success message
+                      setServiceSelectedMessage(`${defaultService.name} added! You can modify it below.`);
+                      setTimeout(() => setServiceSelectedMessage(''), 3000);
+                    } else {
+                      toast.warn("No services available. Please check your filters.");
+                    }
+                  }}
                   sx={{ 
                     textTransform: 'none', 
                     borderRadius: '20px',

@@ -109,13 +109,15 @@ const ScheduleGrid = styled(Box)(({ theme }) => ({
 }));
 
 const TimeColumn = styled(Box)(({ theme }) => ({
-  width: 100, // Increased from 80px to 100px for better readability
+  width: 80, // Keep at 80px for consistency with CSS
   flexShrink: 0,
   borderRight: `1px solid ${theme.palette.divider}`,
   position: 'sticky',
   left: 0,
   backgroundColor: theme.palette.background.paper,
-  zIndex: 2
+  zIndex: 2,
+  paddingTop: 0, // Remove padding to ensure alignment
+  marginTop: 0 // Remove margin to ensure alignment
 }));
 
 const StylistColumn = styled(Box)(({ theme }) => ({
@@ -134,15 +136,15 @@ const StylistColumn = styled(Box)(({ theme }) => ({
 }));
 
 const StylistHeader = styled(Box)(({ theme }) => ({
-  padding: theme.spacing(1.5), // Increased padding for better visibility
+  padding: theme.spacing(1.5),
   textAlign: 'center',
   borderBottom: `1px solid ${theme.palette.divider}`,
-  borderRight: `1px solid ${theme.palette.divider}`, // Add right border to each header
+  borderRight: `1px solid ${theme.palette.divider}`,
   backgroundColor: theme.palette.salon.oliveLight,
   position: 'sticky',
   top: 0,
   zIndex: 3,
-  height: 56, // Increased from 48px to 56px for better visibility
+  height: 56,
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center'
@@ -264,6 +266,28 @@ const BreakCard = styled(Box)<{ duration: number }>(({ theme, duration }) => ({
   },
 }));
 
+// Add a new styled component for break blocks
+const BreakBlock = styled(Box)(({ theme }) => ({
+  position: 'absolute',
+  left: '1px',
+  right: '1px',
+  backgroundColor: 'rgba(220, 0, 0, 0.15)',
+  color: '#d32f2f',
+  borderRadius: '8px',
+  padding: '8px 12px',
+  boxShadow: '0 2px 4px rgba(0,0,0,0.15)',
+  zIndex: 5,
+  overflow: 'hidden',
+  display: 'flex',
+  flexDirection: 'column',
+  justifyContent: 'space-between',
+  borderLeft: '4px solid #dc3545',
+  '&:hover': {
+    backgroundColor: 'rgba(220, 0, 0, 0.2)',
+    boxShadow: '0 3px 6px rgba(0,0,0,0.2)'
+  }
+}));
+
 // Update the generateTimeSlots function to create precise 15-minute intervals
 const generateTimeSlots = () => {
   const slots = [];
@@ -328,7 +352,17 @@ interface Stylist {
   id: string;
   name: string;
   breaks: Break[];
+  available?: boolean;
   // ... other stylist properties ...
+}
+
+// Add ClientEntry interface before the component definition
+interface ClientEntry {
+  id: string;
+  client: any;
+  selectedCollectionId: string;
+  services: any[];
+  stylistList?: { id: string; name: string }[];
 }
 
 interface StylistDayViewProps {
@@ -381,7 +415,19 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
     reason: ''
   });
   // Update the editFormData state type
-  const [editFormData, setEditFormData] = useState({
+  const [editFormData, setEditFormData] = useState<{
+    clientName: string;
+    clientId: string;
+    serviceId: string;
+    stylistId: string;
+    startTime: string;
+    endTime: string;
+    notes: string;
+    mobileNumber: string;
+    stylistIds: string[];
+    isNewClient: boolean;
+    clientEntries: ClientEntry[];
+  }>({
     clientName: '',
     clientId: '',
     serviceId: '',
@@ -390,9 +436,9 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
     endTime: '',
     notes: '',
     mobileNumber: '',
-    stylistIds: [] as string[],
+    stylistIds: [],
     isNewClient: false,
-    clientEntries: [] as { id: string; client: any; selectedCollectionId: string; services: any[] }
+    clientEntries: []
   });
   // State for drag and drop
   const [draggedAppointment, setDraggedAppointment] = useState<any | null>(null);
@@ -431,9 +477,12 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
     }
   };
   
+  // Update the handleSlotClick function to not open the edit dialog
   const handleSlotClick = (stylistId: string, hour: number, minute: number) => {
     // Check if this time slot is during a break
     if (isBreakTime(stylistId, hour, minute)) {
+      setSnackbarMessage('Cannot book during a break time');
+      setSnackbarOpen(true);
       return; // Don't allow booking during breaks
     }
     
@@ -447,6 +496,13 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
       0,
       0
     );
+    
+    // Find the stylist
+    const selectedStylist = stylists.find(s => s.id === stylistId);
+    if (!selectedStylist) {
+      console.error('Stylist not found:', stylistId);
+      return;
+    }
     
     // Call the onSelectTimeSlot callback with the stylist ID and formatted time
     onSelectTimeSlot(stylistId, selectedTime);
@@ -646,7 +702,7 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
           return {
             clientId: finalClientId,
             serviceIds: entry.services.map(s => s.id),
-            stylistIds: entry.stylistList.map(st => st.id),
+            stylistIds: entry.stylistList?.map(st => st.id) || [],
           };
         })
       );
@@ -866,7 +922,7 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
     }
   };
 
-  // Calculate the position (top offset) based on time - precision to the pixel
+  // Fix the getAppointmentPosition function to calculate positions more precisely
   const getAppointmentPosition = (startTime: string) => {
     try {
       const normalizedStartTime = normalizeDateTime(startTime);
@@ -884,13 +940,11 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
       const positionExact = (totalMinutes / 15) * TIME_SLOT_HEIGHT;
       
       if (process.env.NODE_ENV === 'development') {
-        console.log(`Position for ${new Date(startTime).toLocaleTimeString()}:`, {
-          normalizedTime: normalizedStartTime.toLocaleTimeString(),
+        console.log(`Position for ${normalizedStartTime.toLocaleTimeString()}:`, {
           hours,
           minutes,
           totalMinutes,
-          positionExact,
-          roundedPosition: Math.round(positionExact)
+          positionExact
         });
       }
       
@@ -902,7 +956,7 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
     }
   };
   
-  // Calculate the height (duration) of an appointment or break in pixels with precision
+  // Fix the getAppointmentDuration function to calculate exact durations
   const getAppointmentDuration = (startTime: string, endTime: string) => {
     try {
       const start = normalizeDateTime(startTime);
@@ -923,17 +977,15 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
       const heightExact = (durationMinutes / 15) * TIME_SLOT_HEIGHT;
       
       if (process.env.NODE_ENV === 'development') {
-        console.log(`Duration calc for ${new Date(startTime).toLocaleTimeString()} - ${new Date(endTime).toLocaleTimeString()}:`, {
+        console.log(`Duration calc for ${start.toLocaleTimeString()} - ${endDate.toLocaleTimeString()}:`, {
           startTime: start.toLocaleTimeString(),
           endTime: endDate.toLocaleTimeString(),
           durationMinutes,
-          heightExact,
-          roundedHeight: Math.ceil(heightExact)
+          heightExact
         });
       }
       
       // Ensure a minimum height for very short appointments/breaks
-      // Use exact pixel heights for precise positioning
       return Math.max(heightExact, TIME_SLOT_HEIGHT / 2);
     } catch (error) {
       console.error('Error calculating appointment duration:', error);
@@ -1211,32 +1263,42 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
     }
   };
 
+  // Fix the handleDeleteBreak function to properly delete breaks
   const handleDeleteBreak = async (breakId: string) => {
-    if (!selectedStylist) return;
-    
-    // Add confirmation dialog
-    if (!window.confirm('Are you sure you want to delete this break?')) {
-      return;
-    }
-    
     try {
-      console.log('Deleting break with id:', breakId, 'from stylist:', selectedStylist.id);
+      // Find the stylist that has this break
+      const stylistWithBreak = stylists.find(s => 
+        s.breaks.some(b => b.id === breakId)
+      );
+      
+      if (!stylistWithBreak) {
+        console.error('Could not find stylist with break ID:', breakId);
+        setSnackbarMessage('Could not find the break to delete');
+        setSnackbarOpen(true);
+        return;
+      }
+      
+      // Add confirmation dialog
+      if (!window.confirm('Are you sure you want to delete this break?')) {
+        return;
+      }
+      
+      console.log('Deleting break with id:', breakId, 'from stylist:', stylistWithBreak.id);
       
       if (onDeleteBreak) {
         // Call the prop function to update the database
-        await onDeleteBreak(selectedStylist.id, breakId);
+        await onDeleteBreak(stylistWithBreak.id, breakId);
         
         // After successful server update, update the local state
-        const updatedBreaks = selectedStylist.breaks.filter(b => b.id !== breakId);
+        const updatedBreaks = stylistWithBreak.breaks.filter(b => b.id !== breakId);
         
         const updatedStylists = stylists.map(stylist => 
-          stylist.id === selectedStylist.id 
+          stylist.id === stylistWithBreak.id 
             ? { ...stylist, breaks: updatedBreaks }
             : stylist
         );
         
         setStylists(updatedStylists);
-        setSelectedStylist({ ...selectedStylist, breaks: updatedBreaks });
         setSnackbarMessage('Break time removed successfully');
         setSnackbarOpen(true);
       } else {
@@ -1251,287 +1313,6 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
     }
   };
 
-  const BreakBlock = styled(Box)(({ theme }) => ({
-    position: 'absolute',
-    left: theme.spacing(0.5),
-    right: theme.spacing(0.5),
-    backgroundColor: 'rgba(220, 53, 69, 0.85)', // Red background
-    borderRadius: theme.spacing(1),
-    padding: theme.spacing(0.5),
-    border: '2px solid rgba(220, 0, 0, 0.8)', // Red border
-    boxShadow: '0 2px 6px rgba(0, 0, 0, 0.25)', // Shadow
-    zIndex: 4, // Higher z-index to ensure it's on top
-    color: '#fff', // White text for better contrast on red background
-    overflow: 'hidden',
-    transition: 'all 0.2s ease',
-    '&:hover': {
-      backgroundColor: 'rgba(220, 53, 69, 0.95)',
-      boxShadow: '0 4px 10px rgba(0, 0, 0, 0.3)',
-    },
-    pointerEvents: 'auto', // Make sure it captures mouse events
-  }));
-
-  // Update the time column rendering
-  const renderTimeColumn = () => (
-    <TimeColumn>
-      <StylistHeader>
-        <TimeLabel variant="subtitle2" sx={{ fontSize: '1rem', fontWeight: 'medium' }}>
-          Time
-        </TimeLabel>
-      </StylistHeader>
-      {timeSlots.map(({ hour, minute }) => (
-        <TimeSlot key={`time-${hour}-${minute}`}>
-          {/* Only show the hour label for the first slot of each hour */}
-          {minute === 0 ? (
-            <TimeLabel sx={{ fontWeight: 'medium' }}>
-              {format(new Date().setHours(hour, minute), 'h:mm a')}
-            </TimeLabel>
-          ) : (
-            <TimeLabel sx={{ fontSize: '0.75rem', opacity: 0.8 }}>
-              {format(new Date().setHours(hour, minute), 'h:mm a')}
-            </TimeLabel>
-          )}
-        </TimeSlot>
-      ))}
-    </TimeColumn>
-  );
-
-  // Declare state for service filtering *before* using it in the hook
-  const [selectedServiceCollection, setSelectedServiceCollection] = useState<string>('');
-  const [serviceSearchQuery, setServiceSearchQuery] = useState<string>('');
-
-  // Fetch collections and services based on the selected collection
-  const { serviceCollections } = useServiceCollections();
-  const { services: collectionServices, isLoading: isLoadingCollectionServices } = useCollectionServices(selectedServiceCollection);
-
-  const getFilteredServices = () => {
-    // Use collectionServices if available, otherwise fall back to services
-    const allServices = collectionServices || services || [];
-    
-    // First filter by active status
-    let filteredServices = allServices.filter(service => 
-      service.active !== false
-    );
-    
-    // Filter by collection if one is selected
-    if (selectedServiceCollection) {
-      filteredServices = filteredServices.filter(service => 
-        'collection_id' in service && service.collection_id === selectedServiceCollection
-      );
-    }
-    
-    // Filter by search query if one is entered
-    if (serviceSearchQuery) {
-      const query = serviceSearchQuery.toLowerCase();
-      filteredServices = filteredServices.filter(service => 
-        service.name.toLowerCase().includes(query) || 
-        (service.description && service.description.toLowerCase().includes(query))
-      );
-    }
-    
-    // Log for debugging
-    console.log('Filtered services:', {
-      selectedCollection: selectedServiceCollection,
-      searchQuery: serviceSearchQuery,
-      servicesCount: filteredServices.length,
-      services: filteredServices
-    });
-    
-    return filteredServices;
-  };
-
-  // Add handler for date picker icon click
-  const handleDatePickerClick = (event: React.MouseEvent<HTMLButtonElement>) => {
-    setDatePickerAnchorEl(event.currentTarget);
-  };
-  
-  // Add handler for date picker close
-  const handleDatePickerClose = () => {
-    setDatePickerAnchorEl(null);
-  };
-  
-  // Update the handleDateChange function
-  const handleDateChange = (date: Date | null) => {
-    if (date) {
-      setCurrentDate(date);
-      // Notify parent component if callback is provided
-      if (onDateChange) {
-        onDateChange(date);
-      }
-      handleDatePickerClose();
-    }
-  };
-
-  const { isLoading: loadingStylists } = useStylists();
-
-  useEffect(() => {
-    setStylists(initialStylists);
-  }, [initialStylists]);
-
-  useEffect(() => {
-    if (onStylistsChange) {
-      onStylistsChange(stylists);
-    }
-  }, [stylists, onStylistsChange]);
-
-  const handleStylistClick = (stylistId: string) => {
-    const foundStylist = stylists.find(s => s.id === stylistId);
-    if (foundStylist) {
-      setSelectedStylist(foundStylist);
-      setBreakDialogOpen(true);
-    }
-  };
-
-  const renderAppointmentsForStylist = (stylistId: string) => {
-    // Filter appointments for this stylist and the current day
-    const stylistAppointments = todayAppointments
-      .filter(app => app.stylist_id === stylistId)
-      .sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
-
-    console.log(`Rendering appointments for stylist ${stylistId}:`, stylistAppointments.length);
-
-    return stylistAppointments.map(appointment => {
-      const top = getAppointmentPosition(appointment.start_time);
-      const duration = getAppointmentDuration(appointment.start_time, appointment.end_time);
-
-      console.log("Appointment position calculation:", {
-        id: appointment.id,
-        clientName: appointment.clientDetails?.[0]?.full_name || 'Unknown Client',
-        startTime: appointment.start_time,
-        formattedTime: formatTime(appointment.start_time),
-        topPosition: top,
-        duration: duration
-      });
-
-      // Extract client and service info correctly
-      const primaryClient = appointment.clientDetails?.[0];
-      // Fallback to direct appointment.client_id if no clientDetails
-      const fallbackClient = allClients && allClients.find(c => c.id === appointment.client_id);
-      const clientName = primaryClient?.full_name || fallbackClient?.full_name || 'Unknown Client';
-
-      const primaryServices = primaryClient?.services || [];
-      // Fallback to direct appointment.service_id if no services in clientDetails
-      const fallbackService = services.find(s => s.id === appointment.service_id);
-      const serviceNames = primaryServices.length > 0
-        ? primaryServices.map(s => s.name).join(', ')
-        : (fallbackService?.name || 'Unknown Service');
-
-      const isPaid = appointment.paid || false;
-      const status = appointment.status || 'scheduled';
-
-      return (
-        <ErrorBoundary key={appointment.id} fallback={<Typography>Error rendering appointment</Typography>}>
-          <AppointmentCard
-            style={{ top: `${top}px` }}
-            duration={duration}
-            isPaid={isPaid}
-            status={status}
-            onClick={() => handleAppointmentClick(appointment)}
-            draggable
-            onDragStart={(e) => handleDragStart(e, appointment)}
-            title={`Status: ${status}, Paid: ${isPaid ? 'Yes' : 'No'}`}
-          >
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
-              <Tooltip title={clientName}>
-                 <Typography variant="body2" fontWeight="bold" noWrap sx={{ flexGrow: 1, pr: 1 }}>
-                   {clientName}
-                 </Typography>
-              </Tooltip>
-              {status === 'completed' && (
-                <Chip label="Completed" size="small" color="default" sx={{ mr: 0.5 }} />
-              )}
-              {isPaid && status !== 'completed' && (
-                <Chip label="Paid" size="small" color="success" sx={{ mr: 0.5 }} />
-              )}
-            </Box>
-            <Tooltip title={serviceNames}>
-              <Typography variant="caption" display="block" noWrap>
-                {serviceNames}
-              </Typography>
-            </Tooltip>
-            <Typography variant="caption" display="block">
-              {formatTime(appointment.start_time)} - {formatTime(appointment.end_time)}
-            </Typography>
-          </AppointmentCard>
-        </ErrorBoundary>
-      );
-    });
-  };
-
-  const handleAddClientEntry = () => {
-    setEditFormData(prev => ({
-      ...prev,
-      clientEntries: [...prev.clientEntries, { 
-        id: crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2),
-        client: null, 
-        selectedCollectionId: '', 
-        services: [],
-        stylistList: [] // Initialize stylistList as empty array
-      }]
-    }));
-  };
-
-  const handleRemoveClientEntry = (id: string) => {
-    setEditFormData(prev => ({
-      ...prev,
-      clientEntries: prev.clientEntries.filter(entry => entry.id !== id)
-    }));
-  };
-
-  const handleClientChange = (id: string, newValue: any) => {
-    setEditFormData(prev => ({
-      ...prev,
-      clientEntries: prev.clientEntries.map(entry =>
-        entry.id === id ? { ...entry, client: newValue } : entry
-      )
-    }));
-  };
-
-  const handleClientPhoneChange = (id: string, newValue: string) => {
-    setEditFormData(prev => ({
-      ...prev,
-      clientEntries: prev.clientEntries.map(entry =>
-        entry.id === id ? { ...entry, client: { ...entry.client, phone: newValue } } : entry
-      )
-    }));
-  };
-
-  const handleCollectionChange = (id: string, newValue: any) => {
-    setEditFormData(prev => ({
-      ...prev,
-      clientEntries: prev.clientEntries.map(entry =>
-        entry.id === id ? { ...entry, selectedCollectionId: newValue?.id } : entry
-      )
-    }));
-  };
-
-  const handleServicesChange = (id: string, newValue: any[]) => {
-    setEditFormData(prev => ({
-      ...prev,
-      clientEntries: prev.clientEntries.map(entry =>
-        entry.id === id ? { ...entry, services: newValue } : entry
-      )
-    }));
-  };
-
-  const handleStylistsChange = (id: string, newValue: any[]) => {
-    setEditFormData(prev => ({
-      ...prev,
-      clientEntries: prev.clientEntries.map(entry =>
-        entry.id === id ? { ...entry, stylistList: newValue.map(s => ({ id: s.id, name: s.name })) } : entry
-      )
-    }));
-  };
-
-  // Add state for break editing
-  const [editingBreak, setEditingBreak] = useState<Break | null>(null);
-  const [editBreakDialogOpen, setEditBreakDialogOpen] = useState<boolean>(false);
-  const [editBreakFormData, setEditBreakFormData] = useState({
-    startTime: '',
-    endTime: '',
-    reason: ''
-  });
-  
   const handleEditBreakDialogOpen = (breakItem: Break) => {
     setEditingBreak(breakItem);
     
@@ -1710,6 +1491,291 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
     }
   }, [selectedDate]);
 
+  // Add date picker handlers
+  const handleDatePickerClick = (event: React.MouseEvent<HTMLButtonElement>) => {
+    setDatePickerAnchorEl(event.currentTarget);
+  };
+
+  const handleDatePickerClose = () => {
+    setDatePickerAnchorEl(null);
+  };
+
+  const handleDateChange = (newDate: Date | null) => {
+    if (newDate) {
+      setCurrentDate(newDate);
+      if (onDateChange) {
+        onDateChange(newDate);
+      }
+      handleDatePickerClose();
+    }
+  };
+
+  // Add handler functions for client entries
+  const handleClientChange = (entryId: string, newValue: any) => {
+    setEditFormData(prev => ({
+      ...prev,
+      clientEntries: prev.clientEntries.map(entry =>
+        entry.id === entryId ? { ...entry, client: newValue } : entry
+      )
+    }));
+  };
+
+  const handleClientPhoneChange = (entryId: string, phone: string) => {
+    setEditFormData(prev => ({
+      ...prev,
+      clientEntries: prev.clientEntries.map(entry =>
+        entry.id === entryId ? {
+          ...entry,
+          client: { ...entry.client, phone }
+        } : entry
+      )
+    }));
+  };
+
+  const handleCollectionChange = (entryId: string, collection: any) => {
+    setEditFormData(prev => ({
+      ...prev,
+      clientEntries: prev.clientEntries.map(entry =>
+        entry.id === entryId ? {
+          ...entry,
+          selectedCollectionId: collection?.id || '',
+          services: []
+        } : entry
+      )
+    }));
+  };
+
+  const handleServicesChange = (entryId: string, services: any[]) => {
+    setEditFormData(prev => ({
+      ...prev,
+      clientEntries: prev.clientEntries.map(entry =>
+        entry.id === entryId ? { ...entry, services } : entry
+      )
+    }));
+  };
+
+  const handleStylistsChange = (entryId: string, stylists: { id: string; name: string }[]) => {
+    setEditFormData(prev => ({
+      ...prev,
+      clientEntries: prev.clientEntries.map(entry =>
+        entry.id === entryId ? { ...entry, stylistList: stylists } : entry
+      )
+    }));
+  };
+
+  const handleAddClientEntry = () => {
+    const newEntry: ClientEntry = {
+      id: `entry-${Date.now()}`,
+      client: null,
+      selectedCollectionId: '',
+      services: [],
+      stylistList: []
+    };
+    
+    setEditFormData(prev => ({
+      ...prev,
+      clientEntries: [...prev.clientEntries, newEntry]
+    }));
+    
+    // Focus on the service search field after a short delay to allow rendering
+    setTimeout(() => {
+      const serviceSearchField = document.getElementById(`service-search-${newEntry.id}`);
+      if (serviceSearchField) {
+        serviceSearchField.focus();
+      }
+    }, 100);
+  };
+
+  const handleRemoveClientEntry = (entryId: string) => {
+    setEditFormData(prev => ({
+      ...prev,
+      clientEntries: prev.clientEntries.filter(entry => entry.id !== entryId)
+    }));
+  };
+
+  // Add updateClientFromAppointment function
+  const updateClientFromAppointment = async (
+    name: string,
+    phone: string,
+    email: string,
+    notes: string
+  ): Promise<{ id: string }> => {
+    // This should be implemented to actually create a new client
+    // For now, return a mock response
+    return { id: `client-${Date.now()}` };
+  };
+
+  // Update the renderTimeColumn function to include a time header with proper time formatting
+  const renderTimeColumn = () => {
+    return (
+      <TimeColumn className="time-column">
+        {/* Time header */}
+        <Box 
+          sx={{ 
+            height: '56px',
+            backgroundColor: '#f5f5f5',
+            borderRight: '1px solid rgba(0, 0, 0, 0.12)',
+            borderBottom: '1px solid rgba(0, 0, 0, 0.12)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontWeight: 'bold',
+            color: 'rgba(0, 0, 0, 0.7)',
+            position: 'sticky',
+            top: 0,
+            zIndex: 10
+          }}
+        >
+          Time
+        </Box>
+        
+        {/* Time slots */}
+        {timeSlots.map((slot, index) => {
+          const hour12 = slot.hour > 12 ? slot.hour - 12 : slot.hour === 0 ? 12 : slot.hour;
+          const period = slot.hour >= 12 ? 'PM' : 'AM';
+          const displayTime = slot.minute === 0 
+            ? `${hour12}:00 ${period}`
+            : `${hour12}:${slot.minute} ${period}`;
+          
+          return (
+            <TimeSlot key={index} className="time-slot">
+              <TimeLabel className="time-label">
+                {displayTime}
+              </TimeLabel>
+            </TimeSlot>
+          );
+        })}
+      </TimeColumn>
+    );
+  };
+
+  // Update the renderAppointmentsForStylist function
+  const renderAppointmentsForStylist = (stylistId: string) => {
+    return todayAppointments
+      .filter(appointment => appointment.stylist_id === stylistId)
+      .map(appointment => {
+        // Find the service details
+        const serviceName = appointment.serviceDetails?.name || 
+                           (services.find(s => s.id === appointment.service_id)?.name) || 
+                           'Unknown Service';
+        
+        // Determine if the appointment is paid
+        const isPaid = appointment.paid || false;
+        
+        // Determine appointment status
+        const status = appointment.status || 'scheduled';
+        
+        // Format times properly
+        const startTime = formatTime(appointment.start_time);
+        const endTime = formatTime(appointment.end_time);
+        
+        return (
+          <AppointmentCard
+            key={appointment.id}
+            draggable
+            onDragStart={(e) => handleDragStart(e, appointment)}
+            onClick={() => handleAppointmentClick(appointment)}
+            style={{
+              top: `${getAppointmentPosition(appointment.start_time)}px`,
+              height: `${getAppointmentDuration(appointment.start_time, appointment.end_time)}px`,
+              backgroundColor: status === 'completed' 
+                ? theme.palette.grey[400] 
+                : isPaid 
+                  ? theme.palette.success.light
+                  : theme.palette.primary.main
+            }}
+            duration={getAppointmentDuration(appointment.start_time, appointment.end_time)}
+            isPaid={isPaid}
+            status={status as 'scheduled' | 'completed' | 'cancelled'}
+          >
+            <Typography variant="subtitle2" className="appointment-client-name">
+              {appointment.clientDetails?.[0]?.full_name || 'Unknown Client'}
+            </Typography>
+            <Typography variant="body2" className="appointment-service">
+              {serviceName}
+            </Typography>
+            <Typography variant="caption" className="appointment-time">
+              {`${startTime} - ${endTime}`}
+            </Typography>
+          </AppointmentCard>
+        );
+      });
+  };
+
+  // Add state for edit break functionality
+  const [editingBreak, setEditingBreak] = useState<Break | null>(null);
+  const [editBreakDialogOpen, setEditBreakDialogOpen] = useState(false);
+  const [editBreakFormData, setEditBreakFormData] = useState({
+    startTime: '',
+    endTime: '',
+    reason: ''
+  });
+
+  // Add state for service collections
+  const [serviceCollections, setServiceCollections] = useState<any[]>([]);
+  const [selectedServiceCollection, setSelectedServiceCollection] = useState('');
+  const [serviceSearchQuery, setServiceSearchQuery] = useState('');
+  const [isLoadingCollectionServices, setIsLoadingCollectionServices] = useState(false);
+  const [loadingStylists, setLoadingStylists] = useState(false);
+
+  // Use the useServiceCollections hook to get service collections
+  const { serviceCollections: fetchedServiceCollections, isLoading: isLoadingServiceCollections } = useServiceCollections();
+
+  // Update service collections when fetched
+  useEffect(() => {
+    if (fetchedServiceCollections) {
+      setServiceCollections(fetchedServiceCollections);
+    }
+  }, [fetchedServiceCollections]);
+
+  // Add a function to handle service search and selection
+  const handleServiceSearch = (event: React.ChangeEvent<HTMLInputElement>, entryId: string) => {
+    const searchQuery = event.target.value;
+    setServiceSearchQuery(searchQuery);
+    
+    // If search query is empty, don't show any suggestions
+    if (!searchQuery.trim()) {
+      return;
+    }
+    
+    // Find matching services
+    const matchingServices = services.filter(service => 
+      service.name.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+    
+    // If we have exactly one match and it's an exact match, auto-select it
+    if (matchingServices.length === 1 && 
+        matchingServices[0].name.toLowerCase() === searchQuery.toLowerCase()) {
+      // Find the collection this service belongs to
+      const collection = serviceCollections.find(c => c.id === matchingServices[0].collection_id);
+      
+      if (collection) {
+        // Update the entry with the selected collection and service
+        handleCollectionChange(entryId, collection);
+        handleServicesChange(entryId, [matchingServices[0]]);
+      }
+    }
+  };
+
+  // Add a function to handle "Add New Service" button click
+  const handleAddNewService = (entryId: string) => {
+    // Find the entry
+    const entry = editFormData.clientEntries.find(e => e.id === entryId);
+    if (!entry) return;
+    
+    // Create a new service entry in the same entry
+    const serviceSearchField = document.getElementById(`service-search-${entryId}`);
+    if (serviceSearchField) {
+      (serviceSearchField as HTMLInputElement).focus();
+      // Clear any previous search
+      (serviceSearchField as HTMLInputElement).value = '';
+    }
+    
+    // Show a message to guide the user
+    setSnackbarMessage('Please search and select a service');
+    setSnackbarOpen(true);
+  };
+
   return (
     <DayViewContainer>
       <DayViewHeader>
@@ -1800,16 +1866,18 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
       </DayViewHeader>
       
       <ScheduleGrid className="schedule-grid">
+        {/* Use the renderTimeColumn function to create the time column */}
         {renderTimeColumn()}
         
         {stylists
-          .filter(stylist => stylist.available !== false) // Only show available stylists
+          .filter(stylist => stylist.available !== false)
           .map((stylist, index, filteredStylists) => (
           <StylistColumn 
             key={stylist.id}
             className="stylist-column"
           >
             <StylistHeader
+              className="stylist-header"
               onClick={() => handleBreakDialogOpen(stylist.id)}
               sx={{
                 cursor: 'pointer',
@@ -1859,86 +1927,73 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
               const breakStartTime = normalizeDateTime(breakItem.startTime);
               const breakEndTime = normalizeDateTime(breakItem.endTime);
               
+              // Format times properly
+              const startTimeFormatted = formatTime(breakStartTime);
+              const endTimeFormatted = formatTime(breakEndTime);
+              
               const top = getAppointmentPosition(breakItem.startTime);
               const height = getAppointmentDuration(breakItem.startTime, breakItem.endTime);
 
               return (
-                <BreakBlock
+                <Box
                   key={breakItem.id}
+                  className="break-block"
                   sx={{
+                    position: 'absolute',
+                    left: theme.spacing(0.75),
+                    right: theme.spacing(0.75),
                     top: `${top}px`,
                     height: `${height}px`,
+                    backgroundColor: 'rgba(220, 0, 0, 0.8)',
+                    color: 'white',
+                    borderRadius: '8px',
+                    padding: theme.spacing(1, 1.5),
+                    boxShadow: '0 2px 4px rgba(0,0,0,0.15)',
+                    zIndex: 5,
                     display: 'flex',
                     flexDirection: 'column',
-                    justifyContent: 'flex-start',
-                    alignItems: 'center',
-                    gap: 0.5,
-                    cursor: 'pointer'
+                    justifyContent: 'space-between',
+                    border: '1px solid rgba(255, 255, 255, 0.25)',
+                    '&:hover': {
+                      boxShadow: '0 3px 6px rgba(0,0,0,0.2)',
+                      transform: 'translateY(-2px)'
+                    }
                   }}
                   onClick={() => handleEditBreakDialogOpen(breakItem)}
                 >
-                  <Box 
-                    sx={{ 
-                      position: 'absolute',
-                      top: 0,
-                      left: 0,
-                      right: 0,
-                      padding: '3px 0',
-                      backgroundColor: 'rgba(220, 0, 0, 0.9)',
-                      textAlign: 'center',
-                      borderBottom: '1px solid rgba(0,0,0,0.1)'
-                    }}
+                  <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: 'white' }}>
+                    Break Time
+                  </Typography>
+                  
+                  {breakItem.reason && (
+                    <Typography variant="body2" sx={{ color: 'white', mb: 1 }}>
+                      {breakItem.reason}
+                    </Typography>
+                  )}
+                  
+                  <Typography 
+                    variant="caption" 
+                    className="break-time-text"
                   >
-                    <Typography variant="subtitle2" sx={{ fontWeight: 'bold', fontSize: '0.85rem', letterSpacing: '0.5px', color: '#fff' }}>
-                      BREAK
-                    </Typography>
-                  </Box>
+                    {`${startTimeFormatted} - ${endTimeFormatted}`}
+                  </Typography>
                   
-                  <Box sx={{ width: '100%', mt: 4, px: 1, textAlign: 'center' }}>
-                    <Typography variant="caption" sx={{ 
-                      fontSize: '0.8rem', 
-                      fontWeight: 'bold', 
-                      display: 'block',
-                      bgcolor: 'rgba(255, 255, 255, 0.7)',
-                      borderRadius: '4px',
-                      padding: '2px 4px',
-                      mx: 'auto',
-                      width: 'fit-content'
-                    }}>
-                      {formatTime(breakStartTime)} - {formatTime(breakEndTime)}
-                    </Typography>
-                    {breakItem.reason && (
-                      <Typography variant="caption" sx={{ 
-                        fontSize: '0.75rem', 
-                        display: 'block', 
-                        mt: 0.5, 
-                        fontStyle: 'italic',
-                        maxWidth: '100%',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap'
-                      }}>
-                        "{breakItem.reason}"
-                      </Typography>
-                    )}
-                  </Box>
-                  
-                  {/* Add edit and delete buttons directly on the break card */}
+                  {/* Add edit and delete buttons */}
                   <Box 
                     sx={{ 
                       position: 'absolute', 
-                      bottom: 4, 
+                      top: 4, 
                       right: 4, 
                       display: 'flex', 
                       gap: 0.5,
-                      opacity: 0.9,
+                      opacity: 0.7,
                       '&:hover': { opacity: 1 }
                     }}
                     onClick={e => e.stopPropagation()} // Prevent opening edit dialog when clicking buttons
                   >
                     <IconButton 
                       size="small" 
-                      sx={{ padding: 0.3, backgroundColor: 'rgba(255,255,255,0.6)', boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }}
+                      sx={{ padding: 0.3, backgroundColor: 'rgba(255,255,255,0.8)' }}
                       onClick={(e) => {
                         e.stopPropagation();
                         handleEditBreakDialogOpen(breakItem);
@@ -1948,7 +2003,7 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
                     </IconButton>
                     <IconButton 
                       size="small" 
-                      sx={{ padding: 0.3, backgroundColor: 'rgba(255,255,255,0.6)', boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }}
+                      sx={{ padding: 0.3, backgroundColor: 'rgba(255,255,255,0.8)' }}
                       onClick={(e) => {
                         e.stopPropagation();
                         handleDeleteBreak(breakItem.id);
@@ -1957,7 +2012,7 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
                       <DeleteIcon fontSize="small" />
                     </IconButton>
                   </Box>
-                </BreakBlock>
+                </Box>
               );
             })}
           </StylistColumn>

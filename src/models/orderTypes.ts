@@ -48,17 +48,14 @@ export interface OrderItem {
   price: number;
   total: number;
   type: 'product' | 'service';
-  discount?: number;
   hsn_code?: string;
   gst_percentage?: number;
-  created_at?: string;
-  updated_at?: string;
-  // Fields for salon consumption
-  is_salon_consumption?: boolean;
-  for_salon_use?: boolean;
-  category?: string;
-  purpose?: string | null;
   units?: string;
+  category?: string;
+  for_salon_use?: boolean;
+  purpose?: string;
+  discount?: number; // Individual item discount amount
+  discount_percentage?: number; // Individual item discount percentage
 }
 
 export interface OrderSummary {

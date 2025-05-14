@@ -531,6 +531,9 @@ export default function POS() {
 			}
 		}
 
+		// Determine the type - ensure it is always either 'product' or 'service', never undefined
+		const itemType = service.type === 'service' ? 'service' : 'product';
+		
 		const newItem: OrderItem = {
 			id: uuidv4(),
 			order_id: '',
@@ -539,10 +542,12 @@ export default function POS() {
 			quantity: quantity,
 			price: customPrice !== undefined ? customPrice : service.price,
 			total: (customPrice !== undefined ? customPrice : service.price) * quantity,
-			type: service.type || 'product',
+			type: itemType, // Ensure type is never undefined
 			hsn_code: service.hsn_code,
 			gst_percentage: service.gst_percentage,
-			for_salon_use: false
+			for_salon_use: false,
+			discount: 0, // Initialize discount to 0
+			discount_percentage: 0 // Initialize discount_percentage to 0
 		};
 
 		console.log(`🛒 Created order item:`, newItem);
@@ -760,13 +765,23 @@ export default function POS() {
 	const calculateProductSubtotal = useCallback(() => {
 		return orderItems
 			.filter(item => item.type === 'product')
-			.reduce((sum, item) => sum + item.price * item.quantity, 0);
+			.reduce((sum, item) => {
+				// Calculate item subtotal with individual discount
+				const itemTotal = item.price * item.quantity;
+				const itemDiscount = item.discount || 0;
+				return sum + (itemTotal - itemDiscount);
+			}, 0);
 	}, [orderItems]);
 
 	const calculateServiceSubtotal = useCallback(() => {
 		return orderItems
 			.filter(item => item.type === 'service')
-			.reduce((sum, item) => sum + item.price * item.quantity, 0);
+			.reduce((sum, item) => {
+				// Calculate item subtotal with individual discount
+				const itemTotal = item.price * item.quantity;
+				const itemDiscount = item.discount || 0;
+				return sum + (itemTotal - itemDiscount);
+			}, 0);
 	}, [orderItems]);
 
 	const calculateProductGstAmount = useCallback((subtotal: number) => {
@@ -777,16 +792,42 @@ export default function POS() {
 		return isServiceGstApplied ? (subtotal * serviceGstRate) / 100 : 0;
 	}, [isServiceGstApplied, serviceGstRate]);
 
+	const calculateTotalDiscount = useCallback(() => {
+		// Sum all individual discounts
+		const individualDiscounts = orderItems.reduce((sum, item) => sum + (item.discount || 0), 0);
+		
+		// Add global discount
+		const globalDiscount = walkInDiscount;
+		
+		// Add percentage discount (apply it to the already discounted subtotal)
+		const subtotalAfterIndividualDiscounts = calculateProductSubtotal() + calculateServiceSubtotal();
+		const subtotalWithGST = subtotalAfterIndividualDiscounts + 
+			calculateProductGstAmount(calculateProductSubtotal()) + 
+			calculateServiceGstAmount(calculateServiceSubtotal());
+		const percentageDiscountAmount = (subtotalWithGST * walkInDiscountPercentage) / 100;
+		
+		console.log('Discount calculation:', { 
+			individualDiscounts, 
+			globalDiscount, 
+			percentageDiscountAmount, 
+			total: individualDiscounts + globalDiscount + percentageDiscountAmount 
+		});
+		
+		return individualDiscounts + globalDiscount + percentageDiscountAmount;
+	}, [orderItems, walkInDiscount, walkInDiscountPercentage, calculateProductSubtotal, calculateServiceSubtotal, calculateProductGstAmount, calculateServiceGstAmount]);
+
 	const calculateTotalAmount = useCallback(() => {
 		const prodSubtotal = calculateProductSubtotal();
 		const servSubtotal = calculateServiceSubtotal();
 		const prodGst = calculateProductGstAmount(prodSubtotal);
 		const servGst = calculateServiceGstAmount(servSubtotal);
 		const combinedSubtotal = prodSubtotal + servSubtotal + prodGst + servGst;
-		const percentageDiscountAmount = (combinedSubtotal * walkInDiscountPercentage) / 100;
-		const totalDiscount = walkInDiscount + percentageDiscountAmount;
+		
+		// Use the separate discount calculation
+		const totalDiscount = calculateTotalDiscount();
+		
 		return Math.max(0, combinedSubtotal - totalDiscount); // Ensure total is not negative
-	}, [calculateProductSubtotal, calculateServiceSubtotal, calculateProductGstAmount, calculateServiceGstAmount, walkInDiscount, walkInDiscountPercentage]);
+	}, [calculateProductSubtotal, calculateServiceSubtotal, calculateProductGstAmount, calculateServiceGstAmount, calculateTotalDiscount]);
 
 	const calculateSalonGST = useCallback(() => {
 		// Calculate taxable value and GST components for each product
@@ -1328,18 +1369,26 @@ export default function POS() {
 				stylist_id: staffInfo?.id || '',
 				stylist_name: staffInfo?.name || '',
 				items: [],
-				services: ([...formattedProducts, ...formattedServices] as any[]),
+				// Make sure to include individual item discounts in the services array
+				services: ([...formattedProducts, ...formattedServices].map(item => ({
+					...item,
+					// Ensure discount and discount_percentage are included
+					discount: item.discount || 0,
+					discount_percentage: item.discount_percentage || 0
+				})) as any[]),
 				
+				// Include breakdown of different discount types in the order
+				item_discounts: orderItems.reduce((sum, item) => sum + (item.discount || 0), 0),
 				payment_method: isSplitPayment ? 'split' : walkInPaymentMethod,
 				split_payments: isSplitPayment ? splitPayments : undefined,
 				discount: walkInDiscount,
-				discount_percentage: walkInDiscountPercentage,  // Add discount percentage
+				discount_percentage: walkInDiscountPercentage,
 				subtotal: calculateProductSubtotal() + calculateServiceSubtotal(),
 				tax: calculateProductGstAmount(calculateProductSubtotal()) + calculateServiceGstAmount(calculateServiceSubtotal()),
 				total: calculateTotalAmount(),
 				total_amount: calculateTotalAmount(),
 				status: 'completed',
-				order_date: new Date().toISOString(),
+				order_date: salonConsumptionDate ? salonConsumptionDate.toISOString() : new Date().toISOString(),
 				is_walk_in: true,
 				is_salon_consumption: false,
 				pending_amount: isSplitPayment ? Math.max(0, calculateTotalAmount() - getAmountPaid()) : 0,
@@ -1347,7 +1396,7 @@ export default function POS() {
 					id: uuidv4(),
 					amount: calculateTotalAmount(),
 					payment_method: walkInPaymentMethod,
-					payment_date: new Date().toISOString()
+					payment_date: salonConsumptionDate ? salonConsumptionDate.toISOString() : new Date().toISOString()
 				}]
 			});
 			
@@ -1493,11 +1542,13 @@ export default function POS() {
 				quantity: quantity,
 				price: service.price,
 				total: service.price * quantity,
-				type: 'product',
+				type: 'product', // Always set as product for salon use
 				gst_percentage: service.gst_percentage,
 				hsn_code: service.hsn_code,
 				for_salon_use: true,
-				purpose: consumptionPurpose
+				purpose: consumptionPurpose,
+				discount: 0,
+				discount_percentage: 0
 			};
 
 			setSalonProducts((prev) => [...prev, newItem]);
@@ -1711,20 +1762,19 @@ export default function POS() {
 					is_salon_consumption: true,
 					status: 'completed',
 					payment_method: 'internal',
-					services: salonProducts.map((product, idx) => ({
-						id: orderItems[idx].id,          // Match pos_order_items UUID
-						type: 'product',
+					services: salonProducts.map((product) => ({
+						id: uuidv4(),
+						name: product.item_name,
 						price: product.price,
 						quantity: product.quantity,
-						service_id: product.item_id,
-						service_name: product.item_name,
-						product_id: product.item_id,    // Add product_id for reference
-						product_name: product.item_name,// Add product_name
-						gst_percentage: product.gst_percentage || 0,
-						hsn_code: product.hsn_code || '',
-						units: product.units || '',
-						for_salon_use: true
-					}))
+						type: 'product',
+						gst_percentage: product.gst_percentage,
+						hsn_code: product.hsn_code,
+						discount: product.discount || 0,
+						discount_percentage: product.discount_percentage || 0,
+						total: product.total
+					})),
+					requisition_voucher_no: requisitionVoucherNo || null
 				};
 
 				console.log('Creating order record with data:', orderData);
@@ -1898,7 +1948,7 @@ export default function POS() {
 					order_id: baseOrderData.order_id,
 					client_id: baseOrderData.client_id,
 					client_name: baseOrderData.client_name, 
-					order_date: baseOrderData.order_date,
+					order_date: salonConsumptionDate ? salonConsumptionDate.toISOString() : baseOrderData.order_date,
 					items: baseOrderData.items,
 					services: baseOrderData.services,
 					subtotal: baseOrderData.subtotal,
@@ -2214,8 +2264,16 @@ export default function POS() {
 		const serviceGstAmount = calculateServiceGstAmount(serviceSubtotal);
 		const combinedGstAmount = productGstAmount + serviceGstAmount;
 		const subtotalIncludingGST = combinedSubtotal + combinedGstAmount;
+
+		// Calculate individual item discounts total
+		const individualItemDiscounts = orderItems.reduce((sum, item) => sum + (item.discount || 0), 0);
+		
+		// Calculate global percentage discount (on subtotal including GST)
 		const percentageDiscountAmount = (subtotalIncludingGST * walkInDiscountPercentage) / 100;
-		const totalDiscount = walkInDiscount + percentageDiscountAmount;
+		
+		// Total discount is sum of: individual item discounts + global direct discount + percentage discount
+		const totalDiscount = individualItemDiscounts + walkInDiscount + percentageDiscountAmount;
+		
 		const totalAmount = Math.max(0, subtotalIncludingGST - totalDiscount);
 
 		return (
@@ -2239,24 +2297,89 @@ export default function POS() {
 											(x{item.quantity})
 										</Typography>
 									</Typography>
-									<TextField
-										size="small"
-										variant="standard"
-										type="number"
-										value={item.price}
-										onChange={(e) => {
-											const newPrice = parseFloat(e.target.value);
-												handleItemPriceChange(item.id, isNaN(newPrice) ? 0 : newPrice);
-										}}
-										sx={{ mt: 0.5, width: '80px' }}
-										InputProps={{
-											startAdornment: <InputAdornment position="start">₹</InputAdornment>,
-											inputProps: { step: 0.01, min: 0 }
-										}}
-									/>
+									<Box sx={{ display: 'flex', alignItems: 'center', mt: 1, gap: 2 }}>
+										<TextField
+											size="small"
+											variant="standard"
+											type="number"
+											value={item.price}
+											onChange={(e) => {
+												const newPrice = parseFloat(e.target.value);
+													handleItemPriceChange(item.id, isNaN(newPrice) ? 0 : newPrice);
+											}}
+											sx={{ width: '80px' }}
+											InputProps={{
+												startAdornment: <InputAdornment position="start">₹</InputAdornment>,
+												inputProps: { step: 0.01, min: 0 }
+											}}
+										/>
+										
+										{/* Individual item discount fields */}
+										<Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+											<TextField
+												size="small"
+												variant="standard"
+												type="number"
+												label="Disc ₹"
+												value={item.discount || 0}
+												onChange={(e) => {
+													const discAmount = parseFloat(e.target.value);
+													const updatedItems = orderItems.map(i => 
+														i.id === item.id 
+															? { 
+																...i, 
+																discount: isNaN(discAmount) ? 0 : discAmount,
+																// Calculate percentage based on amount
+																discount_percentage: isNaN(discAmount) ? 0 : 
+																	i.price > 0 ? Math.min(100, (discAmount / (i.price * i.quantity)) * 100) : 0,
+																// Update total with discount
+																total: Math.max(0, (i.price * i.quantity) - (isNaN(discAmount) ? 0 : discAmount))
+															} 
+															: i
+													);
+													setOrderItems(updatedItems);
+												}}
+												sx={{ width: '70px' }}
+												InputProps={{
+													inputProps: { min: 0, max: item.price * item.quantity }
+												}}
+											/>
+											<TextField
+												size="small"
+												variant="standard"
+												type="number"
+												label="Disc %"
+												value={item.discount_percentage || 0}
+												onChange={(e) => {
+													const discPercentage = parseFloat(e.target.value);
+													const validPercentage = isNaN(discPercentage) ? 0 : Math.max(0, Math.min(100, discPercentage));
+													const discAmount = (validPercentage / 100) * (item.price * item.quantity);
+													const updatedItems = orderItems.map(i => 
+														i.id === item.id 
+															? { 
+																...i, 
+																discount_percentage: validPercentage,
+																discount: discAmount,
+																// Update total with discount
+																total: Math.max(0, (i.price * i.quantity) - discAmount)
+															} 
+															: i
+													);
+													setOrderItems(updatedItems);
+												}}
+												sx={{ width: '70px' }}
+												InputProps={{
+													endAdornment: <InputAdornment position="end">%</InputAdornment>,
+													inputProps: { min: 0, max: 100, step: 1 }
+												}}
+											/>
+										</Box>
+									</Box>
 								</Box>
 								<Typography variant="body1" sx={{ fontWeight: 500, minWidth: '70px', textAlign: 'right' }}>
-									{formatCurrency(item.price * item.quantity)}
+									{formatCurrency((item.discount && item.discount > 0) 
+										? Math.max(0, (item.price * item.quantity) - item.discount)
+										: item.price * item.quantity)}
 								</Typography>
 								<Tooltip title="Remove Item">
 									<IconButton size="small" color="error" onClick={() => handleRemoveFromOrder(item.id)} sx={{ ml: 1 }}>
@@ -2270,12 +2393,38 @@ export default function POS() {
 				<Divider sx={{ my: 2 }} />
 				{/* Subtotals */}
 				<Box sx={{ mb: 1, display: 'flex', justifyContent: 'space-between' }}>
-					<Typography>Service Subtotal:</Typography>
-					<Typography fontWeight="medium">{formatCurrency(serviceSubtotal)}</Typography>
+					<Typography variant="body2">Product Subtotal:</Typography>
+					<Typography variant="body2" fontWeight="500">{formatCurrency(productSubtotal)}</Typography>
 				</Box>
 				<Box sx={{ mb: 1, display: 'flex', justifyContent: 'space-between' }}>
-					<Typography>Product Subtotal:</Typography>
-					<Typography fontWeight="medium">{formatCurrency(productSubtotal)}</Typography>
+					<Typography variant="body2">Service Subtotal:</Typography>
+					<Typography variant="body2" fontWeight="500">{formatCurrency(serviceSubtotal)}</Typography>
+				</Box>
+				
+				{/* Manual date selection */}
+				<Box sx={{ mb: 2, mt: 2 }}>
+					<Typography variant="body2" fontWeight="500" gutterBottom>Order Date:</Typography>
+					<LocalizationProvider dateAdapter={AdapterDateFns}>
+						<DatePicker
+							value={salonConsumptionDate}
+							onChange={(newDate) => setSalonConsumptionDate(newDate)}
+							slotProps={{
+								textField: {
+									fullWidth: true,
+									variant: "outlined",
+									size: "small",
+									helperText: "Manually set order date",
+									sx: { mb: 1, '& .MuiOutlinedInput-root': { borderRadius: '8px' } }
+								}
+							}}
+						/>
+					</LocalizationProvider>
+				</Box>
+
+				{/* GST Section */}
+				<Box sx={{ mb: 1, display: 'flex', justifyContent: 'space-between' }}>
+					<Typography variant="body2">Product GST ({productGstRate}%):</Typography>
+					<Typography variant="body2" fontWeight="500">{formatCurrency(productGstAmount)}</Typography>
 				</Box>
 				<Box sx={{ mb: 1, display: 'flex', justifyContent: 'space-between' }}>
 					<Typography>Subtotal:</Typography>
@@ -2361,6 +2510,31 @@ export default function POS() {
 					<Typography>Discount:</Typography>
 					<Typography fontWeight="medium" color="error.main">-{formatCurrency(totalDiscount)}</Typography>
 				</Box>
+				
+				{/* Show breakdown of discounts if there are different types */}
+				{(individualItemDiscounts > 0 || walkInDiscount > 0 || percentageDiscountAmount > 0) && (
+					<Box sx={{ mb: 1, ml: 2 }}>
+						{individualItemDiscounts > 0 && (
+							<Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+								<Typography variant="body2" color="text.secondary">Item Discounts:</Typography>
+								<Typography variant="body2" color="text.secondary">-{formatCurrency(individualItemDiscounts)}</Typography>
+							</Box>
+						)}
+						{walkInDiscount > 0 && (
+							<Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+								<Typography variant="body2" color="text.secondary">Global Discount:</Typography>
+								<Typography variant="body2" color="text.secondary">-{formatCurrency(walkInDiscount)}</Typography>
+							</Box>
+						)}
+						{percentageDiscountAmount > 0 && (
+							<Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+								<Typography variant="body2" color="text.secondary">Percentage Discount ({walkInDiscountPercentage}%):</Typography>
+								<Typography variant="body2" color="text.secondary">-{formatCurrency(percentageDiscountAmount)}</Typography>
+							</Box>
+						)}
+					</Box>
+				)}
+
 				<Divider sx={{ my: 2 }} />
 				{/* Total Amount */}
 				<Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
@@ -3157,12 +3331,19 @@ export default function POS() {
 								fullWidth
 								sx={{ mt: 2 }}
 								onClick={async () => {
-									// Build payments array from paymentAmounts and apply as splitPayments
-									const payments = Object.entries(paymentAmounts)
-										.filter(([_, amt]) => amt > 0)
-										.map(([method, amt]) => ({ id: uuidv4(), payment_method: method as PaymentMethod, amount: amt }));
-									setSplitPayments(payments);
-									setIsSplitPayment(true);
+									// Build payments array from paymentAmounts
+									if (isSplitPayment) {
+										// Only setup split payments if split payment mode is enabled
+										const payments = Object.entries(paymentAmounts)
+											.filter(([_, amt]) => amt > 0)
+											.map(([method, amt]) => ({ 
+												id: uuidv4(), 
+												payment_method: method as PaymentMethod, 
+												amount: amt 
+											}));
+										setSplitPayments(payments);
+									}
+									// Don't automatically set split payment to true
 									await handleCreateWalkInOrder();
 								}}
 								disabled={processing || Object.values(paymentAmounts).reduce((a, b) => a + b, 0) < calculateTotalAmount()}
@@ -3394,5 +3575,8 @@ export default function POS() {
 		</Box>
 	);
 }
+
+
+
 
 

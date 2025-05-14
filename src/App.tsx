@@ -28,6 +28,7 @@ const Products = lazy(() => import('./pages/InventoryManager'));
 const ProductMaster = lazy(() => import('./pages/ProductMaster'));
 const CollectionDetail = lazy(() => import('./pages/CollectionDetail'));
 const MembershipTiers = lazy(() => import('./pages/MembershipTiers'));
+const MembersPage = lazy(() => import('./pages/MembersPage'));
 
 // Loading fallback component
 const PageLoader = () => (
@@ -59,7 +60,6 @@ function App() {
             <Route index element={<Navigate to="/dashboard" replace />} />
             <Route path="dashboard" element={<Dashboard />} />
             <Route path="appointments" element={<Appointments />} />
-            {/* <Route path="create-appointment" element={<CreateAppointment />} /> */}
             <Route path="clients" element={<Clients />} />
             <Route path="stylists" element={
               <ErrorBoundary>
@@ -71,6 +71,11 @@ function App() {
             <Route path="membership-tiers" element={
               <ErrorBoundary>
                 <MembershipTiers />
+              </ErrorBoundary>
+            } />
+            <Route path="members" element={
+              <ErrorBoundary>
+                <MembersPage />
               </ErrorBoundary>
             } />
             <Route path="products" element={<Products />} />
