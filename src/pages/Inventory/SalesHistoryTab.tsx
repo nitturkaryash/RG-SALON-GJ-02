@@ -122,7 +122,7 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
   // Compute remaining-stock tax breakdown on the client
   const tableData = useMemo(() => {
     return filteredData.map(item => {
-      const qty = item.current_stock ?? 0;
+      const qty = item.remaining_stock ?? 0;
       const unitExcl = Number(item.unit_price_ex_gst) || 0;
       const gstPct = Number(item.gst_percentage) || 0;
       
@@ -360,8 +360,7 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
         'Serial No.', 'Date', 'Product Name', 'HSN Code', 'Units', 'Qty.',
         'Unit Price (Inc. GST)', 'Unit Price (Ex.GST)', 'Taxable Value', 'GST %',
         'Discount %', 'Taxable After Discount', 'CGST', 'SGST', 'Total Value',
-        'Initial Stock', 'Remaining Stock', 'Current Stock', 'Taxable Value',
-        'IGST (Rs.)', 'CGST (Rs.)', 'SGST (Rs.)', 'Total Value (Rs.)'
+        'Initial Stock', 'Current Stock', 'Taxable Value', 'IGST (Rs.)', 'CGST (Rs.)', 'SGST (Rs.)', 'Total Value (Rs.)'
       ];
       const dataRows = tableData.map(item => [
         item.serial_no,
@@ -381,7 +380,6 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
         item.invoice_value,
         item.initial_stock,
         item.remaining_stock,
-        item.current_stock,
         item.current_stock_taxable_value ?? 0,
         item.current_stock_igst ?? 0,
         item.current_stock_cgst ?? 0,
@@ -570,8 +568,7 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
                 {renderSortableHeader('sgst_amount', 'SGST')}
                 {renderSortableHeader('invoice_value', 'Total Value')}
                 {renderSortableHeader('initial_stock', 'Initial Stock')}
-                {renderSortableHeader('remaining_stock', 'Remaining Stock')}
-                {renderSortableHeader('current_stock', 'Current Stock')}
+                {renderSortableHeader('remaining_stock', 'Current Stock')}
                 {renderSortableHeader('current_stock_taxable_value', 'Taxable Value')}
                 {renderSortableHeader('current_stock_igst', 'IGST (Rs.)')}
                 {renderSortableHeader('current_stock_cgst', 'CGST (Rs.)')}
@@ -583,7 +580,7 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={22} align="center" sx={{ py: 3 }}>
+                  <TableCell colSpan={21} align="center" sx={{ py: 3 }}>
                     <CircularProgress />
                     <Typography variant="body2" sx={{ mt: 1 }}>
                       Loading sales data...
@@ -613,7 +610,6 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
                       <TableCell align="right">{formatCurrency(row.invoice_value)}</TableCell>
                       <TableCell align="right">{row.initial_stock}</TableCell>
                       <TableCell align="right">{row.remaining_stock}</TableCell>
-                      <TableCell align="right">{row.current_stock}</TableCell>
                       <TableCell align="right">{formatCurrency(row.current_stock_taxable_value)}</TableCell>
                       <TableCell align="right">{formatCurrency(row.current_stock_igst)}</TableCell>
                       <TableCell align="right">{formatCurrency(row.current_stock_cgst)}</TableCell>
@@ -630,7 +626,7 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
                   ))
               ) : (
                 <TableRow>
-                  <TableCell colSpan={22} align="center" sx={{ py: 3 }}>
+                  <TableCell colSpan={21} align="center" sx={{ py: 3 }}>
                     <Typography variant="body1">No sales data found</Typography>
                     <Typography variant="body2" color="textSecondary" sx={{ mt: 1 }}>
                       {searchTerm 
