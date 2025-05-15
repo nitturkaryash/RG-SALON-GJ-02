@@ -42,20 +42,27 @@ export const usePurchaseHistory = () => {
     setIsLoading(true);
     setError(null);
     try {
-      const { data, error: fetchError } = await supabase
+      const { data: purchaseRecords, error: fetchError } = await supabase
         .from(TABLES.PURCHASES)
         .select(
           'purchase_id,product_id,date,purchase_invoice_number,purchase_qty,' +
           'mrp_incl_gst,mrp_excl_gst,purchase_taxable_value,purchase_igst,purchase_cgst,' +
           'purchase_sgst,purchase_invoice_value_rs,discount_on_purchase_percentage,' +
-          'created_at,updated_at,units,stock_balance_after_purchase:current_stock,Vendor,' +
+          'created_at,updated_at,units,Vendor,' +
           'product_master(name,hsn_code,units,gst_percentage)'
         )
         .order('date', { ascending: true });
 
       if (fetchError) throw handleSupabaseError(fetchError);
 
-      const transformedData: PurchaseTransaction[] = (data as any[]).map(item => {
+      // Fetch current stock balances from the inventory_balance_stock view
+      const { data: stockData, error: stockError } = await supabase
+        .from('inventory_balance_stock')
+        .select('product_name,balance_qty');
+      if (stockError) throw handleSupabaseError(stockError);
+      const stockMap = new Map((stockData as any[]).map(s => [s.product_name, s.balance_qty]));
+
+      const transformedData: PurchaseTransaction[] = (purchaseRecords as any[]).map(item => {
         const product = item.product_master;
         let calculatedGstPercentage = 0;
         const origTaxableValue = item.purchase_taxable_value ?? 0;
@@ -99,8 +106,10 @@ export const usePurchaseHistory = () => {
         // Calculate total invoice value including GST
         const purchaseInvoiceValue = computedTaxableValue + purchaseCgst + purchaseSgst + purchaseIgst;
 
+        // Determine current stock quantity from the stock map
+        const currentStockQty = stockMap.get(product?.name ?? '') ?? 0;
+
         // Calculate current stock valuation
-        const currentStockQty = item.stock_balance_after_purchase ?? 0;
         const currentStockTaxableValue = currentStockQty * calculatedMrpExcl;
         let currentStockCgst = 0;
         let currentStockSgst = 0;
@@ -139,7 +148,7 @@ export const usePurchaseHistory = () => {
           created_at: item.created_at,
           updated_at: item.updated_at,
           supplier: item.Vendor || 'Direct Entry',
-          stock_after_purchase: item.stock_balance_after_purchase ?? null,
+          stock_after_purchase: currentStockQty,
           // Add calculated current stock values
           current_stock_taxable_value: parseFloat(currentStockTaxableValue.toFixed(2)),
           current_stock_cgst: parseFloat(currentStockCgst.toFixed(2)),
