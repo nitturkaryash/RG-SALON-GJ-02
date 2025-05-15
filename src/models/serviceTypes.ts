@@ -10,10 +10,21 @@ export interface ServiceCollection {
 export interface ServiceItem {
   id: string;
   collection_id: string;
+  subcollection_id?: string; // optional link to a sub-collection
   name: string;
   description: string;
   price: number;
   duration: number;
   active: boolean;
+  gender?: string;
+  created_at?: string;
+}
+
+// ServiceSubCollection represents a sub-grouping within a service collection
+export interface ServiceSubCollection {
+  id: string;
+  collection_id: string;
+  name: string;
+  description: string;
   created_at?: string;
 } 

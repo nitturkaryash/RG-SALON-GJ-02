@@ -614,6 +614,15 @@ export function useAppointments() {
 
       return newAppointment;
     },
+    onSuccess: (data) => {
+      console.log("Appointment updated successfully in DB:", data);
+      queryClient.invalidateQueries({ queryKey: ['appointments'] });
+      toast.success('Appointment created successfully!');
+    },
+    onError: (error) => {
+      console.error('Error creating appointment:', error);
+      toast.error(`Failed to create appointment: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   });
 
   const updateAppointment = useMutation({
@@ -623,34 +632,33 @@ export function useAppointments() {
 
       console.log(`Starting update for appointment ${appointmentId}`);
 
-      // --- Step 1: Delete existing join table entries --- 
-      // We should ideally wrap these in a transaction if possible, 
-      // but Supabase client might require RPC for transactions.
-      // Doing sequentially for now.
-      console.log(` -> Deleting existing joins for appointment ${appointmentId}...`);
-      try {
-        const { error: deleteClientsError } = await supabase
-          .from('appointment_clients')
-          .delete()
-          .eq('appointment_id', appointmentId);
-        if (deleteClientsError) throw new Error(`Failed to delete appointment_clients: ${deleteClientsError.message}`);
+      // Only clear and re-link join tables when new clientDetails are provided
+      const hasClientDetails = Array.isArray(data.clientDetails);
+      if (hasClientDetails) {
+        console.log(` -> Deleting existing joins for appointment ${appointmentId}...`);
+        try {
+          const { error: deleteClientsError } = await supabase
+            .from('appointment_clients')
+            .delete()
+            .eq('appointment_id', appointmentId);
+          if (deleteClientsError) throw new Error(`Failed to delete appointment_clients: ${deleteClientsError.message}`);
 
-        const { error: deleteServicesError } = await supabase
-          .from('appointment_services')
-          .delete()
-          .eq('appointment_id', appointmentId);
-        if (deleteServicesError) throw new Error(`Failed to delete appointment_services: ${deleteServicesError.message}`);
+          const { error: deleteServicesError } = await supabase
+            .from('appointment_services')
+            .delete()
+            .eq('appointment_id', appointmentId);
+          if (deleteServicesError) throw new Error(`Failed to delete appointment_services: ${deleteServicesError.message}`);
 
-        const { error: deleteStylistsError } = await supabase
-          .from('appointment_stylists')
-          .delete()
-          .eq('appointment_id', appointmentId);
-        if (deleteStylistsError) throw new Error(`Failed to delete appointment_stylists: ${deleteStylistsError.message}`);
-        console.log(` -> Successfully deleted existing joins.`);
-      } catch (error) {
-         console.error("Error deleting existing join table records:", error);
-         // Decide if we should proceed or throw. Let's throw for now.
-         throw new Error(`Failed to clear existing appointment links: ${error instanceof Error ? error.message : error}`);
+          const { error: deleteStylistsError } = await supabase
+            .from('appointment_stylists')
+            .delete()
+            .eq('appointment_id', appointmentId);
+          if (deleteStylistsError) throw new Error(`Failed to delete appointment_stylists: ${deleteStylistsError.message}`);
+          console.log(` -> Successfully deleted existing joins.`);
+        } catch (error) {
+          console.error("Error deleting existing join table records:", error);
+          throw new Error(`Failed to clear existing appointment links: ${error instanceof Error ? error.message : error}`);
+        }
       }
 
       // --- Step 2: Update the base appointments table --- 
@@ -702,85 +710,85 @@ export function useAppointments() {
       if (!updatedAppointment) throw new Error(`Failed to update base appointment ${appointmentId} (no data returned).`);
       console.log(` -> Successfully updated base appointment.`);
 
-      // --- Step 3: Insert new join table entries --- 
-      // This logic is very similar to the createAppointment mutation
-      console.log(` -> Inserting new joins for appointment ${appointmentId}...`);
-      try {
-        // Process inserts for all clients concurrently
-        await Promise.all(clientDetails.map(async (detail) => {
-          const { clientId, serviceIds, stylistIds } = detail;
-          console.log(`  -> Processing joins for client ${clientId}`);
-
-          // 3a: Insert into appointment_clients
-          const { error: acError } = await supabase
-            .from('appointment_clients')
-            .insert({ appointment_id: appointmentId, client_id: clientId });
-          if (acError) throw new Error(`Failed to link client ${clientId}: ${acError.message}`);
-          console.log(`    - Linked client ${clientId}`);
-
-          // 3b: Insert into appointment_services
-          const serviceInserts = serviceIds.map(serviceId => ({ appointment_id: appointmentId, client_id: clientId, service_id: serviceId }));
-          if (serviceInserts.length > 0) {
-            const { error: asError } = await supabase.from('appointment_services').insert(serviceInserts);
-            // Handle potential duplicate key error if constraints were not properly handled by delete
-            if (asError && asError.code === '23505') { 
-                console.warn(`Ignoring duplicate service(s) on update for client ${clientId}: ${asError.message}`);
-            } else if (asError) {
-                throw new Error(`Failed to link services for client ${clientId} on update: ${asError.message}`);
-            }
-             console.log(`    - Linked ${serviceInserts.length} services for client ${clientId}`);
-          }
-
-          // 3c: Insert into appointment_stylists
-          const stylistInserts = stylistIds.map(stylistId => ({ appointment_id: appointmentId, client_id: clientId, stylist_id: stylistId }));
-           if (stylistInserts.length > 0) {
-             const { error: astError } = await supabase.from('appointment_stylists').insert(stylistInserts);
-             if (astError && astError.code === '23505') { 
-                 console.warn(`Ignoring duplicate stylist(s) on update for client ${clientId}: ${astError.message}`);
-             } else if (astError) {
-                throw new Error(`Failed to link stylists for client ${clientId} on update: ${astError.message}`);
-             }
-             console.log(`    - Linked ${stylistInserts.length} stylists for client ${clientId}`);
-           }
-        })); // End of Promise.all for client details
-
-        console.log(` -> Successfully inserted new joins for appointment ${appointmentId}.`);
-
-        // Send WhatsApp notification
+      // Only insert new join records when clientDetails provided
+      if (hasClientDetails) {
+        console.log(` -> Inserting new joins for appointment ${appointmentId}...`);
         try {
-          const notificationData = await prepareNotificationData(appointmentId);
-          if (notificationData && notificationData.clientPhone) {
-            try {
-              await sendAppointmentNotification('updated', notificationData);
-              console.log('Appointment update notification sent successfully');
-            } catch (whatsappError) {
-              console.error('Failed to send appointment update notification:', whatsappError);
-              // Log the detailed error for debugging
-              if (whatsappError instanceof Error) {
-                console.error('Error details:', whatsappError.message);
-              }
-              // Don't throw error here to not affect the appointment update
-              // But we do want to show a toast notification to the user
-              toast.warning('Appointment updated but notification could not be sent. Please contact the client directly.');
-            }
-          } else {
-            console.warn('Could not send appointment update notification: Missing client data', {
-              notificationData,
-              appointmentId
-            });
-            toast.warning('Appointment updated but notification could not be sent: Missing client contact information');
-          }
-        } catch (error) {
-          console.error('Error preparing notification data for update:', error);
-          toast.warning('Appointment updated but confirmation message could not be sent');
-        }
+          // Process inserts for all clients concurrently
+          await Promise.all((data.clientDetails || []).map(async (detail) => {
+            const { clientId, serviceIds, stylistIds } = detail;
+            console.log(`  -> Processing joins for client ${clientId}`);
 
-      } catch (joinError) {
-        // If inserting new joins fails, the base appointment is already updated.
-        // This leaves the data potentially inconsistent. Transactional logic would be better.
-        console.error(`Error inserting new join table records for appointment ${appointmentId}:`, joinError);
-        // We should probably throw here to indicate the update wasn't fully successful
-        throw new Error(`Update partially failed: Could not insert new links. ${joinError instanceof Error ? joinError.message : joinError}`);
+            // 3a: Insert into appointment_clients
+            const { error: acError } = await supabase
+              .from('appointment_clients')
+              .insert({ appointment_id: appointmentId, client_id: clientId });
+            if (acError) throw new Error(`Failed to link client ${clientId}: ${acError.message}`);
+            console.log(`    - Linked client ${clientId}`);
+
+            // 3b: Insert into appointment_services
+            const serviceInserts = serviceIds.map(serviceId => ({ appointment_id: appointmentId, client_id: clientId, service_id: serviceId }));
+            if (serviceInserts.length > 0) {
+              const { error: asError } = await supabase.from('appointment_services').insert(serviceInserts);
+              // Handle potential duplicate key error if constraints were not properly handled by delete
+              if (asError && asError.code === '23505') { 
+                  console.warn(`Ignoring duplicate service(s) on update for client ${clientId}: ${asError.message}`);
+              } else if (asError) {
+                  throw new Error(`Failed to link services for client ${clientId} on update: ${asError.message}`);
+              }
+               console.log(`    - Linked ${serviceInserts.length} services for client ${clientId}`);
+            }
+
+            // 3c: Insert into appointment_stylists
+            const stylistInserts = stylistIds.map(stylistId => ({ appointment_id: appointmentId, client_id: clientId, stylist_id: stylistId }));
+             if (stylistInserts.length > 0) {
+               const { error: astError } = await supabase.from('appointment_stylists').insert(stylistInserts);
+               if (astError && astError.code === '23505') { 
+                   console.warn(`Ignoring duplicate stylist(s) on update for client ${clientId}: ${astError.message}`);
+               } else if (astError) {
+                  throw new Error(`Failed to link stylists for client ${clientId} on update: ${astError.message}`);
+               }
+               console.log(`    - Linked ${stylistInserts.length} stylists for client ${clientId}`);
+             }
+          })); // End of Promise.all for client details
+
+          console.log(` -> Successfully inserted new joins for appointment ${appointmentId}.`);
+
+          // Send WhatsApp notification
+          try {
+            const notificationData = await prepareNotificationData(appointmentId);
+            if (notificationData && notificationData.clientPhone) {
+              try {
+                await sendAppointmentNotification('updated', notificationData);
+                console.log('Appointment update notification sent successfully');
+              } catch (whatsappError) {
+                console.error('Failed to send appointment update notification:', whatsappError);
+                // Log the detailed error for debugging
+                if (whatsappError instanceof Error) {
+                  console.error('Error details:', whatsappError.message);
+                }
+                // Don't throw error here to not affect the appointment update
+                // But we do want to show a toast notification to the user
+                toast.warning('Appointment updated but notification could not be sent. Please contact the client directly.');
+              }
+            } else {
+              console.warn('Could not send appointment update notification: Missing client data', {
+                notificationData,
+                appointmentId
+              });
+              toast.warning('Appointment updated but notification could not be sent: Missing client contact information');
+            }
+          } catch (error) {
+            console.error('Error preparing notification data for update:', error);
+            toast.warning('Appointment updated but confirmation message could not be sent');
+          }
+
+        } catch (joinError) {
+          // If inserting new joins fails, the base appointment is already updated.
+          console.error(`Error inserting new join table records for appointment ${appointmentId}:`, joinError);
+          // We should probably throw here to indicate the update wasn't fully successful
+          throw new Error(`Update partially failed: Could not insert new links. ${joinError instanceof Error ? joinError.message : joinError}`);
+        }
       }
 
       // Return the updated base appointment record

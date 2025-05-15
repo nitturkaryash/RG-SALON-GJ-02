@@ -42,119 +42,60 @@ export const usePurchaseHistory = () => {
     setIsLoading(true);
     setError(null);
     try {
+      // Fetch enriched purchase history from backend table with precomputed stock values
       const { data: purchaseRecords, error: fetchError } = await supabase
-        .from(TABLES.PURCHASES)
+        .from(TABLES.PURCHASE_HISTORY_WITH_STOCK)
         .select(
-          'purchase_id,product_id,date,purchase_invoice_number,purchase_qty,' +
-          'mrp_incl_gst,mrp_excl_gst,purchase_taxable_value,purchase_igst,purchase_cgst,' +
-          'purchase_sgst,purchase_invoice_value_rs,discount_on_purchase_percentage,' +
-          'created_at,updated_at,units,Vendor,' +
-          'product_master(name,hsn_code,units,gst_percentage)'
+          'purchase_id,product_id,date,product_name,hsn_code,units,purchase_invoice_number,' +
+          'purchase_qty,mrp_incl_gst,mrp_excl_gst,discount_on_purchase_percentage,gst_percentage,' +
+          'purchase_taxable_value,purchase_igst,purchase_cgst,purchase_sgst,purchase_invoice_value_rs,' +
+          'supplier,current_stock_at_purchase,computed_stock_taxable_value,computed_stock_cgst,' +
+          'computed_stock_sgst,computed_stock_igst,computed_stock_total_value,created_at,updated_at'
         )
         .order('date', { ascending: true });
 
       if (fetchError) throw handleSupabaseError(fetchError);
 
-      // Fetch current stock balances from the inventory_balance_stock view
-      const { data: stockData, error: stockError } = await supabase
-        .from('inventory_balance_stock')
-        .select('product_name,balance_qty');
-      if (stockError) throw handleSupabaseError(stockError);
-      const stockMap = new Map((stockData as any[]).map(s => [s.product_name, s.balance_qty]));
+      // We no longer need separate stock fetch; backend table includes current_stock_at_purchase and computed_* values
 
       const transformedData: PurchaseTransaction[] = (purchaseRecords as any[]).map(item => {
-        const product = item.product_master;
-        let calculatedGstPercentage = 0;
-        const origTaxableValue = item.purchase_taxable_value ?? 0;
-        if (origTaxableValue > 0) {
-          if (item.purchase_cgst != null && item.purchase_sgst != null) {
-            calculatedGstPercentage = ((item.purchase_cgst + item.purchase_sgst) / origTaxableValue) * 100;
-          } else if (item.purchase_igst != null) {
-            calculatedGstPercentage = (item.purchase_igst / origTaxableValue) * 100;
-          }
-        }
-
-        // Determine the final GST percentage for this transaction
-        const finalGstPct = parseFloat(calculatedGstPercentage.toFixed(2)) || product?.gst_percentage || 18;
-        // Calculate MRP Excluding GST based on MRP Inclusive from transaction and GST percentage
-        const mrpIncl = item.mrp_incl_gst ?? 0;
-        const calculatedMrpExcl = mrpIncl / (1 + finalGstPct / 100);
-
-        // Calculate purchase cost per unit excluding GST minus discount
-        const purchaseQty = Number(item.purchase_qty) || 0;
-        const discountPct = item.discount_on_purchase_percentage ?? 0;
-        const costPerUnitExGst = calculatedMrpExcl * (1 - (discountPct / 100));
-        // Calculate taxable value based on discounted cost per unit
-        const computedTaxableValue = costPerUnitExGst * purchaseQty;
-        // Recalculate tax amounts based on the new taxable value
-        let purchaseCgst: number;
-        let purchaseSgst: number;
-        let purchaseIgst: number;
-        // Determine tax split: CGST/SGST for local, IGST for interstate
-        if (item.purchase_igst != null && item.purchase_igst > 0) {
-          // Interstate purchase: full GST charged as IGST
-          purchaseIgst = computedTaxableValue * (finalGstPct / 100);
-          purchaseCgst = 0;
-          purchaseSgst = 0;
-        } else {
-          // Local purchase: split GST equally into CGST and SGST
-          const halfGstRate = finalGstPct / 2 / 100; // half percentage as decimal
-          purchaseCgst = computedTaxableValue * halfGstRate;
-          purchaseSgst = computedTaxableValue * halfGstRate;
-          purchaseIgst = 0;
-        }
-        // Calculate total invoice value including GST
-        const purchaseInvoiceValue = computedTaxableValue + purchaseCgst + purchaseSgst + purchaseIgst;
-
-        // Determine current stock quantity from the stock map
-        const currentStockQty = stockMap.get(product?.name ?? '') ?? 0;
-
-        // Calculate current stock valuation
-        const currentStockTaxableValue = currentStockQty * calculatedMrpExcl;
-        let currentStockCgst = 0;
-        let currentStockSgst = 0;
-        let currentStockIgst = 0;
-
-        if (item.purchase_igst != null && item.purchase_igst > 0) {
-          // Interstate purchase: full GST charged as IGST for current stock
-          currentStockIgst = currentStockTaxableValue * (finalGstPct / 100);
-        } else {
-          // Local purchase: split GST equally into CGST and SGST for current stock
-          const halfGstRate = finalGstPct / 2 / 100;
-          currentStockCgst = currentStockTaxableValue * halfGstRate;
-          currentStockSgst = currentStockTaxableValue * halfGstRate;
-        }
-        const currentStockTotalAmountInclGst = currentStockTaxableValue + currentStockCgst + currentStockSgst + currentStockIgst;
+        // Map directly from stored fields in purchase_history_with_stock
+        const currentStockQty = item.current_stock_at_purchase;
+        const currentTaxable = item.computed_stock_taxable_value;
+        const currentCgst = item.computed_stock_cgst;
+        const currentSgst = item.computed_stock_sgst;
+        const currentIgst = item.computed_stock_igst;
+        const currentTotal = item.computed_stock_total_value;
 
         return {
           purchase_id: item.purchase_id,
           product_id: item.product_id,
           date: item.date,
-          product_name: product?.name || 'Unknown Product',
-          hsn_code: product?.hsn_code ?? undefined,
-          units: item.units || (product?.units ?? undefined),
+          product_name: item.product_name,
+          hsn_code: item.hsn_code,
+          units: item.units,
           purchase_invoice_number: item.purchase_invoice_number,
           purchase_qty: Number(item.purchase_qty),
           mrp_incl_gst: item.mrp_incl_gst,
-          mrp_excl_gst: parseFloat(calculatedMrpExcl.toFixed(2)),
-          purchase_cost_per_unit_ex_gst: parseFloat(costPerUnitExGst.toFixed(2)),
-          discount_on_purchase_percentage: item.discount_on_purchase_percentage || 0,
-          gst_percentage: finalGstPct,
-          purchase_taxable_value: parseFloat(computedTaxableValue.toFixed(2)),
-          purchase_igst: parseFloat(purchaseIgst.toFixed(2)),
-          purchase_cgst: parseFloat(purchaseCgst.toFixed(2)),
-          purchase_sgst: parseFloat(purchaseSgst.toFixed(2)),
-          purchase_invoice_value_rs: parseFloat(purchaseInvoiceValue.toFixed(2)),
+          mrp_excl_gst: item.mrp_excl_gst,
+          purchase_cost_per_unit_ex_gst: item.mrp_excl_gst,
+          discount_on_purchase_percentage: item.discount_on_purchase_percentage,
+          gst_percentage: item.gst_percentage,
+          purchase_taxable_value: item.purchase_taxable_value,
+          purchase_igst: item.purchase_igst,
+          purchase_cgst: item.purchase_cgst,
+          purchase_sgst: item.purchase_sgst,
+          purchase_invoice_value_rs: item.purchase_invoice_value_rs,
           created_at: item.created_at,
           updated_at: item.updated_at,
-          supplier: item.Vendor || 'Direct Entry',
+          supplier: item.supplier,
           stock_after_purchase: currentStockQty,
           // Add calculated current stock values
-          current_stock_taxable_value: parseFloat(currentStockTaxableValue.toFixed(2)),
-          current_stock_cgst: parseFloat(currentStockCgst.toFixed(2)),
-          current_stock_sgst: parseFloat(currentStockSgst.toFixed(2)),
-          current_stock_igst: parseFloat(currentStockIgst.toFixed(2)),
-          current_stock_total_amount_incl_gst: parseFloat(currentStockTotalAmountInclGst.toFixed(2))
+          current_stock_taxable_value: currentTaxable,
+          current_stock_cgst: currentCgst,
+          current_stock_sgst: currentSgst,
+          current_stock_igst: currentIgst,
+          current_stock_total_amount_incl_gst: currentTotal
         };
       });
 
@@ -175,24 +116,32 @@ export const usePurchaseHistory = () => {
     fetchPurchases();
   }, [fetchPurchases]);
 
-  // Delete a purchase transaction by ID
+  // Delete a purchase transaction by ID from both history and purchases tables
   const deletePurchaseTransaction = useCallback(async (purchaseId: string): Promise<boolean> => {
     try {
-      const { error } = await supabase
+      // Remove from history table
+      const { error: histError } = await supabase
+        .from(TABLES.PURCHASE_HISTORY_WITH_STOCK)
+        .delete()
+        .eq('purchase_id', purchaseId);
+      if (histError) {
+        console.error('Error deleting purchase history record:', histError);
+        return false;
+      }
+      // Remove original purchase
+      const { error: purchaseError } = await supabase
         .from(TABLES.PURCHASES)
         .delete()
         .eq('purchase_id', purchaseId);
-      if (error) {
-        console.error('Error deleting purchase:', error);
-        // Consider setting an error state here for the UI
+      if (purchaseError) {
+        console.error('Error deleting purchase record:', purchaseError);
         return false;
       }
-      // Update local state to reflect the deletion
-      setPurchases(prevPurchases => prevPurchases.filter(p => p.purchase_id !== purchaseId));
+      // Update local state to reflect deletion
+      setPurchases(prev => prev.filter(p => p.purchase_id !== purchaseId));
       return true;
     } catch (err) {
       console.error('Unexpected error deleting purchase:', err);
-      // Consider setting an error state here for the UI
       return false;
     }
   }, [setPurchases]);

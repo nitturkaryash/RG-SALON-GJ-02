@@ -22,6 +22,8 @@ const Clients = lazy(() => import('./pages/Clients'));
 const Stylists = lazy(() => import('./pages/Stylists'));
 const ServiceCollections = lazy(() => import('./pages/ServiceCollections'));
 const ServiceCollectionDetail = lazy(() => import('./pages/ServiceCollectionDetail'));
+const ServiceSubCollections = lazy(() => import('./pages/ServiceSubCollections'));
+const ServiceSubCollectionDetail = lazy(() => import('./pages/ServiceSubCollectionDetail'));
 const Orders = lazy(() => import('./pages/Orders'));
 const POS = lazy(() => import('./pages/POS'));
 const Products = lazy(() => import('./pages/InventoryManager'));
@@ -29,6 +31,7 @@ const ProductMaster = lazy(() => import('./pages/ProductMaster'));
 const CollectionDetail = lazy(() => import('./pages/CollectionDetail'));
 const MembershipTiers = lazy(() => import('./pages/MembershipTiers'));
 const MembersPage = lazy(() => import('./pages/MembersPage'));
+const ServiceOverview = lazy(() => import('./pages/ServiceOverview'));
 
 // Loading fallback component
 const PageLoader = () => (
@@ -66,8 +69,9 @@ function App() {
                 <Stylists />
               </ErrorBoundary>
             } />
-            <Route path="services" element={<ServiceCollections />} />
-            <Route path="services/:id" element={<ServiceCollectionDetail />} />
+            <Route path="services" element={<ServiceOverview />} />
+            <Route path="services/:collectionId" element={<ServiceSubCollections />} />
+            <Route path="services/:collectionId/:subCollectionId" element={<ServiceSubCollectionDetail />} />
             <Route path="membership-tiers" element={
               <ErrorBoundary>
                 <MembershipTiers />

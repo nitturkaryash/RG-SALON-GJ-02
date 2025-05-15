@@ -12,6 +12,7 @@ export interface Service {
   category?: string;
   active?: boolean;
   collection_id?: string;
+  gender?: string;
 }
 
 export function useServices() {
@@ -43,7 +44,9 @@ export function useServices() {
             price: service.price || 0,
             collection_id: service.collection_id,
             // Only include category if it exists in the database response
-            ...(service.hasOwnProperty('category') ? { category: service.category } : {})
+            ...(service.hasOwnProperty('category') ? { category: service.category } : {}),
+            // Only include gender if it exists in the database response
+            ...(service.hasOwnProperty('gender') ? { gender: service.gender } : {})
           })) as Service[];
         } else {
           console.warn('No services found in the database.');
@@ -69,6 +72,7 @@ export function useServices() {
         price: newService.price,
         category: newService.category || '',
         collection_id: newService.collection_id,
+        gender: newService.gender || null,
         // Omit active field to avoid schema conflicts
       };
       

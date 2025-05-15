@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import {
   Box,
   Typography,
@@ -38,8 +38,8 @@ import { useAppointments, Appointment, MergedAppointment } from '../hooks/useApp
 import { useStylists, Stylist, StylistBreak } from '../hooks/useStylists'
 import { useServices, Service as BaseService } from '../hooks/useServices'
 import { useClients, Client } from '../hooks/useClients'
-import { format, addDays, subDays } from 'date-fns'
-import { useServiceCollections } from '../hooks/useServiceCollections';
+import { format, addDays, subDays, isSameDay } from 'date-fns'
+import { useServiceCollections } from '../hooks/useServiceCollections'
 import StylistDayView, { Break } from '../components/StylistDayView'
 import FutureAppointmentsList from '../components/FutureAppointmentsList'
 import { Search as SearchIcon, Add as AddIcon, Delete as DeleteIcon, Close as CloseIcon, Receipt as ReceiptIcon, CalendarMonth as CalendarIcon, ViewList as ListIcon } from '@mui/icons-material'
@@ -53,7 +53,6 @@ import interactionPlugin from '@fullcalendar/interaction'
 import { DateSelectArg } from '@fullcalendar/core'
 import { createFilterOptions } from '@mui/material/Autocomplete'
 import { useNavigate } from 'react-router-dom'
-import { useCallback } from 'react'
 
 // Define Drawer width as a constant
 const drawerWidth = 500;
@@ -70,21 +69,33 @@ interface BookingFormData {
 }
 
 // Generate time options for select dropdown
-const generateTimeOptions = () => {
+const generateTimeOptions = (intervalMinutes: number = 10) => {
   const options = [];
-  for (let hour = 8; hour <= 22; hour++) {
-    const period = hour >= 12 ? 'PM' : 'AM';
-    const hour12 = hour > 12 ? hour - 12 : (hour === 0 ? 12 : hour);
+  const startHourOperating = 8;
+  const endHourOperating = 22; // Example: salon closes around 10 PM / 22:00
+
+  for (let hour = startHourOperating; hour <= endHourOperating; hour++) {
+    for (let minute = 0; minute < 60; minute += intervalMinutes) {
+      // Ensure that for the last operating hour, we don't generate times beyond a certain point if needed
+      // For example, if endHourOperating is 22 and last slot is 22:30
+      // if (hour === endHourOperating && minute > 30 && intervalMinutes <= 30) continue;
+
+      const period = hour >= 12 && hour < 24 ? 'PM' : 'AM';
+      let hour12 = hour % 12;
+      if (hour12 === 0) hour12 = 12;
+
+      const minuteStr = minute.toString().padStart(2, '0');
+      const timeValue = `${hour.toString().padStart(2, '0')}:${minuteStr}`;
 
     options.push({
-      value: `${hour}:00`,
-      label: `${hour12}:00 ${period}`
+        value: timeValue,
+        label: `${hour12}:${minuteStr} ${period}`
     });
-    options.push({
-      value: `${hour}:30`,
-      label: `${hour12}:30 ${period}`
-    });
+    }
   }
+  // If the last operating hour needs specific cutoff, adjust loop or filter options.
+  // E.g., if 22:30 is the last bookable slot:
+  // return options.filter(opt => !(parseInt(opt.value.split(':')[0]) === 22 && parseInt(opt.value.split(':')[1]) > 30));
   return options;
 };
 
@@ -97,13 +108,15 @@ interface ServiceCollection {
 
 // Interface for a single client entry in the new state
 interface ServiceEntry {
-  id: string;
+  id: string; // This is the service_definition_id
   name: string;
   price: number;
   stylistId: string;
   stylistName: string;
   fromTime: string; 
   toTime: string;
+  appointmentInstanceId?: string; // Unique ID of the appointment record in the DB for this service instance
+  isNew?: boolean; // Flag to indicate if this service was newly added in the drawer during an edit session
 }
 
 interface ClientAppointmentEntry {
@@ -114,11 +127,12 @@ interface ClientAppointmentEntry {
 }
 
 // Define filter for freeSolo client options
-const filterClients = createFilterOptions<{ id: string; full_name: string; phone?: string; email?: string; created_at?: string; inputValue?: string }>();
+// Use the full Client interface plus optional inputValue so filterOptions and Autocomplete share the same type
+const filterClients = createFilterOptions<Client & { inputValue?: string }>();
 
 // Extend the Service interface to include gender property
 interface ServiceWithGender extends BaseService {
-  gender?: 'male' | 'female' | null;
+  gender?: string;
 }
 
 // Define service option with groupHeader for the Autocomplete component
@@ -130,6 +144,92 @@ interface ServiceOption extends BaseService {
 interface ExtendedClientAppointmentEntry extends Omit<ClientAppointmentEntry, 'services'> {
   services: ServiceEntry[];
 }
+
+// Helper for button styles for CustomAutocompleteListbox
+const buttonSx = (type: 'male' | 'female', currentFilter: 'male' | 'female' | null) => ({
+  minWidth: '80px',
+  borderRadius: '20px',
+  textTransform: 'none',
+  bgcolor: currentFilter === type ? '#6B8E23' : 'transparent',
+  color: currentFilter === type ? 'white' : '#757575',
+  borderColor: '#E0E0E0',
+  '&:hover': {
+    bgcolor: currentFilter === type ? '#566E1C' : 'rgba(0,0,0,0.04)'
+  }
+});
+
+// Custom ListboxComponent for Autocomplete with ref forwarding
+interface CustomListboxProps extends React.HTMLAttributes<HTMLUListElement> {
+  serviceGenderFilterState: 'male' | 'female' | null;
+  setServiceGenderFilterState: (value: 'male' | 'female' | null) => void;
+}
+
+const CustomAutocompleteListbox = React.forwardRef<HTMLUListElement, CustomListboxProps>(
+  (props, ref) => {
+    const { children, serviceGenderFilterState, setServiceGenderFilterState, ...other } = props;
+    return (
+      <Box component="ul" {...other} ref={ref}>
+        <Box
+          sx={{
+            position: 'sticky',
+            top: 0,
+            bgcolor: 'background.paper',
+            zIndex: 2,
+            py: 1.5,
+            px: 2,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 2,
+            borderBottom: '1px solid',
+            borderColor: 'divider'
+          }}
+        >
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+            <Typography variant="body2" sx={{ fontWeight: 'medium', color: 'text.secondary' }}>
+            </Typography>
+            <Button
+              size="small"
+              variant={serviceGenderFilterState === null ? 'contained' : 'outlined'}
+              onClick={() => setServiceGenderFilterState(null)}
+              sx={{
+                minWidth: '80px',
+                borderRadius: '20px',
+                textTransform: 'none',
+                bgcolor: serviceGenderFilterState === null ? '#6B8E23' : 'transparent',
+                color: serviceGenderFilterState === null ? 'white' : '#757575',
+                borderColor: '#E0E0E0',
+                '&:hover': {
+                  bgcolor: serviceGenderFilterState === null ? '#566E1C' : 'rgba(0,0,0,0.04)'
+                }
+              }}
+            >
+              Show All
+            </Button>
+            <Button
+              size="small"
+              variant={serviceGenderFilterState === 'female' ? 'contained' : 'outlined'}
+              onClick={() => setServiceGenderFilterState(serviceGenderFilterState === 'female' ? null : 'female')}
+              sx={buttonSx('female', serviceGenderFilterState)}
+            >
+              Female
+            </Button>
+            <Button
+              size="small"
+              variant={serviceGenderFilterState === 'male' ? 'contained' : 'outlined'}
+              onClick={() => setServiceGenderFilterState(serviceGenderFilterState === 'male' ? null : 'male')}
+              sx={buttonSx('male', serviceGenderFilterState)}
+            >
+              Male
+            </Button>
+          </Box>
+        </Box>
+        {children}
+      </Box>
+    );
+  }
+);
+CustomAutocompleteListbox.displayName = 'CustomAutocompleteListbox';
 
 export default function Appointments() {
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
@@ -151,8 +251,17 @@ export default function Appointments() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   // Add state for view mode
   const [viewMode, setViewMode] = useState<'calendar' | 'list'>('calendar');
-  const [serviceGenderFilter, setServiceGenderFilter] = useState<'male' | 'female' | null>('male');
+  const [serviceGenderFilter, setServiceGenderFilter] = useState<'male' | 'female' | null>(null);
   const [serviceSearchTerm, setServiceSearchTerm] = useState('');
+  // Add new state for the inline service selection
+  const [showInlineServiceSelection, setShowInlineServiceSelection] = useState(false);
+  const [inlineServiceData, setInlineServiceData] = useState<{
+    serviceId: string;
+    stylistId: string;
+    fromTime: string;
+    toTime: string;
+  }>({ serviceId: '', stylistId: '', fromTime: '', toTime: '' });
+  const [isInlineServiceDropdownOpen, setIsInlineServiceDropdownOpen] = useState(false); // New state for inline Autocomplete
   // Removed clientDialogOpen state
   // Removed serviceDialogOpen state
   const [selectedEntryId, setSelectedEntryId] = useState<string>('');
@@ -162,7 +271,7 @@ export default function Appointments() {
   const [clientHistory, setClientHistory] = useState<MergedAppointment[]>([]);
 
   // Timesoptions initialization
-  const timeOptions = generateTimeOptions();
+  const timeOptions = useMemo(() => generateTimeOptions(10), []); // Generate 10-minute interval options
   const navigate = useNavigate();
 
   // Hook calls
@@ -252,72 +361,151 @@ export default function Appointments() {
   };
 
   const handleAppointmentClick = (appointment: MergedAppointment) => {
+    console.log("[handleAppointmentClick] Received appointment object:", JSON.parse(JSON.stringify(appointment)));
+
     setEditingAppointment(appointment);
     setSelectedSlot(null);
 
-    const clientEntriesToSet = (appointment.clientDetails || []).map((clientDetail): ExtendedClientAppointmentEntry | null => {
-      const client: Client | null = (allClients || []).find(c => c.id === clientDetail.id) || null;
-      if (!client) {
-        console.warn(`Client data not found locally for ID: ${clientDetail.id}`);
-        // Optionally fetch if missing, or handle gracefully
-        // return null;
-      }
+    const primaryClientInfo = allClients.find(c => c.id === appointment.client_id);
 
-      // Convert Service array to ServiceEntry array
-      const serviceEntries: ServiceEntry[] = (clientDetail.services || []).map(service => {
-        // Create a date object for start and end times
-        const startDate = new Date(appointment.start_time);
-        const endDate = new Date(appointment.end_time);
-        
-        // Format times in HH:MM format
-        const startHour = startDate.getHours();
-        const startMinute = startDate.getMinutes();
-        const endHour = endDate.getHours();
-        const endMinute = endDate.getMinutes();
-        
-        const fromTime = `${startHour}:${startMinute.toString().padStart(2, '0')}`;
-        const toTime = `${endHour}:${endMinute.toString().padStart(2, '0')}`;
-        
-        // Find the stylist for this service
-        const stylist = allStylists.find(s => s.id === appointment.stylist_id) || { id: '', name: 'Unknown' };
-
-        // Return a properly formatted ServiceEntry
-        return {
-          id: service.id,
-          name: service.name,
-          price: service.price || 0,
-          stylistId: stylist.id,
-          stylistName: stylist.name,
-          fromTime,
-          toTime
-        };
-      });
-
-      return {
-        id: uuidv4(),
-        client: client ? { ...client } : null, // Ensure client exists before spreading
-        services: serviceEntries,
-        stylists: clientDetail.stylists || [], 
-      };
-    }).filter((entry): entry is ExtendedClientAppointmentEntry => entry !== null);
-
-    if (clientEntriesToSet.length === 0 && appointment.clientDetails?.length > 0) {
-      console.warn("Appointment data missing nested client details after filtering. Check data consistency.");
+    if (!primaryClientInfo) {
+      console.warn(`[handleAppointmentClick] Primary client data not found for ID: ${appointment.client_id}. Cannot populate drawer.`);
       setClientEntries([{ id: uuidv4(), client: null, services: [], stylists: [] }]);
-    } else if (clientEntriesToSet.length === 0) {
-      console.log("Setting default blank entry as clientDetails was empty.")
-      setClientEntries([{ id: uuidv4(), client: null, services: [], stylists: [] }]);
-    } else {
-      setClientEntries(clientEntriesToSet);
+      setAppointmentTime({ startTime: '', endTime: '' });
+      setAppointmentNotes('');
+      return;
     }
 
-    const startDate = new Date(appointment.start_time);
-    const endDate = new Date(appointment.end_time);
+    console.log("[handleAppointmentClick] Primary client found:", primaryClientInfo);
+
+    // Group all appointments for this client on the same day and consolidate their services
+    const clickedDate = new Date(appointment.start_time);
+    const groupAppointments = appointments.filter((a: MergedAppointment) =>
+      a.client_id === appointment.client_id &&
+      isSameDay(new Date(a.start_time), clickedDate)
+    );
+    console.log("[handleAppointmentClick] Found group appointments:", groupAppointments.map(a => a.id));
+
+    const consolidatedServiceEntries: ServiceEntry[] = [];
+    const involvedStylistIds = new Set<string>();
+
+    groupAppointments.forEach((app: MergedAppointment) => {
+      let servicesAddedFromDetail = false;
+      if (app.clientDetails && Array.isArray(app.clientDetails) && app.clientDetails.length > 0) {
+        app.clientDetails.forEach(clientDetailEntry => {
+          if (clientDetailEntry.id === primaryClientInfo.id && Array.isArray(clientDetailEntry.services)) {
+            clientDetailEntry.services.forEach(serviceFromDetail => {
+              const originalAppointmentId = (serviceFromDetail as any).original_appointment_id ||
+                                            (serviceFromDetail as any).appointment_id ||
+                                            (serviceFromDetail as any).instance_id;
+              const serviceStylistId = (serviceFromDetail as any).original_stylist_id ||
+                                      (serviceFromDetail as any).stylist_id || app.stylist_id;
+              const serviceStartTimeStr = (serviceFromDetail as any).original_start_time ||
+                                          (serviceFromDetail as any).start_time || app.start_time;
+              const serviceEndTimeStr = (serviceFromDetail as any).original_end_time ||
+                                        (serviceFromDetail as any).end_time || app.end_time;
+              const stylist = allStylists.find(s => s.id === serviceStylistId);
+              if (stylist) involvedStylistIds.add(stylist.id);
+              const startDate = new Date(serviceStartTimeStr);
+              const endDate = new Date(serviceEndTimeStr);
+              consolidatedServiceEntries.push({
+                id: serviceFromDetail.id,
+                name: serviceFromDetail.name,
+                price: serviceFromDetail.price || 0,
+                stylistId: stylist?.id || '',
+                stylistName: stylist?.name || 'Unknown',
+                fromTime: `${startDate.getHours()}:${String(startDate.getMinutes()).padStart(2,'0')}`,
+                toTime: `${endDate.getHours()}:${String(endDate.getMinutes()).padStart(2,'0')}`,
+                appointmentInstanceId: originalAppointmentId,
+                isNew: false
+              });
+              servicesAddedFromDetail = true;
+            });
+          }
+        });
+      }
+      if (!servicesAddedFromDetail && app.id && app.service_id) {
+        const serviceDef = allServices.find(s => s.id === app.service_id);
+        const stylist = allStylists.find(s => s.id === app.stylist_id);
+        if (serviceDef) {
+          const startDate = new Date(app.start_time);
+          const endDate = new Date(app.end_time);
+          consolidatedServiceEntries.push({
+            id: serviceDef.id,
+            name: serviceDef.name,
+            price: serviceDef.price || 0,
+            stylistId: stylist?.id || '',
+            stylistName: stylist?.name || 'Unknown',
+            fromTime: `${startDate.getHours()}:${String(startDate.getMinutes()).padStart(2,'0')}`,
+            toTime: `${endDate.getHours()}:${String(endDate.getMinutes()).padStart(2,'0')}`,
+            appointmentInstanceId: app.id,
+            isNew: false
+          });
+          if (stylist) involvedStylistIds.add(stylist.id);
+        }
+      }
+    });
+
+    // Derive stylist order directly from service entries to preserve order
+    const seenStylistIds = new Set<string>();
+    const finalStylistsForEntry = consolidatedServiceEntries
+      .map(entry => entry.stylistId)
+      .filter(id => {
+        if (seenStylistIds.has(id)) return false;
+        seenStylistIds.add(id);
+        return true;
+      })
+      .map(id => {
+        const stylist = allStylists.find(s => s.id === id);
+        return stylist ? { id: stylist.id, name: stylist.name } : null;
+      })
+      .filter((s): s is Pick<Stylist, 'id' | 'name'> => s !== null);
+
+    setClientEntries([{
+      id: uuidv4(), 
+      client: primaryClientInfo, 
+      services: consolidatedServiceEntries, 
+      stylists: finalStylistsForEntry 
+    }]);
+
+    // Determine overall start/end from the consolidated services if available, otherwise use main appointment times
+    let overallStartTimeToSet = appointment.start_time;
+    let overallEndTimeToSet = appointment.end_time;
+
+    if (consolidatedServiceEntries.length > 0) {
+        const allStartTimes = consolidatedServiceEntries.map(s => {
+            const [hr, min] = s.fromTime.split(':').map(Number);
+            const d = new Date(appointment.start_time); // Use original appointment date part
+            d.setHours(hr, min, 0, 0);
+            return d;
+        });
+        const allEndTimes = consolidatedServiceEntries.map(s => {
+            const [hr, min] = s.toTime.split(':').map(Number);
+            const d = new Date(appointment.start_time); // Use original appointment date part
+            d.setHours(hr, min, 0, 0);
+            // Handle services ending past midnight relative to start of day
+            const startOfDayForService = new Date(d); startOfDayForService.setHours(0,0,0,0);
+            const serviceStartTimeDate = allStartTimes[consolidatedServiceEntries.findIndex(entry => entry.toTime === s.toTime)];
+            if (d < serviceStartTimeDate && serviceStartTimeDate) d.setDate(d.getDate() + 1);
+            return d;
+        });
+
+        const earliestStartTime = new Date(Math.min(...allStartTimes.map(d => d.getTime())));
+        const latestEndTime = new Date(Math.max(...allEndTimes.map(d => d.getTime())));
+        
+        overallStartTimeToSet = earliestStartTime.toISOString();
+        overallEndTimeToSet = latestEndTime.toISOString();
+    }
+
+    const overallStartDate = new Date(overallStartTimeToSet);
+    const overallEndDate = new Date(overallEndTimeToSet);
+    
     setAppointmentTime({
-      startTime: `${startDate.getHours()}:${String(startDate.getMinutes()).padStart(2, '0')}`,
-      endTime: `${endDate.getHours()}:${String(endDate.getMinutes()).padStart(2, '0')}`
+      startTime: `${overallStartDate.getHours()}:${String(overallStartDate.getMinutes()).padStart(2, '0')}`,
+      endTime: `${overallEndDate.getHours()}:${String(overallEndDate.getMinutes()).padStart(2, '0')}`,
     });
     setAppointmentNotes(appointment.notes || '');
+    console.log("[handleAppointmentClick] Drawer populated. Services count:", consolidatedServiceEntries.length, "Overall Times:", appointmentTime);
   };
 
   const handleDayViewSelect = (stylistId: string, time: Date) => {
@@ -353,59 +541,30 @@ export default function Appointments() {
 
   // Fix addServiceToEntry function to properly assign service and calculate times
   const addServiceToEntry = (entryId: string, service: BaseService) => {
-    // Find the entry
     const entry = clientEntries.find(e => e.id === entryId);
     if (!entry) return;
 
-    // Calculate default from/to times
     const lastService = entry.services[entry.services.length - 1];
-    
-    // Default times if no previous service exists
     let fromTime = appointmentTime.startTime || '10:00';
-    
-    // If appointment time is set, use that
-    if (appointmentTime.startTime) {
-      fromTime = appointmentTime.startTime;
-    }
-    
-    // Get current time if neither is set
-    if (!appointmentTime.startTime && !lastService) {
-      const now = new Date();
-      const hour = now.getHours();
-      const roundedMinutes = Math.ceil(now.getMinutes() / 15) * 15;
-      fromTime = `${hour}:${roundedMinutes === 60 ? '00' : roundedMinutes.toString().padStart(2, '0')}`;
-    }
-    
     if (lastService) {
-      // If there's a previous service, set start time as the end time of the last service
       fromTime = lastService.toTime;
+    } else if (entry.services.length === 0 && appointmentTime.startTime) {
+        fromTime = appointmentTime.startTime;
     }
     
-    // Calculate the end time by adding the service duration to the start time
     const [fromHour, fromMinute] = fromTime.split(':').map(Number);
-    const serviceDuration = service.duration || 60; // Default to 60 minutes if not specified
-    
-    // Calculate new end time in minutes
+    const serviceDuration = service.duration || 60; 
     let totalMinutes = (fromHour * 60) + fromMinute + serviceDuration;
     const toHour = Math.floor(totalMinutes / 60);
     const toMinute = totalMinutes % 60;
-    
-    // Format end time
     const toTime = `${toHour}:${toMinute.toString().padStart(2, '0')}`;
     
-    // Try to use the same stylist from previous service as default, if available
-    let stylistId = '';
-    let stylistName = '';
-    
-    if (lastService && lastService.stylistId) {
-      stylistId = lastService.stylistId;
-      stylistName = lastService.stylistName;
-    } else if (entry.stylists && entry.stylists.length > 0) {
-      stylistId = entry.stylists[0].id;
-      stylistName = entry.stylists[0].name;
-    }
+    // Use the initial clicked stylist when no previous service or explicit selection exists
+    let stylistId = lastService?.stylistId || selectedStylistId || '';
+    let stylistName = lastService?.stylistName
+      || (selectedStylistId ? (allStylists.find(s => s.id === selectedStylistId)?.name || '') : '')
+      || '';
 
-    // Create new service entry
     const newService: ServiceEntry = {
       id: service.id,
       name: service.name,
@@ -413,10 +572,11 @@ export default function Appointments() {
       stylistId, 
       stylistName,
       fromTime,
-      toTime
+      toTime,
+      isNew: true, // Mark as new when added via UI to an existing or new booking
+      appointmentInstanceId: undefined // No DB ID yet
     };
 
-    // Update the entry with the new service
     updateEntry(entryId, {
       services: [...entry.services, newService]
     });
@@ -601,127 +761,119 @@ export default function Appointments() {
     }
     // --- End Validation ---
 
-    // --- Process client entries and create appointments ---
     try {
-      // Process each client entry to create appointments
       for (const entry of clientEntries) {
-        // Process client - create if new
         let clientId = entry.client?.id;
-        const isNewClient = !clientId && entry.client;
-        
-        // Create new client if needed
-        if (isNewClient) {
+        if (!clientId && entry.client) {
           const newClient = await handleAddNewClient(entry);
-          if (newClient) {
-            clientId = newClient.id;
-          } else {
-            throw new Error('Failed to create client. Please check client details and try again.');
-          }
+          if (newClient) clientId = newClient.id;
+          else throw new Error('Failed to create client.');
         }
+        if (!clientId) throw new Error('Client ID is missing.');
 
-        if (!clientId) {
-          throw new Error('Client ID is missing. Please select or create a client.');
-        }
+        const servicesInDrawer = entry.services;
+        const baseDateForNew = selectedSlot ? new Date(selectedSlot.start) : new Date(selectedDate);
+        baseDateForNew.setHours(0,0,0,0);
 
-        // Generate clientDetails for the API
-        const clientDetails = entry.services.map(service => ({
-          clientId: clientId!,
-          serviceIds: [service.id],
-          stylistIds: [service.stylistId]
-        }));
-
-        // If editing an existing appointment
         if (editingAppointment) {
-          // Create update data for the first service
-          // Using the first service as the primary one in the appointment table
-          const firstService = entry.services[0];
-          if (!firstService) continue;
-
-          // Parse times
-          const [startHour, startMinute] = firstService.fromTime.split(':').map(Number);
-          const [endHour, endMinute] = firstService.toTime.split(':').map(Number);
-          
-          // Create date objects
-          const baseDate = new Date(editingAppointment.start_time);
-          baseDate.setHours(0, 0, 0, 0);
-          
-          const startTime = new Date(baseDate);
-          startTime.setHours(startHour, startMinute, 0, 0);
-          
-          const endTime = new Date(baseDate);
-          endTime.setHours(endHour, endMinute, 0, 0);
-          if (endTime <= startTime) endTime.setDate(endTime.getDate() + 1);
-
-          // Update the appointment
-          const updateData = {
-            id: editingAppointment.id,
-            start_time: startTime.toISOString(),
-            end_time: endTime.toISOString(),
-            notes: appointmentNotes,
-            status: editingAppointment.status,
-            client_id: clientId!,
-            stylist_id: firstService.stylistId,
-            service_id: firstService.id,
-            clientDetails
-          };
-          
-          await updateAppointment(updateData);
-          
-          // If there are multiple services, create separate appointments for each additional service
-          for (let i = 1; i < entry.services.length; i++) {
-            const service = entry.services[i];
-            
-            // Parse times for this service
-            const [svcStartHour, svcStartMinute] = service.fromTime.split(':').map(Number);
-            const [svcEndHour, svcEndMinute] = service.toTime.split(':').map(Number);
-            
-            // Create date objects
-            const serviceStartTime = new Date(baseDate);
-            serviceStartTime.setHours(svcStartHour, svcStartMinute, 0, 0);
-            
-            const serviceEndTime = new Date(baseDate);
-            serviceEndTime.setHours(svcEndHour, svcEndMinute, 0, 0);
-            if (serviceEndTime <= serviceStartTime) serviceEndTime.setDate(serviceEndTime.getDate() + 1);
-            
-            // Create a new appointment for this service
-            const serviceAppData = {
-              start_time: serviceStartTime.toISOString(),
-              end_time: serviceEndTime.toISOString(),
-              notes: appointmentNotes,
-              status: 'scheduled' as const,
-              client_id: clientId!,
-              stylist_id: service.stylistId,
-              service_id: service.id,
-              clientDetails: [{
-                clientId: clientId!,
-                serviceIds: [service.id],
-                stylistIds: [service.stylistId]
-              }]
-            };
-            
-            await createAppointment(serviceAppData);
+          // UPDATE LOGIC FOR EXISTING GROUPED/SINGLE APPOINTMENT
+          const originalAppointmentInstanceIds = new Set<string>();
+          // Re-fetch or use a more reliable source for original appointment IDs if possible
+          // For now, we assume editingAppointment.clientDetails was the source for initial load
+          (editingAppointment.clientDetails || []).forEach(cd => {
+            if (cd.id === clientId) {
+              (cd.services || []).forEach(s => {
+                const originalAppId = (s as any).original_appointment_id || (s as any).appointment_id;
+                if (originalAppId) originalAppointmentInstanceIds.add(originalAppId);
+              });
+            }
+          });
+          // If clientDetails was empty or not structured well, and we only had the primary editingAppointment.id
+          if (originalAppointmentInstanceIds.size === 0 && editingAppointment.id) {
+            originalAppointmentInstanceIds.add(editingAppointment.id);
           }
-        } 
-        // Creating new appointments
-        else {
-          // Create separate appointments for each service
-          for (const service of entry.services) {
-            // Parse times
+
+          const drawerInstanceIds = new Set<string>();
+
+          for (const service of servicesInDrawer) {
             const [startHour, startMinute] = service.fromTime.split(':').map(Number);
             const [endHour, endMinute] = service.toTime.split(':').map(Number);
             
-            // Create date objects  
-            const baseDate = selectedSlot ? new Date(selectedSlot.start) : new Date(selectedDate);
-            baseDate.setHours(0, 0, 0, 0);
-            
-            const startTime = new Date(baseDate);
+            // Use editingAppointment's date as the base for existing appointments
+            const baseDateForExisting = new Date(editingAppointment.start_time);
+            baseDateForExisting.setHours(0,0,0,0);
+
+            const startTime = new Date(baseDateForExisting);
             startTime.setHours(startHour, startMinute, 0, 0);
+            const endTime = new Date(baseDateForExisting);
+            endTime.setHours(endHour, endMinute, 0, 0);
+            if (endTime <= startTime) endTime.setDate(endTime.getDate() + 1);
+
+            const clientDetailsPayload = [{
+              clientId: clientId!,
+              serviceIds: [service.id],
+              stylistIds: [service.stylistId]
+            }];
+
+            if (service.appointmentInstanceId && !service.isNew && originalAppointmentInstanceIds.has(service.appointmentInstanceId)) {
+              // UPDATE EXISTING APPOINTMENT INSTANCE
+              const updateData = {
+                id: service.appointmentInstanceId,
+                start_time: startTime.toISOString(),
+                end_time: endTime.toISOString(),
+                notes: appointmentNotes,
+                status: editingAppointment.status, // Or derive based on changes
+                client_id: clientId!,
+                stylist_id: service.stylistId,
+                service_id: service.id, // service_definition_id
+                clientDetails: clientDetailsPayload
+              };
+              await updateAppointment(updateData);
+              drawerInstanceIds.add(service.appointmentInstanceId);
+            } else {
+              // CREATE NEW APPOINTMENT INSTANCE (either truly new or was part of group but lost its ID somehow)
+              const appointmentData = {
+                start_time: startTime.toISOString(),
+                end_time: endTime.toISOString(),
+                notes: appointmentNotes,
+                status: 'scheduled' as const,
+                client_id: clientId!,
+                stylist_id: service.stylistId,
+                service_id: service.id, // service_definition_id
+                clientDetails: clientDetailsPayload
+              };
+              await createAppointment(appointmentData);
+              // Note: we don't add to drawerInstanceIds as these are new
+            }
+          }
+
+          // DELETE APPOINTMENTS that were in the original group but are no longer in the drawer
+          for (const originalId of Array.from(originalAppointmentInstanceIds)) {
+            if (!drawerInstanceIds.has(originalId)) {
+              // Check if this originalId corresponds to any service still in drawer (e.g. if ID was lost and re-added)
+              // This check is simplified; robustly it might mean checking service_id, stylist_id, and time proximity.
+              const stillExistsWithDifferentOrNoInstanceId = servicesInDrawer.find(
+                s => s.id === editingAppointment.service_id && s.stylistId === editingAppointment.stylist_id
+                // This is a very naive check. A proper check would need to compare against the original service details for `originalId`
+              );
+              if (!stillExistsWithDifferentOrNoInstanceId) { // Only delete if truly gone
+                 await deleteAppointment(originalId);
+              }
+            }
+          }
+
+        } else {
+          // CREATE NEW APPOINTMENTS (original logic for new booking)
+          for (const service of servicesInDrawer) {
+            const [startHour, startMinute] = service.fromTime.split(':').map(Number);
+            const [endHour, endMinute] = service.toTime.split(':').map(Number);
             
-            const endTime = new Date(baseDate);
+            const startTime = new Date(baseDateForNew);
+            startTime.setHours(startHour, startMinute, 0, 0);
+            const endTime = new Date(baseDateForNew);
             endTime.setHours(endHour, endMinute, 0, 0);
             if (endTime <= startTime) endTime.setDate(endTime.getDate() + 1);
             
-            // Create the appointment
             const appointmentData = {
               start_time: startTime.toISOString(),
               end_time: endTime.toISOString(),
@@ -736,7 +888,6 @@ export default function Appointments() {
                 stylistIds: [service.stylistId]
               }]
             };
-            
             await createAppointment(appointmentData);
           }
         }
@@ -836,7 +987,7 @@ export default function Appointments() {
     setAppointmentTime({ startTime: '', endTime: '' });
     setAppointmentNotes('');
     setServiceSearchTerm('');
-    setServiceGenderFilter('male');
+    setServiceGenderFilter(null);
   };
 
   // Add handler for view mode toggle
@@ -936,6 +1087,106 @@ export default function Appointments() {
     }
   };
 
+  // Update the handler for adding a new service
+  const handleAddNewServiceClick = () => {
+    const currentEntryId = clientEntries[0]?.id;
+    if (!currentEntryId) {
+      console.error("Client entry ID not found.");
+      toast.error("Cannot add service: client context missing.");
+      return;
+    }
+
+    const entry = clientEntries.find(e => e.id === currentEntryId);
+    const hasMissingStylist = entry?.services.some(service => !service.stylistId);
+    
+    if (hasMissingStylist) {
+      toast.warn("Please assign an expert to all services before adding a new one");
+      return;
+    }
+    
+    setSelectedEntryId(currentEntryId);
+    
+    const lastService = entry?.services[entry.services.length - 1];
+    const fromTime = lastService?.toTime || appointmentTime.startTime || '10:00';
+    const defaultStylistId = lastService?.stylistId || entry?.stylists[0]?.id || '';
+
+    setInlineServiceData({
+      serviceId: '',
+      stylistId: defaultStylistId,
+      fromTime,
+      toTime: fromTime 
+    });
+    
+    setShowInlineServiceSelection(true);
+    setIsInlineServiceDropdownOpen(false); // Ensure dropdown is closed initially
+  };
+
+  // Add handler for finalizing service selection
+  const handleInlineServiceAdd = () => {
+    if (!inlineServiceData.serviceId) {
+      toast.warn("Please select a service");
+      return;
+    }
+    
+    if (!inlineServiceData.stylistId) {
+      toast.warn("Please select an expert");
+      return;
+    }
+    
+    // Find the selected service details
+    const selectedService = activeServices.find(s => s.id === inlineServiceData.serviceId);
+    if (!selectedService) {
+      toast.error("Selected service not found");
+      return;
+    }
+    
+    // Find stylist details
+    const selectedStylist = allStylists.find(s => s.id === inlineServiceData.stylistId);
+    if (!selectedStylist) {
+      toast.error("Selected expert not found");
+      return;
+    }
+    
+    // Calculate end time based on service duration if not set
+    let toTime = inlineServiceData.toTime;
+    if (toTime === inlineServiceData.fromTime) {
+      const [fromHour, fromMinute] = inlineServiceData.fromTime.split(':').map(Number);
+      const serviceDuration = selectedService.duration || 60; // Default to 60 minutes
+      
+      let totalMinutes = (fromHour * 60) + fromMinute + serviceDuration;
+      const toHour = Math.floor(totalMinutes / 60);
+      const toMinute = totalMinutes % 60;
+      
+      toTime = `${toHour}:${toMinute.toString().padStart(2, '0')}`;
+    }
+    
+    // Create the new service entry
+    const newService: ServiceEntry = {
+      id: selectedService.id,
+      name: selectedService.name,
+      price: selectedService.price || 0,
+      stylistId: selectedStylist.id,
+      stylistName: selectedStylist.name,
+      fromTime: inlineServiceData.fromTime,
+      toTime: toTime
+    };
+    
+    // Add to the client entry
+    const entry = clientEntries.find(e => e.id === selectedEntryId);
+    if (entry) {
+      updateEntry(selectedEntryId, {
+        services: [...entry.services, newService]
+      });
+      
+      // Reset and hide the inline selection
+      setInlineServiceData({ serviceId: '', stylistId: '', fromTime: '', toTime: '' });
+      setShowInlineServiceSelection(false);
+      
+      setServiceSelectedMessage(`${selectedService.name} added successfully!`);
+      setTimeout(() => setServiceSelectedMessage(''), 2000);
+    }
+  };
+
   // ============================================
   // Rendering Logic
   // ============================================
@@ -967,7 +1218,7 @@ export default function Appointments() {
         }}
       >
         <Typography variant="h5" component="h1">
-          {viewMode === 'calendar' ? 'Appointments Calendar' : 'Upcoming Appointments'}
+          {viewMode === 'calendar' ? '' : 'Upcoming Appointments'}
         </Typography>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
           <ToggleButtonGroup
@@ -1021,6 +1272,9 @@ export default function Appointments() {
               onDeleteBreak={handleDeleteBreak}
               onUpdateBreak={handleUpdateBreak}
               onDateChange={setSelectedDate}
+              onUpdateAppointment={(appointmentId, appointmentUpdates) => Promise.resolve(
+                updateAppointment({ id: appointmentId, ...appointmentUpdates })
+              )}
             />
           ) : (
             <FutureAppointmentsList
@@ -1113,21 +1367,25 @@ export default function Appointments() {
             </Box>
             
             {/* Client search field */}
-            <Autocomplete
+            <Autocomplete<Client & { inputValue?: string }, false, false, true>
               fullWidth
               freeSolo
+              // @ts-ignore: Allow custom filterOptions for client search
               filterOptions={(options, params) => {
                 const filtered = filterClients(options, params);
                 // Suggest the creation of a new value
                 const { inputValue } = params;
                 const isExisting = options.some((option) => inputValue === option.full_name);
                 if (inputValue !== '' && !isExisting) {
-                  filtered.push({
+                  // Push new client option (bypass TS structural checks)
+                  (filtered as any).push({
                     inputValue: `Add new client: "${inputValue}"`,
                     full_name: inputValue,
                     id: '',
-                    phone: ''
-                  });
+                    phone: '',
+                    email: '',
+                    created_at: ''
+                  } as unknown as Client & { inputValue: string });
                 }
                 return filtered;
               }}
@@ -1240,8 +1498,10 @@ export default function Appointments() {
                 label="Mobile Number *"
                 value={clientEntries[0]?.client?.phone || ''}
                 onChange={(e) => {
-                  const updatedClient = {
-                    ...clientEntries[0].client,
+                  // Update phone for a new client entry (client guaranteed non-null here)
+                  const currentClient = clientEntries[0].client!;
+                  const updatedClient: Client & { inputValue?: string } = {
+                    ...currentClient,
                     phone: e.target.value
                   };
                   updateEntry(clientEntries[0].id, { client: updatedClient });
@@ -1361,68 +1621,38 @@ export default function Appointments() {
             <Autocomplete<ServiceOption, false, false, true>
               fullWidth
               freeSolo
-              disableClearable
-              value={null}
-              options={(() => {
-                // Filter services based on search and gender
-                const filteredServices = activeServices.filter(service => 
-                  (!serviceGenderFilter || (service as ServiceWithGender).gender === serviceGenderFilter || !(service as ServiceWithGender).gender) &&
-                  (!serviceSearchTerm || service.name.toLowerCase().includes(serviceSearchTerm.toLowerCase()))
-                );
-                
-                // Group by category
-                const servicesByCategory: Record<string, BaseService[]> = {};
-                filteredServices.forEach(service => {
-                  const category = service.category || 'HAIR';
-                  if (!servicesByCategory[category]) {
-                    servicesByCategory[category] = [];
-                  }
-                  servicesByCategory[category].push(service);
-                });
-                
-                // Create options with category grouping
-                return Object.entries(servicesByCategory).flatMap(([category, services]) => [
-                  { groupHeader: category, id: `header-${category}`, name: category, price: 0, category } as ServiceOption,
-                  ...services
-                ]);
-              })()}
-              groupBy={(option) => option.groupHeader ? '' : (option.category || 'HAIR')}
+              openOnFocus
+              inputValue={serviceSearchTerm}
+              ListboxComponent={CustomAutocompleteListbox as any}
+              ListboxProps={{
+                style: { padding: 0, maxHeight: 300 },
+                serviceGenderFilterState: serviceGenderFilter,
+                setServiceGenderFilterState: setServiceGenderFilter
+              } as any}
+              options={activeServices.filter(service => 
+                (!serviceSearchTerm || service.name.toLowerCase().includes(serviceSearchTerm.toLowerCase())) &&
+                (serviceGenderFilter === null || (service as ServiceWithGender).gender === serviceGenderFilter)
+              )}
               getOptionLabel={(option) => typeof option === 'string' ? option : option.name}
-              renderOption={(props, option: ServiceOption) => {
-                // If it's a group header, render it differently
-                if (option.groupHeader) {
-                  return (
-                    <ListSubheader key={option.id} component="div" style={{ fontWeight: 'bold', textTransform: 'uppercase' }}>
-                      {option.groupHeader}
-                    </ListSubheader>
-                  );
-                }
-                
-                // Otherwise render a normal option
-                return (
-                  <MenuItem component="li" {...props} key={option.id}>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}>
-                      <span>{option.name}</span>
-                      <Typography variant="body2" fontWeight="medium">₹{option.price}</Typography>
+              renderOption={(props, option) => (
+                <MenuItem component="li" {...props} key={option.id}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center' }}>
+                    <Box>
+                      <Typography variant="body1">{option.name}</Typography>
+                      {(option as ServiceWithGender).gender && (
+                        <Typography variant="caption" color="text.secondary">
+                          {(option as ServiceWithGender).gender === 'male' ? 'Male' : 'Female'}
+                        </Typography>
+                      )}
                     </Box>
-                  </MenuItem>
-                );
-              }}
-              filterOptions={(options, state) => {
-                // Filter options based on the input value
-                return options.filter(option => {
-                  // Always include group headers
-                  if (option.groupHeader) return true;
-                  // Filter by search text
-                  return option.name.toLowerCase().includes(state.inputValue.toLowerCase());
-                });
-              }}
+                    <Typography variant="body2" fontWeight="medium">₹{option.price}</Typography>
+                  </Box>
+                </MenuItem>
+              )}
               renderInput={(params) => (
                 <TextField
                   {...params}
-                  label="Search Service By Name"
-                  value={serviceSearchTerm}
-                  onChange={(e) => setServiceSearchTerm(e.target.value)}
+                  placeholder="Search Service By Name"
                   InputProps={{
                     ...params.InputProps,
                     endAdornment: (
@@ -1435,91 +1665,31 @@ export default function Appointments() {
                     ),
                   }}
                   sx={{
-                    borderRadius: '8px',
                     '& .MuiOutlinedInput-notchedOutline': {
                       borderColor: '#E0E0E0'
                     }
                   }}
                 />
               )}
-              ListboxProps={{
-                style: { 
-                  padding: 0,
-                },
-              }}
-              ListboxComponent={(props: React.HTMLAttributes<HTMLUListElement>) => (
-                <Box component="ul" {...props}>
-                  <Box 
-                    sx={{ 
-                      position: 'sticky', 
-                      top: 0, 
-                      bgcolor: 'background.paper', 
-                      zIndex: 2,
-                      py: 1.5,
-                      px: 2,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: 2,
-                      borderBottom: '1px solid',
-                      borderColor: 'divider'
-                    }}
-                  >
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                      <Typography variant="body2" sx={{ fontWeight: 'medium', color: 'text.secondary' }}>
-                        Filter:
-                      </Typography>
-                      <Button 
-                        size="small" 
-                        variant={serviceGenderFilter === 'female' ? 'contained' : 'outlined'}
-                        onClick={() => setServiceGenderFilter('female')}
-                        sx={{ 
-                          minWidth: '80px',
-                          borderRadius: '20px', 
-                          textTransform: 'none',
-                          bgcolor: serviceGenderFilter === 'female' ? '#6B8E23' : 'transparent',
-                          color: serviceGenderFilter === 'female' ? 'white' : '#757575',
-                          borderColor: '#E0E0E0',
-                          '&:hover': {
-                            bgcolor: serviceGenderFilter === 'female' ? '#566E1C' : 'rgba(0,0,0,0.04)'
-                          }
-                        }}
-                      >
-                        Female
-                      </Button>
-                      <Button 
-                        size="small"
-                        variant={serviceGenderFilter === 'male' ? 'contained' : 'outlined'}
-                        onClick={() => setServiceGenderFilter('male')}
-                        sx={{ 
-                          minWidth: '80px',
-                          borderRadius: '20px', 
-                          textTransform: 'none',
-                          bgcolor: serviceGenderFilter === 'male' ? '#6B8E23' : 'transparent',
-                          color: serviceGenderFilter === 'male' ? 'white' : '#757575',
-                          borderColor: '#E0E0E0',
-                          '&:hover': {
-                            bgcolor: serviceGenderFilter === 'male' ? '#566E1C' : 'rgba(0,0,0,0.04)'
-                          }
-                        }}
-                      >
-                        Male
-                      </Button>
-                    </Box>
-                  </Box>
-                  {props.children}
-                </Box>
-              )}
               onChange={(_, newValue) => {
-                // Handle selection
-                if (newValue && !newValue.groupHeader) {
-                  handleCheckServiceSelectionBeforeDialog(clientEntries[0].id);
-                  handleServiceSelection(newValue as BaseService);
+                // Handle service selection immediately
+                if (newValue && typeof newValue === 'object' && !newValue.groupHeader) {
+                  const entryId = clientEntries[0].id;
+                  const entry = clientEntries.find(e => e.id === entryId);
+                  // Ensure all prior services have an expert assigned
+                  if (entry?.services.some(s => !s.stylistId)) {
+                    toast.warn("Please assign an expert to all services before adding a new one");
+                    return;
+                  }
+                  addServiceToEntry(entryId, newValue as BaseService);
+                  // Clear search term so dropdown shows fresh list on next open
+                  setServiceSearchTerm('');
+                  // Show confirmation message
+                  setServiceSelectedMessage(`${(newValue as BaseService).name} selected!`);
+                  setTimeout(() => setServiceSelectedMessage(''), 2000);
                 }
               }}
-              onInputChange={(_, newInputValue) => {
-                setServiceSearchTerm(newInputValue);
-              }}
+              onInputChange={(_, newInputValue) => setServiceSearchTerm(newInputValue)}
               sx={{ mb: 3 }}
             />
 
@@ -1631,34 +1801,7 @@ export default function Appointments() {
                   variant="outlined"
                   color="primary"
                   endIcon={<AddIcon />}
-                  onClick={() => {
-                    // Set the selected entry ID first
-                    const entry = clientEntries.find(e => e.id === clientEntries[0].id);
-                    
-                    // Check if any service has missing stylist
-                    const hasMissingStylist = entry?.services.some(service => !service.stylistId);
-                    
-                    if (hasMissingStylist) {
-                      toast.warn("Please assign an expert to all services before adding a new one");
-                      return;
-                    }
-
-                    // Find a default service from the list - use the first available service
-                    const defaultService = activeServices.find(service => 
-                      (!serviceGenderFilter || (service as ServiceWithGender).gender === serviceGenderFilter || !(service as ServiceWithGender).gender)
-                    );
-
-                    if (defaultService) {
-                      // Directly add the service to the entry - this will auto-calculate times
-                      addServiceToEntry(clientEntries[0].id, defaultService);
-                      
-                      // Show success message
-                      setServiceSelectedMessage(`${defaultService.name} added! You can modify it below.`);
-                      setTimeout(() => setServiceSelectedMessage(''), 3000);
-                    } else {
-                      toast.warn("No services available. Please check your filters.");
-                    }
-                  }}
+                  onClick={handleAddNewServiceClick}
                   sx={{ 
                     textTransform: 'none', 
                     borderRadius: '20px',
@@ -1676,18 +1819,241 @@ export default function Appointments() {
               </Box>
             )}
 
-            {/* Service Selected Message */}
-            {serviceSelectedMessage && (
+            {/* New Inline Service Selection Row */}
+            {showInlineServiceSelection && (
               <Box sx={{ 
-                mt: 2, 
-                p: 1, 
-                bgcolor: '#E8F5E9', 
-                color: '#2E7D32', 
-                borderRadius: 1, 
-                textAlign: 'center',
-                fontWeight: 'medium'
+                mt: 3, 
+                p: 2, 
+                border: '1px dashed', 
+                borderColor: '#6B8E23', 
+                borderRadius: 1,
+                bgcolor: '#FAFFF2'
               }}>
-                {serviceSelectedMessage}
+                <Typography variant="subtitle2" fontWeight="medium" mb={2}>
+                  Add New Service
+                </Typography>
+                
+                {/* Searchable service selection */}
+                <Autocomplete
+                  fullWidth
+                  // Removed openOnFocus and autoHighlight
+                  options={activeServices}
+                  open={isInlineServiceDropdownOpen} // Control open state
+                  onOpen={() => setIsInlineServiceDropdownOpen(true)}
+                  onClose={() => setIsInlineServiceDropdownOpen(false)}
+                  getOptionLabel={(option) => typeof option === 'string' ? option : option.name}
+                  value={inlineServiceData.serviceId ? activeServices.find(s => s.id === inlineServiceData.serviceId) || null : null}
+                  onChange={(_, newValue) => {
+                    if (!newValue) {
+                      setInlineServiceData(prev => ({
+                        ...prev,
+                        serviceId: ''
+                      }));
+                      // setIsInlineServiceDropdownOpen(false); // It will be closed by onClose
+                      return;
+                    }
+                    
+                    setInlineServiceData(prev => ({
+                      ...prev,
+                      serviceId: newValue.id
+                    }));
+                    
+                    const serviceDuration = newValue.duration || 60;
+                    const [fromHour, fromMinute] = inlineServiceData.fromTime.split(':').map(Number);
+                    
+                    let totalMinutes = (fromHour * 60) + fromMinute + serviceDuration;
+                    const toHour = Math.floor(totalMinutes / 60);
+                    const toMinute = totalMinutes % 60;
+                    
+                    const toTime = `${toHour}:${toMinute.toString().padStart(2, '0')}`;
+                    
+                    setInlineServiceData(prev => ({
+                      ...prev,
+                      toTime
+                    }));
+                    setIsInlineServiceDropdownOpen(false); // Close dropdown after selection
+                  }}
+                  renderInput={(params) => (
+                    <TextField
+                      {...params}
+                      placeholder="Search & Select Service"
+                      variant="outlined"
+                      InputProps={{
+                        ...params.InputProps,
+                        endAdornment: (
+                          <>
+                            <Box component="span" sx={{ display: 'flex', marginRight: 1, pointerEvents: 'none' }}>
+                              <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                                <path d="M6 9L12 15L18 9" stroke="#757575" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                              </svg>
+                            </Box>
+                            {params.InputProps.endAdornment}
+                          </>
+                        ),
+                        sx: {
+                          borderRadius: '8px',
+                          '& .MuiOutlinedInput-notchedOutline': {
+                            borderColor: '#E0E0E0'
+                          }
+                        }
+                      }}
+                      sx={{
+                        '& .MuiInputLabel-root': {
+                          color: '#757575'
+                        }
+                      }}
+                    />
+                  )}
+                  renderOption={(props, option) => (
+                    <MenuItem {...props} key={option.id}>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}>
+                        <Typography variant="body1">{option.name}</Typography>
+                        <Typography variant="body2" fontWeight="medium">₹{option.price}</Typography>
+                      </Box>
+                    </MenuItem>
+                  )}
+                  filterOptions={(options, state) => {
+                    return options.filter(option => 
+                      option.name.toLowerCase().includes(state.inputValue.toLowerCase())
+                    );
+                  }}
+                  sx={{ mb: 2 }}
+                />
+                
+                {/* Expert Selection */}
+                <FormControl fullWidth sx={{ mb: 2 }}>
+                  <InputLabel>Expert</InputLabel>
+                  <Select
+                    value={inlineServiceData.stylistId}
+                    label="Expert"
+                    onChange={(e) => {
+                      setInlineServiceData(prev => ({
+                        ...prev,
+                        stylistId: e.target.value as string
+                      }));
+                    }}
+                    endAdornment={
+                      <Box component="span" sx={{ display: 'flex', marginRight: 1, pointerEvents: 'none' }}>
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                          <path d="M6 9L12 15L18 9" stroke="#757575" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                        </svg>
+                      </Box>
+                    }
+                  >
+                    {allStylists
+                      .filter(stylist => stylist.available !== false)
+                      .map(stylist => (
+                        <MenuItem key={stylist.id} value={stylist.id}>{stylist.name}</MenuItem>
+                      ))
+                    }
+                  </Select>
+                </FormControl>
+                
+                {/* Time Selection */}
+                <Grid container spacing={2} sx={{ mb: 2 }}>
+                  <Grid item xs={6}>
+                    <FormControl fullWidth>
+                      <InputLabel>From Time</InputLabel>
+                      <Select
+                        value={inlineServiceData.fromTime}
+                        label="From Time"
+                        onChange={(e) => {
+                          const newFromTime = e.target.value as string;
+                          setInlineServiceData(prev => ({
+                            ...prev,
+                            fromTime: newFromTime
+                          }));
+                          
+                          // Update end time based on service duration
+                          const service = activeServices.find(s => s.id === inlineServiceData.serviceId);
+                          if (service) {
+                            const [fromHour, fromMinute] = newFromTime.split(':').map(Number);
+                            const serviceDuration = service.duration || 60;
+                            
+                            let totalMinutes = (fromHour * 60) + fromMinute + serviceDuration;
+                            const toHour = Math.floor(totalMinutes / 60);
+                            const toMinute = totalMinutes % 60;
+                            
+                            const toTime = `${toHour}:${toMinute.toString().padStart(2, '0')}`;
+                            
+                            setInlineServiceData(prev => ({
+                              ...prev,
+                              toTime
+                            }));
+                          }
+                        }}
+                        endAdornment={
+                          <Box component="span" sx={{ display: 'flex', marginRight: 1, pointerEvents: 'none' }}>
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                              <path d="M6 9L12 15L18 9" stroke="#757575" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                            </svg>
+                          </Box>
+                        }
+                      >
+                        {timeOptions.map(option => (
+                          <MenuItem key={`inline-from-${option.value}`} value={option.value}>{option.label}</MenuItem>
+                        ))}
+                      </Select>
+                    </FormControl>
+                  </Grid>
+                  <Grid item xs={6}>
+                    <FormControl fullWidth>
+                      <InputLabel>To Time</InputLabel>
+                      <Select
+                        value={inlineServiceData.toTime}
+                        label="To Time"
+                        onChange={(e) => {
+                          setInlineServiceData(prev => ({
+                            ...prev,
+                            toTime: e.target.value as string
+                          }));
+                        }}
+                        endAdornment={
+                          <Box component="span" sx={{ display: 'flex', marginRight: 1, pointerEvents: 'none' }}>
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                              <path d="M6 9L12 15L18 9" stroke="#757575" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                            </svg>
+                          </Box>
+                        }
+                      >
+                        {timeOptions.map(option => (
+                          <MenuItem key={`inline-to-${option.value}`} value={option.value}>{option.label}</MenuItem>
+                        ))}
+                      </Select>
+                    </FormControl>
+                  </Grid>
+                </Grid>
+                
+                {/* Action Buttons */}
+                <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 2 }}>
+                  <Button
+                    variant="outlined"
+                    onClick={() => {
+                      setShowInlineServiceSelection(false);
+                      setInlineServiceData({ serviceId: '', stylistId: '', fromTime: '', toTime: '' });
+                    }}
+                    sx={{ 
+                      textTransform: 'none',
+                      borderColor: '#E0E0E0',
+                      color: '#757575'
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    variant="contained"
+                    onClick={handleInlineServiceAdd}
+                    sx={{ 
+                      textTransform: 'none',
+                      bgcolor: '#6B8E23',
+                      '&:hover': {
+                        bgcolor: '#566E1C'
+                      }
+                    }}
+                  >
+                    Add Service
+                  </Button>
+                </Box>
               </Box>
             )}
           </Box>
@@ -1734,6 +2100,58 @@ export default function Appointments() {
           >
             {editingAppointment ? 'Update Appointment' : 'Book Appointment'}
           </Button>
+
+          {/* Create Bill Button - Show only when editing an existing appointment */}
+          {editingAppointment && (
+            <Button 
+              onClick={() => {
+                console.log("[Create Bill] Clicked. Editing Appointment:", editingAppointment);
+                console.log("[Create Bill] Client from clientEntries[0]:", clientEntries[0]?.client);
+                console.log("[Create Bill] Services from clientEntries[0] (fallback source):", clientEntries[0]?.services);
+
+                if (editingAppointment && clientEntries[0]?.client) {
+                  // Directly use services from clientEntries, which is populated from MergedAppointment
+                  console.warn("[Create Bill] Populating services for POS from drawer state (clientEntries[0].services).");
+                  const servicesForPOS = clientEntries[0].services.map(s => ({ 
+                    id: s.id, 
+                    name: s.name, 
+                    price: s.price 
+                  }));
+                  console.log("[Create Bill] servicesForPOS from drawer:", servicesForPOS);
+                      
+                  if (servicesForPOS.length === 0) {
+                    toast.error("No services found for this appointment to create a bill.");
+                    console.log("[Create Bill] No services to send to POS.");
+                    return;
+                  }
+
+                  const appointmentDataForPOS = {
+                    clientName: clientEntries[0].client.full_name,
+                    stylistId: editingAppointment.stylist_id, 
+                    services: servicesForPOS,
+                    id: editingAppointment.id, 
+                    type: 'service', 
+                  };
+                  console.log("[Create Bill] Final appointmentDataForPOS to be sent to /pos:", appointmentDataForPOS);
+                  navigate('/pos', { state: { appointmentData: appointmentDataForPOS } });
+                  handleCloseDrawer(); 
+                } else {
+                  toast.error("Cannot create bill: Missing appointment or client details.");
+                  console.error("[Create Bill] Pre-condition failed: editingAppointment or clientEntries[0].client is missing.");
+                }
+              }}
+              variant="contained"
+              color="info" // Using a different color for distinction
+              startIcon={<ReceiptIcon />}
+              sx={{ 
+                borderRadius: '8px',
+                textTransform: 'none',
+                py: 1.5
+              }}
+            >
+              Create Bill
+            </Button>
+          )}
           
           {/* Only show delete button when editing an existing appointment */}
           {editingAppointment && (

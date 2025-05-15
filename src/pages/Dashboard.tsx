@@ -61,13 +61,6 @@ export default function Dashboard() {
   // Reference to track if dashboard is mounted
   const isMounted = useRef(true);
   
-  // Refresh data immediately when component mounts (on login or page open)
-  useEffect(() => {
-    // Immediate refresh on component mount
-    console.log('Dashboard mounted, fetching initial data...');
-    refetchAnalytics();
-  }, []); // Empty dependency array means this runs once on mount
-  
   // Auto-refresh analytics data every 5 minutes
   useEffect(() => {
     const intervalId = setInterval(() => {

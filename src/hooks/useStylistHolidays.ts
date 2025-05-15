@@ -318,9 +318,9 @@ export function useStylistHolidays() {
     holidays,
     isLoading,
     getStylistHolidays,
-    addHoliday: addHoliday.mutate,
-    updateHoliday: updateHoliday.mutate,
-    deleteHoliday: deleteHoliday.mutate,
+    addHoliday,
+    updateHoliday,
+    deleteHoliday,
     updateStylistAvailability,
     isStylistOnHoliday
   };

@@ -151,51 +151,57 @@ export function useCollectionServices(collectionId?: string) {
     },
   });
 
-  // Mutation to delete a service from the 'services' table
+  // Mutation to delete a service from the 'services' table (now soft delete by deactivating)
   const deleteService = useMutation({
     mutationFn: async (id: string) => {
-      console.log(`Deleting service ${id} from services table`);
+      console.log(`Soft deleting (deactivating) service ${id}`);
 
-      // First, get the service to preserve the collection_id for query invalidation
-      const { data: serviceData, error: fetchError } = await supabase
+      // Fetch collection_id first for invalidation logic, and to ensure service exists
+      const { data: serviceToDeactivate, error: fetchError } = await supabase
         .from('services')
-        .select('collection_id')
+        .select('collection_id, name') // Also fetch name for toast message
         .eq('id', id)
         .single();
-      
-      if (fetchError) {
-        console.error('Error fetching service before deletion:', fetchError);
-        throw fetchError;
-      }
-      
-      const collection_id = serviceData?.collection_id;
 
-      // Now delete the service
-      const { error } = await supabase
-        .from('services')
-        .delete()
-        .eq('id', id);
-      
-      if (error) {
-        console.error('Error deleting service from services table:', error);
-        throw error;
+      if (fetchError) {
+        console.error('Error fetching service before deactivation:', fetchError);
+        toast.error(`Failed to find service (ID: ${id}) for deactivation.`);
+        throw fetchError; 
       }
-      
-      console.log(`Service ${id} deleted from services table`);
-      // Return the collection_id to use in onSuccess for invalidation
-      return { success: true, collection_id }; 
+      if (!serviceToDeactivate) {
+        const notFoundError = new Error("Service not found for deactivation.");
+        toast.error(notFoundError.message);
+        throw notFoundError;
+      }
+
+      // Perform the update to set active = false
+      const { error: updateError } = await supabase
+        .from('services')
+        .update({ active: false, updated_at: new Date().toISOString() })
+        .eq('id', id);
+
+      if (updateError) {
+        console.error('Error deactivating service in services table:', updateError);
+        toast.error(`Failed to deactivate service '${serviceToDeactivate.name}'.`);
+        throw updateError;
+      }
+
+      console.log(`Service ${id} (${serviceToDeactivate.name}) deactivated in services table`);
+      // Return the necessary details for onSuccess callback
+      return { success: true, collection_id: serviceToDeactivate.collection_id, name: serviceToDeactivate.name };
     },
-    onSuccess: (data) => {
-      console.log('Service deletion successful, invalidating queries');
-      // Invalidate relevant queries using the collection_id from the mutation result
-      queryClient.invalidateQueries({ queryKey: ['services', { collectionId: data.collection_id }] });
-      queryClient.invalidateQueries({ queryKey: ['services', { collectionId: undefined }] });
+    onSuccess: (result) => {
+      console.log('Service deactivation successful, invalidating queries');
+      queryClient.invalidateQueries({ queryKey: ['services', { collectionId: result.collection_id }] });
+      queryClient.invalidateQueries({ queryKey: ['services', { collectionId: undefined }] }); 
       queryClient.invalidateQueries({ queryKey: ['services'] });
-      toast.success('Service deleted successfully');
+      toast.success(`Service '${result.name}' deactivated successfully`);
     },
-    onError: (error) => {
-      toast.error('Failed to delete service');
-      console.error('Error deleting service:', error);
+    onError: (error: Error) => {
+      // Error toast is handled in mutationFn for more specific messages, 
+      // but a general one can be here if needed or if specific toasts are removed from mutationFn.
+      // toast.error('Failed to deactivate service'); // Already handled with more context
+      console.error('Error deactivating service (onError):', error.message);
     },
   });
 

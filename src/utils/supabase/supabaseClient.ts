@@ -4,6 +4,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 // Define TABLES immediately after imports
 export const TABLES = {
   PURCHASES: 'inventory_purchases',
+  PURCHASE_HISTORY_WITH_STOCK: 'purchase_history_with_stock',
   SALES: 'inventory_sales_new',
   CONSUMPTION: 'inventory_consumption',
   BALANCE_STOCK: 'balance_stock',

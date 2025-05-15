@@ -72,6 +72,9 @@ const BUSINESS_HOURS = {
 // Update the time slot height to make the calendar more readable
 const TIME_SLOT_HEIGHT = 30; // Height in pixels for each 15-minute slot
 
+// Height in pixels of the StylistColumn header (must match StylistHeader height)
+const STYLIST_HEADER_HEIGHT = 56;
+
 // Styled components
 const DayViewContainer = styled(Paper)(({ theme }) => ({
   height: '100%',
@@ -123,14 +126,11 @@ const TimeColumn = styled(Box)(({ theme }) => ({
 const StylistColumn = styled(Box)(({ theme }) => ({
   flex: 1,
   minWidth: 200, // Increased from 180px to 200px for better spacing
+  [theme.breakpoints.down('sm')]: {
+    minWidth: 120,
+  },
   position: 'relative',
   backgroundColor: theme.palette.salon.offWhite,
-  // Remove border-right property completely
-  // borderRight: `1px solid ${theme.palette.divider}`,
-  // "&:last-child": {
-  //   borderRight: "none"
-  // },
-  // Make sure the column always extends to full height of content
   height: '100%',
   paddingBottom: '50vh', // Add extra space at the bottom for scrolling
 }));
@@ -152,6 +152,9 @@ const StylistHeader = styled(Box)(({ theme }) => ({
 
 const TimeSlot = styled(Box)(({ theme }) => ({
   height: TIME_SLOT_HEIGHT,
+  [theme.breakpoints.down('sm')]: {
+    height: Math.floor(TIME_SLOT_HEIGHT * 0.7),
+  },
   borderBottom: `1px solid ${theme.palette.divider}`,
   display: 'flex',
   alignItems: 'center',
@@ -935,9 +938,8 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
       // Calculate total minutes since business hours start
       const totalMinutes = (hours * 60) + minutes;
       
-      // Convert to pixels based on 15-minute slots
-      // TIME_SLOT_HEIGHT for each 15-minute slot, so divide by 15 to get height per minute
-      const positionExact = (totalMinutes / 15) * TIME_SLOT_HEIGHT;
+      // Convert to pixels based on 15-minute slots and include header offset
+      const positionExact = STYLIST_HEADER_HEIGHT + (totalMinutes / 15) * TIME_SLOT_HEIGHT;
       
       if (process.env.NODE_ENV === 'development') {
         console.log(`Position for ${normalizedStartTime.toLocaleTimeString()}:`, {
@@ -1670,34 +1672,41 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
         const endTime = formatTime(appointment.end_time);
         
         return (
-          <AppointmentCard
+          <Tooltip
             key={appointment.id}
-            draggable
-            onDragStart={(e) => handleDragStart(e, appointment)}
-            onClick={() => handleAppointmentClick(appointment)}
-            style={{
-              top: `${getAppointmentPosition(appointment.start_time)}px`,
-              height: `${getAppointmentDuration(appointment.start_time, appointment.end_time)}px`,
-              backgroundColor: status === 'completed' 
-                ? theme.palette.grey[400] 
-                : isPaid 
-                  ? theme.palette.success.light
-                  : theme.palette.primary.main
-            }}
-            duration={getAppointmentDuration(appointment.start_time, appointment.end_time)}
-            isPaid={isPaid}
-            status={status as 'scheduled' | 'completed' | 'cancelled'}
+            title={`${appointment.clientDetails?.[0]?.full_name || allClients.find(c => c.id === appointment.client_id)?.full_name || 'Unknown Client'} - ${serviceName} (${startTime} - ${endTime})`}
+            arrow
           >
-            <Typography variant="subtitle2" className="appointment-client-name">
-              {appointment.clientDetails?.[0]?.full_name || 'Unknown Client'}
-            </Typography>
-            <Typography variant="body2" className="appointment-service">
-              {serviceName}
-            </Typography>
-            <Typography variant="caption" className="appointment-time">
-              {`${startTime} - ${endTime}`}
-            </Typography>
-          </AppointmentCard>
+            <AppointmentCard
+              draggable
+              onDragStart={(e) => handleDragStart(e, appointment)}
+              onClick={() => handleAppointmentClick(appointment)}
+              style={{
+                top: `${getAppointmentPosition(appointment.start_time)}px`,
+                height: `${getAppointmentDuration(appointment.start_time, appointment.end_time)}px`,
+                backgroundColor: status === 'completed'
+                  ? theme.palette.grey[400]
+                  : isPaid
+                    ? theme.palette.success.light
+                    : theme.palette.primary.main
+              }}
+              duration={getAppointmentDuration(appointment.start_time, appointment.end_time)}
+              isPaid={isPaid}
+              status={status as 'scheduled' | 'completed' | 'cancelled'}
+            >
+              <Typography variant="subtitle2" className="appointment-client-name">
+                {appointment.clientDetails?.[0]?.full_name
+                  || allClients.find(c => c.id === appointment.client_id)?.full_name
+                  || 'Unknown Client'}
+              </Typography>
+              <Typography variant="body2" className="appointment-service">
+                {serviceName}
+              </Typography>
+              <Typography variant="caption" className="appointment-time">
+                {`${startTime} - ${endTime}`}
+              </Typography>
+            </AppointmentCard>
+          </Tooltip>
         );
       });
   };
@@ -1890,7 +1899,7 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
                 })
               }}
             >
-              <Typography variant="subtitle2">{stylist.name}</Typography>
+              <Typography variant="subtitle2" sx={{ color: 'white' }}>{stylist.name}</Typography>
             </StylistHeader>
             
             {timeSlots.map(slot => (

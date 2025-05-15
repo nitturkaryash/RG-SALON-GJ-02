@@ -414,7 +414,7 @@ export function useDashboardAnalytics({ startDate, endDate }: UseDashboardAnalyt
     // Query key now includes the date range
     queryKey: ['dashboard-analytics', startDate, endDate], 
     queryFn: getAnalyticsSummary, // Automatically receives queryKey
-    enabled: !!startDate && !!endDate, // Only run query if dates are valid
+    enabled: !loadingOrders && !loadingAppointments && !loadingServices && !loadingStylists && !!startDate && !!endDate, // Only run query if dates are valid and initial hook data loaded
     refetchInterval: settings.refreshInterval,
     refetchOnWindowFocus: true,
     refetchOnMount: true,

@@ -443,15 +443,15 @@ export default function InventoryManager() {
       ];
       const consRows = consUIData.map((r: any, idx: number) => [
         idx + 1, // S.No
-        r.date ? new Date(r.date).toLocaleDateString() : '-', // Date
-        r.product_name || '-', // Product Name
-        r.hsn_code || '-', // HSN Code
-        r.product_type || '-', // Product Type (formerly Units)
-        r.quantity || 0, // Qty
+        r.Date ? new Date(r.Date).toLocaleDateString() : '-', // Date
+        r['Product Name'] || '-', // Product Name
+        (r.HSN_Code ?? r['HSN Code']) || '-', // HSN Code
+        r.product_type || '-', // Product Type
+        Number(r['Consumption Qty.']) || 0, // Qty
         r.purpose || '-', // Purpose
         r.stylist_name || '-', // Stylist
-        `₹${(Number(r.price_per_unit) || 0).toFixed(2)}`, // Unit Price (Rs.)
-        `${(Number(r.gst_percentage) || 0).toFixed(2)}%`, // GST %
+        `₹${(Number(r['Purchase_Cost_per_Unit_Ex_GST_Rs']) || 0).toFixed(2)}`, // Unit Price (Rs.)
+        `${(Number(r['Purchase_GST_Percentage']) || 0).toFixed(2)}%`, // GST %
         // Transaction values from SalonConsumptionTab's processedData
         `₹${(Number(r.transaction_taxable_value) || 0).toFixed(2)}`,
         `₹${(Number(r.transaction_cgst) || 0).toFixed(2)}`,
@@ -497,9 +497,9 @@ export default function InventoryManager() {
         `₹${(i.cgst_amount ?? 0).toFixed(2)}`, // CGST (Transaction Rs.)
         `₹${(i.sgst_amount ?? 0).toFixed(2)}`, // SGST (Transaction Rs.)
         `₹${(i.invoice_value ?? 0).toFixed(2)}`, // Total Value (Transaction Rs.)
-        i.initial_stock_before_sale ?? '-', // Initial Stock Before Sale
-        i.remaining_stock_after_sale ?? '-', // Remaining Stock After Sale
-        i.current_stock_latest ?? '-', // Current Stock (Latest)
+        i.initial_stock ?? '-', // Initial Stock Before Sale
+        i.remaining_stock ?? '-', // Remaining Stock After Sale
+        i.current_stock ?? '-', // Current Stock (Latest)
         // Current Stock Valuation - assuming fields like i.current_stock_taxable_value exist in salesData
         `₹${(i.current_stock_taxable_value ?? 0).toFixed(2)}`,
         `₹${(i.current_stock_igst ?? 0).toFixed(2)}`,
@@ -526,8 +526,8 @@ export default function InventoryManager() {
         s.change_type || '-', // Change Type
         s.source || '-', // Source
         s.reference_id || '-', // Reference ID
-        s.change_qty ?? 0, // Quantity Change
-        s.stock_after ?? 0 // Quantity After Change
+        s.change_qty ?? '-', // Quantity Change - MODIFIED
+        s.stock_after ?? '-' // Quantity After Change - MODIFIED
       ]);
       const stockSheet = XLSX.utils.aoa_to_sheet([stockHeaders, ...stockRows]);
       XLSX.utils.book_append_sheet(wb, stockSheet, 'Balance Stock');

@@ -109,10 +109,11 @@ export default function Stylists() {
   const [specialties, setSpecialties] = useState<string[]>([])
   const [holidayDate, setHolidayDate] = useState<Date | null>(new Date())
   const [holidayReason, setHolidayReason] = useState<string>('')
+  const [holidayEndDate, setHolidayEndDate] = useState<Date | null>(new Date())
   const [holidayDialogOpen, setHolidayDialogOpen] = useState<boolean>(false)
   const [selectedStylistForHoliday, setSelectedStylistForHoliday] = useState<Stylist | null>(null)
   const [editingHoliday, setEditingHoliday] = useState<StylistHoliday | null>(null)
-  const [viewType, setViewType] = useState<'grid' | 'calendar' | 'report'>('grid')
+  const [viewType, setViewType] = useState<'report'>('report')
   const [reportMonth, setReportMonth] = useState<Date>(new Date())
   const [holidayReports, setHolidayReports] = useState<HolidayReport[]>([])
   const [stylistHolidays, setStylistHolidays] = useState<Record<string, StylistHoliday[]>>({})
@@ -144,23 +145,16 @@ export default function Stylists() {
     }
   }, [serviceCollections, services])
 
-  // Load holidays for all stylists
+  // Build stylistHolidays map from the fetched allHolidays list
   useEffect(() => {
-    if (stylists?.length) {
-      const loadHolidays = async () => {
-        const holidaysMap: Record<string, StylistHoliday[]> = {};
-        
-        for (const stylist of stylists) {
-          const stylistHolidays = await getStylistHolidays(stylist.id);
-          holidaysMap[stylist.id] = stylistHolidays;
-        }
-        
-        setStylistHolidays(holidaysMap);
-      };
-      
-      loadHolidays();
+    if (stylists?.length && allHolidays) {
+      const holidaysMap: Record<string, StylistHoliday[]> = {};
+      stylists.forEach(stylist => {
+        holidaysMap[stylist.id] = allHolidays.filter(h => h.stylist_id === stylist.id);
+      });
+      setStylistHolidays(holidaysMap);
     }
-  }, [stylists, getStylistHolidays, allHolidays]);
+  }, [stylists, allHolidays]);
 
   // Generate holiday reports whenever stylists or reportMonth changes
   useEffect(() => {
@@ -252,18 +246,20 @@ export default function Stylists() {
     }
   }
 
-  const openHolidayDialog = (stylist: Stylist, existingHoliday?: StylistHoliday) => {
+  const openHolidayDialog = (stylist: Stylist, existingHoliday?: any) => {
     setSelectedStylistForHoliday(stylist)
     
     if (existingHoliday) {
       // Edit mode
       setEditingHoliday(existingHoliday)
       setHolidayDate(new Date(existingHoliday.holiday_date))
+      setHolidayEndDate(new Date(existingHoliday.holiday_date))
       setHolidayReason(existingHoliday.reason || '')
     } else {
       // Add mode
       setEditingHoliday(null)
       setHolidayDate(new Date())
+      setHolidayEndDate(new Date())
       setHolidayReason('')
     }
     
@@ -278,40 +274,45 @@ export default function Stylists() {
 
   const addOrUpdateHoliday = async () => {
     if (!selectedStylistForHoliday || !holidayDate) {
-      toast.error('Please select a stylist and date')
+      toast.error('Please select a stylist and a start date')
       return
     }
-
-    // Format date consistently
-    const formattedDate = format(holidayDate, 'yyyy-MM-dd');
-
     try {
       if (editingHoliday) {
         // Update existing holiday
-        await updateHoliday({
+        await updateHoliday.mutateAsync({
           holidayId: editingHoliday.id,
-          holidayDate: formattedDate,
+          holidayDate: format(holidayDate, 'yyyy-MM-dd'),
           reason: holidayReason
-        });
-        toast.success(`Holiday updated for ${selectedStylistForHoliday.name}`);
+        })
+        toast.success(`Holiday updated for ${selectedStylistForHoliday.name}`)
       } else {
-        // Add new holiday
-        await addHoliday({
-          stylistId: selectedStylistForHoliday.id,
-          holidayDate: formattedDate,
-          reason: holidayReason
-        });
-        toast.success(`Holiday added for ${selectedStylistForHoliday.name}`);
+        // Add new holiday(s) for the selected range
+        if (!holidayEndDate) {
+          toast.error('Please select an end date')
+          return
+        }
+        if (holidayEndDate < holidayDate) {
+          toast.error('End date cannot be before start date')
+          return
+        }
+        const datesInRange = eachDayOfInterval({ start: holidayDate, end: holidayEndDate })
+        for (const date of datesInRange) {
+          await addHoliday.mutateAsync({
+            stylistId: selectedStylistForHoliday.id,
+            holidayDate: format(date, 'yyyy-MM-dd'),
+            reason: holidayReason
+          })
+        }
+        toast.success(`Holidays added for ${selectedStylistForHoliday.name}`)
       }
-
       // Refresh data
-      queryClient.invalidateQueries({ queryKey: ['stylist_holidays'] });
-      queryClient.invalidateQueries({ queryKey: ['stylists'] });
-      
-      closeHolidayDialog();
+      queryClient.invalidateQueries({ queryKey: ['stylist_holidays'] })
+      queryClient.invalidateQueries({ queryKey: ['stylists'] })
+      closeHolidayDialog()
     } catch (error) {
-      console.error('Error managing holiday:', error);
-      toast.error('Error saving holiday');
+      console.error('Error managing holiday:', error)
+      toast.error('Error saving holiday')
     }
   }
 
@@ -321,11 +322,35 @@ export default function Stylists() {
     }
 
     try {
-      await deleteHoliday(holidayId);
+      await deleteHoliday.mutateAsync(holidayId);
       toast.success(`Holiday removed for ${stylist.name}`);
+      // Refresh queries to refetch data
+      queryClient.invalidateQueries({ queryKey: ['stylist_holidays'] });
+      queryClient.invalidateQueries({ queryKey: ['stylists'] });
+      // Update local state to remove the holiday immediately
+      setStylistHolidays(prev => ({
+        ...prev,
+        [stylist.id]: prev[stylist.id]?.filter(h => h.id !== holidayId) || []
+      }));
     } catch (error) {
       console.error('Error removing holiday:', error);
       toast.error('Error removing holiday');
+    }
+  }
+
+  // Handler to delete holiday from within the Edit Holiday dialog
+  const handleDialogDelete = async () => {
+    if (!selectedStylistForHoliday || !editingHoliday) return
+    if (!window.confirm(`Are you sure you want to remove this holiday for ${selectedStylistForHoliday.name}?`)) return
+    try {
+      await deleteHoliday.mutateAsync(editingHoliday.id)
+      toast.success(`Holiday removed for ${selectedStylistForHoliday.name}`)
+      queryClient.invalidateQueries({ queryKey: ['stylist_holidays'] })
+      queryClient.invalidateQueries({ queryKey: ['stylists'] })
+      closeHolidayDialog()
+    } catch (error) {
+      console.error('Error removing holiday:', error)
+      toast.error('Error removing holiday')
     }
   }
 
@@ -357,23 +382,6 @@ export default function Stylists() {
   const handleNextMonth = () => {
     setReportMonth(addMonths(reportMonth, 1));
   }
-
-  const getHolidayStatus = (stylist: Stylist): { isOnHoliday: boolean; holidayInfo?: StylistHoliday } => {
-    if (!stylist.holidays || stylist.holidays.length === 0) {
-      return { isOnHoliday: false };
-    }
-    
-    const today = new Date();
-    const holidayToday = stylist.holidays.find(holiday => {
-      const holidayDate = new Date(holiday.date);
-      return isSameDay(holidayDate, today);
-    });
-    
-    return { 
-      isOnHoliday: !!holidayToday,
-      holidayInfo: holidayToday
-    };
-  };
 
   // Add function to check if a stylist is on holiday on a specific date
   const getStylistHolidayForDate = (stylist: Stylist, date: Date): StylistHoliday | undefined => {
@@ -455,7 +463,6 @@ export default function Stylists() {
               }
             }}
           >
-            <Tab value="grid" icon={<Grid item />} label="Grid" />
             <Tab value="report" icon={<CalendarViewMonth />} label="Holiday Report" />
           </Tabs>
           <Button 
@@ -469,236 +476,9 @@ export default function Stylists() {
         </Box>
       </Box>
 
-      {/* GRID VIEW */}
-      {viewType === 'grid' && stylists?.length ? (
-        <Grid container spacing={3} sx={{ 
-          width: '100%', 
-          m: 0, 
-          boxSizing: 'border-box',
-          justifyContent: 'flex-start' 
-        }}>
-          {stylists.map((stylist) => {
-            // Check if stylist is on holiday today
-            const stylistHolidaysList = stylistHolidays[stylist.id] || [];
-            const today = format(new Date(), 'yyyy-MM-dd');
-            const holidayToday = stylistHolidaysList.find(
-              h => h.holiday_date === today
-            );
-            const isOnHolidayToday = !!holidayToday;
-            
-            return (
-              <Grid item xs={12} sm={6} md={4} lg={3} key={stylist.id} sx={{ 
-                p: 2, 
-                boxSizing: 'border-box',
-                '& > *': { width: '100%', height: '100%' }
-              }}>
-                <Card sx={{ 
-                  height: '100%', 
-                  display: 'flex', 
-                  flexDirection: 'column',
-                  transition: 'transform 0.2s, box-shadow 0.2s',
-                  position: 'relative',
-                  '&:hover': {
-                    transform: 'translateY(-4px)',
-                    boxShadow: 4,
-                  },
-                  ...(isOnHolidayToday && {
-                    borderColor: 'warning.main',
-                    borderWidth: 2,
-                    borderStyle: 'solid'
-                  })
-                }}>
-                  {isOnHolidayToday && (
-                    <Box sx={{
-                      position: 'absolute',
-                      top: 0,
-                      right: 0,
-                      backgroundColor: 'warning.main',
-                      color: 'warning.contrastText',
-                      px: 2,
-                      py: 0.5,
-                      borderBottomLeftRadius: 8,
-                      fontSize: '0.75rem',
-                      fontWeight: 'bold',
-                      zIndex: 1
-                    }}>
-                      ON HOLIDAY TODAY
-                    </Box>
-                  )}
-                  
-                  <Box sx={{ p: 2, display: 'flex', alignItems: 'center' }}>
-                    <Badge
-                      overlap="circular"
-                      anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-                      badgeContent={
-                        stylist.holidays && stylist.holidays.length > 0 ? (
-                          <Tooltip title={`${stylist.holidays.length} holiday(s) scheduled`}>
-                            <HolidayIcon color="primary" />
-                          </Tooltip>
-                        ) : null
-                      }
-                    >
-                      <Avatar 
-                        src={stylist.imageUrl || DEFAULT_AVATAR} 
-                        sx={{ width: 64, height: 64, mr: 2 }}
-                      />
-                    </Badge>
-                    <Box>
-                      <Typography variant="h6" component="div">
-                        {stylist.name}
-                      </Typography>
-                      <Box sx={{ display: 'flex', alignItems: 'center', mb: 0.5 }}>
-                        <Face fontSize="small" sx={{ mr: 0.5, opacity: 0.7 }} />
-                        <Typography variant="body2" color="text.secondary">
-                          {stylist.gender === 'male' ? 'Male' : stylist.gender === 'female' ? 'Female' : 'Other'}
-                        </Typography>
-                      </Box>
-                      <Typography 
-                        variant="body2" 
-                        color={isOnHolidayToday ? 'warning.main' : (stylist.available ? 'success.main' : 'error.main')}
-                        sx={{ fontWeight: 'medium' }}
-                      >
-                        {isOnHolidayToday 
-                          ? `On Holiday${holidayToday?.reason ? `: ${holidayToday.reason}` : ''}` 
-                          : (stylist.available ? 'Available' : 'Not Available')}
-                      </Typography>
-                      
-                      {/* Holiday button */}
-                      <Button
-                        size="small"
-                        startIcon={<HolidayIcon />}
-                        color="secondary"
-                        onClick={() => openHolidayDialog(stylist)}
-                        sx={{ mt: 1, borderRadius: '4px', py: 0.5 }}
-                        variant="outlined"
-                      >
-                        Add Holiday
-                      </Button>
-                    </Box>
-                  </Box>
-                  
-                  <Divider />
-                  
-                  <CardContent sx={{ flexGrow: 1, p: 2 }}>
-                    {stylist.bio && (
-                      <Typography variant="body2" color="text.secondary" paragraph>
-                        {stylist.bio}
-                      </Typography>
-                    )}
-                    
-                    <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                      Specialties:
-                    </Typography>
-                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                      {stylist.specialties.map((specialty) => (
-                        <Chip
-                          key={specialty}
-                          label={specialty}
-                          size="small"
-                          icon={getSpecialtyIcon(specialty)}
-                          sx={{ mb: 0.5, mr: 0.5 }}
-                        />
-                      ))}
-                    </Box>
-                    
-                    {/* Display upcoming holidays */}
-                    {stylistHolidaysList.length > 0 && (
-                      <>
-                        <Typography variant="subtitle2" sx={{ mb: 1, mt: 2 }}>
-                          Upcoming Holidays:
-                        </Typography>
-                        <Box sx={{ maxHeight: '150px', overflowY: 'auto' }}>
-                          {stylistHolidaysList
-                            .filter(holiday => {
-                              const holidayDate = new Date(holiday.holiday_date);
-                              return isToday(holidayDate) || isAfter(holidayDate, new Date());
-                            })
-                            .sort((a, b) => 
-                              new Date(a.holiday_date).getTime() - new Date(b.holiday_date).getTime()
-                            )
-                            .map((holiday) => (
-                              <Box 
-                                key={holiday.id} 
-                                sx={{ 
-                                  display: 'flex', 
-                                  alignItems: 'center', 
-                                  justifyContent: 'space-between',
-                                  mb: 1,
-                                  p: 1,
-                                  bgcolor: holiday.holiday_date === today ? 'warning.light' : 'background.paper',
-                                  borderRadius: '4px',
-                                  border: '1px solid',
-                                  borderColor: holiday.holiday_date === today ? 'warning.main' : 'divider'
-                                }}
-                              >
-                                <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                                  <EventBusyIcon 
-                                    fontSize="small" 
-                                    sx={{ 
-                                      mr: 1, 
-                                      color: holiday.holiday_date === today ? 'warning.main' : 'error.main' 
-                                    }} 
-                                  />
-                                  <Box>
-                                    <Typography variant="body2" fontWeight={holiday.holiday_date === today ? 'bold' : 'normal'}>
-                                      {format(new Date(holiday.holiday_date), 'MMM dd, yyyy')}
-                                      {holiday.holiday_date === today && ' (Today)'}
-                                    </Typography>
-                                    {holiday.reason && (
-                                      <Typography variant="caption" color="text.secondary">
-                                        {holiday.reason}
-                                      </Typography>
-                                    )}
-                                  </Box>
-                                </Box>
-                                <Box>
-                                  <IconButton 
-                                    size="small" 
-                                    color="primary"
-                                    onClick={() => openHolidayDialog(stylist, holiday)}
-                                    sx={{ mr: 0.5 }}
-                                  >
-                                    <EditIcon fontSize="small" />
-                                  </IconButton>
-                                  <IconButton 
-                                    size="small" 
-                                    color="error"
-                                    onClick={() => removeHoliday(stylist, holiday.id)}
-                                  >
-                                    <DeleteIcon fontSize="small" />
-                                  </IconButton>
-                                </Box>
-                              </Box>
-                            ))}
-                        </Box>
-                      </>
-                    )}
-                  </CardContent>
-                  
-                  <CardActions sx={{ justifyContent: 'flex-end', p: 1.5, pt: 0 }}>
-                    <IconButton onClick={() => handleEdit(stylist)} color="primary" size="small">
-                      <EditIcon fontSize="small" />
-                    </IconButton>
-                    <IconButton onClick={() => handleDelete(stylist.id)} color="error" size="small">
-                      <DeleteIcon fontSize="small" />
-                    </IconButton>
-                  </CardActions>
-                </Card>
-              </Grid>
-            );
-          })}
-        </Grid>
-      ) : viewType === 'grid' ? (
-        <Paper sx={{ p: 3, textAlign: 'center' }}>
-          <Typography variant="body1" color="text.secondary">
-            No stylists found. Add your first stylist to get started.
-          </Typography>
-        </Paper>
-      ) : null}
-
       {/* HOLIDAY REPORT VIEW - updated */}
-      {viewType === 'report' && stylists?.length ? (
-        <Paper sx={{ p: 3, width: '100%' }}>
+      {stylists?.length ? (
+        <Paper sx={{ p: 3, width: '100%', borderRadius: 2 }}>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
             <Typography variant="h5">
               Holiday Report: {format(reportMonth, 'MMMM yyyy')}
@@ -768,7 +548,7 @@ export default function Stylists() {
             </Grid>
           </Box>
 
-          <TableContainer>
+          <TableContainer component={Paper} sx={{ borderRadius: 2, overflow: 'hidden' }}>
             <Table>
               <TableHead>
                 <TableRow>
@@ -783,13 +563,17 @@ export default function Stylists() {
                   const stylist = stylists.find(s => s.id === report.stylistId);
                   if (!stylist) return null;
                   
-                  const isOnHolidayToday = checkStylistOnHolidayToday(stylist);
+                  // Synchronously check if stylist is on holiday today
+                  const todayDate = format(new Date(), 'yyyy-MM-dd');
+                  const todayHoliday = getStylistHolidayForDate(stylist, new Date());
+                  const isOnHolidayToday = !!todayHoliday;
                   
                   return (
                     <TableRow 
                       key={report.stylistId}
                       sx={{ 
-                        bgcolor: isOnHolidayToday ? 'warning.lighter' : 'inherit'
+                        bgcolor: isOnHolidayToday ? 'warning.lighter' : 'inherit',
+                        '&:hover': { backgroundColor: 'action.hover' }
                       }}
                     >
                       <TableCell>
@@ -846,6 +630,8 @@ export default function Stylists() {
                                   label={format(holidayDate, 'MMM dd (EEE)')}
                                   size="small"
                                   color={isToday ? 'warning' : isPast ? 'default' : 'primary'}
+                                  onDelete={() => stylist && removeHoliday(stylist, holiday.id)}
+                                  deleteIcon={<DeleteIcon fontSize="small" />}
                                   sx={{ 
                                     m: 0.5,
                                     textDecoration: isPast ? 'line-through' : 'none',
@@ -858,30 +644,30 @@ export default function Stylists() {
                         </Box>
                       </TableCell>
                       <TableCell>
-                        <Box sx={{ display: 'flex', gap: 1 }}>
-                          <Button
-                            size="small"
-                            startIcon={<HolidayIcon />}
-                            onClick={() => openHolidayDialog(stylist)}
-                            color="primary"
-                            variant="outlined"
-                          >
-                            Add Holiday
-                          </Button>
-                          {isOnHolidayToday && (
-                            <Button
+                        <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+                          <Tooltip title="Add Holiday">
+                            <IconButton
                               size="small"
-                              color="warning"
-                              variant="outlined"
-                              onClick={() => {
-                                const todayHoliday = getStylistHolidayForDate(stylist, new Date());
-                                if (todayHoliday) {
-                                  openHolidayDialog(stylist, todayHoliday);
-                                }
-                              }}
+                              color="primary"
+                              onClick={() => openHolidayDialog(stylist)}
                             >
-                              Edit Today's Holiday
-                            </Button>
+                              <HolidayIcon />
+                            </IconButton>
+                          </Tooltip>
+                          {report.totalHolidays > 0 && (
+                            <Tooltip title="Edit Holidays">
+                              <IconButton
+                                size="small"
+                                color="warning"
+                                onClick={() => {
+                                  // edit the first holiday in the list
+                                  const firstHoliday = report.holidays[0];
+                                  openHolidayDialog(stylist, firstHoliday);
+                                }}
+                              >
+                                <EditIcon />
+                              </IconButton>
+                            </Tooltip>
                           )}
                         </Box>
                       </TableCell>
@@ -892,13 +678,13 @@ export default function Stylists() {
             </Table>
           </TableContainer>
         </Paper>
-      ) : viewType === 'report' ? (
+      ) : (
         <Paper sx={{ p: 3, textAlign: 'center' }}>
           <Typography variant="body1" color="text.secondary">
             No stylists found. Add your first stylist to get started.
           </Typography>
         </Paper>
-      ) : null}
+      )}
 
       {/* Add/Edit Stylist Dialog */}
       <Dialog open={open} onClose={handleClose} maxWidth="md" fullWidth>
@@ -1053,7 +839,7 @@ export default function Stylists() {
                                           available: formData.available,
                                           breaks: formData.breaks
                                         };
-                                        openHolidayDialog(tempStylist, holiday);
+                                        openHolidayDialog(tempStylist, holiday as any);
                                       }
                                     }}
                                     sx={{ mr: 1 }}
@@ -1106,18 +892,30 @@ export default function Stylists() {
             </Typography>
             
             <LocalizationProvider dateAdapter={AdapterDateFns}>
-              <DatePicker
-                label="Holiday Date"
-                value={holidayDate}
-                onChange={(newDate) => setHolidayDate(newDate)}
-                slotProps={{
-                  textField: {
-                    fullWidth: true,
-                    margin: "normal",
-                    variant: "outlined"
-                  }
-                }}
-              />
+              {!editingHoliday ? (
+                <>
+                  <DatePicker
+                    label="Start Date"
+                    value={holidayDate}
+                    onChange={(newDate) => setHolidayDate(newDate)}
+                    slotProps={{ textField: { fullWidth: true, margin: 'normal', variant: 'outlined' } }}
+                  />
+                  <DatePicker
+                    label="End Date"
+                    value={holidayEndDate}
+                    minDate={holidayDate}
+                    onChange={(newDate) => setHolidayEndDate(newDate)}
+                    slotProps={{ textField: { fullWidth: true, margin: 'normal', variant: 'outlined' } }}
+                  />
+                </>
+              ) : (
+                <DatePicker
+                  label="Holiday Date"
+                  value={holidayDate}
+                  onChange={(newDate) => setHolidayDate(newDate)}
+                  slotProps={{ textField: { fullWidth: true, margin: 'normal', variant: 'outlined' } }}
+                />
+              )}
             </LocalizationProvider>
 
             <TextField
@@ -1128,10 +926,46 @@ export default function Stylists() {
               margin="normal"
               placeholder="Vacation, Personal, etc."
             />
+
+            {/* Existing Holidays List */}
+            {selectedStylistForHoliday && stylistHolidays[selectedStylistForHoliday.id]?.length > 0 && (
+              <Box sx={{ mt: 3 }}>
+                <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                  Existing Holidays
+                </Typography>
+                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                  {stylistHolidays[selectedStylistForHoliday.id].map((holiday) => {
+                    const hDate = new Date(holiday.holiday_date);
+                    const isTodayChip = isSameDay(hDate, new Date());
+                    const isPastChip = isBefore(hDate, new Date()) && !isTodayChip;
+                    return (
+                      <Tooltip key={holiday.id} title={holiday.reason || 'No reason provided'}>
+                        <Chip
+                          clickable
+                          onClick={() => openHolidayDialog(selectedStylistForHoliday, holiday)}
+                          icon={<EventBusyIcon />}
+                          label={format(hDate, 'MMM dd (EEE)')}
+                          size="small"
+                          color={isTodayChip ? 'warning' : isPastChip ? 'default' : 'primary'}
+                          onDelete={() => removeHoliday(selectedStylistForHoliday, holiday.id)}
+                          deleteIcon={<DeleteIcon fontSize="small" />}
+                          sx={{ cursor: 'pointer', m: 0.5, textDecoration: isPastChip ? 'line-through' : 'none', opacity: isPastChip ? 0.7 : 1 }}
+                        />
+                      </Tooltip>
+                    );
+                  })}
+                </Box>
+              </Box>
+            )}
           </Box>
         </DialogContent>
         <DialogActions>
           <Button onClick={closeHolidayDialog}>Cancel</Button>
+          {editingHoliday && (
+            <Button onClick={handleDialogDelete} variant="outlined" color="error">
+              Delete Holiday
+            </Button>
+          )}
           <Button 
             onClick={addOrUpdateHoliday} 
             variant="contained" 
