@@ -1776,6 +1776,31 @@ export default function POS() {
 					})),
 					requisition_voucher_no: requisitionVoucherNo || null
 				};
+				
+				// Add stock snapshot to track inventory
+				const stockSnapshot: Record<string, number> = {};
+				let firstProductStock = 0;
+				
+				// Get the initial stock quantities before the updates (from previous queries)
+				for (const result of updateResults) {
+					if (result.success && result.initialStock !== undefined) {
+						const product = salonProducts.find(p => p.item_name === result.product);
+						if (product) {
+							stockSnapshot[product.item_id] = result.initialStock;
+							
+							// Use the first product's stock for the current_stock integer field
+							if (firstProductStock === 0) {
+								firstProductStock = result.initialStock;
+							}
+						}
+					}
+				}
+				
+				// Add stock snapshot and current_stock to the order data
+				if (Object.keys(stockSnapshot).length > 0) {
+					orderData.stock_snapshot = JSON.stringify(stockSnapshot);
+					orderData.current_stock = String(firstProductStock);
+				}
 
 				console.log('Creating order record with data:', orderData);
 
@@ -2967,10 +2992,31 @@ export default function POS() {
 								<Box sx={{ flex: 1, minWidth: '240px' }}>
 									<Autocomplete
 										options={filteredProducts}
-										getOptionLabel={(option) => option.name}
+										getOptionLabel={(option) => {
+											const stockLabel = option.stock_quantity !== undefined ? 
+												` (${option.stock_quantity} in stock)` : '';
+											return `${option.name}${stockLabel}`;
+										}}
+										renderOption={(props, option) => (
+											<li {...props}>
+												<Box>
+													<Typography variant="body2">{option.name}</Typography>
+													<Typography variant="caption" color="text.secondary">
+														₹{option.price} • {option.stock_quantity !== undefined ? 
+															`${option.stock_quantity} in stock` : 'Stock not available'}
+													</Typography>
+												</Box>
+											</li>
+										)}
 										value={productDropdownValue}
 										onChange={(_, newProduct) => {
-											if (newProduct) handleAddToOrder(newProduct);
+											if (newProduct) {
+												if (newProduct.stock_quantity !== undefined && newProduct.stock_quantity <= 0) {
+													toast.error(`${newProduct.name} is out of stock`);
+												} else {
+													handleAddToOrder(newProduct);
+												}
+											}
 											setProductDropdownValue(null);
 										}}
 										renderInput={(params) => (

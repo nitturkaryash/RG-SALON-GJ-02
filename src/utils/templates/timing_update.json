@@ -1,0 +1,29 @@
+{
+  "name": "rg_salon_timing_update",
+  "language": "en",
+  "category": "UTILITY",
+  "components": [
+    {
+      "type": "HEADER",
+      "format": "TEXT",
+      "text": "RG Salon Timing Update"
+    },
+    {
+      "type": "BODY",
+      "text": "Hello {{1}},\n\nThis is to inform you about our updated salon timings:\n\n{{2}}\n\nEffective from: {{3}}\n\nWe've updated our schedule to serve you better. 💇‍♂️\n\nNote: {{4}}"
+    },
+    {
+      "type": "FOOTER",
+      "text": "For better service experience"
+    },
+    {
+      "type": "BUTTONS",
+      "buttons": [
+        {
+          "type": "QUICK_REPLY",
+          "text": "Book Now"
+        }
+      ]
+    }
+  ]
+} 
