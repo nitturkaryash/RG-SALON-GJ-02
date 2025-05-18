@@ -1,0 +1,33 @@
+{
+  "name": "appointment_confirm",
+  "language": "en",
+  "category": "UTILITY",
+  "components": [
+    {
+      "type": "HEADER",
+      "format": "TEXT",
+      "text": "Appointment Confirmed at RG Salon"
+    },
+    {
+      "type": "BODY",
+      "text": "Hello {{1}},\n\nYour appointment has been confirmed for {{2}}.\n\nServices:\n{{3}}\n\nStylist: {{4}}\nTotal Amount: {{5}}\n\nLocation: RG Salon, Gandhinagar\n\nSee you soon! 💇‍♂️✨"
+    },
+    {
+      "type": "FOOTER",
+      "text": "Need to reschedule? Reply to this message or call us."
+    },
+    {
+      "type": "BUTTONS",
+      "buttons": [
+        {
+          "type": "QUICK_REPLY",
+          "text": "Reschedule"
+        },
+        {
+          "type": "QUICK_REPLY",
+          "text": "Cancel"
+        }
+      ]
+    }
+  ]
+} 

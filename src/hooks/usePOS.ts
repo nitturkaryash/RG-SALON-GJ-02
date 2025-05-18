@@ -175,6 +175,8 @@ interface PosOrder {
   order_type?: string;
   category?: string;
   salon_use?: boolean;
+  stock_snapshot?: string;  // Store stock quantities before order as JSON string
+  current_stock?: string;   // Same data but with different field name as JSON string
 }
 
 export const GST_RATE = 0.18 // 18% GST for salon services in India
@@ -570,6 +572,52 @@ export async function createWalkInOrder(
       orderInsertData.invoice_number = invoiceNumber;
     }
 
+    // Handle product stock updates
+    if (products.length > 0) {
+      try {
+        // Create a stock snapshot before updating inventory
+        const stockSnapshot: Record<string, number> = {};
+        let currentStock = 0; // Store the first product's quantity as integer
+        
+        // Get current stock quantities before updating
+        for (const product of products) {
+          try {
+            const { data: productData } = await supabase
+              .from('products')
+              .select('stock_quantity')
+              .eq('id', product.id)
+      .single();
+      
+            if (productData && productData.stock_quantity !== undefined) {
+              stockSnapshot[product.id] = productData.stock_quantity;
+              
+              // Just store the first product's stock for current_stock
+              if (currentStock === 0) {
+                currentStock = productData.stock_quantity;
+              }
+            }
+          } catch (err) {
+            console.warn(`Failed to get stock for product ${product.id}:`, err);
+          }
+        }
+        
+        // Add stock snapshot to order insert data - JSON string
+        orderInsertData.stock_snapshot = JSON.stringify(stockSnapshot);
+        // Add current_stock as direct integer value
+        orderInsertData.current_stock = String(currentStock);
+        
+        const stockUpdates = products.map(product => ({
+          productId: product.id,
+          quantity: product.quantity
+        }));
+        
+        await updateProductStockQuantities(stockUpdates);
+      } catch (stockError) {
+        console.warn('Warning: Failed to update some product stock quantities:', stockError);
+        // Continue anyway since the order was created
+      }
+    }
+
     // Submit to Supabase
     const { data: orderResult, error } = await supabase
       .from('pos_orders')
@@ -584,21 +632,6 @@ export async function createWalkInOrder(
         message: 'Failed to create order: ' + error.message,
         error: new Error(error.message)
       };
-    }
-    
-    // Handle product stock updates
-    if (products.length > 0) {
-      try {
-        const stockUpdates = products.map(product => ({
-          productId: product.id,
-          quantity: product.quantity
-        }));
-        
-        await updateProductStockQuantities(stockUpdates);
-      } catch (stockError) {
-        console.warn('Warning: Failed to update some product stock quantities:', stockError);
-        // Continue anyway since the order was created
-      }
     }
     
     // Update client financial records if it's not a salon consumption
@@ -1055,15 +1088,43 @@ export function usePOS() {
       console.log('🔍 usePOS - Prepared order for submission:', order);
       
       try {
+        // Insert the order record
+      try {
         // Handle product stock updates if services contain product items
         if (data.services && data.services.length > 0) {
           const productItems = data.services.filter(item => 
             item.type === 'product' || 
             (item.type === undefined && item.service_id && !item.service_id.startsWith('serv'))
           );
+            
+            // Create a stock snapshot before updating inventory
+            const stockSnapshot: Record<string, number> = {};
+            let currentStock = 0; // Store the first product's quantity as integer
           
           if (productItems.length > 0) {
             console.log('🔍 usePOS - Updating product stock for items:', productItems);
+              
+              // Get current stock quantities before updating
+              for (const item of productItems) {
+                try {
+                  const { data: productData } = await supabase
+                    .from('products')
+                    .select('stock_quantity')
+                    .eq('id', item.service_id)
+                    .single();
+                  
+                  if (productData && productData.stock_quantity !== undefined) {
+                    stockSnapshot[item.service_id] = productData.stock_quantity;
+                    
+                    // Just store the first product's stock for current_stock
+                    if (currentStock === 0) {
+                      currentStock = productData.stock_quantity;
+                    }
+                  }
+                } catch (err) {
+                  console.warn(`Failed to get stock for product ${item.service_id}:`, err);
+                }
+              }
             
             const stockUpdates = productItems.map(item => ({
               productId: item.service_id,
@@ -1077,9 +1138,17 @@ export function usePOS() {
               console.warn('⚠️ usePOS - Some product stock updates failed');
             }
           }
-        }
         
-        // Insert the order record
+            // Add stock snapshot as JSON
+            if (Object.keys(stockSnapshot).length > 0) {
+              order.stock_snapshot = JSON.stringify(stockSnapshot);
+              // Use just the quantity as integer for current_stock
+              order.current_stock = String(currentStock); // Cast to string but will be stored as integer
+            }
+          }
+          
+          console.log('🔍 usePOS - Attempting to insert order without stock data');
+          
         const { data: insertedOrder, error } = await supabase
           .from('pos_orders')
           .insert(order)
@@ -1206,6 +1275,14 @@ export function usePOS() {
           success: false,
           message: 'An unexpected error occurred',
           error: orderError instanceof Error ? orderError : new Error(String(orderError))
+          };
+        }
+      } catch (error) {
+        console.error('❌ usePOS - Unexpected error creating order:', error);
+        return {
+          success: false,
+          message: 'An unexpected error occurred',
+          error: error instanceof Error ? error : new Error(String(error))
         };
       }
     },

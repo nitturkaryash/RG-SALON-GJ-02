@@ -1,0 +1,20 @@
+{
+  "name": "salon_reschedule",
+  "language": "en",
+  "category": "UTILITY",
+  "components": [
+    {
+      "type": "HEADER",
+      "format": "TEXT",
+      "text": "Appointment Update"
+    },
+    {
+      "type": "BODY",
+      "text": "Hello {{1}},\n\nYour appointment has been rescheduled:\n\nOld timing:\nDate: {{2}}\nTime: {{3}}\n\nNew timing:\nDate: {{4}}\nTime: {{5}}\n\nService: {{6}}\n\nPlease confirm if this works for you."
+    },
+    {
+      "type": "FOOTER",
+      "text": "Reply YES to confirm the new timing"
+    }
+  ]
+} 
