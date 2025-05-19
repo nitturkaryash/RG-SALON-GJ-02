@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   Box, 
   Paper, 
@@ -77,14 +77,15 @@ const STYLIST_HEADER_HEIGHT = 56;
 
 // Styled components
 const DayViewContainer = styled(Paper)(({ theme }) => ({
-  height: '100%',
+  height: '100vh', // Changed from 100% to 100vh to ensure full viewport height
+  minHeight: 0,
   width: '100%',
   display: 'flex',
   flexDirection: 'column',
-  overflow: 'hidden',
+  overflow: 'visible', // Allow vertical scrollbars
   backgroundColor: theme.palette.background.default,
-  border: 'none', // Remove border as the parent container will handle this
-  borderRadius: 0, // Remove border radius for full bleed
+  border: 'none',
+  borderRadius: 0,
 }));
 
 const DayViewHeader = styled(Box)(({ theme }) => ({
@@ -102,13 +103,11 @@ const DayViewHeader = styled(Box)(({ theme }) => ({
 const ScheduleGrid = styled(Box)(({ theme }) => ({
   display: 'flex',
   flex: 1,
-  overflow: 'auto',
+  minHeight: `${((BUSINESS_HOURS.end - BUSINESS_HOURS.start + 1) * 4) * TIME_SLOT_HEIGHT + STYLIST_HEADER_HEIGHT}px`, // Ensure all slots are visible
+  overflowY: 'visible',   // allow page to scroll vertically so headers stick to viewport
+  overflowX: 'visible',   // defer horizontal scroll to outer wrapper for reliable sticky behavior
   position: 'relative',
-  width: '100%', // Ensure it takes full width
-  '& > *': {  // This affects all direct children
-    height: 'fit-content',  // Allow elements to grow beyond viewport
-    minHeight: '100%'       // But at minimum be full height
-  }
+  width: '100%',       // full width
 }));
 
 const TimeColumn = styled(Box)(({ theme }) => ({
@@ -118,23 +117,55 @@ const TimeColumn = styled(Box)(({ theme }) => ({
   position: 'sticky',
   left: 0,
   backgroundColor: theme.palette.background.paper,
-  zIndex: 2,
-  paddingTop: 0, // Remove padding to ensure alignment
-  marginTop: 0 // Remove margin to ensure alignment
+  zIndex: 12, // Higher than StylistHeader to ensure it stays above
+  paddingTop: 0,
+  marginTop: 0
+}));
+
+// Update HeaderWrapper for better transition
+const HeaderWrapper = styled(Box)(({ theme }) => ({
+  position: 'fixed',
+  top: 0,
+  left: 0,
+  right: 0,
+  zIndex: 1000, // Very high z-index to ensure it's on top
+  pointerEvents: 'none', // Let clicks pass through the wrapper
+  boxShadow: '0 4px 8px rgba(0,0,0,0.15)',
+  transition: 'all 0.2s ease-in-out',
+}));
+
+// Update FixedStylistHeader with better contrast
+const FixedStylistHeader = styled(Box)(({ theme }) => ({
+  padding: theme.spacing(1.5),
+  textAlign: 'center',
+  borderBottom: `1px solid ${theme.palette.divider}`,
+  borderRight: `1px solid ${theme.palette.divider}`,
+  backgroundColor: theme.palette.primary.main, // Use primary color for better visibility
+  height: STYLIST_HEADER_HEIGHT,
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  pointerEvents: 'auto', // Re-enable pointer events for the header itself
+  color: 'white',
+  fontWeight: 'bold',
 }));
 
 const StylistColumn = styled(Box)(({ theme }) => ({
   flex: 1,
-  minWidth: 200, // Increased from 180px to 200px for better spacing
+  minWidth: 200,
   [theme.breakpoints.down('sm')]: {
     minWidth: 120,
   },
   position: 'relative',
   backgroundColor: theme.palette.salon.offWhite,
   height: '100%',
-  paddingBottom: '50vh', // Add extra space at the bottom for scrolling
+  overflow: 'visible',
+  display: 'flex',
+  flexDirection: 'column',
+  // Removed CSS containment to ensure sticky headers can function
 }));
 
+// Update StylistHeader - replace 'left: 0' with overflow control
 const StylistHeader = styled(Box)(({ theme }) => ({
   padding: theme.spacing(1.5),
   textAlign: 'center',
@@ -143,11 +174,12 @@ const StylistHeader = styled(Box)(({ theme }) => ({
   backgroundColor: theme.palette.salon.oliveLight,
   position: 'sticky',
   top: 0,
-  zIndex: 3,
-  height: 56,
+  zIndex: 100,
+  height: STYLIST_HEADER_HEIGHT,
   display: 'flex',
   alignItems: 'center',
-  justifyContent: 'center'
+  justifyContent: 'center',
+  boxShadow: '0 1px 2px rgba(0,0,0,0.1)', // subtle shadow for separation
 }));
 
 const TimeSlot = styled(Box)(({ theme }) => ({
@@ -403,13 +435,47 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
   onAppointmentClick,
 }) => {
   const theme = useTheme();
-  const { clients: allClients, isLoading: isLoadingClients } = useClients(); // Add useClients hook
+  const { clients: allClients = [], isLoading: isLoadingClients } = useClients(); // Add default empty array
 
   const [stylists, setStylists] = useState<Stylist[]>(initialStylists);
   const [selectedStylist, setSelectedStylist] = useState<Stylist | null>(null);
   const [currentDate, setCurrentDate] = useState<Date>(selectedDate || new Date());
   const [selectedAppointment, setSelectedAppointment] = useState<any | null>(null);
   const [editDialogOpen, setEditDialogOpen] = useState<boolean>(false);
+  // Add state for scroll position tracking
+  const [scrollTop, setScrollTop] = useState(0);
+  const [scrollLeft, setScrollLeft] = useState(0);
+  const [gridRect, setGridRect] = useState<DOMRect | null>(null);
+  const gridRef = useRef<HTMLDivElement>(null);
+  
+  // Track both vertical and horizontal scroll position
+  const handleScroll = useCallback(() => {
+    const gridElement = gridRef.current;
+    if (gridElement) {
+      // Update scroll positions
+      setScrollTop(gridElement.scrollTop);
+      setScrollLeft(gridElement.scrollLeft);
+      // Recalculate container bounds for accurate positioning
+      setGridRect(gridElement.getBoundingClientRect());
+    }
+  }, []);
+  
+  // Set up scroll listener
+  useEffect(() => {
+    const gridElement = gridRef.current;
+    if (!gridElement) return;
+    // Initialize positions
+    handleScroll();
+    // Listen for scroll
+    gridElement.addEventListener('scroll', handleScroll);
+    // Listen for resize to adjust bounds
+    window.addEventListener('resize', handleScroll);
+    return () => {
+      gridElement.removeEventListener('scroll', handleScroll);
+      window.removeEventListener('resize', handleScroll);
+    };
+  }, [handleScroll]);
+
   // Add break dialog state
   const [breakDialogOpen, setBreakDialogOpen] = useState<boolean>(false);
   const [breakFormData, setBreakFormData] = useState({
@@ -1614,7 +1680,7 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
         {/* Time header */}
         <Box 
           sx={{ 
-            height: '56px',
+            height: STYLIST_HEADER_HEIGHT,
             backgroundColor: '#f5f5f5',
             borderRight: '1px solid rgba(0, 0, 0, 0.12)',
             borderBottom: '1px solid rgba(0, 0, 0, 0.12)',
@@ -1625,7 +1691,7 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
             color: 'rgba(0, 0, 0, 0.7)',
             position: 'sticky',
             top: 0,
-            zIndex: 10
+            zIndex: 12
           }}
         >
           Time
@@ -1785,6 +1851,18 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
     setSnackbarOpen(true);
   };
 
+  // Add a wrapper component to handle horizontal scrolling separately
+  const GridWrapper = styled(Box)(({ theme }) => ({
+    display: 'flex', // Make wrapper a flex container
+    flexDirection: 'column',
+    flex: 1,         // Take remaining vertical space
+    overflowX: 'auto',
+    overflowY: 'visible', // Allow vertical scroll for ScheduleGrid
+    width: '100%',
+    position: 'relative', // Create stacking context
+    // Removed CSS containment so sticky headers can anchor correctly
+  }));
+
   return (
     <DayViewContainer>
       <DayViewHeader>
@@ -1874,159 +1952,164 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
         </Box>
       </DayViewHeader>
       
-      <ScheduleGrid className="schedule-grid">
-        {/* Use the renderTimeColumn function to create the time column */}
-        {renderTimeColumn()}
-        
-        {stylists
-          .filter(stylist => stylist.available !== false)
-          .map((stylist, index, filteredStylists) => (
-          <StylistColumn 
-            key={stylist.id}
-            className="stylist-column"
-          >
-            <StylistHeader
-              className="stylist-header"
-              onClick={() => handleBreakDialogOpen(stylist.id)}
-              sx={{
-                cursor: 'pointer',
-                '&:hover': {
-                  backgroundColor: theme.palette.salon.oliveLight,
-                  opacity: 0.9
-                },
-                ...(index === filteredStylists.length - 1 && {
-                  borderRight: 'none'
-                })
-              }}
+      <GridWrapper>
+        <ScheduleGrid 
+          className="schedule-grid" 
+          ref={gridRef}
+        >
+          {/* Use the renderTimeColumn function to create the time column */}
+          {renderTimeColumn()}
+          
+          {stylists
+            .filter(stylist => stylist.available !== false)
+            .map((stylist, index, filteredStylists) => (
+            <StylistColumn 
+              key={stylist.id}
+              className="stylist-column"
             >
-              <Typography variant="subtitle2" sx={{ color: 'white' }}>{stylist.name}</Typography>
-            </StylistHeader>
-            
-            {timeSlots.map(slot => (
-              <AppointmentSlot
-                key={`slot-${stylist.id}-${slot.hour}-${slot.minute}`}
-                onClick={() => handleSlotClick(stylist.id, slot.hour, slot.minute)}
-                onDragOver={(e) => handleDragOver(e, stylist.id, slot.hour, slot.minute)}
-                onDrop={(e) => handleDrop(e, stylist.id, slot.hour, slot.minute)}
+              <StylistHeader
+                className="stylist-header"
+                onClick={() => handleBreakDialogOpen(stylist.id)}
                 sx={{
+                  cursor: 'pointer',
+                  '&:hover': {
+                    backgroundColor: theme.palette.salon.oliveLight,
+                    opacity: 0.9
+                  },
                   ...(index === filteredStylists.length - 1 && {
                     borderRight: 'none'
-                  }),
-                  ...(isBreakTime(stylist.id, slot.hour, slot.minute) && { 
-                    backgroundColor: 'rgba(220, 53, 69, 0.3)', // Light red background
-                    backgroundImage: 'repeating-linear-gradient(135deg, transparent, transparent 6px, rgba(220, 53, 69, 0.5) 6px, rgba(220, 53, 69, 0.5) 12px)', // Red stripes
-                    border: '1px dashed rgba(220, 0, 0, 0.8)', // Red dashed border
-                    cursor: 'not-allowed',
-                    '&:hover': {
-                      backgroundColor: 'rgba(220, 53, 69, 0.4)' // Slightly darker on hover
-                    }
                   })
                 }}
-              />
-            ))}
-            
-            {renderAppointmentsForStylist(stylist.id)}
-            
-            {getStylistBreaks(stylist.id).map((breakItem: StylistBreak) => {
-              const breakDate = new Date(breakItem.startTime);
-              // Only show breaks for the current day
-              if (!isSameDay(breakDate, currentDate)) return null;
+              >
+                <Typography variant="subtitle2" sx={{ color: 'white' }}>{stylist.name}</Typography>
+              </StylistHeader>
               
-              // Normalize the break times to ensure consistent handling
-              const breakStartTime = normalizeDateTime(breakItem.startTime);
-              const breakEndTime = normalizeDateTime(breakItem.endTime);
-              
-              // Format times properly
-              const startTimeFormatted = formatTime(breakStartTime);
-              const endTimeFormatted = formatTime(breakEndTime);
-              
-              const top = getAppointmentPosition(breakItem.startTime);
-              const height = getAppointmentDuration(breakItem.startTime, breakItem.endTime);
-
-              return (
-                <Box
-                  key={breakItem.id}
-                  className="break-block"
+              {timeSlots.map(slot => (
+                <AppointmentSlot
+                  key={`slot-${stylist.id}-${slot.hour}-${slot.minute}`}
+                  onClick={() => handleSlotClick(stylist.id, slot.hour, slot.minute)}
+                  onDragOver={(e) => handleDragOver(e, stylist.id, slot.hour, slot.minute)}
+                  onDrop={(e) => handleDrop(e, stylist.id, slot.hour, slot.minute)}
                   sx={{
-                    position: 'absolute',
-                    left: theme.spacing(0.75),
-                    right: theme.spacing(0.75),
-                    top: `${top}px`,
-                    height: `${height}px`,
-                    backgroundColor: 'rgba(220, 0, 0, 0.8)',
-                    color: 'white',
-                    borderRadius: '8px',
-                    padding: theme.spacing(1, 1.5),
-                    boxShadow: '0 2px 4px rgba(0,0,0,0.15)',
-                    zIndex: 5,
-                    display: 'flex',
-                    flexDirection: 'column',
-                    justifyContent: 'space-between',
-                    border: '1px solid rgba(255, 255, 255, 0.25)',
-                    '&:hover': {
-                      boxShadow: '0 3px 6px rgba(0,0,0,0.2)',
-                      transform: 'translateY(-2px)'
-                    }
+                    ...(index === filteredStylists.length - 1 && {
+                      borderRight: 'none'
+                    }),
+                    ...(isBreakTime(stylist.id, slot.hour, slot.minute) && { 
+                      backgroundColor: 'rgba(220, 53, 69, 0.3)', // Light red background
+                      backgroundImage: 'repeating-linear-gradient(135deg, transparent, transparent 6px, rgba(220, 53, 69, 0.5) 6px, rgba(220, 53, 69, 0.5) 12px)', // Red stripes
+                      border: '1px dashed rgba(220, 0, 0, 0.8)', // Red dashed border
+                      cursor: 'not-allowed',
+                      '&:hover': {
+                        backgroundColor: 'rgba(220, 53, 69, 0.4)' // Slightly darker on hover
+                      }
+                    })
                   }}
-                  onClick={() => handleEditBreakDialogOpen(breakItem)}
-                >
-                  <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: 'white' }}>
-                    Break Time
-                  </Typography>
-                  
-                  {breakItem.reason && (
-                    <Typography variant="body2" sx={{ color: 'white', mb: 1 }}>
-                      {breakItem.reason}
-                    </Typography>
-                  )}
-                  
-                  <Typography 
-                    variant="caption" 
-                    className="break-time-text"
-                  >
-                    {`${startTimeFormatted} - ${endTimeFormatted}`}
-                  </Typography>
-                  
-                  {/* Add edit and delete buttons */}
-                  <Box 
-                    sx={{ 
-                      position: 'absolute', 
-                      top: 4, 
-                      right: 4, 
-                      display: 'flex', 
-                      gap: 0.5,
-                      opacity: 0.7,
-                      '&:hover': { opacity: 1 }
+                />
+              ))}
+              
+              {renderAppointmentsForStylist(stylist.id)}
+              
+              {getStylistBreaks(stylist.id).map((breakItem: StylistBreak) => {
+                const breakDate = new Date(breakItem.startTime);
+                // Only show breaks for the current day
+                if (!isSameDay(breakDate, currentDate)) return null;
+                
+                // Normalize the break times to ensure consistent handling
+                const breakStartTime = normalizeDateTime(breakItem.startTime);
+                const breakEndTime = normalizeDateTime(breakItem.endTime);
+                
+                // Format times properly
+                const startTimeFormatted = formatTime(breakStartTime);
+                const endTimeFormatted = formatTime(breakEndTime);
+                
+                const top = getAppointmentPosition(breakItem.startTime);
+                const height = getAppointmentDuration(breakItem.startTime, breakItem.endTime);
+
+                return (
+                  <Box
+                    key={breakItem.id}
+                    className="break-block"
+                    sx={{
+                      position: 'absolute',
+                      left: theme.spacing(0.75),
+                      right: theme.spacing(0.75),
+                      top: `${top}px`,
+                      height: `${height}px`,
+                      backgroundColor: 'rgba(220, 0, 0, 0.8)',
+                      color: 'white',
+                      borderRadius: '8px',
+                      padding: theme.spacing(1, 1.5),
+                      boxShadow: '0 2px 4px rgba(0,0,0,0.15)',
+                      zIndex: 5,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'space-between',
+                      border: '1px solid rgba(255, 255, 255, 0.25)',
+                      '&:hover': {
+                        boxShadow: '0 3px 6px rgba(0,0,0,0.2)',
+                        transform: 'translateY(-2px)'
+                      }
                     }}
-                    onClick={e => e.stopPropagation()} // Prevent opening edit dialog when clicking buttons
+                    onClick={() => handleEditBreakDialogOpen(breakItem)}
                   >
-                    <IconButton 
-                      size="small" 
-                      sx={{ padding: 0.3, backgroundColor: 'rgba(255,255,255,0.8)' }}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleEditBreakDialogOpen(breakItem);
-                      }}
+                    <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: 'white' }}>
+                      Break Time
+                    </Typography>
+                    
+                    {breakItem.reason && (
+                      <Typography variant="body2" sx={{ color: 'white', mb: 1 }}>
+                        {breakItem.reason}
+                      </Typography>
+                    )}
+                    
+                    <Typography 
+                      variant="caption" 
+                      className="break-time-text"
                     >
-                      <EditIcon fontSize="small" />
-                    </IconButton>
-                    <IconButton 
-                      size="small" 
-                      sx={{ padding: 0.3, backgroundColor: 'rgba(255,255,255,0.8)' }}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDeleteBreak(breakItem.id);
+                      {`${startTimeFormatted} - ${endTimeFormatted}`}
+                    </Typography>
+                    
+                    {/* Add edit and delete buttons */}
+                    <Box 
+                      sx={{ 
+                        position: 'absolute', 
+                        top: 4, 
+                        right: 4, 
+                        display: 'flex', 
+                        gap: 0.5,
+                        opacity: 0.7,
+                        '&:hover': { opacity: 1 }
                       }}
+                      onClick={e => e.stopPropagation()} // Prevent opening edit dialog when clicking buttons
                     >
-                      <DeleteIcon fontSize="small" />
-                    </IconButton>
+                      <IconButton 
+                        size="small" 
+                        sx={{ padding: 0.3, backgroundColor: 'rgba(255,255,255,0.8)' }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleEditBreakDialogOpen(breakItem);
+                        }}
+                      >
+                        <EditIcon fontSize="small" />
+                      </IconButton>
+                      <IconButton 
+                        size="small" 
+                        sx={{ padding: 0.3, backgroundColor: 'rgba(255,255,255,0.8)' }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteBreak(breakItem.id);
+                        }}
+                      >
+                        <DeleteIcon fontSize="small" />
+                      </IconButton>
+                    </Box>
                   </Box>
-                </Box>
-              );
-            })}
-          </StylistColumn>
-        ))}
-      </ScheduleGrid>
+                );
+              })}
+            </StylistColumn>
+          ))}
+        </ScheduleGrid>
+      </GridWrapper>
       
       {/* Edit Appointment Drawer */}
       <Drawer anchor="right" variant="persistent" open={editDialogOpen} onClose={handleEditDialogClose}
