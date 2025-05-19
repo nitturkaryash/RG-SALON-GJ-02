@@ -107,7 +107,7 @@ const ScheduleGrid = styled(Box)(({ theme }) => ({
   overflowY: 'visible',   // allow page to scroll vertically so headers stick to viewport
   overflowX: 'visible',   // defer horizontal scroll to outer wrapper for reliable sticky behavior
   position: 'relative',
-  width: '100%',       // full width
+  width: 'max-content', // expand to fit all columns so TimeColumn sticks across full scroll
 }));
 
 const TimeColumn = styled(Box)(({ theme }) => ({
@@ -1856,7 +1856,7 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
     display: 'flex', // Make wrapper a flex container
     flexDirection: 'column',
     flex: 1,         // Take remaining vertical space
-    overflowX: 'auto',
+    overflowX: 'auto',  // enable horizontal scroll within calendar wrapper for TimeColumn stickiness
     overflowY: 'visible', // Allow vertical scroll for ScheduleGrid
     width: '100%',
     position: 'relative', // Create stacking context
