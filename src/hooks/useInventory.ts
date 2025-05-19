@@ -378,7 +378,7 @@ export const useInventory = () => {
         console.log('Fetching salon consumption data...');
         
         // Use the salon_consumption_products view for detailed consumption data
-        const tableNameToUse = TABLES.SALON_CONSUMPTION_PRODUCTS || 'salon_consumption_products';
+        const tableNameToUse = TABLES.SALON_CONSUMPTION || 'salon_consumption_products';
         console.log('Using table name:', tableNameToUse);
         
         // Check if we have the table first to avoid 404 errors
