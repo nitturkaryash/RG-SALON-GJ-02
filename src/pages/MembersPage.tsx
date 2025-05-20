@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { 
   Container, 
   Paper, 
@@ -17,11 +17,19 @@ import {
   Grid,
   TextField,
   InputAdornment,
-  Avatar
+  Avatar,
+  IconButton,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogContentText,
+  DialogActions,
+  Button
 } from '@mui/material';
 import { supabase } from '../utils/supabase/supabaseClient';
-import { Search, Person, CardMembership, Star, CalendarMonth, AttachMoney, AccountBalanceWallet } from '@mui/icons-material';
+import { Search, Person, CardMembership, Star, CalendarMonth, AttachMoney, AccountBalanceWallet, Delete } from '@mui/icons-material';
 import { format, differenceInMonths } from 'date-fns';
+import { toast } from 'react-toastify';
 
 interface Member {
   id: string;
@@ -34,10 +42,14 @@ interface Member {
   membershipDuration?: number; // in months
   orderData?: any; // Store the original order data for debugging
   currentBalance?: number;
+  totalMembershipAmount?: number;
 }
 
 const MembersPage = () => {
   const [searchTerm, setSearchTerm] = useState('');
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [memberToDelete, setMemberToDelete] = useState<Member | null>(null);
+  const queryClient = useQueryClient();
 
   // Fetch members using dedicated members table and enrich with client & tier details
   const { data: members, isLoading, error } = useQuery({
@@ -46,7 +58,7 @@ const MembersPage = () => {
       // 1) Fetch raw membership records
       const { data: membersData, error: membersError } = await supabase
         .from('members')
-        .select('id, client_id, client_name, tier_id, purchase_date, expires_at, current_balance')
+        .select('id, client_id, client_name, tier_id, purchase_date, expires_at, current_balance, total_membership_amount')
         .order('purchase_date', { ascending: false });
       if (membersError) {
         console.error('Error fetching members:', membersError);
@@ -99,9 +111,10 @@ const MembersPage = () => {
           email: client?.email,
           purchaseDate: m.purchase_date,
           membershipTier: tier?.name,
-          membershipPrice: membershipPrice,
+          membershipPrice: tier?.price,
           membershipDuration: tier?.duration_months,
-          currentBalance: balance
+          currentBalance: m.current_balance,
+          totalMembershipAmount: m.total_membership_amount
         };
       });
     }
@@ -137,6 +150,37 @@ const MembersPage = () => {
     if (tier.includes('platinum')) return '#E5E4E2'; // Platinum
     if (tier.includes('diamond')) return '#B9F2FF'; // Diamond
     return '#6B8E23'; // Default - Olive
+  };
+
+  // Handle delete confirmation
+  const handleDeleteConfirm = async () => {
+    if (!memberToDelete) return;
+
+    try {
+      const { error } = await supabase
+        .from('members')
+        .delete()
+        .eq('id', memberToDelete.id);
+
+      if (error) {
+        throw error;
+      }
+
+      toast.success('Membership deleted successfully');
+      queryClient.invalidateQueries(['members']);
+    } catch (error) {
+      console.error('Error deleting membership:', error);
+      toast.error('Failed to delete membership');
+    } finally {
+      setDeleteDialogOpen(false);
+      setMemberToDelete(null);
+    }
+  };
+
+  // Handle delete click
+  const handleDeleteClick = (member: Member) => {
+    setMemberToDelete(member);
+    setDeleteDialogOpen(true);
   };
 
   return (
@@ -197,6 +241,20 @@ const MembersPage = () => {
                     position: 'relative',
                     overflow: 'hidden'
                   }}>
+                    {/* Delete button */}
+                    <IconButton
+                      sx={{
+                        position: 'absolute',
+                        top: 8,
+                        right: membershipStatus.isActive ? 80 : 8, // Adjust position if "ACTIVE" badge exists
+                        zIndex: 2
+                      }}
+                      color="error"
+                      onClick={() => handleDeleteClick(member)}
+                    >
+                      <Delete />
+                    </IconButton>
+                    
                     {/* Status indicator */}
                     {membershipStatus.isActive && (
                       <Box sx={{
@@ -270,16 +328,16 @@ const MembersPage = () => {
                         </Typography>
                         
                         {membershipPrice > 0 && (
-                          <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5, display: 'flex', alignItems: 'center' }}>
-                            <AttachMoney fontSize="small" sx={{ mr: 1 }} />
-                            <span style={{ minWidth: '70px' }}>Price:</span> Rs. {membershipPrice.toLocaleString()}
-                          </Typography>
-                        )}
-                        {member.currentBalance !== undefined && member.currentBalance >= 0 && (
-                          <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5, display: 'flex', alignItems: 'center' }}>
-                            <AccountBalanceWallet fontSize="small" sx={{ mr: 1 }} />
-                            <span style={{ minWidth: '70px' }}>Balance:</span> Rs. {member.currentBalance.toLocaleString()}
-                          </Typography>
+                          <>
+                            <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5, display: 'flex', alignItems: 'center' }}>
+                              <AttachMoney fontSize="small" sx={{ mr: 1 }} />
+                              <span style={{ minWidth: '70px' }}>Total Amount:</span> Rs. {member.totalMembershipAmount?.toLocaleString() || membershipPrice.toLocaleString()}
+                            </Typography>
+                            <Typography variant="body2" color={member.currentBalance && member.currentBalance > 0 ? "success.main" : "error.main"} sx={{ mb: 0.5, display: 'flex', alignItems: 'center' }}>
+                              <AccountBalanceWallet fontSize="small" sx={{ mr: 1 }} />
+                              <span style={{ minWidth: '70px' }}>Balance:</span> Rs. {member.currentBalance?.toLocaleString() || '0'}
+                            </Typography>
+                          </>
                         )}
                         
                         <Box sx={{ 
@@ -330,6 +388,25 @@ const MembersPage = () => {
           </Box>
         )}
       </Paper>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog
+        open={deleteDialogOpen}
+        onClose={() => setDeleteDialogOpen(false)}
+      >
+        <DialogTitle>Delete Membership?</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            Are you sure you want to delete the membership for {memberToDelete?.name}? This action cannot be undone.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteDialogOpen(false)}>Cancel</Button>
+          <Button onClick={handleDeleteConfirm} color="error" variant="contained">
+            Delete
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Container>
   );
 };

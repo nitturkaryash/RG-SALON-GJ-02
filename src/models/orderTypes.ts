@@ -47,7 +47,7 @@ export interface OrderItem {
   quantity: number;
   price: number;
   total: number;
-  type: 'product' | 'service';
+  type: 'product' | 'service' | 'membership';
   hsn_code?: string;
   gst_percentage?: number;
   units?: string;
@@ -56,6 +56,7 @@ export interface OrderItem {
   purpose?: string;
   discount?: number; // Individual item discount amount
   discount_percentage?: number; // Individual item discount percentage
+  duration_months?: number; // Duration in months for membership items
 }
 
 export interface OrderSummary {

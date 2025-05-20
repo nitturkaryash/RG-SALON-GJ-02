@@ -1564,18 +1564,52 @@ export default function POS() {
 			// Initialize balance for new memberships
 			const membershipItems = orderItems.filter(i => i.category === 'membership');
 			for (const item of membershipItems) {
-				const { error } = await supabase
+				// Check if membership already exists for this client
+				const { data: existingMembership } = await supabase
 					.from('members')
-					.insert({
-						client_id:       clientIdToUse,
-						client_name:     clientNameToUse,
-						tier_id:         item.item_id,
-						purchase_date:   new Date().toISOString(),
-						expires_at:      new Date(Date.now() + (item.duration_months||0)*30*24*60*60*1000).toISOString(),
-						current_balance: item.price
-					});
-				if (error) toast.error('Failed to record membership purchase');
-				else      toast.success('Membership activated');
+					.select('id')
+					.eq('client_id', clientIdToUse)
+					.eq('tier_id', item.item_id)
+					.single();
+
+				if (existingMembership) {
+					// Update existing membership
+					const { error: updateError } = await supabase
+						.from('members')
+						.update({
+							current_balance: item.price,
+							total_membership_amount: item.price,
+							expires_at: new Date(Date.now() + (item.duration_months || 12) * 30 * 24 * 60 * 60 * 1000).toISOString()
+						})
+						.eq('id', existingMembership.id);
+
+					if (updateError) {
+						toast.error('Failed to update membership');
+						console.error('Membership update error:', updateError);
+					} else {
+						toast.success('Membership renewed');
+					}
+				} else {
+					// Create new membership
+					const { error: insertError } = await supabase
+						.from('members')
+						.insert({
+							client_id: clientIdToUse,
+							client_name: clientNameToUse,
+							tier_id: item.item_id,
+							purchase_date: new Date().toISOString(),
+							expires_at: new Date(Date.now() + (item.duration_months || 12) * 30 * 24 * 60 * 60 * 1000).toISOString(),
+							current_balance: item.price,
+							total_membership_amount: item.price
+						});
+
+					if (insertError) {
+						toast.error('Failed to record membership purchase');
+						console.error('Membership insert error:', insertError);
+					} else {
+						toast.success('Membership activated');
+					}
+				}
 			}
 		} catch (error) {
 			console.error("Error creating walk-in order:", error);
@@ -2690,22 +2724,16 @@ export default function POS() {
 	const handleAddMembershipToOrder = useCallback((membership: POSMembership) => {
 		const newItem: OrderItem = {
 			id: uuidv4(),
-			order_id: '',
 			item_id: membership.id,
 			item_name: membership.name,
-			quantity: 1,
 			price: membership.price,
-			total: membership.price,
-			type: 'service', // Use service type since memberships are a type of service
-			category: 'membership', // Use category to identify it as a membership
-			for_salon_use: false
+			quantity: 1,
+			type: 'membership',
+			category: 'membership',
+			duration_months: membership.duration_months
 		};
 
-		setOrderItems((prev) => {
-			const newState = [...prev, newItem];
-			return newState;
-		});
-
+		setOrderItems(prev => [...prev, newItem]);
 		toast.success(`Added ${membership.name} membership to order`);
 	}, []);
 
@@ -3211,13 +3239,24 @@ export default function POS() {
 									/>
 									<Typography variant="body2" sx={{ mr: 2, display: 'flex', alignItems: 'center' }}>
 										<AccountBalanceWalletIcon fontSize="small" sx={{ mr: 0.5 }} />
-										Rs. {(activeClientMembership.currentBalance - (paymentAmounts.membership || 0)).toLocaleString()}
+										Rs. {activeClientMembership.currentBalance.toLocaleString()}
 									</Typography>
 									<FormControlLabel
 										control={
 											<Switch
 												checked={useMembershipPayment}
-												onChange={e => setUseMembershipPayment(e.target.checked)}
+												onChange={e => {
+													setUseMembershipPayment(e.target.checked);
+													if (e.target.checked) {
+														// When enabling membership payment, set the payment amount to the order total
+														// but cap it at the available balance
+														const paymentAmount = Math.min(total, activeClientMembership.currentBalance);
+														setPaymentAmounts(prev => ({ ...prev, membership: paymentAmount }));
+													} else {
+														// When disabling, reset membership payment
+														setPaymentAmounts(prev => ({ ...prev, membership: 0 }));
+													}
+												}}
 												size="small"
 											/>
 										}
@@ -3226,21 +3265,33 @@ export default function POS() {
 								</Box>
 							)}
 							
-							{useMembershipPayment && (
-								<TextField
-									label="Membership Payment"
-									type="number"
-									size="small"
-									value={paymentAmounts.membership > 0 ? paymentAmounts.membership : activeClientMembership?.currentBalance || 0}
-									onChange={e => {
-										const val = Math.min(activeClientMembership?.currentBalance||0, Number(e.target.value)||0);
-										setPaymentAmounts(prev => ({ ...prev, membership: val }));
-									}}
-									InputProps={{
-										startAdornment: <InputAdornment position="start">₹</InputAdornment>
-									}}
-									sx={{ mb: 2 }}
-								/>
+							{/* Show membership payment field only when membership payment is enabled */}
+							{useMembershipPayment && activeClientMembership && activeClientMembership.isActive && (
+								<Box sx={{ mb: 2 }}>
+									<Typography variant="subtitle2" gutterBottom>
+										Amount to Pay from Membership (Available: Rs. {activeClientMembership.currentBalance.toLocaleString()})
+									</Typography>
+									<TextField
+										fullWidth
+										type="number"
+										size="small"
+										value={paymentAmounts.membership}
+										onChange={e => {
+											const val = Math.min(
+												Math.min(total, activeClientMembership.currentBalance), // Cap at both total and available balance
+												Math.max(0, Number(e.target.value) || 0)
+											);
+											setPaymentAmounts(prev => ({ ...prev, membership: val }));
+										}}
+										InputProps={{
+											startAdornment: <InputAdornment position="start">₹</InputAdornment>,
+											inputProps: {
+												min: 0,
+												max: Math.min(total, activeClientMembership.currentBalance)
+											}
+										}}
+									/>
+								</Box>
 							)}
 							
 							{/* Payment inputs hidden when using membership payment */}
