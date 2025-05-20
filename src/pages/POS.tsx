@@ -3227,9 +3227,14 @@ export default function POS() {
 								Payment Details
 							</Typography>
 							
-							{/* Membership Badge and Payment Toggle */}
-							{activeClientMembership && activeClientMembership.isActive && (
-								<Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+							{/* Payment Methods Section */}
+							<Typography variant="subtitle2" gutterBottom>
+								Payment Methods:
+							</Typography>
+
+							{/* Membership Status and Toggle */}
+							{activeClientMembership ? (
+								<Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
 									<Chip
 										icon={<CardMembershipIcon />}
 										label={`${activeClientMembership.tierName} Member`}
@@ -3248,13 +3253,21 @@ export default function POS() {
 												onChange={e => {
 													setUseMembershipPayment(e.target.checked);
 													if (e.target.checked) {
-														// When enabling membership payment, set the payment amount to the order total
-														// but cap it at the available balance
+														// When enabling membership payment, move amount from cash to membership
 														const paymentAmount = Math.min(total, activeClientMembership.currentBalance);
-														setPaymentAmounts(prev => ({ ...prev, membership: paymentAmount }));
+														setPaymentAmounts(prev => ({
+															...prev,
+															membership: paymentAmount,
+															cash: Math.max(0, total - paymentAmount)
+														}));
 													} else {
-														// When disabling, reset membership payment
-														setPaymentAmounts(prev => ({ ...prev, membership: 0 }));
+														// When disabling, move amount from membership to cash
+														const membershipAmount = paymentAmounts.membership;
+														setPaymentAmounts(prev => ({
+															...prev,
+															membership: 0,
+															cash: prev.cash + membershipAmount
+														}));
 													}
 												}}
 												size="small"
@@ -3263,179 +3276,189 @@ export default function POS() {
 										label="Pay via Membership"
 									/>
 								</Box>
-							)}
-							
-							{/* Show membership payment field only when membership payment is enabled */}
-							{useMembershipPayment && activeClientMembership && activeClientMembership.isActive && (
+							) : selectedClient && (
 								<Box sx={{ mb: 2 }}>
-									<Typography variant="subtitle2" gutterBottom>
-										Amount to Pay from Membership (Available: Rs. {activeClientMembership.currentBalance.toLocaleString()})
-									</Typography>
-									<TextField
-										fullWidth
-										type="number"
+									<Button
+										startIcon={<CardMembershipIcon />}
+										variant="outlined"
 										size="small"
-										value={paymentAmounts.membership}
-										onChange={e => {
-											const val = Math.min(
-												Math.min(total, activeClientMembership.currentBalance), // Cap at both total and available balance
-												Math.max(0, Number(e.target.value) || 0)
-											);
-											setPaymentAmounts(prev => ({ ...prev, membership: val }));
-										}}
-										InputProps={{
-											startAdornment: <InputAdornment position="start">₹</InputAdornment>,
-											inputProps: {
-												min: 0,
-												max: Math.min(total, activeClientMembership.currentBalance)
-											}
-										}}
-									/>
+										onClick={() => setTabValue(2)} // Switch to membership tab
+									>
+										Add Membership Plan
+									</Button>
 								</Box>
 							)}
-							
-							{/* Payment inputs hidden when using membership payment */}
-							{!useMembershipPayment && (
-								<>  
-								{/* Editable individual payment methods */}
-								<Box sx={{ mb: 2 }}>
-									<Typography variant="subtitle2" gutterBottom>
-										Payment Methods:
-									</Typography>
-									<Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, mt: 2 }}>
-										{/* Editable method cards */}
-										{(['cash', 'credit_card', 'debit_card', 'upi', 'bnpl', 'membership'] as string[]).map(method => (
-											<Box
-												key={method}
-												sx={{
-													minWidth: '120px', flex: '1 1 0', p: 1.5,
-													border: '1px solid',
-													borderColor: paymentAmounts[method] > 0 ? 'primary.main' : 'divider',
-													borderRadius: '8px',
-													bgcolor: paymentAmounts[method] > 0 ? 'primary.lighter' : 'background.paper'
-												}}
-											>
-												<Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-													{method === 'cash' && <LocalAtm fontSize="small" sx={{ mr: 1, color: paymentAmounts[method] > 0 ? 'primary.main' : 'text.secondary' }} />}
-													{method === 'credit_card' && <CreditCard fontSize="small" sx={{ mr: 1, color: paymentAmounts[method] > 0 ? 'primary.main' : 'text.secondary' }} />}
-													{method === 'debit_card' && <CreditCard fontSize="small" sx={{ mr: 1, color: paymentAmounts[method] > 0 ? 'primary.main' : 'text.secondary' }} />}
-													{method === 'upi' && <AccountBalance fontSize="small" sx={{ mr: 1, color: paymentAmounts[method] > 0 ? 'primary.main' : 'text.secondary' }} />}
-													{method === 'bnpl' && <AttachMoney fontSize="small" sx={{ mr: 1, color: paymentAmounts[method] > 0 ? 'primary.main' : 'text.secondary' }} />}
-													{method === 'membership' && <AccountBalanceWalletIcon fontSize="small" sx={{ mr: 1, color: paymentAmounts[method] > 0 ? 'primary.main' : 'text.secondary' }} />}
-													<Typography variant="body2" fontWeight={paymentAmounts[method] > 0 ? 'bold' : 'normal'}>
-														{PAYMENT_METHOD_LABELS[method]}
-													</Typography>
-												</Box>
-												<TextField
-													size="small"
-													fullWidth
-													variant="outlined"
-													type="number"
-													value={paymentAmounts[method]}
-													onChange={e => {
-														const val = parseFloat(e.target.value) || 0;
-														setPaymentAmounts(prev => ({ ...prev, [method]: val }));
-													}}
-													onFocus={() => {
-														// Auto-fill this method with remaining total when first focused (non-cash)
-														if (!isSplitPayment && method !== 'cash' && paymentAmounts[method] === 0) {
-															const sumOtherMethods = Object.entries(paymentAmounts)
-																.filter(([m]) => m !== method)
-																.reduce((sum, [_, amt]) => sum + (amt || 0), 0);
-															const fillAmount = Math.max(0, total - sumOtherMethods);
-															setPaymentAmounts(prev => ({ ...prev, [method]: fillAmount }));
-														}
-													}}
-													InputProps={{ startAdornment: <InputAdornment position="start">₹</InputAdornment> }}
-												/>
-											</Box>
-										))}
-									</Box>
-								</Box>
-								<Grid container spacing={2} sx={{ mt: 1 }}>
-									<Grid item xs={12} sm={6}>
-										<TextField
-												fullWidth
-												label="Discount ₹"
-												variant="outlined"
-												type="number"
-												size="small"
-												value={walkInDiscount}
-												onChange={(e) => {
-													const fixedDiscount = Math.round(Number(e.target.value));
-													setWalkInDiscount(fixedDiscount);
-													// Calculate and set percentage discount
-													const currentTotal = calculateProductSubtotal() + calculateServiceSubtotal() + calculateProductGstAmount(calculateProductSubtotal()) + calculateServiceGstAmount(calculateServiceSubtotal());
-													const remainingAmount = currentTotal - fixedDiscount;
-													const calculatedPercentage = currentTotal > 0 ? ((currentTotal - remainingAmount) / currentTotal) * 100 : 0;
-													setWalkInDiscountPercentage(Math.max(0, Math.min(100, parseFloat(calculatedPercentage.toFixed(2)))));
-												}}
-												InputProps={{
-													inputProps: { min: 0, step: 1 },
-													startAdornment: (
-														<InputAdornment position="start">
-															₹
-														</InputAdornment>
-													),
-												}}
-											/>
-									</Grid>
-									
-									<Grid item xs={12} sm={6}>
+
+							{/* Payment Method Cards */}
+							<Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, mb: 2 }}>
+								{/* Show all payment methods */}
+								{(['cash', 'credit_card', 'debit_card', 'upi', 'bnpl'] as const).map(method => (
+									<Box
+										key={method}
+										sx={{
+											minWidth: '120px',
+											flex: '1 1 0',
+											p: 1.5,
+											border: '1px solid',
+											borderColor: paymentAmounts[method] > 0 ? 'primary.main' : 'divider',
+											borderRadius: '8px',
+											bgcolor: paymentAmounts[method] > 0 ? 'primary.lighter' : 'background.paper'
+										}}
+									>
+										<Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+											{method === 'cash' && <LocalAtm fontSize="small" sx={{ mr: 1, color: paymentAmounts[method] > 0 ? 'primary.main' : 'text.secondary' }} />}
+											{method === 'credit_card' && <CreditCard fontSize="small" sx={{ mr: 1, color: paymentAmounts[method] > 0 ? 'primary.main' : 'text.secondary' }} />}
+											{method === 'debit_card' && <CreditCard fontSize="small" sx={{ mr: 1, color: paymentAmounts[method] > 0 ? 'primary.main' : 'text.secondary' }} />}
+											{method === 'upi' && <AccountBalance fontSize="small" sx={{ mr: 1, color: paymentAmounts[method] > 0 ? 'primary.main' : 'text.secondary' }} />}
+											{method === 'bnpl' && <AttachMoney fontSize="small" sx={{ mr: 1, color: paymentAmounts[method] > 0 ? 'primary.main' : 'text.secondary' }} />}
+											<Typography variant="body2" fontWeight={paymentAmounts[method] > 0 ? 'bold' : 'normal'}>
+												{PAYMENT_METHOD_LABELS[method]}
+											</Typography>
+										</Box>
 										<TextField
 											fullWidth
-											label="Discount %"
+											size="small"
+											type="number"
+											value={paymentAmounts[method]}
+											onChange={(e) => {
+												const newValue = Math.max(0, Number(e.target.value) || 0);
+												setPaymentAmounts(prev => ({ ...prev, [method]: newValue }));
+											}}
+											InputProps={{
+												startAdornment: <InputAdornment position="start">₹</InputAdornment>
+											}}
+										/>
+									</Box>
+								))}
+
+								{/* Show membership payment option only for members */}
+								{activeClientMembership && activeClientMembership.isActive && (
+									<Box
+										sx={{
+											minWidth: '120px',
+											flex: '1 1 0',
+											p: 1.5,
+											border: '1px solid',
+											borderColor: paymentAmounts.membership > 0 ? 'primary.main' : 'divider',
+											borderRadius: '8px',
+											bgcolor: paymentAmounts.membership > 0 ? 'primary.lighter' : 'background.paper'
+										}}
+									>
+										<Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+											<AccountBalanceWalletIcon fontSize="small" sx={{ mr: 1, color: paymentAmounts.membership > 0 ? 'primary.main' : 'text.secondary' }} />
+											<Typography variant="body2" fontWeight={paymentAmounts.membership > 0 ? 'bold' : 'normal'}>
+												Pay from Membership
+											</Typography>
+										</Box>
+										<TextField
+											fullWidth
+											size="small"
+											type="number"
+											value={paymentAmounts.membership}
+											onChange={(e) => {
+												const val = Math.min(
+													Math.min(total, activeClientMembership.currentBalance),
+													Math.max(0, Number(e.target.value) || 0)
+												);
+												setPaymentAmounts(prev => ({ ...prev, membership: val }));
+											}}
+											InputProps={{
+												startAdornment: <InputAdornment position="start">₹</InputAdornment>,
+												inputProps: {
+													min: 0,
+													max: Math.min(total, activeClientMembership.currentBalance)
+												}
+											}}
+										/>
+										<Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+											Available: Rs. {activeClientMembership.currentBalance.toLocaleString()}
+										</Typography>
+									</Box>
+								)}
+							</Box>
+							
+							<Grid container spacing={2} sx={{ mt: 1 }}>
+								<Grid item xs={12} sm={6}>
+									<TextField
+											fullWidth
+											label="Discount ₹"
 											variant="outlined"
 											type="number"
 											size="small"
-											value={walkInDiscountPercentage}
+											value={walkInDiscount}
 											onChange={(e) => {
-												const percentage = parseFloat(e.target.value);
-												setWalkInDiscountPercentage(isNaN(percentage) ? 0 : Math.max(0, Math.min(100, percentage)));
-												// Calculate and set fixed discount
+												const fixedDiscount = Math.round(Number(e.target.value));
+												setWalkInDiscount(fixedDiscount);
+												// Calculate and set percentage discount
 												const currentTotal = calculateProductSubtotal() + calculateServiceSubtotal() + calculateProductGstAmount(calculateProductSubtotal()) + calculateServiceGstAmount(calculateServiceSubtotal());
-												const calculatedFixedDiscount = (currentTotal * (isNaN(percentage) ? 0 : Math.max(0, Math.min(100, percentage)))) / 100;
-												setWalkInDiscount(calculatedFixedDiscount);
+												const remainingAmount = currentTotal - fixedDiscount;
+												const calculatedPercentage = currentTotal > 0 ? ((currentTotal - remainingAmount) / currentTotal) * 100 : 0;
+												setWalkInDiscountPercentage(Math.max(0, Math.min(100, parseFloat(calculatedPercentage.toFixed(2)))));
 											}}
 											InputProps={{
-												inputProps: { min: 0, max: 100, step: 0.1 },
-												endAdornment: (
-													<InputAdornment position="end">
-														%
+												inputProps: { min: 0, step: 1 },
+												startAdornment: (
+													<InputAdornment position="start">
+														₹
 													</InputAdornment>
 												),
 											}}
 										/>
-									</Grid>
-									
-									<Grid item xs={12}>
-										<FormControlLabel
-											control={
-												<Switch
-													checked={isSplitPayment}
-													onChange={(e) =>
-														setIsSplitPayment(e.target.checked)
-													}
-													color="primary"
-													size="small"
-												/>
-											}
-											label={
-												<Box sx={{ display: 'flex', alignItems: 'center' }}>
-													<Typography variant="body2" sx={{ mr: 1 }}>Split Payment</Typography>
-													<Tooltip title="Split the total amount across multiple payment methods">
-														<IconButton size="small">
-															<InfoIcon fontSize="small" />
-														</IconButton>
-													</Tooltip>
-												</Box>
-											}
-										/>
-									</Grid>
 								</Grid>
-								{/* Split payment collapse and fields */}
-								</>
-							)}
+								
+								<Grid item xs={12} sm={6}>
+									<TextField
+										fullWidth
+										label="Discount %"
+										variant="outlined"
+										type="number"
+										size="small"
+										value={walkInDiscountPercentage}
+										onChange={(e) => {
+											const percentage = parseFloat(e.target.value);
+											setWalkInDiscountPercentage(isNaN(percentage) ? 0 : Math.max(0, Math.min(100, percentage)));
+											// Calculate and set fixed discount
+											const currentTotal = calculateProductSubtotal() + calculateServiceSubtotal() + calculateProductGstAmount(calculateProductSubtotal()) + calculateServiceGstAmount(calculateServiceSubtotal());
+											const calculatedFixedDiscount = (currentTotal * (isNaN(percentage) ? 0 : Math.max(0, Math.min(100, percentage)))) / 100;
+											setWalkInDiscount(calculatedFixedDiscount);
+										}}
+										InputProps={{
+											inputProps: { min: 0, max: 100, step: 0.1 },
+											endAdornment: (
+												<InputAdornment position="end">
+													%
+												</InputAdornment>
+											),
+										}}
+									/>
+								</Grid>
+								
+								<Grid item xs={12}>
+									<FormControlLabel
+										control={
+											<Switch
+												checked={isSplitPayment}
+												onChange={(e) =>
+													setIsSplitPayment(e.target.checked)
+												}
+												color="primary"
+												size="small"
+											/>
+										}
+										label={
+											<Box sx={{ display: 'flex', alignItems: 'center' }}>
+												<Typography variant="body2" sx={{ mr: 1 }}>Split Payment</Typography>
+												<Tooltip title="Split the total amount across multiple payment methods">
+													<IconButton size="small">
+														<InfoIcon fontSize="small" />
+													</IconButton>
+												</Tooltip>
+											</Box>
+										}
+									/>
+								</Grid>
+							</Grid>
+							{/* Split payment collapse and fields */}
 							
 							<Collapse in={isSplitPayment}>
 								<Box sx={{ mt: 2, p: 2, bgcolor: 'background.paper', borderRadius: '8px', border: '1px solid', borderColor: 'divider' }}>
