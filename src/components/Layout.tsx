@@ -357,7 +357,17 @@ export default function Layout({ children }: LayoutProps) {
           backgroundColor: 'background.default',
         }}
       >
-        {children}
+        <FramerMotion.AnimatePresence initial={false} mode="wait">
+          <FramerMotion.motion.div
+            key={location.pathname}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            transition={{ duration: 0.3 }}
+          >
+            {children}
+          </FramerMotion.motion.div>
+        </FramerMotion.AnimatePresence>
       </Box>
     </Box>
   )

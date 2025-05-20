@@ -4,6 +4,7 @@ CREATE OR REPLACE VIEW sales_product_new AS
 WITH sales_data AS (
     SELECT
         po.id AS order_id,
+        (po.client_id IS NULL)       AS is_walk_in,
         po.date AS order_date,
         item,
         (item->>'service_id')::UUID AS product_id,
@@ -75,6 +76,7 @@ final_sales AS (
         initial_stock,
         initial_stock - cumulative_quantity_sold AS remaining_stock,
         current_stock,
+        is_walk_in,
         order_item_id,
         order_item_pk
     FROM cumulative_sales

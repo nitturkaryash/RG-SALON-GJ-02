@@ -1096,6 +1096,47 @@ export function usePOS() {
         
         console.log('✅ usePOS - Order created successfully:', insertedOrder);
         
+        // Insert membership records for sold membership tiers (only items with category='membership')
+        if (insertedOrder && Array.isArray(data.services)) {
+          const membershipServices = data.services.filter(s => s.category === 'membership');
+          console.log('🔍 usePOS - membershipServices detected:', membershipServices);
+          if (membershipServices.length > 0) {
+            console.log('🔍 usePOS - tierIds for membership insertion:', membershipServices.map(s => s.service_id));
+            const tierIds = membershipServices.map(s => s.service_id);
+            const { data: soldTiers, error: tierError } = await supabase
+              .from('membership_tiers')
+              .select('id, duration_months')
+              .in('id', tierIds);
+            if (!tierError && soldTiers) {
+              for (const tier of soldTiers) {
+                console.log('🔍 usePOS - inserting membership for tier:', tier.id);
+                const purchaseDate = insertedOrder.created_at
+                  ? insertedOrder.created_at.slice(0, 10)
+                  : new Date().toISOString().slice(0, 10);
+                const expires = new Date(purchaseDate);
+                expires.setMonth(expires.getMonth() + tier.duration_months);
+                const expiresAt = expires.toISOString().slice(0, 10);
+                const { error: membersError } = await supabase
+                  .from('members')
+                  .insert({
+                    client_id: data.client_id,
+                    client_name: data.client_name,
+                    tier_id: tier.id,
+                    purchase_date: purchaseDate,
+                    expires_at: expiresAt
+                  });
+                if (membersError) {
+                  console.error('❌ usePOS - Failed to insert membership record:', membersError);
+                } else {
+                  console.log('✅ usePOS - membership record inserted:', tier.id);
+                }
+              }
+            } else if (tierError) {
+              console.error('❌ usePOS - Error querying membership_tiers:', tierError);
+            }
+          }
+        }
+        
         // *** START: Insert Order Items ***
         if (insertedOrder && data.services && data.services.length > 0) {
           const itemsToInsert = data.services.map(item => {

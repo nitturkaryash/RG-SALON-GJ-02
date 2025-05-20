@@ -69,7 +69,7 @@ interface BookingFormData {
 }
 
 // Generate time options for select dropdown
-const generateTimeOptions = (intervalMinutes: number = 10) => {
+const generateTimeOptions = (intervalMinutes: number = 15) => {
   const options = [];
   const startHourOperating = 8;
   const endHourOperating = 22; // Example: salon closes around 10 PM / 22:00
@@ -87,15 +87,12 @@ const generateTimeOptions = (intervalMinutes: number = 10) => {
       const minuteStr = minute.toString().padStart(2, '0');
       const timeValue = `${hour.toString().padStart(2, '0')}:${minuteStr}`;
 
-    options.push({
+      options.push({
         value: timeValue,
         label: `${hour12}:${minuteStr} ${period}`
-    });
+      });
     }
   }
-  // If the last operating hour needs specific cutoff, adjust loop or filter options.
-  // E.g., if 22:30 is the last bookable slot:
-  // return options.filter(opt => !(parseInt(opt.value.split(':')[0]) === 22 && parseInt(opt.value.split(':')[1]) > 30));
   return options;
 };
 
@@ -270,8 +267,8 @@ export default function Appointments() {
   const [showingClientHistory, setShowingClientHistory] = useState(false);
   const [clientHistory, setClientHistory] = useState<MergedAppointment[]>([]);
 
-  // Timesoptions initialization
-  const timeOptions = useMemo(() => generateTimeOptions(10), []); // Generate 10-minute interval options
+  // Timesoptions initialization (15-minute interval)
+  const timeOptions = useMemo(() => generateTimeOptions(15), []); // Generate 15-minute interval options
   const navigate = useNavigate();
 
   // Hook calls
@@ -1255,7 +1252,7 @@ export default function Appointments() {
             left: 0,
             right: showDrawer ? drawerWidth : 0,
             bottom: 0,
-            overflowY: 'auto',
+            overflow: 'hidden',
             transition: 'right 0.3s ease',
           }}
         >

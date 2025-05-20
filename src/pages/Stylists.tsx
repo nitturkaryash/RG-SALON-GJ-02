@@ -374,15 +374,6 @@ export default function Stylists() {
     return format(date, 'EEE');
   }
 
-  // Helper to handle previous/next month navigation
-  const handlePrevMonth = () => {
-    setReportMonth(subMonths(reportMonth, 1));
-  }
-
-  const handleNextMonth = () => {
-    setReportMonth(addMonths(reportMonth, 1));
-  }
-
   // Add function to check if a stylist is on holiday on a specific date
   const getStylistHolidayForDate = (stylist: Stylist, date: Date): StylistHoliday | undefined => {
     const formattedDate = format(date, 'yyyy-MM-dd');
@@ -483,30 +474,20 @@ export default function Stylists() {
             <Typography variant="h5">
               Holiday Report: {format(reportMonth, 'MMMM yyyy')}
             </Typography>
-            <Box sx={{ display: 'flex', gap: 1 }}>
-              <Button 
-                onClick={handlePrevMonth} 
-                variant="outlined" 
-                size="small"
-              >
-                Previous Month
-              </Button>
-              <Button 
-                onClick={() => setReportMonth(new Date())} 
-                variant="outlined" 
-                size="small"
-                color="primary"
-              >
-                Current Month
-              </Button>
-              <Button 
-                onClick={handleNextMonth} 
-                variant="outlined" 
-                size="small"
-              >
-                Next Month
-              </Button>
-            </Box>
+            <LocalizationProvider dateAdapter={AdapterDateFns}>
+              <DatePicker
+                views={[ 'year', 'month' ]}
+                value={reportMonth}
+                onChange={(newValue) => newValue && setReportMonth(newValue)}
+                slotProps={{
+                  textField: {
+                    size: 'small',
+                    variant: 'outlined',
+                    sx: { width: 120 }
+                  }
+                }}
+              />
+            </LocalizationProvider>
           </Box>
 
           {/* Summary section */}

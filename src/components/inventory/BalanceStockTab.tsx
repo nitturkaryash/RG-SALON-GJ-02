@@ -115,7 +115,7 @@ const BalanceStockTab: React.FC<BalanceStockTabProps> = ({ balanceStock, isLoadi
       }
       
       const record = productMap.get(productName)!;
-      record.purchased_quantity += purchase.purchase_qty || purchase.quantity || 0;
+      record.purchased_quantity += purchase.purchase_qty || 0;
       record.taxable_value += purchase.purchase_taxable_value || purchase.taxable_value || 0;
       record.igst += purchase.purchase_igst || purchase.igst || 0;
       record.cgst += purchase.purchase_cgst || purchase.cgst || 0;
@@ -145,7 +145,7 @@ const BalanceStockTab: React.FC<BalanceStockTabProps> = ({ balanceStock, isLoadi
       }
       
       const record = productMap.get(productName)!;
-      record.sold_quantity += sale.sale_qty || sale.quantity || 0;
+      record.sold_quantity += sale.sales_qty || (sale.quantity as number | undefined) || 0;
       // Subtract sales values from balance financial values
       record.taxable_value -= sale.taxable_value || 0;
       record.igst -= sale.igst || 0;

@@ -179,6 +179,7 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
       const { data, error } = await supabase
         .from(SALES_VIEW)
         .select('*')
+        // Include all product orders within the date range
         .gte('date', dateRange.startDate)
         .lte('date', dateRange.endDate)
         .order('date', { ascending: false });

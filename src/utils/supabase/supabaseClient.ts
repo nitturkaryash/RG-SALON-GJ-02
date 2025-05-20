@@ -7,7 +7,7 @@ export const TABLES = {
   PURCHASE_HISTORY_WITH_STOCK: 'purchase_history_with_stock',
   SALES: 'inventory_sales_new',
   CONSUMPTION: 'inventory_consumption',
-  BALANCE_STOCK: 'balance_stock',
+  BALANCE_STOCK: 'balance_stock_view',
   POS_ORDERS: 'pos_orders',
   POS_ORDER_ITEMS: 'pos_order_items',
   SALES_CONSUMER: 'inventory_sales_consumer',

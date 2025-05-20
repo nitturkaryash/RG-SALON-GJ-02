@@ -20,7 +20,7 @@ import {
   Avatar
 } from '@mui/material';
 import { supabase } from '../utils/supabase/supabaseClient';
-import { Search, Person, CardMembership, Star, CalendarMonth, AttachMoney } from '@mui/icons-material';
+import { Search, Person, CardMembership, Star, CalendarMonth, AttachMoney, AccountBalanceWallet } from '@mui/icons-material';
 import { format, differenceInMonths } from 'date-fns';
 
 interface Member {
@@ -33,272 +33,77 @@ interface Member {
   membershipPrice?: number;
   membershipDuration?: number; // in months
   orderData?: any; // Store the original order data for debugging
+  currentBalance?: number;
 }
 
 const MembersPage = () => {
   const [searchTerm, setSearchTerm] = useState('');
 
-  // Fetch members using react-query
+  // Fetch members using dedicated members table and enrich with client & tier details
   const { data: members, isLoading, error } = useQuery({
     queryKey: ['members'],
     queryFn: async () => {
-      try {
-        console.log('Starting membership query...');
-        
-        // First, query the membership_tiers table to get all membership tiers
-        const { data: membershipTiers, error: tiersError } = await supabase
-          .from('membership_tiers')
-          .select('id, name, price, duration_months, benefits, description');
-
-        if (tiersError) {
-          console.error('Error fetching membership tiers:', tiersError);
-          // Continue even if we can't get tiers - we'll use service names instead
-        }
-
-        console.log('Membership tiers:', membershipTiers);
-
-        // Get the membership tier IDs and names for reference
-        const tierIds = membershipTiers?.map(tier => tier.id) || [];
-        const tierNames = membershipTiers?.map(tier => tier.name.toLowerCase()) || [];
-        const tierPrices = membershipTiers?.map(tier => tier.price) || [];
-
-        console.log('Tier IDs:', tierIds);
-        console.log('Tier Names:', tierNames);
-        console.log('Tier Prices:', tierPrices);
-
-        // First search approach: Look directly in pos_orders
-        const { data: orders, error: ordersError } = await supabase
-          .from('pos_orders')
-          .select('*')
-          .not('client_name', 'is', null);
-
-        if (ordersError) {
-          console.error('Error fetching orders:', ordersError);
-          throw new Error(`Failed to fetch orders: ${ordersError.message}`);
-        }
-
-        console.log(`Found ${orders?.length || 0} orders to analyze`);
-        
-        if (orders && orders.length > 0) {
-          // Log the structure of a few orders to understand the data format
-          console.log('Order sample structure:', JSON.stringify(orders[0], null, 2));
-        }
-
-        // Collect all potential membership orders using multiple detection approaches
-        let membershipOrders: any[] = [];
-        
-        if (orders && orders.length > 0) {
-          // For each order, check if it contains membership services in any form
-          for (const order of orders) {
-            let isMembershipOrder = false;
-            let membershipInfo = null;
-            let servicesList: any[] = [];
-            
-            // First inspect raw order data
-            console.log(`Inspecting order ${order.id} for client ${order.client_name}`);
-            
-            // Check if services field exists
-            if (order.services) {
-              try {
-                // Handle services field based on its type
-                if (typeof order.services === 'string') {
-                  servicesList = JSON.parse(order.services);
-                } else if (Array.isArray(order.services)) {
-                  servicesList = order.services;
-                } else {
-                  console.log(`Order ${order.id} has services in unexpected format: ${typeof order.services}`);
-                }
-                
-                // Log the parsed services for debugging
-                console.log(`Order ${order.id} has ${servicesList.length} services:`, servicesList);
-                
-                // Check if any service is a membership
-                for (const service of servicesList) {
-                  if (!service) continue;
-                  
-                  // Extract all potential identifiers
-                  const serviceName = ((service.service_name || service.product_name || '') + '').toLowerCase();
-                  const serviceType = ((service.type || '') + '').toLowerCase();
-                  const serviceCategory = ((service.category || '') + '').toLowerCase();
-                  const serviceId = service.service_id || service.product_id || '';
-                  const price = parseFloat(service.price || '0');
-                  
-                  console.log(`Checking service: ${serviceName}, type: ${serviceType}, category: ${serviceCategory}, id: ${serviceId}, price: ${price}`);
-                  
-                  // Check multiple membership indicators
-                  if (
-                    // Match by ID
-                    tierIds.includes(serviceId) ||
-                    // Match by name
-                    tierNames.some(name => serviceName.includes(name)) ||
-                    // Match by the word "member"
-                    serviceName.includes('member') ||
-                    serviceType.includes('member') ||
-                    serviceCategory.includes('member') ||
-                    // Match by price (within 0.1 to handle floating point issues)
-                    tierPrices.some(tierPrice => Math.abs(price - tierPrice) < 0.1)
-                  ) {
-                    console.log(`Found membership indicator in order ${order.id} for service: `, service);
-                    isMembershipOrder = true;
-                    membershipInfo = service;
-                    break;
-                  }
-                }
-              } catch (e) {
-                console.error(`Error processing services for order ${order.id}:`, e);
-              }
-            }
-            
-            // Fallback: check for membership indicators in the entire order
-            if (!isMembershipOrder) {
-              const orderStr = JSON.stringify(order).toLowerCase();
-              if (
-                orderStr.includes('membership') || 
-                orderStr.includes('platinum') || 
-                orderStr.includes('gold') || 
-                orderStr.includes('silver') ||
-                // Check if any membership tier IDs are present in the order
-                tierIds.some(id => orderStr.includes(id))
-              ) {
-                console.log(`Found membership indicator in order ${order.id} via text search`);
-                isMembershipOrder = true;
-              }
-            }
-            
-            // Check the total amount against known membership prices
-            if (!isMembershipOrder && order.total) {
-              const totalAmount = parseFloat(order.total);
-              const isMembershipPrice = tierPrices.some(price => Math.abs(totalAmount - price) < 0.1);
-              
-              if (isMembershipPrice) {
-                console.log(`Order ${order.id} has a total (${totalAmount}) matching a membership price`);
-                isMembershipOrder = true;
-              }
-            }
-            
-            // If any indicator was found, add to membership orders
-            if (isMembershipOrder) {
-              membershipOrders.push({
-                ...order,
-                _membershipInfo: membershipInfo, // Store the detected membership service
-                _servicesList: servicesList // Store the parsed services list
-              });
-            }
-          }
-        }
-
-        console.log(`Found ${membershipOrders.length} orders with membership indicators`);
-
-        if (membershipOrders.length === 0) {
-          console.log('No membership orders found.');
-          return [];
-        }
-
-        // Map orders to member data
-        const membersData: Member[] = membershipOrders.map(order => {
-          // Determine the membership tier
-          let membershipTierName = 'Membership';
-          let membershipPrice = 0;
-          let membershipDuration = 12; // Default to 12 months
-          let matchedTier = null;
-          
-          // Try to get tier name from the detected membership service
-          if (order._membershipInfo) {
-            const membershipService = order._membershipInfo;
-            const serviceId = membershipService.service_id || membershipService.product_id;
-            const serviceName = membershipService.service_name || membershipService.product_name;
-            const servicePrice = parseFloat(membershipService.price || '0');
-            
-            // Try to match with known tiers
-            matchedTier = membershipTiers?.find(tier => 
-              tier.id === serviceId || 
-              Math.abs(parseFloat(tier.price) - servicePrice) < 0.1 ||
-              tier.name.toLowerCase() === serviceName?.toLowerCase()
-            );
-            
-            if (matchedTier) {
-              membershipTierName = matchedTier.name;
-              membershipPrice = parseFloat(matchedTier.price);
-              membershipDuration = matchedTier.duration_months || 12;
-            } else if (serviceName) {
-              membershipTierName = serviceName;
-              membershipPrice = servicePrice;
-            }
-          } else {
-            // Try to match by order total
-            const orderTotal = parseFloat(order.total || '0');
-            matchedTier = membershipTiers?.find(tier => 
-              Math.abs(parseFloat(tier.price) - orderTotal) < 0.1
-            );
-            
-            if (matchedTier) {
-              membershipTierName = matchedTier.name;
-              membershipPrice = parseFloat(matchedTier.price);
-              membershipDuration = matchedTier.duration_months || 12;
-            }
-          }
-          
-          return {
-            id: order.id,
-            name: order.client_name || 'Unknown Client',
-            purchaseDate: order.created_at || order.date || new Date().toISOString(),
-            membershipTier: membershipTierName,
-            membershipPrice: membershipPrice,
-            membershipDuration: membershipDuration,
-            orderData: {
-              id: order.id,
-              client_name: order.client_name,
-              total: order.total,
-              membershipInfo: order._membershipInfo,
-              services: order._servicesList
-            }
-          };
-        });
-
-        // Fetch client details to enrich member records
-        try {
-          const clientNames = [...new Set(membersData.map(member => member.name))];
-          
-          if (clientNames.length > 0) {
-            const { data: clientsData, error: clientsError } = await supabase
-              .from('clients')
-              .select('id, full_name, phone, email')
-              .in('full_name', clientNames);
-
-            if (clientsError) {
-              console.error('Error fetching client details:', clientsError);
-            } else if (clientsData && clientsData.length > 0) {
-              console.log(`Found ${clientsData.length} clients with details`);
-              
-              // Enhance member records with client details
-              membersData.forEach(member => {
-                const clientDetails = clientsData.find(client => 
-                  client.full_name.toLowerCase() === member.name.toLowerCase()
-                );
-                
-                if (clientDetails) {
-                  member.id = clientDetails.id; // Use client ID instead of order ID
-                  member.phone = clientDetails.phone;
-                  member.email = clientDetails.email;
-                }
-              });
-            }
-          }
-        } catch (error) {
-          console.error('Error fetching client details:', error);
-        }
-        
-        // Remove duplicates by client name
-        const uniqueMembers = Array.from(
-          new Map(membersData.map(member => [member.name.toLowerCase(), member])).values()
-        );
-
-        console.log(`Returning ${uniqueMembers.length} unique members`);
-        return uniqueMembers;
-      } catch (error) {
-        console.error('Error in members query:', error);
-        throw error;
+      // 1) Fetch raw membership records
+      const { data: membersData, error: membersError } = await supabase
+        .from('members')
+        .select('id, client_id, client_name, tier_id, purchase_date, expires_at, current_balance')
+        .order('purchase_date', { ascending: false });
+      if (membersError) {
+        console.error('Error fetching members:', membersError);
+        throw membersError;
       }
+
+      // 2) Load client details
+      const clientIds = Array.from(new Set(membersData.map(m => m.client_id)));
+      const { data: clientsData, error: clientsError } = await supabase
+        .from('clients')
+        .select('id, full_name, phone, email')
+        .in('id', clientIds);
+      if (clientsError) console.error('Error fetching clients:', clientsError);
+
+      // 3) Load membership tier details
+      const tierIds = Array.from(new Set(membersData.map(m => m.tier_id)));
+      const { data: tiersData, error: tiersError } = await supabase
+        .from('membership_tiers')
+        .select('id, name, price, duration_months')
+        .in('id', tierIds);
+      if (tiersError) console.error('Error fetching tiers:', tiersError);
+
+      // 4) Combine into Member[] with computed balance after membership usage
+      // Fetch membership payments for these clients
+      const membershipClientIds = Array.from(new Set(membersData.map(m => m.client_id)));
+      const { data: ordersData } = await supabase
+        .from('pos_orders')
+        .select('client_id, payments')
+        .in('client_id', membershipClientIds);
+      const paymentsByClient: Record<string, number> = {};
+      if (ordersData) {
+        ordersData.forEach(order => {
+          (order.payments || []).forEach((p: any) => {
+            if (p.payment_method === 'membership') {
+              paymentsByClient[order.client_id] = (paymentsByClient[order.client_id] || 0) + (p.amount || 0);
+            }
+          });
+        });
+      }
+      return membersData.map(m => {
+        const client = clientsData?.find(c => c.id === m.client_id);
+        const tier = tiersData?.find(t => t.id === m.tier_id);
+        const membershipPrice = tier?.price || 0;
+        const used = paymentsByClient[m.client_id] || 0;
+        const balance = membershipPrice - used;
+        return {
+          id: m.id,
+          name: client?.full_name || m.client_name,
+          phone: client?.phone,
+          email: client?.email,
+          purchaseDate: m.purchase_date,
+          membershipTier: tier?.name,
+          membershipPrice: membershipPrice,
+          membershipDuration: tier?.duration_months,
+          currentBalance: balance
+        };
+      });
     }
   });
 
@@ -468,6 +273,12 @@ const MembersPage = () => {
                           <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5, display: 'flex', alignItems: 'center' }}>
                             <AttachMoney fontSize="small" sx={{ mr: 1 }} />
                             <span style={{ minWidth: '70px' }}>Price:</span> Rs. {membershipPrice.toLocaleString()}
+                          </Typography>
+                        )}
+                        {member.currentBalance !== undefined && member.currentBalance >= 0 && (
+                          <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5, display: 'flex', alignItems: 'center' }}>
+                            <AccountBalanceWallet fontSize="small" sx={{ mr: 1 }} />
+                            <span style={{ minWidth: '70px' }}>Balance:</span> Rs. {member.currentBalance.toLocaleString()}
                           </Typography>
                         )}
                         

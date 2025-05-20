@@ -18,6 +18,7 @@ export interface Client {
   gender?: string;
   birth_date?: string | null; // Store as string, handle date conversion in UI
   anniversary_date?: string | null; // Store as string, handle date conversion in UI
+  membership?: string; // Optional membership tier name for POS badge
 }
 
 export function useClients() {
