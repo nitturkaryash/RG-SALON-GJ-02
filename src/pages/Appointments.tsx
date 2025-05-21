@@ -34,7 +34,8 @@ import {
   ListItemText,
   ListSubheader,
   Checkbox,
-  FormControlLabel
+  FormControlLabel,
+  Popover
 } from '@mui/material'
 import { useAppointments, Appointment, MergedAppointment } from '../hooks/useAppointments'
 import { useStylists, Stylist, StylistBreak } from '../hooks/useStylists'
@@ -55,6 +56,9 @@ import interactionPlugin from '@fullcalendar/interaction'
 import { DateSelectArg } from '@fullcalendar/core'
 import { createFilterOptions } from '@mui/material/Autocomplete'
 import { useNavigate } from 'react-router-dom'
+import { DatePicker } from '@mui/x-date-pickers/DatePicker'
+import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider'
+import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns'
 
 // Define Drawer width as a constant
 const drawerWidth = 500;
@@ -273,6 +277,10 @@ export default function Appointments() {
   // Add client history state and function
   const [showingClientHistory, setShowingClientHistory] = useState(false);
   const [clientHistory, setClientHistory] = useState<MergedAppointment[]>([]);
+  // Add date picker state
+  const [drawerDatePickerAnchorEl, setDrawerDatePickerAnchorEl] = useState<HTMLElement | null>(null)
+  const datePickerOpen = Boolean(drawerDatePickerAnchorEl)
+  const [drawerDate, setDrawerDate] = useState<Date>(new Date())
 
   // Timesoptions initialization (15-minute interval)
   const timeOptions = useMemo(() => generateTimeOptions(15), []); // Generate 15-minute interval options
@@ -755,6 +763,49 @@ export default function Appointments() {
     // --- End Validation ---
 
     try {
+      // Simple date/time shift for single-service update
+      if (editingAppointment && clientEntries.length === 1) {
+        const entry = clientEntries[0];
+        if (entry.services.length === 1) {
+          const service = entry.services[0];
+          if (service.appointmentInstanceId && !service.isNew) {
+            // Calculate new start and end based on selected drawer date
+            const [startHour, startMinute] = service.fromTime.split(':').map(Number);
+            const [endHour, endMinute] = service.toTime.split(':').map(Number);
+            const baseDate = new Date(drawerDate);
+            baseDate.setHours(0, 0, 0, 0);
+            const startTime = new Date(baseDate);
+            startTime.setHours(startHour, startMinute, 0, 0);
+            const endTime = new Date(baseDate);
+            endTime.setHours(endHour, endMinute, 0, 0);
+            if (endTime <= startTime) {
+              endTime.setDate(endTime.getDate() + 1);
+            }
+            const clientDetailsPayload = [{
+              clientId: entry.client?.id!,
+              serviceIds: [service.id],
+              stylistIds: [service.stylistId]
+            }];
+            // Update the existing appointment instance on the new date/time
+            const updateData = {
+              id: service.appointmentInstanceId!,
+              start_time: startTime.toISOString(),
+              end_time: endTime.toISOString(),
+              notes: appointmentNotes,
+              status: editingAppointment.status,
+              client_id: entry.client?.id!,
+              stylist_id: service.stylistId,
+              service_id: service.id,
+              is_for_someone_else: entry.isForSomeoneElse,
+              clientDetails: clientDetailsPayload
+            };
+            await updateAppointment(updateData);
+            toast.success('Appointment shifted successfully!');
+            handleCloseDrawer();
+            return;
+          }
+        }
+      }
       for (const entry of clientEntries) {
         let clientId = entry.client?.id;
         if (!clientId && entry.client) {
@@ -765,8 +816,9 @@ export default function Appointments() {
         if (!clientId) throw new Error('Client ID is missing.');
 
         const servicesInDrawer = entry.services;
-        const baseDateForNew = selectedSlot ? new Date(selectedSlot.start) : new Date(selectedDate);
-        baseDateForNew.setHours(0,0,0,0);
+        // Use drawerDate for base date instead of selectedSlot or selectedDate
+        const baseDateForNew = new Date(drawerDate)
+        baseDateForNew.setHours(0,0,0,0)
 
         if (editingAppointment) {
           // UPDATE LOGIC FOR EXISTING GROUPED/SINGLE APPOINTMENT
@@ -793,8 +845,8 @@ export default function Appointments() {
             const [endHour, endMinute] = service.toTime.split(':').map(Number);
             
             // Use editingAppointment's date as the base for existing appointments
-            const baseDateForExisting = new Date(editingAppointment.start_time);
-            baseDateForExisting.setHours(0,0,0,0);
+            const baseDateForExisting = new Date(drawerDate)
+            baseDateForExisting.setHours(0,0,0,0)
 
             const startTime = new Date(baseDateForExisting);
             startTime.setHours(startHour, startMinute, 0, 0);
@@ -1183,6 +1235,16 @@ export default function Appointments() {
     }
   };
 
+  useEffect(() => {
+    if (editingAppointment) {
+      setDrawerDate(new Date(editingAppointment.start_time))
+    } else if (selectedSlot) {
+      setDrawerDate(new Date(selectedSlot.start))
+    } else {
+      setDrawerDate(selectedDate)
+    }
+  }, [editingAppointment, selectedSlot, selectedDate])
+
   // ============================================
   // Rendering Logic
   // ============================================
@@ -1309,36 +1371,42 @@ export default function Appointments() {
           },
         }}
       >
-        {/* Header with back button and title */}
-        <Box 
-          sx={{ 
-            display: 'flex', 
-            alignItems: 'center', 
-            p: 2, 
-            borderBottom: '1px solid', 
-            borderColor: 'divider', 
-            position: 'relative'
-          }}
+        {/* Header with back button, title, and calendar icon */}
+        <Box
+          sx={{ display: 'flex', alignItems: 'center', p: 2, borderBottom: '1px solid', borderColor: 'divider', position: 'relative' }}
         >
-          <IconButton 
-            onClick={handleCloseDrawer} 
-            sx={{ position: 'absolute', left: 8 }}
-          >
+          <IconButton onClick={handleCloseDrawer} sx={{ position: 'absolute', left: 8 }}>
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
               <path d="M15 18L9 12L15 6" stroke="#6B8E23" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
             </svg>
           </IconButton>
-          <Typography 
-            variant="h6" 
-            sx={{ 
-              color: '#6B8E23',
-              flex: 1,
-              textAlign: 'center'
-            }}
-          >
-            Create Appointment
+          <Typography variant="h6" sx={{ color: '#6B8E23', flex: 1, textAlign: 'center' }}>
+            {editingAppointment ? 'Update Appointment' : 'Create Appointment'}
           </Typography>
+          <IconButton
+            onClick={(e) => setDrawerDatePickerAnchorEl(e.currentTarget)}
+            sx={{ position: 'absolute', right: 8 }}
+          >
+            <CalendarIcon sx={{ color: '#6B8E23' }} />
+          </IconButton>
         </Box>
+
+        {/* Date Picker Popover */}
+        <Popover
+          open={datePickerOpen}
+          anchorEl={drawerDatePickerAnchorEl}
+          onClose={() => setDrawerDatePickerAnchorEl(null)}
+          anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+          transformOrigin={{ vertical: 'top', horizontal: 'center' }}
+        >
+          <LocalizationProvider dateAdapter={AdapterDateFns}>
+            <DatePicker
+              value={drawerDate}
+              onChange={(newDate) => newDate && setDrawerDate(newDate)}
+              slotProps={{ textField: { sx: { m: 1 } } }}
+            />
+          </LocalizationProvider>
+        </Popover>
 
         {/* Form Content Area - Allow Scrolling */}
         <Box sx={{ p: 3, overflowY: 'auto', flexGrow: 1, bgcolor: '#F5F5F5' }}>

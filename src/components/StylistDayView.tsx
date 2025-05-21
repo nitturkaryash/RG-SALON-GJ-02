@@ -2169,10 +2169,15 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
               ModalProps={{ keepMounted: true }}
               PaperProps={{ sx: { width: 500, display: 'flex', flexDirection: 'column' } }}>
         
-        {/* Header */}
-        <Box sx={{ p: 3, pb: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid', borderColor: 'divider' }}>
-          <Typography variant="h6">Edit Appointment</Typography>
-          <IconButton onClick={handleEditDialogClose}><CloseIcon /></IconButton>
+        {/* Header with calendar icon */}
+        <Box sx={{ p: 3, pb: 1, display: 'flex', alignItems: 'center', borderBottom: '1px solid', borderColor: 'divider', position: 'relative' }}>
+          <IconButton onClick={handleDatePickerClick} sx={{ position: 'absolute', left: 8 }}>
+            <CalendarMonth sx={{ color: theme.palette.primary.main }} />
+          </IconButton>
+          <Typography variant="h6" sx={{ flex: 1, textAlign: 'center' }}>Edit Appointment</Typography>
+          <IconButton onClick={handleEditDialogClose} sx={{ position: 'absolute', right: 8 }}>
+            <CloseIcon />
+          </IconButton>
         </Box>
         
         {/* Scrollable content area */}
