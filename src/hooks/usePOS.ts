@@ -17,7 +17,7 @@ declare global {
 }
 
 // Extended payment method types to include BNPL
-export const PAYMENT_METHODS = ['cash', 'credit_card', 'debit_card', 'upi', 'bnpl'] as const
+export const PAYMENT_METHODS = ['cash', 'credit_card', 'debit_card', 'upi', 'bnpl', 'membership'] as const
 export type PaymentMethod = typeof PAYMENT_METHODS[number]
 
 // Add split to payment methods where needed
@@ -30,6 +30,7 @@ export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
   debit_card: 'Debit Card',
   upi: 'UPI',
   bnpl: 'Buy Now Pay Later',
+  membership: 'Membership'
 }
 
 // Interface for payment details - used for split payments
@@ -105,13 +106,13 @@ export interface CreateOrderItemData {
 	quantity: number;
 	price: number;
 	total: number;
-	type: 'product' | 'service';
+	type: 'product' | 'service' | 'membership';
 	hsn_code?: string;
 	units?: string;
 	category?: string;
 	gst_percentage?: number;
 	discount?: number;
-	for_salon_use?: boolean;
+	duration_months?: number;
 }
 
 // Type for services within CreateOrderData (if needed explicitly)

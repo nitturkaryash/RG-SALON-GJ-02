@@ -864,12 +864,20 @@ export default function POS() {
 	}, [orderItems]);
 
 	const calculateProductGstAmount = useCallback((subtotal: number) => {
+		// If using membership payment and not split payment, disable GST
+		if (useMembershipPayment && !isSplitPayment) {
+			return 0;
+		}
 		return isProductGstApplied ? (subtotal * productGstRate) / 100 : 0;
-	}, [isProductGstApplied, productGstRate]);
+	}, [isProductGstApplied, productGstRate, useMembershipPayment, isSplitPayment]);
 
 	const calculateServiceGstAmount = useCallback((subtotal: number) => {
+		// If using membership payment and not split payment, disable GST
+		if (useMembershipPayment && !isSplitPayment) {
+			return 0;
+		}
 		return isServiceGstApplied ? (subtotal * serviceGstRate) / 100 : 0;
-	}, [isServiceGstApplied, serviceGstRate]);
+	}, [isServiceGstApplied, serviceGstRate, useMembershipPayment, isSplitPayment]);
 
 	const calculateTotalDiscount = useCallback(() => {
 		// Sum all individual discounts
@@ -1002,7 +1010,7 @@ export default function POS() {
 	}, [total, getAmountPaid]); // Add getAmountPaid dependency
 
 	// Payment amounts map for editable multi-method entries
-	const [paymentAmounts, setPaymentAmounts] = useState<Record<string, number>>({
+	const [paymentAmounts, setPaymentAmounts] = useState<Record<PaymentMethod, number>>({
 		cash: total,
 		credit_card: 0,
 		debit_card: 0,
@@ -1448,6 +1456,12 @@ export default function POS() {
 			});
 			
 			// Call the standalone function with the correct parameters
+			const subtotal = calculateProductSubtotal() + calculateServiceSubtotal();
+			const tax = calculateProductGstAmount(calculateProductSubtotal()) + calculateServiceGstAmount(calculateServiceSubtotal());
+			// Always use the full amount regardless of payment method
+			const totalAmount = subtotal + tax - walkInDiscount;
+			
+			// Create the order with the actual total amount, regardless of payment method
 			const orderResult = await createWalkInOrderMutation.mutateAsync({
 				order_id: uuidv4(),
 				client_id: clientIdToUse || '', 
@@ -1464,16 +1478,16 @@ export default function POS() {
 				})) as any[]),
 				
 				// Include breakdown of different discount types in the order
-				payment_method: isSplitPayment ? 'split' : walkInPaymentMethod,
+				payment_method: isSplitPayment ? 'split' : (useMembershipPayment ? 'membership' : walkInPaymentMethod),
 				split_payments: isSplitPayment ? splitPayments : undefined,
 				
 				discount: walkInDiscount,
 				discount_percentage: walkInDiscountPercentage,
 				
-				subtotal: calculateProductSubtotal() + calculateServiceSubtotal(),
-				tax: calculateProductGstAmount(calculateProductSubtotal()) + calculateServiceGstAmount(calculateServiceSubtotal()),
-				total: calculateTotalAmount(),
-				total_amount: calculateTotalAmount(),
+				subtotal: subtotal,
+				tax: tax,
+				total: totalAmount, // Always show the actual order amount
+				total_amount: totalAmount, // Always show the actual order amount
 				status: 'completed',
 				order_date: salonConsumptionDate ? salonConsumptionDate.toISOString() : new Date().toISOString(),
 				is_walk_in: true,
@@ -1481,8 +1495,8 @@ export default function POS() {
 				pending_amount: isSplitPayment ? Math.max(0, calculateTotalAmount() - getAmountPaid()) : 0,
 				payments: isSplitPayment ? splitPayments : [{
 					id: uuidv4(),
-					amount: calculateTotalAmount(),
-					payment_method: walkInPaymentMethod,
+					amount: totalAmount, // Always store the full order amount
+					payment_method: useMembershipPayment ? 'membership' : walkInPaymentMethod,
 					payment_date: salonConsumptionDate ? salonConsumptionDate.toISOString() : new Date().toISOString()
 				}]
 			});
@@ -3251,24 +3265,28 @@ export default function POS() {
 											<Switch
 												checked={useMembershipPayment}
 												onChange={e => {
-													setUseMembershipPayment(e.target.checked);
-													if (e.target.checked) {
-														// When enabling membership payment, move amount from cash to membership
-														const paymentAmount = Math.min(total, activeClientMembership.currentBalance);
-														setPaymentAmounts(prev => ({
-															...prev,
-															membership: paymentAmount,
-															cash: Math.max(0, total - paymentAmount)
-														}));
-													} else {
-														// When disabling, move amount from membership to cash
-														const membershipAmount = paymentAmounts.membership;
-														setPaymentAmounts(prev => ({
-															...prev,
-															membership: 0,
-															cash: prev.cash + membershipAmount
-														}));
-													}
+													                                                        setUseMembershipPayment(e.target.checked);
+                                                        if (e.target.checked) {
+                                                                // When using membership, use the full amount
+                                                                const paymentAmount = Math.min(total, activeClientMembership.currentBalance);
+                                                                setPaymentAmounts(prev => ({
+                                                                        ...prev,
+                                                                        membership: total, // Use full amount for membership
+                                                                        cash: 0 // No cash payment needed
+                                                                }));
+                                                                // Set walkInPaymentMethod to membership
+                                                                setWalkInPaymentMethod('membership');
+                                                        } else {
+                                                                // When disabling, move amount from membership to cash
+                                                                const membershipAmount = paymentAmounts.membership;
+                                                                setPaymentAmounts(prev => ({
+                                                                        ...prev,
+                                                                        membership: 0,
+                                                                        cash: prev.cash + membershipAmount
+                                                                }));
+                                                                // Reset walkInPaymentMethod to cash
+                                                                setWalkInPaymentMethod('cash');
+                                                        }
 												}}
 												size="small"
 											/>
@@ -3291,7 +3309,7 @@ export default function POS() {
 
 							{/* Payment Method Cards */}
 							<Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, mb: 2 }}>
-								{/* Show all payment methods */}
+								{/* Show all payment methods except membership */}
 								{(['cash', 'credit_card', 'debit_card', 'upi', 'bnpl'] as const).map(method => (
 									<Box
 										key={method}
@@ -3572,9 +3590,14 @@ export default function POS() {
 								fullWidth
 								sx={{ mt: 2 }}
 								onClick={async () => {
+									// Calculate total based on payment method
+									const orderTotal = useMembershipPayment ? 
+										calculateProductSubtotal() + calculateServiceSubtotal() : // No GST for membership
+										calculateTotalAmount(); // Include GST for other methods
+
 									// Build payments array from paymentAmounts
-									if (isSplitPayment) {
-										// Only setup split payments if split payment mode is enabled
+									if (isSplitPayment && !useMembershipPayment) {
+										// Only setup split payments if split payment mode is enabled and not using membership
 										const payments = Object.entries(paymentAmounts)
 											.filter(([_, amt]) => amt > 0)
 											.map(([method, amt]) => ({ 
@@ -3584,10 +3607,13 @@ export default function POS() {
 											}));
 										setSplitPayments(payments);
 									}
-									// Don't automatically set split payment to true
 									await handleCreateWalkInOrder();
 								}}
-								disabled={processing || Object.values(paymentAmounts).reduce((a, b) => a + b, 0) < calculateTotalAmount()}
+								disabled={processing || (
+									useMembershipPayment ? 
+										paymentAmounts.membership < (calculateProductSubtotal() + calculateServiceSubtotal()) : // Check without GST for membership
+										Object.values(paymentAmounts).reduce((a, b) => a + b, 0) < calculateTotalAmount() // Check with GST for other methods
+								)}
 								startIcon={processing ? <CircularProgress size={20} /> : <CheckIcon />}
 							>
 								{processing ? 'Processing...' : 'Complete Order'}

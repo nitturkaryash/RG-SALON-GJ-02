@@ -8,7 +8,7 @@ export type OrderBy =
   'balance_value';
 
 // Type for payment methods
-export type PaymentMethod = 'cash' | 'credit_card' | 'debit_card' | 'upi' | 'bnpl';
+export type PaymentMethod = 'cash' | 'credit_card' | 'debit_card' | 'upi' | 'bnpl' | 'membership';
 
 // Order interface for POS system
 export interface Order {
