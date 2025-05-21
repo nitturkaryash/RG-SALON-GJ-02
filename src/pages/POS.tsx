@@ -3265,28 +3265,29 @@ export default function POS() {
 											<Switch
 												checked={useMembershipPayment}
 												onChange={e => {
-													                                                        setUseMembershipPayment(e.target.checked);
-                                                        if (e.target.checked) {
-                                                                // When using membership, use the full amount
-                                                                const paymentAmount = Math.min(total, activeClientMembership.currentBalance);
-                                                                setPaymentAmounts(prev => ({
-                                                                        ...prev,
-                                                                        membership: total, // Use full amount for membership
-                                                                        cash: 0 // No cash payment needed
-                                                                }));
-                                                                // Set walkInPaymentMethod to membership
-                                                                setWalkInPaymentMethod('membership');
-                                                        } else {
-                                                                // When disabling, move amount from membership to cash
-                                                                const membershipAmount = paymentAmounts.membership;
-                                                                setPaymentAmounts(prev => ({
-                                                                        ...prev,
-                                                                        membership: 0,
-                                                                        cash: prev.cash + membershipAmount
-                                                                }));
-                                                                // Reset walkInPaymentMethod to cash
-                                                                setWalkInPaymentMethod('cash');
-                                                        }
+													setUseMembershipPayment(e.target.checked);
+													if (e.target.checked) {
+														// When using membership, use the subtotal without GST
+														const subtotal = calculateProductSubtotal() + calculateServiceSubtotal();
+														const paymentAmount = Math.min(subtotal, activeClientMembership.currentBalance);
+														setPaymentAmounts(prev => ({
+															...prev,
+															membership: paymentAmount, // Use subtotal for membership
+															cash: 0 // No cash payment needed
+														}));
+														// Set walkInPaymentMethod to membership
+														setWalkInPaymentMethod('membership');
+													} else {
+														// When disabling, move amount from membership to cash
+														const membershipAmount = paymentAmounts.membership;
+														setPaymentAmounts(prev => ({
+															...prev,
+															membership: 0,
+															cash: prev.cash + membershipAmount
+														}));
+														// Reset walkInPaymentMethod to cash
+														setWalkInPaymentMethod('cash');
+													}
 												}}
 												size="small"
 											/>
