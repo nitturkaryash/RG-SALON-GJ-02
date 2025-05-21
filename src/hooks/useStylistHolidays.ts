@@ -3,6 +3,7 @@ import { toast } from 'react-toastify'
 import { v4 as uuidv4 } from 'uuid'
 import { supabase } from '../utils/supabase/supabaseClient.js'
 import { format } from 'date-fns'
+import React from 'react'
 
 export interface StylistHoliday {
   id: string;
@@ -267,29 +268,28 @@ export function useStylistHolidays() {
       
       // Update stylists who have holidays today to be unavailable
       const { error: errorUnavailable } = await supabase.rpc('update_stylists_on_holiday');
-      
       if (errorUnavailable) {
         console.error('Error updating stylists on holiday:', errorUnavailable);
       }
       
-      // Optionally, reset stylists who don't have holidays today back to available
-      // This is commented out as it might override manual availability settings
-      // But you can uncomment it if you want automatic availability resets
-      /*
+      // Reset stylists who don't have holidays today back to available
       const { error: errorAvailable } = await supabase.rpc('reset_stylists_not_on_holiday');
-      
       if (errorAvailable) {
         console.error('Error resetting stylists not on holiday:', errorAvailable);
       }
-      */
       
       // Refresh stylists data
       queryClient.invalidateQueries({ queryKey: ['stylists'] });
-      
     } catch (error) {
       console.error('Error in updateStylistAvailability:', error);
     }
   };
+
+  // Sync availability on initial load
+  React.useEffect(() => {
+    // Ensure availability flags are correct based on today's holidays
+    updateStylistAvailability();
+  }, []);
 
   // Check if a stylist is on holiday for a specific date
   const isStylistOnHoliday = async (stylistId: string, date?: Date) => {

@@ -3247,7 +3247,7 @@ export default function POS() {
 							</Typography>
 
 							{/* Membership Status and Toggle */}
-							{activeClientMembership ? (
+							{activeClientMembership && (
 								<Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
 									<Chip
 										icon={<CardMembershipIcon />}
@@ -3294,17 +3294,6 @@ export default function POS() {
 										}
 										label="Pay via Membership"
 									/>
-								</Box>
-							) : selectedClient && (
-								<Box sx={{ mb: 2 }}>
-									<Button
-										startIcon={<CardMembershipIcon />}
-										variant="outlined"
-										size="small"
-										onClick={() => setTabValue(2)} // Switch to membership tab
-									>
-										Add Membership Plan
-									</Button>
 								</Box>
 							)}
 

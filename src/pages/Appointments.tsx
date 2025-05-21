@@ -32,7 +32,9 @@ import {
   List,
   ListItem,
   ListItemText,
-  ListSubheader
+  ListSubheader,
+  Checkbox,
+  FormControlLabel
 } from '@mui/material'
 import { useAppointments, Appointment, MergedAppointment } from '../hooks/useAppointments'
 import { useStylists, Stylist, StylistBreak } from '../hooks/useStylists'
@@ -121,6 +123,8 @@ interface ClientAppointmentEntry {
   client: (Client & { inputValue?: string }) | null;
   services: ServiceEntry[];
   stylists: Pick<Stylist, 'id' | 'name'>[];
+  // Flag to indicate booking on behalf of someone else
+  isForSomeoneElse: boolean;
 }
 
 // Define filter for freeSolo client options
@@ -140,6 +144,8 @@ interface ServiceOption extends BaseService {
 // Clean up service types
 interface ExtendedClientAppointmentEntry extends Omit<ClientAppointmentEntry, 'services'> {
   services: ServiceEntry[];
+  // Flag to indicate booking on behalf of someone else
+  isForSomeoneElse: boolean;
 }
 
 // Helper for button styles for CustomAutocompleteListbox
@@ -236,7 +242,8 @@ export default function Appointments() {
     id: uuidv4(), 
     client: null, 
     services: [], 
-    stylists: [] 
+    stylists: [],
+    isForSomeoneElse: false
   }]);
   const [appointmentTime, setAppointmentTime] = useState({ startTime: '', endTime: '' });
   const [appointmentNotes, setAppointmentNotes] = useState('');
@@ -278,30 +285,13 @@ export default function Appointments() {
   const { clients: allClients = [], isLoading: loadingClients, updateClientFromAppointment } = useClients();
   const { serviceCollections = [], isLoading: loadingCollections } = useServiceCollections();
 
-  // Frontend filtering of services to use
+  // --- Frontend filtering of services to use
   const activeServices = useMemo(() => {
     return (allServices || []).filter(service => service.active !== false);
   }, [allServices]);
 
-  // --- Moved Helper Function BEFORE its use in useMemo ---
-  const convertStylists = (stylists: Stylist[]): any[] => {
-    // Filter out stylists where available is false
-    return stylists
-      .filter(stylist => stylist.available !== false) // Only include available stylists
-      .map(stylist => ({
-        ...stylist,
-        breaks: (stylist.breaks || []).map((breakItem: StylistBreak) => ({
-          ...breakItem,
-          id: breakItem.id,
-          startTime: breakItem.startTime,
-          endTime: breakItem.endTime,
-          reason: breakItem.reason || ''
-        }))
-      }));
-  };
-
-  // --- Hooks Using Helper Functions ---
-  const processedStylists = useMemo(() => convertStylists(allStylists || []), [allStylists]);
+  // We will use allStylists directly for stylist day view
+  const processedStylists = allStylists || [];
 
   // --- Other Helper Functions ---
   const addBlankEntry = () => {
@@ -309,7 +299,8 @@ export default function Appointments() {
       id: uuidv4(),
       client: null,
       services: [],
-      stylists: []
+      stylists: [],
+      isForSomeoneElse: false
     }]);
   };
 
@@ -353,7 +344,7 @@ export default function Appointments() {
       startTime: `${startDate.getHours()}:${String(startDate.getMinutes()).padStart(2, '0')}`,
       endTime: `${endDate.getHours()}:${String(endDate.getMinutes()).padStart(2, '0')}`,
     });
-    setClientEntries([{ id: uuidv4(), client: null, services: [], stylists: [] }]);
+    setClientEntries([{ id: uuidv4(), client: null, services: [], stylists: [], isForSomeoneElse: false }]);
     setAppointmentNotes('');
   };
 
@@ -367,7 +358,7 @@ export default function Appointments() {
 
     if (!primaryClientInfo) {
       console.warn(`[handleAppointmentClick] Primary client data not found for ID: ${appointment.client_id}. Cannot populate drawer.`);
-      setClientEntries([{ id: uuidv4(), client: null, services: [], stylists: [] }]);
+      setClientEntries([{ id: uuidv4(), client: null, services: [], stylists: [], isForSomeoneElse: false }]);
       setAppointmentTime({ startTime: '', endTime: '' });
       setAppointmentNotes('');
       return;
@@ -377,10 +368,13 @@ export default function Appointments() {
 
     // Group all appointments for this client on the same day and consolidate their services
     const clickedDate = new Date(appointment.start_time);
-    const groupAppointments = appointments.filter((a: MergedAppointment) =>
-      a.client_id === appointment.client_id &&
-      isSameDay(new Date(a.start_time), clickedDate)
-    );
+    const groupAppointments = appointment.is_for_someone_else
+      ? [appointment]
+      : appointments.filter((a: MergedAppointment) =>
+          a.client_id === appointment.client_id &&
+          isSameDay(new Date(a.start_time), clickedDate) &&
+          !a.is_for_someone_else
+        );
     console.log("[handleAppointmentClick] Found group appointments:", groupAppointments.map(a => a.id));
 
     const consolidatedServiceEntries: ServiceEntry[] = [];
@@ -462,7 +456,8 @@ export default function Appointments() {
       id: uuidv4(), 
       client: primaryClientInfo, 
       services: consolidatedServiceEntries, 
-      stylists: finalStylistsForEntry 
+      stylists: finalStylistsForEntry,
+      isForSomeoneElse: appointment.is_for_someone_else || false
     }]);
 
     // Determine overall start/end from the consolidated services if available, otherwise use main appointment times
@@ -527,7 +522,8 @@ export default function Appointments() {
       id: uuidv4(), 
       client: null, 
       services: [], 
-      stylists: preSelectedStylist ? [{ id: preSelectedStylist.id, name: preSelectedStylist.name }] : []
+      stylists: preSelectedStylist ? [{ id: preSelectedStylist.id, name: preSelectedStylist.name }] : [],
+      isForSomeoneElse: false
     }]);
     setAppointmentNotes('');
   };
@@ -823,6 +819,7 @@ export default function Appointments() {
                 client_id: clientId!,
                 stylist_id: service.stylistId,
                 service_id: service.id, // service_definition_id
+                is_for_someone_else: entry.isForSomeoneElse,
                 clientDetails: clientDetailsPayload
               };
               await updateAppointment(updateData);
@@ -837,6 +834,7 @@ export default function Appointments() {
                 client_id: clientId!,
                 stylist_id: service.stylistId,
                 service_id: service.id, // service_definition_id
+                is_for_someone_else: entry.isForSomeoneElse,
                 clientDetails: clientDetailsPayload
               };
               await createAppointment(appointmentData);
@@ -879,6 +877,7 @@ export default function Appointments() {
               client_id: clientId!,
               stylist_id: service.stylistId,
               service_id: service.id,
+              is_for_someone_else: entry.isForSomeoneElse,
               clientDetails: [{
                 clientId: clientId!,
                 serviceIds: [service.id],
@@ -980,7 +979,7 @@ export default function Appointments() {
     setSelectedSlot(null);
     setEditingAppointment(null);
     setIsBilling(false);
-    setClientEntries([{ id: uuidv4(), client: null, services: [], stylists: [] }]);
+    setClientEntries([{ id: uuidv4(), client: null, services: [], stylists: [], isForSomeoneElse: false }]);
     setAppointmentTime({ startTime: '', endTime: '' });
     setAppointmentNotes('');
     setServiceSearchTerm('');
@@ -1259,7 +1258,7 @@ export default function Appointments() {
           {viewMode === 'calendar' ? (
             <StylistDayView
               key={selectedDate.toISOString()}
-              stylists={processedStylists}
+              stylists={allStylists || []}
               appointments={appointments}
               services={allServices}
               selectedDate={selectedDate}
@@ -1515,6 +1514,21 @@ export default function Appointments() {
                     }
                   }
                 }}
+              />
+            )}
+
+            {/* Add 'Book for someone else' checkbox */}
+            {clientEntries[0]?.client && (
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    checked={clientEntries[0].isForSomeoneElse}
+                    onChange={(e) => updateEntry(clientEntries[0].id, { isForSomeoneElse: e.target.checked })}
+                    color="primary"
+                  />
+                }
+                label="Book for someone else"
+                sx={{ mt: 2 }}
               />
             )}
 

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   Box, 
   Paper, 
@@ -33,7 +33,8 @@ import {
   CircularProgress,
   Drawer,
   Stack,
-  Chip
+  Chip,
+  Menu
 } from '@mui/material';
 import { styled } from '@mui/material/styles';
 import { ChevronLeft, ChevronRight, Today, Receipt, CalendarMonth, Delete as DeleteIcon, Close as CloseIcon, Add as AddIcon, Edit as EditIcon, Save as SaveIcon } from '@mui/icons-material';
@@ -442,6 +443,10 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
   const [currentDate, setCurrentDate] = useState<Date>(selectedDate || new Date());
   const [selectedAppointment, setSelectedAppointment] = useState<any | null>(null);
   const [editDialogOpen, setEditDialogOpen] = useState<boolean>(false);
+  // Track checked-in appointments and context menu state
+  const [checkedInIds, setCheckedInIds] = useState<Set<string>>(new Set());
+  const [contextMenuPosition, setContextMenuPosition] = useState<{ mouseX: number; mouseY: number } | null>(null);
+  const [contextMenuAppointment, setContextMenuAppointment] = useState<any | null>(null);
   // Add state for scroll position tracking
   const [scrollTop, setScrollTop] = useState(0);
   const [scrollLeft, setScrollLeft] = useState(0);
@@ -1722,6 +1727,7 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
     return todayAppointments
       .filter(appointment => appointment.stylist_id === stylistId)
       .map(appointment => {
+        const isCheckedIn = checkedInIds.has(appointment.id);
         // Find the service details
         const serviceName = appointment.serviceDetails?.name || 
                            (services.find(s => s.id === appointment.service_id)?.name) || 
@@ -1737,6 +1743,15 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
         const startTime = formatTime(appointment.start_time);
         const endTime = formatTime(appointment.end_time);
         
+        // Compute background color, yellow if checked in
+        const bgColor = isCheckedIn
+          ? theme.palette.warning.main
+          : status === 'completed'
+            ? theme.palette.grey[400]
+            : isPaid
+              ? theme.palette.success.light
+              : theme.palette.primary.main;
+        
         return (
           <Tooltip
             key={appointment.id}
@@ -1747,14 +1762,11 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
               draggable
               onDragStart={(e) => handleDragStart(e, appointment)}
               onClick={() => handleAppointmentClick(appointment)}
+              onContextMenu={(e) => handleContextMenu(e, appointment)}
               style={{
                 top: `${getAppointmentPosition(appointment.start_time)}px`,
                 height: `${getAppointmentDuration(appointment.start_time, appointment.end_time)}px`,
-                backgroundColor: status === 'completed'
-                  ? theme.palette.grey[400]
-                  : isPaid
-                    ? theme.palette.success.light
-                    : theme.palette.primary.main
+                backgroundColor: bgColor
               }}
               duration={getAppointmentDuration(appointment.start_time, appointment.end_time)}
               isPaid={isPaid}
@@ -1863,6 +1875,35 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
     // Removed CSS containment so sticky headers can anchor correctly
   }));
 
+  // Context menu handlers for check-in
+  const handleContextMenu = (event: React.MouseEvent, appointment: any) => {
+    event.preventDefault();
+    setContextMenuAppointment(appointment);
+    setContextMenuPosition({ mouseX: event.clientX - 2, mouseY: event.clientY - 4 });
+  };
+  const handleCloseContextMenu = () => {
+    setContextMenuAppointment(null);
+    setContextMenuPosition(null);
+  };
+  const handleCheckIn = () => {
+    if (contextMenuAppointment) {
+      setCheckedInIds(prev => new Set(prev).add(contextMenuAppointment.id));
+      // TODO: optionally call onUpdateAppointment to persist check-in status
+    }
+    handleCloseContextMenu();
+  };
+  const handleCheckOut = () => {
+    if (contextMenuAppointment) {
+      setCheckedInIds(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(contextMenuAppointment.id);
+        return newSet;
+      });
+      // TODO: optionally call onUpdateAppointment to persist check-out status
+    }
+    handleCloseContextMenu();
+  };
+
   return (
     <DayViewContainer>
       <DayViewHeader>
@@ -1960,28 +2001,40 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
           {/* Use the renderTimeColumn function to create the time column */}
           {renderTimeColumn()}
           
-          {stylists
-            .filter(stylist => stylist.available !== false)
-            .map((stylist, index, filteredStylists) => (
-            <StylistColumn 
+          {stylists.map((stylist, index, allStylists) => (
+            <StylistColumn
               key={stylist.id}
               className="stylist-column"
+              sx={{
+                // Dim and disable interaction for unavailable stylists (e.g., on holiday)
+                opacity: stylist.available !== false ? 1 : 0.5,
+                pointerEvents: stylist.available !== false ? 'auto' : 'none'
+              }}
             >
               <StylistHeader
                 className="stylist-header"
-                onClick={() => handleBreakDialogOpen(stylist.id)}
+                // Only allow opening break dialog if stylist is available
+                onClick={() => { if (stylist.available !== false) handleBreakDialogOpen(stylist.id) }}
                 sx={{
-                  cursor: 'pointer',
-                  '&:hover': {
-                    backgroundColor: theme.palette.salon.oliveLight,
-                    opacity: 0.9
-                  },
-                  ...(index === filteredStylists.length - 1 && {
+                  // Adjust cursor and colors based on availability
+                  cursor: stylist.available !== false ? 'pointer' : 'default',
+                  backgroundColor: stylist.available !== false
+                    ? theme.palette.salon.oliveLight
+                    : theme.palette.action.disabledBackground,
+                  color: stylist.available !== false
+                    ? 'white'
+                    : theme.palette.text.disabled,
+                  '&:hover': stylist.available !== false
+                    ? { backgroundColor: theme.palette.salon.oliveLight, opacity: 0.9 }
+                    : {},
+                  ...(index === allStylists.length - 1 && {
                     borderRight: 'none'
                   })
                 }}
               >
-                <Typography variant="subtitle2" sx={{ color: 'white' }}>{stylist.name}</Typography>
+                <Typography variant="subtitle2">
+                  {stylist.name}
+                </Typography>
               </StylistHeader>
               
               {timeSlots.map(slot => (
@@ -1991,7 +2044,7 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
                   onDragOver={(e) => handleDragOver(e, stylist.id, slot.hour, slot.minute)}
                   onDrop={(e) => handleDrop(e, stylist.id, slot.hour, slot.minute)}
                   sx={{
-                    ...(index === filteredStylists.length - 1 && {
+                    ...(index === allStylists.length - 1 && {
                       borderRight: 'none'
                     }),
                     ...(isBreakTime(stylist.id, slot.hour, slot.minute) && { 
@@ -2701,6 +2754,23 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
           {snackbarMessage}
         </Alert>
       </Snackbar>
+      {/* Context menu for appointment check-in */}
+      <Menu
+        open={contextMenuPosition !== null}
+        onClose={handleCloseContextMenu}
+        anchorReference="anchorPosition"
+        anchorPosition={
+          contextMenuPosition !== null
+            ? { top: contextMenuPosition.mouseY, left: contextMenuPosition.mouseX }
+            : undefined
+        }
+      >
+        {contextMenuAppointment && checkedInIds.has(contextMenuAppointment.id) ? (
+          <MenuItem onClick={handleCheckOut}>Check Out</MenuItem>
+        ) : (
+          <MenuItem onClick={handleCheckIn}>Check In</MenuItem>
+        )}
+      </Menu>
     </DayViewContainer>
   );
 }

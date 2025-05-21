@@ -49,6 +49,7 @@ export interface Appointment {
   billed?: boolean;
   stylist_ids?: string[];
   service_ids?: string[];
+  is_for_someone_else?: boolean;
 }
 
 export interface MergedAppointment extends Appointment {
@@ -150,6 +151,7 @@ interface CreateAppointmentData {
   client_id?: string; // Optional client_id
   phone?: string;     // Optional phone
   email?: string;     // Optional email
+  is_for_someone_else?: boolean;
 }
 
 // Define the expected input type for the update mutation
@@ -168,6 +170,7 @@ interface UpdateAppointmentData {
   status?: Appointment['status'];
   paid?: boolean;
   billed?: boolean;
+  is_for_someone_else?: boolean;
   // Primary keys if required by base table schema (might be redundant if clientDetails covers all)
   client_id?: string; 
   stylist_id?: string;
@@ -670,7 +673,6 @@ export function useAppointments() {
         status, 
         paid, 
         billed, 
-        // Include primary keys if they are part of the update data and exist on the table
         client_id, 
         stylist_id, 
         service_id 
@@ -686,18 +688,18 @@ export function useAppointments() {
         ...(service_id && { service_id }),
         ...(paid !== undefined && { paid }),
         ...(billed !== undefined && { billed }),
+        ...(data.is_for_someone_else !== undefined && { is_for_someone_else: data.is_for_someone_else }),
         updated_at: new Date().toISOString()
       };
       
       // Remove undefined keys to prevent sending them in the update payload
       Object.keys(validBaseUpdateData).forEach(key => {
-        // Explicitly type key or cast object to allow indexing
         const typedKey = key as keyof typeof validBaseUpdateData;
         if (validBaseUpdateData[typedKey] === undefined) {
           delete validBaseUpdateData[typedKey];
         }
       });
-
+      
       console.log(` -> Updating base appointment ${appointmentId} with:`, validBaseUpdateData);
       const { data: updatedAppointment, error: updateError } = await supabase
           .from('appointments')
