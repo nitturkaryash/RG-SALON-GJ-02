@@ -73,6 +73,13 @@ const PurchasesTab = () => {
       format: (value: number) => formatCurrency(value)
     },
     {
+      id: 'discount_on_purchase_percentage',
+      label: 'Discount %',
+      minWidth: 100,
+      align: 'right' as const,
+      format: (value: number) => value ? `${value.toFixed(2)}%` : '0%'
+    },
+    {
       id: 'purchase_invoice_value_rs',
       label: 'Invoice Value',
       minWidth: 120,

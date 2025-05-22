@@ -365,6 +365,7 @@ const PurchaseTab: React.FC<PurchaseTabProps> = ({ purchases, isLoading, error }
             
             const newStockQty = (data.stock_quantity || 0) + formState.purchase_qty;
             
+            // Update inventory products
             const { error: updateError } = await supabase
               .from('inventory_products')
               .update({ 
@@ -377,6 +378,31 @@ const PurchaseTab: React.FC<PurchaseTabProps> = ({ purchases, isLoading, error }
               console.error('Error updating product stock:', updateError);
             } else {
               console.log('Product stock updated to:', newStockQty);
+              
+              // Update purchase history with stock
+              const { error: historyUpdateError } = await supabase
+                .from('purchase_history_with_stock')
+                .update({
+                  purchase_qty: formState.purchase_qty,
+                  mrp_incl_gst: formState.mrp_incl_gst,
+                  mrp_excl_gst: formState.mrp_excl_gst,
+                  discount_on_purchase_percentage: formState.discount_on_purchase_percentage,
+                  gst_percentage: formState.gst_percentage,
+                  purchase_taxable_value: formState.purchase_taxable_value,
+                  purchase_igst: formState.purchase_igst,
+                  purchase_cgst: formState.purchase_cgst,
+                  purchase_sgst: formState.purchase_sgst,
+                  purchase_invoice_value_rs: formState.purchase_invoice_value_rs,
+                  updated_at: new Date().toISOString()
+                })
+                .eq('product_id', data.product_id)
+                .eq('purchase_invoice_number', formState.purchase_invoice_number);
+                
+              if (historyUpdateError) {
+                console.error('Error updating purchase history:', historyUpdateError);
+              } else {
+                console.log('Purchase history updated successfully');
+              }
             }
           }
         } catch (err) {
@@ -407,6 +433,9 @@ const PurchaseTab: React.FC<PurchaseTabProps> = ({ purchases, isLoading, error }
       await createPurchase(updatedFormState);
       
       toast.success('Purchase added successfully');
+      
+      // Refresh the purchases data
+      await fetchPurchases();
       
       setFormState({
         date: new Date().toISOString().split('T')[0],
@@ -572,7 +601,8 @@ const PurchaseTab: React.FC<PurchaseTabProps> = ({ purchases, isLoading, error }
           purchase_igst: 0,
           purchase_cgst: 0,
           purchase_sgst: 0,
-          purchase_invoice_value_rs: 0
+          purchase_invoice_value_rs: 0,
+          discount_on_purchase_percentage: item.discount_on_purchase_percentage || 0
         };
       }
       
@@ -583,6 +613,9 @@ const PurchaseTab: React.FC<PurchaseTabProps> = ({ purchases, isLoading, error }
       record.purchase_cgst += parseFloat(item.purchase_cgst || '0');
       record.purchase_sgst += parseFloat(item.purchase_sgst || '0');
       record.purchase_invoice_value_rs += parseFloat(item.purchase_invoice_value_rs || '0');
+      if (record.discount_on_purchase_percentage === 0) {
+        record.discount_on_purchase_percentage = item.discount_on_purchase_percentage || 0;
+      }
       
       return acc;
     }, {});
@@ -616,6 +649,7 @@ const PurchaseTab: React.FC<PurchaseTabProps> = ({ purchases, isLoading, error }
               <StyledTableCell>Units</StyledTableCell>
               <StyledTableCell align="right">Qty</StyledTableCell>
               <StyledTableCell align="right">MRP (Incl. GST)</StyledTableCell>
+              <StyledTableCell align="right">Discount %</StyledTableCell>
               <StyledTableCell align="right">GST %</StyledTableCell>
               <StyledTableCell align="right">Taxable Value</StyledTableCell>
               <StyledTableCell align="right">IGST</StyledTableCell>
@@ -668,6 +702,7 @@ const PurchaseTab: React.FC<PurchaseTabProps> = ({ purchases, isLoading, error }
                   <TableCell>{item.units}</TableCell>
                   <TableCell align="right">{item.purchase_qty.toFixed(2)}</TableCell>
                   <TableCell align="right">{formatCurrency(item.mrp_incl_gst || 0)}</TableCell>
+                  <TableCell align="right">{(item.discount_on_purchase_percentage || 0).toFixed(2)}%</TableCell>
                   <TableCell align="right">{(item.gst_percentage || 18).toFixed(2)}%</TableCell>
                   <TableCell align="right">{formatCurrency(item.purchase_taxable_value)}</TableCell>
                   <TableCell align="right">{formatCurrency(item.purchase_igst)}</TableCell>

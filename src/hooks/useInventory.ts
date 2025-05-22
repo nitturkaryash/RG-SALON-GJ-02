@@ -71,6 +71,7 @@ export interface PurchaseFormState {
   vendor_name?: string;
   invoice_no?: string;
   purchase_cost_per_unit_ex_gst?: number; // Add this field
+  purchase_invoice_number?: string; // Add this field
 }
 
 // Add interface for salon consumption recording
@@ -606,7 +607,79 @@ export const useInventory = () => {
     try {
       console.log('Creating purchase with data:', purchaseData);
       
-      // Wrap in try/catch to better handle the mutation
+      // Check if this is an update (if purchase_invoice_number exists)
+      if (purchaseData.purchase_invoice_number) {
+        const { data: existingPurchase, error: checkError } = await supabase
+          .from(TABLES.PURCHASES)
+          .select('*')
+          .eq('purchase_invoice_number', purchaseData.purchase_invoice_number)
+          .eq('product_name', purchaseData.product_name)
+          .single();
+          
+        if (!checkError && existingPurchase) {
+          // This is an update
+          console.log('Updating existing purchase:', existingPurchase);
+          
+          const fullPurchaseData = calculatePurchaseValues(purchaseData);
+          
+          const { error: updateError } = await supabase
+            .from(TABLES.PURCHASES)
+            .update({
+              purchase_qty: fullPurchaseData.purchase_qty,
+              mrp_incl_gst: fullPurchaseData.mrp_incl_gst,
+              mrp_excl_gst: fullPurchaseData.mrp_excl_gst,
+              discount_on_purchase_percentage: fullPurchaseData.discount_on_purchase_percentage,
+              gst_percentage: fullPurchaseData.gst_percentage,
+              purchase_taxable_value: fullPurchaseData.purchase_taxable_value,
+              purchase_igst: fullPurchaseData.purchase_igst,
+              purchase_cgst: fullPurchaseData.purchase_cgst,
+              purchase_sgst: fullPurchaseData.purchase_sgst,
+              purchase_invoice_value_rs: fullPurchaseData.purchase_invoice_value_rs,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', existingPurchase.id);
+            
+          if (updateError) {
+            console.error('Error updating purchase:', updateError);
+            throw updateError;
+          }
+          
+          // Also update purchase history with stock
+          const { error: historyUpdateError } = await supabase
+            .from(TABLES.PURCHASE_HISTORY_WITH_STOCK)
+            .update({
+              purchase_qty: fullPurchaseData.purchase_qty,
+              mrp_incl_gst: fullPurchaseData.mrp_incl_gst,
+              mrp_excl_gst: fullPurchaseData.mrp_excl_gst,
+              discount_on_purchase_percentage: fullPurchaseData.discount_on_purchase_percentage,
+              gst_percentage: fullPurchaseData.gst_percentage,
+              purchase_taxable_value: fullPurchaseData.purchase_taxable_value,
+              purchase_igst: fullPurchaseData.purchase_igst,
+              purchase_cgst: fullPurchaseData.purchase_cgst,
+              purchase_sgst: fullPurchaseData.purchase_sgst,
+              purchase_invoice_value_rs: fullPurchaseData.purchase_invoice_value_rs,
+              updated_at: new Date().toISOString()
+            })
+            .eq('purchase_id', existingPurchase.purchase_id);
+            
+          if (historyUpdateError) {
+            console.error('Error updating purchase history:', historyUpdateError);
+            throw historyUpdateError;
+          }
+          
+          // Manually invalidate queries
+          queryClient.invalidateQueries({ queryKey: [QUERY_KEYS.PURCHASES] });
+          queryClient.invalidateQueries({ queryKey: [QUERY_KEYS.BALANCE_STOCK] });
+          
+          // Force immediate recalculation of balance stock
+          await recalculateBalanceStock();
+          
+          // Return the updated purchase
+          return [existingPurchase];
+        }
+      }
+      
+      // If not an update, proceed with creation as before
       try {
         const result = await createPurchaseMutation.mutateAsync(purchaseData);
         console.log('Purchase creation response:', result);
