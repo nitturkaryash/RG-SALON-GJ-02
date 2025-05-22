@@ -394,9 +394,8 @@ export default function Appointments() {
         app.clientDetails.forEach(clientDetailEntry => {
           if (clientDetailEntry.id === primaryClientInfo.id && Array.isArray(clientDetailEntry.services)) {
             clientDetailEntry.services.forEach(serviceFromDetail => {
-              const originalAppointmentId = (serviceFromDetail as any).original_appointment_id ||
-                                            (serviceFromDetail as any).appointment_id ||
-                                            (serviceFromDetail as any).instance_id;
+              // Use the current appointment instance id for editing/rescheduling
+              const originalAppointmentId = app.id;
               const serviceStylistId = (serviceFromDetail as any).original_stylist_id ||
                                       (serviceFromDetail as any).stylist_id || app.stylist_id;
               const serviceStartTimeStr = (serviceFromDetail as any).original_start_time ||
@@ -1320,7 +1319,7 @@ export default function Appointments() {
           {viewMode === 'calendar' ? (
             <StylistDayView
               key={selectedDate.toISOString()}
-              stylists={allStylists || []}
+              stylists={(allStylists?.map(s => ({ ...s, breaks: s.breaks || [] })) || []) as any}
               appointments={appointments}
               services={allServices}
               selectedDate={selectedDate}
@@ -2196,7 +2195,8 @@ export default function Appointments() {
                     name: s.name, 
                     price: s.price 
                   }));
-                  console.log("[Create Bill] servicesForPOS from drawer:", servicesForPOS);
+                  console.log("[Create Bill] Raw services from clientEntries[0].services before mapping:", JSON.stringify(clientEntries[0].services, null, 2));
+                  console.log("[Create Bill] Mapped servicesForPOS to be sent to POS:", JSON.stringify(servicesForPOS, null, 2));
                       
                   if (servicesForPOS.length === 0) {
                     toast.error("No services found for this appointment to create a bill.");
@@ -2206,12 +2206,18 @@ export default function Appointments() {
 
                   const appointmentDataForPOS = {
                     clientName: clientEntries[0].client.full_name,
-                    stylistId: editingAppointment.stylist_id, 
+                    stylistId: editingAppointment.stylist_id,
                     services: servicesForPOS,
-                    id: editingAppointment.id, 
-                    type: 'service', 
+                    id: editingAppointment.id,
+                    // Use 'service_collection' type when multiple services, else 'service'
+                    type: servicesForPOS.length > 1 ? 'service_collection' : 'service',
+                    // For single service, include serviceId and servicePrice for fallback
+                    ...(servicesForPOS.length === 1
+                      ? { serviceId: servicesForPOS[0].id, servicePrice: servicesForPOS[0].price }
+                      : {}),
+                    // End of appointment data object
                   };
-                  console.log("[Create Bill] Final appointmentDataForPOS to be sent to /pos:", appointmentDataForPOS);
+                  console.log("[Create Bill] Final appointmentDataForPOS to be sent to /pos:", JSON.stringify(appointmentDataForPOS, null, 2));
                   navigate('/pos', { state: { appointmentData: appointmentDataForPOS } });
                   handleCloseDrawer(); 
                 } else {

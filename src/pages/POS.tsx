@@ -1103,9 +1103,12 @@ export default function POS() {
 		console.log('[POS useEffect] Running effect. Location:', location);
 		const appointmentNavData = location.state?.appointmentData;
 
+    // ADDED: Log the entire appointmentNavData object as received
+    console.log('[POS useEffect] Received appointmentNavData:', JSON.stringify(appointmentNavData, null, 2));
+
 		// Defer processing appointment data until services are loaded
 		if (appointmentNavData && (loadingServices || !services || services.length === 0)) {
-			console.log('[POS useEffect] Services not loaded yet; deferring appointment data processing.');
+			console.log('[POS useEffect] Services not loaded yet or are loading; deferring appointment data processing. loadingServices:', loadingServices, 'services length:', services?.length);
 			return;
 		}
 
@@ -1141,46 +1144,48 @@ export default function POS() {
 				}
 			}
 
-			if (appointmentNavData.services && Array.isArray(appointmentNavData.services) && (appointmentNavData.type === 'service_collection' || appointmentNavData.type === 'service')) {
+			const newOrderItems: OrderItem[] = [];
+      // ADDED: Log appointmentNavData.services before iterating
+      console.log('[POS useEffect] appointmentNavData.services to be processed:', JSON.stringify(appointmentNavData.services, null, 2));
+      // ADDED: Log the available services in POS context
+      console.log('[POS useEffect] Available services in POS context (services hook):', JSON.stringify(services?.map(s => ({id: s.id, name: s.name, price: s.price})), null, 2));
+
+			if (appointmentNavData.services && Array.isArray(appointmentNavData.services)) {
 				appointmentNavData.services.forEach((serviceInfo: any) => {
+          // ADDED: Log each serviceInfo from appointmentNavData
+          console.log('[POS useEffect] Processing serviceInfo from nav data:', JSON.stringify(serviceInfo, null, 2));
 					const serviceFromHook = services?.find(s => s.id === serviceInfo.id);
+          // ADDED: Log whether serviceFromHook was found
+          if (serviceFromHook) {
+            console.log('[POS useEffect] Matched serviceFromHook:', JSON.stringify(serviceFromHook, null, 2));
+          } else {
+            console.warn('[POS useEffect] NO MATCH FOUND for serviceInfo.id:', serviceInfo.id, 'in POS services list.');
+          }
+
 					if (serviceFromHook) {
-						console.log('[POS useEffect] Found service to add from array:', serviceFromHook.name, `(ID: ${serviceFromHook.id}) Calling handleAddToOrder...`);
-						const serviceForOrder: POSService = {
-							id: serviceFromHook.id,
-							name: serviceInfo.name || serviceFromHook.name,
+						console.log('[POS useEffect] Preparing service to add from array:', serviceFromHook.name, "(ID:", serviceFromHook.id, ")");
+						const serviceForOrderItem: OrderItem = {
+							id: uuidv4(),
+							order_id: '', // Will be set when order is created
+							item_id: serviceFromHook.id,
+							item_name: serviceInfo.name || serviceFromHook.name,
 							price: serviceInfo.price !== undefined ? serviceInfo.price : serviceFromHook.price,
+							quantity: 1,
+							total: (serviceInfo.price !== undefined ? serviceInfo.price : serviceFromHook.price) * 1,
 							type: 'service',
-							duration: serviceFromHook.duration,
 							category: serviceFromHook.category,
+							// duration_months, discount, discount_percentage, for_salon_use, purpose can be added if available/needed
 						};
-						handleAddToOrder(serviceForOrder, 1);
+						newOrderItems.push(serviceForOrderItem);
 					} else {
-						console.warn(`[POS useEffect] Service ID from array (${serviceInfo.id}) not found in local list. Using fallback.`);
-						const serviceFallback: POSService = {
-							id: serviceInfo.id,
-							name: serviceInfo.name || 'Unknown Service',
-							price: serviceInfo.price || 0,
-							type: 'service',
-						};
-						handleAddToOrder(serviceFallback, 1);
+						console.warn('[POS useEffect] Service ID from array (', serviceInfo.id, ') received, but service not found in local list.');
 					}
 				});
-			} else if (appointmentNavData.serviceId && appointmentNavData.type === 'service') {
-				// Fallback for old single service structure, if necessary, though Appointments.tsx was changed.
-				const serviceFromHook = services?.find(s => s.id === appointmentNavData.serviceId);
-				if (serviceFromHook) {
-					console.log('[POS useEffect] Found single service to add (fallback):', serviceFromHook.name, "(ID:", serviceFromHook.id, "). Calling handleAddToOrder...");
-					const serviceForOrder: POSService = {
-						id: serviceFromHook.id,
-						name: serviceFromHook.name,
-						price: appointmentNavData.servicePrice !== undefined ? appointmentNavData.servicePrice : serviceFromHook.price,
-						type: 'service', 
-						duration: serviceFromHook.duration,
-						category: serviceFromHook.category,
-					};
-					handleAddToOrder(serviceForOrder, 1);
-				}
+			}
+
+			if (newOrderItems.length > 0) {
+				setOrderItems(prevItems => [...prevItems, ...newOrderItems]);
+				newOrderItems.forEach(item => toast.success(`Added ${item.item_name} to order`));
 			}
 
 			setCurrentAppointmentId(appointmentNavData.id || null);
@@ -1194,7 +1199,7 @@ export default function POS() {
 				processedNavKeyRef.current = null;
 			}
 		}
-	}, [location, services, clients, stylists, loadingServices, handleAddToOrder, navigate]); // Refined dependencies for this specific useEffect
+	}, [location, services, clients, stylists, loadingServices, navigate, toast]); // Removed handleAddToOrder, added toast
 
 	const fetchBalanceStockData = useCallback(async () => {
 		console.log("Fetching latest stock data from products table...");

@@ -397,7 +397,7 @@ export const useInventory = () => {
         const { data, error } = await supabase
           .from(tableNameToUse)
           .select('*')
-          .order('Date', { ascending: false });
+          .order('date', { ascending: false });
           
         if (error) throw error;
         return data || [];
