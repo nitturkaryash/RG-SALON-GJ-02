@@ -1145,18 +1145,25 @@ export default function POS() {
 				appointmentNavData.services.forEach((serviceInfo: any) => {
 					const serviceFromHook = services?.find(s => s.id === serviceInfo.id);
 					if (serviceFromHook) {
-						console.log('[POS useEffect] Found service to add from array:', serviceFromHook.name, "(ID:", serviceFromHook.id, "). Calling handleAddToOrder...");
+						console.log('[POS useEffect] Found service to add from array:', serviceFromHook.name, `(ID: ${serviceFromHook.id}) Calling handleAddToOrder...`);
 						const serviceForOrder: POSService = {
 							id: serviceFromHook.id,
-							name: serviceInfo.name || serviceFromHook.name, // Prefer name from nav data if available
+							name: serviceInfo.name || serviceFromHook.name,
 							price: serviceInfo.price !== undefined ? serviceInfo.price : serviceFromHook.price,
-							type: 'service', // Explicitly set type
+							type: 'service',
 							duration: serviceFromHook.duration,
 							category: serviceFromHook.category,
 						};
 						handleAddToOrder(serviceForOrder, 1);
 					} else {
-						console.warn('[POS useEffect] Service ID from array (', serviceInfo.id, ') received, but service not found in local list.');
+						console.warn(`[POS useEffect] Service ID from array (${serviceInfo.id}) not found in local list. Using fallback.`);
+						const serviceFallback: POSService = {
+							id: serviceInfo.id,
+							name: serviceInfo.name || 'Unknown Service',
+							price: serviceInfo.price || 0,
+							type: 'service',
+						};
+						handleAddToOrder(serviceFallback, 1);
 					}
 				});
 			} else if (appointmentNavData.serviceId && appointmentNavData.type === 'service') {
