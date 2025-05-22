@@ -1100,106 +1100,211 @@ export default function POS() {
 	// 3. SIDE EFFECTS (useEffect)
 	// ====================================================
 	useEffect(() => {
-		console.log('[POS useEffect] Running effect. Location:', location);
-		const appointmentNavData = location.state?.appointmentData;
-
-    // ADDED: Log the entire appointmentNavData object as received
-    console.log('[POS useEffect] Received appointmentNavData:', JSON.stringify(appointmentNavData, null, 2));
-
-		// Defer processing appointment data until services are loaded
-		if (appointmentNavData && (loadingServices || !services || services.length === 0)) {
-			console.log('[POS useEffect] Services not loaded yet or are loading; deferring appointment data processing. loadingServices:', loadingServices, 'services length:', services?.length);
-			return;
-		}
-
-		if (appointmentNavData) {
-			const currentNavKey = JSON.stringify(appointmentNavData);
-			console.log('[POS useEffect] Found appointmentData in location.state. Key:', currentNavKey);
-
-			if (processedNavKeyRef.current === currentNavKey) {
-				console.log(`[POS useEffect] Appointment data with key ${currentNavKey} already processed. Ensuring state is cleared.`);
-				if (location.state?.appointmentData) {
-					navigate(location.pathname, { replace: true, state: {} });
-				}
-				return;
-			}
-
-			console.log('[POS useEffect] Processing new appointment data:', currentNavKey);
-			processedNavKeyRef.current = currentNavKey; // Mark as processed
-
-			setTabValue(0);
-
-			if (appointmentNavData.clientName) {
-				setCustomerName(appointmentNavData.clientName);
-				const existingClient = clients?.find(c => c.full_name === appointmentNavData.clientName);
-				if (existingClient) {
-					setSelectedClient(existingClient);
-				}
-			}
-
-			if (appointmentNavData.stylistId) {
-				const existingStylist = stylists?.find(s => s.id === appointmentNavData.stylistId);
-				if (existingStylist) {
-					setSelectedStylist(existingStylist);
-				}
-			}
-
-			const newOrderItems: OrderItem[] = [];
-      // ADDED: Log appointmentNavData.services before iterating
-      console.log('[POS useEffect] appointmentNavData.services to be processed:', JSON.stringify(appointmentNavData.services, null, 2));
-      // ADDED: Log the available services in POS context
-      console.log('[POS useEffect] Available services in POS context (services hook):', JSON.stringify(services?.map(s => ({id: s.id, name: s.name, price: s.price})), null, 2));
-
-			if (appointmentNavData.services && Array.isArray(appointmentNavData.services)) {
-				appointmentNavData.services.forEach((serviceInfo: any) => {
-          // ADDED: Log each serviceInfo from appointmentNavData
-          console.log('[POS useEffect] Processing serviceInfo from nav data:', JSON.stringify(serviceInfo, null, 2));
-					const serviceFromHook = services?.find(s => s.id === serviceInfo.id);
-          // ADDED: Log whether serviceFromHook was found
-          if (serviceFromHook) {
-            console.log('[POS useEffect] Matched serviceFromHook:', JSON.stringify(serviceFromHook, null, 2));
-          } else {
-            console.warn('[POS useEffect] NO MATCH FOUND for serviceInfo.id:', serviceInfo.id, 'in POS services list.');
+  console.log('[POS useEffect] Running effect. Location:', location);
+  const appointmentNavData = location.state?.appointmentData;
+		
+  if (!appointmentNavData) {
+    if (processedNavKeyRef.current !== null) {
+      console.log('[POS useEffect] No appointmentData in location.state. Resetting processedNavKeyRef.');
+      processedNavKeyRef.current = null;
+    }
+    return; // Exit early if no appointment data
+  }
+  
+  console.log('[POS useEffect] Received appointment data:', JSON.stringify(appointmentNavData));
+  
+  // Skip if we've already processed this exact data
+  if (processedNavKeyRef.current === JSON.stringify(appointmentNavData)) {
+    console.log('[POS useEffect] Already processed this appointment data, skipping');
+    return;
+  }
+  
+  // Skip if services aren't loaded yet
+  if (loadingServices || !services || services.length === 0) {
+    console.log('[POS useEffect] Services not loaded yet, will try again when services load');
+    return;
+  }
+		
+  // Mark as processed to prevent duplicate processing
+  processedNavKeyRef.current = JSON.stringify(appointmentNavData);
+  console.log('[POS useEffect] Processing appointment data');
+  
+  // Force tab to walk-in order
+  setTabValue(0);
+  
+  // Set client name and find client record
+  setCustomerName(appointmentNavData.clientName || '');
+  const matchingClient = clients?.find(c => c.full_name === appointmentNavData.clientName);
+  if (matchingClient) {
+    console.log('[POS useEffect] Setting selected client:', matchingClient.full_name);
+    setSelectedClient(matchingClient);
+  } else {
+    console.warn('[POS useEffect] Client not found for name:', appointmentNavData.clientName);
+  }
+  
+  // Find and set stylist
+  const matchingStylist = stylists?.find(s => s.id === appointmentNavData.stylistId);
+  if (matchingStylist) {
+    console.log('[POS useEffect] Setting selected stylist:', matchingStylist.name);
+    setSelectedStylist(matchingStylist);
+  } else {
+    console.warn('[POS useEffect] Stylist not found for ID:', appointmentNavData.stylistId);
+  }
+  
+  // Track the appointment ID for handling order creation later
+  if (appointmentNavData.id) {
+    console.log('[POS useEffect] Setting current appointment ID:', appointmentNavData.id);
+    setCurrentAppointmentId(appointmentNavData.id);
+  }
+  
+  // IMPORTANT: Build the order items array
+  const itemsToAdd: OrderItem[] = [];
+  
+  try {
+    console.log('[POS useEffect] Processing services');
+    
+    // CASE 1: Handle service collection with multiple services
+    if (appointmentNavData.services && Array.isArray(appointmentNavData.services) && appointmentNavData.services.length > 0) {
+      console.log('[POS useEffect] Found service collection with', appointmentNavData.services.length, 'services');
+      
+      // Process each service in the collection
+      appointmentNavData.services.forEach((service: any, idx: number) => {
+        console.log('[POS useEffect] Processing service', idx + 1, ':', service);
+        
+        if (!service.id || !service.name) {
+          console.warn('[POS useEffect] Invalid service data:', service);
+          return; // Skip this invalid service
+                 }
+         
+         // Look up additional service details from services list if available
+         const serviceDetails: any = services.find(s => s.id === service.id);
+         console.log('[POS useEffect] Service details lookup:', serviceDetails ? 'found' : 'not found');
+         
+         // Create the order item with available data
+         const orderItem: OrderItem = {
+           id: uuidv4(),
+           order_id: '',
+           item_id: service.id,
+           item_name: service.name,
+           price: service.price || (serviceDetails?.price || 0),
+           quantity: service.quantity || 1,
+           total: (service.price || (serviceDetails?.price || 0)) * (service.quantity || 1),
+           type: 'service',
+           category: service.category || (serviceDetails?.category) || 'service',
+           discount: 0,
+           discount_percentage: 0,
+           for_salon_use: false
+         };
+         
+         // Add HSN code and GST percentage if available
+         if (service.hsn_code || (serviceDetails?.hsn_code)) {
+           orderItem.hsn_code = service.hsn_code || serviceDetails?.hsn_code;
+         }
+         
+         if (service.gst_percentage || (serviceDetails?.gst_percentage)) {
+           orderItem.gst_percentage = service.gst_percentage || serviceDetails?.gst_percentage || serviceGstRate;
+         } else {
+           orderItem.gst_percentage = serviceGstRate; // Default GST rate
+         }
+        
+        // Add to items array
+        console.log('[POS useEffect] Adding service to order:', orderItem);
+        itemsToAdd.push(orderItem);
+      });
+    }
+    // CASE 2: Handle single service (legacy)
+    else if (appointmentNavData.serviceId) {
+      console.log('[POS useEffect] Found single service with ID:', appointmentNavData.serviceId);
+      
+             // Look up service details - cast as any to access extended properties
+      const serviceDetails: any = services.find(s => s.id === appointmentNavData.serviceId);
+      
+      if (serviceDetails) {
+        console.log('[POS useEffect] Found service details:', serviceDetails.name);
+        
+        // Create order item for single service
+        const orderItem: OrderItem = {
+          id: uuidv4(),
+          order_id: '',
+          item_id: serviceDetails.id,
+          item_name: serviceDetails.name,
+          price: appointmentNavData.servicePrice || serviceDetails.price,
+          quantity: 1,
+          total: (appointmentNavData.servicePrice || serviceDetails.price),
+          type: 'service',
+          category: serviceDetails.category || 'service',
+          discount: 0,
+          discount_percentage: 0,
+          for_salon_use: false
+        };
+        
+        // Add HSN code and GST percentage if available
+        if (serviceDetails.hsn_code) {
+          orderItem.hsn_code = serviceDetails.hsn_code;
+        }
+        
+        if (serviceDetails.gst_percentage) {
+          orderItem.gst_percentage = serviceDetails.gst_percentage;
+        } else {
+          orderItem.gst_percentage = serviceGstRate; // Default GST rate
+        }
+        
+        // Add to items array
+        console.log('[POS useEffect] Adding single service to order:', orderItem);
+        itemsToAdd.push(orderItem);
+      } else {
+        console.warn('[POS useEffect] Service not found for ID:', appointmentNavData.serviceId);
+      }
+    }
+    
+    // If we have items to add, update the order
+    if (itemsToAdd.length > 0) {
+      console.log('[POS useEffect] Adding', itemsToAdd.length, 'items to order');
+      
+             // CRITICAL: Use setState callback to ensure we're working with the latest state
+      setOrderItems(currentItems => {
+        console.log('[POS useEffect] Current items before update:', currentItems.length);
+        const updatedItems = [...itemsToAdd];
+        console.log('[POS useEffect] New items list:', updatedItems.length);
+        
+        // Display success messages
+        itemsToAdd.forEach(item => {
+          toast.success(`Added ${item.item_name} to order`);
+        });
+        
+        // Add a delayed log to verify state updates
+        setTimeout(() => {
+          console.log('[DEBUG] Current orderItems state AFTER update:', orderItems);
+        }, 500);
+        
+        return updatedItems;
+      });
+      
+      // Double-verification: Force an update with a slight delay
+      setTimeout(() => {
+        console.log('[DEBUG] Verifying order items were added correctly...');
+        setOrderItems(current => {
+          if (current.length === 0 && itemsToAdd.length > 0) {
+            console.log('[DEBUG] Items missing from state, forcing update again');
+            return [...itemsToAdd];
           }
-
-					if (serviceFromHook) {
-						console.log('[POS useEffect] Preparing service to add from array:', serviceFromHook.name, "(ID:", serviceFromHook.id, ")");
-						const serviceForOrderItem: OrderItem = {
-							id: uuidv4(),
-							order_id: '', // Will be set when order is created
-							item_id: serviceFromHook.id,
-							item_name: serviceInfo.name || serviceFromHook.name,
-							price: serviceInfo.price !== undefined ? serviceInfo.price : serviceFromHook.price,
-							quantity: 1,
-							total: (serviceInfo.price !== undefined ? serviceInfo.price : serviceFromHook.price) * 1,
-							type: 'service',
-							category: serviceFromHook.category,
-							// duration_months, discount, discount_percentage, for_salon_use, purpose can be added if available/needed
-						};
-						newOrderItems.push(serviceForOrderItem);
-					} else {
-						console.warn('[POS useEffect] Service ID from array (', serviceInfo.id, ') received, but service not found in local list.');
-					}
-				});
-			}
-
-			if (newOrderItems.length > 0) {
-				setOrderItems(prevItems => [...prevItems, ...newOrderItems]);
-				newOrderItems.forEach(item => toast.success(`Added ${item.item_name} to order`));
-			}
-
-			setCurrentAppointmentId(appointmentNavData.id || null);
-
-			console.log('[POS useEffect] Clearing location state after processing...');
-			navigate(location.pathname, { replace: true, state: {} });
-			console.log('[POS useEffect] Location state cleared after processing.');
-		} else {
-			if (processedNavKeyRef.current !== null) {
-				console.log('[POS useEffect] No appointmentData in location.state. Resetting processedNavKeyRef.');
-				processedNavKeyRef.current = null;
-			}
-		}
-	}, [location, services, clients, stylists, loadingServices, navigate, toast]); // Removed handleAddToOrder, added toast
+          return current;
+        });
+      }, 1000);
+    } else {
+      console.warn('[POS useEffect] No valid services found to add to order');
+      toast.error('No valid services found in this appointment');
+    }
+  } catch (error) {
+    console.error('[POS useEffect] Error processing appointment data:', error);
+    toast.error('Error adding services to order');
+  }
+  
+  // Clear the location state to prevent reprocessing on refresh
+  console.log('[POS useEffect] Clearing location state');
+  navigate(location.pathname, { replace: true, state: {} });
+  
+}, [location, navigate, services, clients, stylists, loadingServices, toast, serviceGstRate]);
 
 	const fetchBalanceStockData = useCallback(async () => {
 		console.log("Fetching latest stock data from products table...");

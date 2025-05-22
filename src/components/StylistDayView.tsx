@@ -1073,20 +1073,54 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
   const handleCreateBill = () => {
     if (!selectedAppointment) return;
     
-    const service = services.find(s => s.id === selectedAppointment.service_id);
+    // Get all services for this appointment
+    const appointmentServices = selectedAppointment.services || [];
+    const servicesForPOS = appointmentServices.map((service: { 
+      id: string; 
+      name: string; 
+      price: number;
+      hsn_code?: string;
+      gst_percentage?: number;
+      category?: string;
+    }) => ({
+      id: service.id,
+      name: service.name,
+      price: service.price,
+      type: 'service' as const,
+      quantity: 1,
+      hsn_code: service.hsn_code,
+      gst_percentage: service.gst_percentage,
+      category: service.category
+    }));
     
-    // Navigate to POS with appointment data
+    // If no services found, try to find from services array using service_id
+    if (servicesForPOS.length === 0 && selectedAppointment.service_id) {
+      const service = services.find(s => s.id === selectedAppointment.service_id);
+      if (service) {
+        servicesForPOS.push({
+          id: service.id,
+          name: service.name,
+          price: service.price,
+          type: 'service' as const,
+          quantity: 1,
+          hsn_code: service.hsn_code,
+          gst_percentage: service.gst_percentage,
+          category: service.category
+        });
+      }
+    }
+    
+    // Navigate to POS with complete appointment data
     navigate('/pos', {
       state: {
         appointmentData: {
           id: selectedAppointment.id,
           clientName: selectedAppointment.clients?.full_name || '',
           stylistId: selectedAppointment.stylist_id,
-          serviceId: selectedAppointment.service_id,
-          serviceName: service?.name || '',
-          servicePrice: service?.price || 0,
+          services: servicesForPOS,
+          type: 'service_collection',
           appointmentTime: selectedAppointment.start_time,
-          type: 'service' // Explicitly set type as service
+          notes: selectedAppointment.notes || ''
         }
       }
     });
