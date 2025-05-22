@@ -1024,158 +1024,136 @@ export default function InventoryManager() {
   const handleExport = async () => {
     if (isExporting) return;
     setIsExporting(true);
-    
     try {
-      let dataToExport: any[] = [];
-      let filename = "";
-      let worksheetName = "";
-      
-      if (activeTab === 'purchaseHistory') {
-        const purchasesUIData = filteredPurchases.map((purchase, index) => ({
-          'Serial No': (purchase as any).serial_no || `PURCHASE-${filteredPurchases.length - index}`,
+      const workbook = XLSX.utils.book_new();
+      // Purchase History sheet
+      const purchaseData = filteredPurchases.map((purchase, index) => ({
+        'Serial No': (purchase as any).serial_no || `PURCHASE-${filteredPurchases.length - index}`,
+        'S.No': index + 1,
+        'Date': purchase.date ? new Date(purchase.date).toLocaleDateString() : '-',
+        'Product Name': purchase.product_name || '-',
+        'HSN Code': purchase.hsn_code || '-',
+        'Units': purchase.units || '-',
+        'Vendor': purchase.supplier || '-',
+        'Purchase Invoice No.': purchase.purchase_invoice_number || '-',
+        'Purchase Qty.': purchase.purchase_qty || 0,
+        'MRP Incl. GST (Rs.)': purchase.mrp_incl_gst || 0,
+        'MRP Ex. GST (Rs.)': calculatePriceExcludingGST(purchase.mrp_incl_gst || 0, purchase.gst_percentage || 0),
+        'Discount %': purchase.discount_on_purchase_percentage || 0,
+        'Purchase Cost/Unit (Ex.GST)': purchase.purchase_cost_per_unit_ex_gst || 0,
+        'GST %': purchase.gst_percentage || 0,
+        'Taxable Value (Transaction Rs.)': purchase.purchase_taxable_value || 0,
+        'IGST (Transaction Rs.)': purchase.purchase_igst || 0,
+        'CGST (Transaction Rs.)': purchase.purchase_cgst || 0,
+        'SGST (Transaction Rs.)': purchase.purchase_sgst || 0,
+        'Invoice Value (Transaction Rs.)': purchase.purchase_invoice_value_rs || 0
+      }));
+      if (purchaseData.length) {
+        const ws = XLSX.utils.json_to_sheet(purchaseData);
+        XLSX.utils.book_append_sheet(workbook, ws, 'Purchase History');
+      }
+      // Sales History sheet
+      const salesData = filteredSalesHistory.map((sale, index) => {
+        const unitPriceInclGst = sale.unit_price_incl_gst || sale.unit_price_ex_gst * (1 + sale.gst_percentage / 100);
+        const discountPercentage = sale.discount_percentage || 0;
+        const taxableAfterDiscount = sale.taxable_after_discount || sale.taxable_value * (1 - discountPercentage / 100);
+        const taxableValueCurrentStock = sale.taxable_value_current_stock || (sale.current_stock * sale.unit_price_ex_gst);
+        const cgstCurrentStock = sale.cgst_current_stock || (taxableValueCurrentStock * (sale.gst_percentage / 200));
+        const sgstCurrentStock = sale.sgst_current_stock || (taxableValueCurrentStock * (sale.gst_percentage / 200));
+        const totalValueCurrentStock = sale.total_value_current_stock || (taxableValueCurrentStock + cgstCurrentStock + sgstCurrentStock);
+        return {
+          'S.No': sale.serial_no,
+          'Date': new Date(sale.date).toLocaleDateString(),
+          'Order ID': sale.order_id,
+          'Product Name': sale.product_name,
+          'HSN Code': sale.hsn_code || '-',
+          'Product Type': sale.product_type,
+          'Quantity': Number(sale.quantity),
+          'Unit Price (Ex. GST)': Number(sale.unit_price_ex_gst).toFixed(2),
+          'Unit Price (Incl. GST)': Number(unitPriceInclGst).toFixed(2),
+          'GST %': Number(sale.gst_percentage).toFixed(2),
+          'Discount %': Number(discountPercentage).toFixed(2),
+          'Taxable Value': Number(sale.taxable_value).toFixed(2),
+          'Taxable After Discount': Number(taxableAfterDiscount).toFixed(2),
+          'CGST': Number(sale.cgst_amount).toFixed(2),
+          'SGST': Number(sale.sgst_amount).toFixed(2),
+          'IGST': Number(sale.igst_amount).toFixed(2),
+          'Discount': Number(sale.discount || 0).toFixed(2),
+          'Tax': Number(sale.tax || 0).toFixed(2),
+          'Invoice Value': Number(sale.invoice_value).toFixed(2),
+          'MRP (Incl. GST)': Number(sale.mrp_incl_gst || unitPriceInclGst).toFixed(2),
+          'Discounted Rate': Number(sale.discounted_sales_rate_ex_gst || sale.unit_price_ex_gst).toFixed(2),
+          'Current Stock': Number(sale.current_stock),
+          'Taxable Value (Current Stock)': Number(taxableValueCurrentStock).toFixed(2),
+          'CGST (Current Stock)': Number(cgstCurrentStock).toFixed(2),
+          'SGST (Current Stock)': Number(sgstCurrentStock).toFixed(2),
+          'Total Value (Current Stock)': Number(totalValueCurrentStock).toFixed(2)
+        };
+      });
+      if (salesData.length) {
+        const ws = XLSX.utils.json_to_sheet(salesData);
+        XLSX.utils.book_append_sheet(workbook, ws, 'Sales History');
+      }
+      // Salon Consumption sheet
+      const salonData = filteredSalonConsumption.map((item, index) => {
+        const taxableValueCurrentStock = Number(item.current_stock) * Number(item.purchase_cost_per_unit_ex_gst || 0);
+        const cgstCurrentStock = taxableValueCurrentStock * (Number(item.purchase_gst_percentage || 0) / 200);
+        const sgstCurrentStock = taxableValueCurrentStock * (Number(item.purchase_gst_percentage || 0) / 200);
+        const igstCurrentStock = item.purchase_igst > 0 ? taxableValueCurrentStock * (Number(item.purchase_gst_percentage || 0) / 100) : 0;
+        const totalValueCurrentStock = taxableValueCurrentStock + cgstCurrentStock + sgstCurrentStock + igstCurrentStock;
+        return {
+          'Serial No': (item as any).serial_no || `SALON-${filteredSalonConsumption.length - index}`,
           'S.No': index + 1,
-          'Date': purchase.date ? new Date(purchase.date).toLocaleDateString() : '-',
-          'Product Name': purchase.product_name || '-',
-          'HSN Code': purchase.hsn_code || '-',
-          'Units': purchase.units || '-',
-          'Vendor': purchase.supplier || '-',
-          'Purchase Invoice No.': purchase.purchase_invoice_number || '-',
-          'Purchase Qty.': purchase.purchase_qty || 0,
-          'MRP Incl. GST (Rs.)': purchase.mrp_incl_gst || 0,
-          'MRP Ex. GST (Rs.)': calculatePriceExcludingGST(purchase.mrp_incl_gst || 0, purchase.gst_percentage || 0),
-          'Discount %': purchase.discount_on_purchase_percentage || 0,
-          'Purchase Cost/Unit (Ex.GST)': purchase.purchase_cost_per_unit_ex_gst || 0,
-          'GST %': purchase.gst_percentage || 0,
-          'Taxable Value (Transaction Rs.)': purchase.purchase_taxable_value || 0,
-          'IGST (Transaction Rs.)': purchase.purchase_igst || 0,
-          'CGST (Transaction Rs.)': purchase.purchase_cgst || 0,
-          'SGST (Transaction Rs.)': purchase.purchase_sgst || 0,
-          'Invoice Value (Transaction Rs.)': purchase.purchase_invoice_value_rs || 0
-        }));
-        
-        dataToExport = purchasesUIData;
-        filename = 'purchase_history_export.xlsx';
-        worksheetName = 'Purchase History';
-      } else if (activeTab === 'salesHistory') {
-        const salesHistoryUIData = filteredSalesHistory.map((sale, index) => {
-          // Calculate any missing values to ensure all data is populated
-          const unitPriceInclGst = sale.unit_price_incl_gst || sale.unit_price_ex_gst * (1 + sale.gst_percentage / 100);
-          const discountPercentage = sale.discount_percentage || 0;
-          const taxableAfterDiscount = sale.taxable_after_discount || sale.taxable_value * (1 - discountPercentage / 100);
-          const taxableValueCurrentStock = sale.taxable_value_current_stock || (sale.current_stock * sale.unit_price_ex_gst);
-          const cgstCurrentStock = sale.cgst_current_stock || (taxableValueCurrentStock * (sale.gst_percentage / 200));
-          const sgstCurrentStock = sale.sgst_current_stock || (taxableValueCurrentStock * (sale.gst_percentage / 200));
-          const totalValueCurrentStock = sale.total_value_current_stock || (taxableValueCurrentStock + cgstCurrentStock + sgstCurrentStock);
-          
-          return {
-            'S.No': sale.serial_no,
-            'Date': new Date(sale.date).toLocaleDateString(),
-            'Order ID': sale.order_id,
-            'Product Name': sale.product_name,
-            'HSN Code': sale.hsn_code || '-',
-            'Product Type': sale.product_type,
-            'Quantity': Number(sale.quantity),
-            'Unit Price (Ex. GST)': Number(sale.unit_price_ex_gst).toFixed(2),
-            'Unit Price (Incl. GST)': Number(unitPriceInclGst).toFixed(2),
-            'GST %': Number(sale.gst_percentage).toFixed(2),
-            'Discount %': Number(discountPercentage).toFixed(2),
-            'Taxable Value': Number(sale.taxable_value).toFixed(2),
-            'Taxable After Discount': Number(taxableAfterDiscount).toFixed(2),
-            'CGST': Number(sale.cgst_amount).toFixed(2),
-            'SGST': Number(sale.sgst_amount).toFixed(2),
-            'IGST': Number(sale.igst_amount).toFixed(2),
-            'Discount': Number(sale.discount || 0).toFixed(2),
-            'Tax': Number(sale.tax || 0).toFixed(2),
-            'Invoice Value': Number(sale.invoice_value).toFixed(2),
-            'MRP (Incl. GST)': Number(sale.mrp_incl_gst || unitPriceInclGst).toFixed(2),
-            'Discounted Rate': Number(sale.discounted_sales_rate_ex_gst || sale.unit_price_ex_gst).toFixed(2),
-            'Current Stock': Number(sale.current_stock),
-            'Taxable Value (Current Stock)': Number(taxableValueCurrentStock).toFixed(2),
-            'CGST (Current Stock)': Number(cgstCurrentStock).toFixed(2),
-            'SGST (Current Stock)': Number(sgstCurrentStock).toFixed(2),
-            'Total Value (Current Stock)': Number(totalValueCurrentStock).toFixed(2)
-          };
-        });
-        
-        dataToExport = salesHistoryUIData;
-        filename = 'sales_history_export.xlsx';
-        worksheetName = 'Sales History';
-      } else if (activeTab === 'salonConsumption') {
-        const salonConsumptionUIData = filteredSalonConsumption.map((item, index) => {
-          // Calculate current stock values
-          const taxableValueCurrentStock = Number(item.current_stock) * Number(item.purchase_cost_per_unit_ex_gst || 0);
-          const cgstCurrentStock = taxableValueCurrentStock * (Number(item.purchase_gst_percentage || 0) / 200);
-          const sgstCurrentStock = taxableValueCurrentStock * (Number(item.purchase_gst_percentage || 0) / 200);
-          const igstCurrentStock = item.purchase_igst > 0 ? taxableValueCurrentStock * (Number(item.purchase_gst_percentage || 0) / 100) : 0;
-          const totalValueCurrentStock = taxableValueCurrentStock + cgstCurrentStock + sgstCurrentStock + igstCurrentStock;
-          
-          return {
-            'Serial No': (item as any).serial_no || `SALON-${filteredSalonConsumption.length - index}`,
-            'S.No': index + 1,
-            'Voucher No': item.requisition_voucher_no,
-            'Date': new Date(item.date).toLocaleDateString(),
-            'Order ID': item.order_id,
-            'Product Name': item.product_name,
-            'HSN Code': item.hsn_code || '-', // Ensure fallback for HSN code
-            'Consumption Qty': Number(item.consumption_qty),
-            'Unit Price (Ex. GST)': Number(item.purchase_cost_per_unit_ex_gst).toFixed(2),
-            'GST %': Number(item.purchase_gst_percentage).toFixed(2),
-            'Taxable Value': Number(item.purchase_taxable_value).toFixed(2),
-            'IGST': Number(item.purchase_igst).toFixed(2),
-            'CGST': Number(item.purchase_cgst).toFixed(2),
-            'SGST': Number(item.purchase_sgst).toFixed(2),
-            'Total Cost': Number(item.total_purchase_cost).toFixed(2),
-            'Discounted Rate': Number(item.discounted_sales_rate).toFixed(2),
-            'Current Stock': Number(item.current_stock),
-            'Taxable Value (Current Stock Rs.)': taxableValueCurrentStock.toFixed(2),
-            'IGST (Current Stock Rs.)': igstCurrentStock.toFixed(2),
-            'CGST (Current Stock Rs.)': cgstCurrentStock.toFixed(2), 
-            'SGST (Current Stock Rs.)': sgstCurrentStock.toFixed(2),
-            'Total Value (Current Stock Rs.)': totalValueCurrentStock.toFixed(2)
-          };
-        });
-        
-        dataToExport = salonConsumptionUIData;
-        filename = 'salon_consumption_export.xlsx';
-        worksheetName = 'Salon Consumption';
-      } else if (activeTab === 'balanceStock') {
-        const balanceStockUIData = filteredBalanceStock.map((item, index) => ({
-          'Serial No': item.serial_no || `STOCK-${filteredBalanceStock.length - index}`,
+          'Voucher No': item.requisition_voucher_no,
           'Date': new Date(item.date).toLocaleDateString(),
+          'Order ID': item.order_id,
           'Product Name': item.product_name,
           'HSN Code': item.hsn_code || '-',
-          'Units': item.units,
-          'Change Type': item.change_type === 'addition' ? 'Addition' : 'Reduction',
-          'Source': item.source,
-          'Reference ID': item.reference_id,
-          'Quantity Change': item.change_type === 'addition' ? 
-            `+${Math.abs(Number(item.quantity_change))}` : 
-            `-${Math.abs(Number(item.quantity_change))}`,
-          'Quantity After': Number(item.quantity_after_change)
-        }));
-        
-        dataToExport = balanceStockUIData;
-        filename = 'balance_stock_export.xlsx';
-        worksheetName = 'Balance Stock';
+          'Consumption Qty': Number(item.consumption_qty),
+          'Unit Price (Ex. GST)': Number(item.purchase_cost_per_unit_ex_gst).toFixed(2),
+          'GST %': Number(item.purchase_gst_percentage).toFixed(2),
+          'Taxable Value': Number(item.purchase_taxable_value).toFixed(2),
+          'IGST': Number(item.purchase_igst).toFixed(2),
+          'CGST': Number(item.purchase_cgst).toFixed(2),
+          'SGST': Number(item.purchase_sgst).toFixed(2),
+          'Total Cost': Number(item.total_purchase_cost).toFixed(2),
+          'Discounted Rate': Number(item.discounted_sales_rate).toFixed(2),
+          'Current Stock': Number(item.current_stock),
+          'Taxable Value (Current Stock Rs.)': taxableValueCurrentStock.toFixed(2),
+          'IGST (Current Stock Rs.)': igstCurrentStock.toFixed(2),
+          'CGST (Current Stock Rs.)': cgstCurrentStock.toFixed(2),
+          'SGST (Current Stock Rs.)': sgstCurrentStock.toFixed(2),
+          'Total Value (Current Stock Rs.)': totalValueCurrentStock.toFixed(2)
+        };
+      });
+      if (salonData.length) {
+        const ws = XLSX.utils.json_to_sheet(salonData);
+        XLSX.utils.book_append_sheet(workbook, ws, 'Salon Consumption');
       }
-      
-      // Only export if we have data
-      if (dataToExport.length > 0) {
-        // Create workbook and worksheet
-        const worksheet = XLSX.utils.json_to_sheet(dataToExport);
-        const workbook = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(workbook, worksheet, worksheetName);
-        
-        // Generate buffer
-        const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
-        const blob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;charset=UTF-8' });
-        
-        // Save file
-      saveAs(blob, filename);
-        toast.success(`Exported ${worksheetName} successfully!`);
-      } else {
-        toast.error('No data to export');
+      // Balance Stock sheet
+      const balanceData = filteredBalanceStock.map((item, index) => ({
+        'Serial No': item.serial_no || `STOCK-${filteredBalanceStock.length - index}`,
+        'Date': new Date(item.date).toLocaleDateString(),
+        'Product Name': item.product_name,
+        'HSN Code': item.hsn_code || '-',
+        'Units': item.units,
+        'Change Type': item.change_type === 'addition' ? 'Addition' : 'Reduction',
+        'Source': item.source,
+        'Reference ID': item.reference_id,
+        'Quantity Change': item.change_type === 'addition'
+          ? `+${Math.abs(Number(item.quantity_change))}`
+          : `-${Math.abs(Number(item.quantity_change))}`,
+        'Quantity After': Number(item.quantity_after_change)
+      }));
+      if (balanceData.length) {
+        const ws = XLSX.utils.json_to_sheet(balanceData);
+        XLSX.utils.book_append_sheet(workbook, ws, 'Balance Stock');
       }
+      // Generate and save workbook
+      const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+      const blob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;charset=UTF-8' });
+      saveAs(blob, 'inventory_export.xlsx');
+      toast.success('Exported all tables successfully!');
     } catch (error) {
       toast.error(`Export failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
