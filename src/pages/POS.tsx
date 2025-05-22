@@ -512,13 +512,12 @@ export default function POS() {
 	// Active membership fetched for selected client
 	const [activeClientMembership, setActiveClientMembership] = useState<ActiveMembershipDetails | null>(null);
 
-	// When membership payment toggled, apply 100% discount
+	// When membership payment toggled, clear discounts
 	useEffect(() => {
 		if (useMembershipPayment) {
-			// Reset direct discount
+			// Reset direct discount and percentage discount
 			setWalkInDiscount(0);
-			// Apply full percentage discount
-			setWalkInDiscountPercentage(100);
+			setWalkInDiscountPercentage(0);
 		} else {
 			// Reset percentage discount when off
 			setWalkInDiscountPercentage(0);
@@ -1104,6 +1103,12 @@ export default function POS() {
 		console.log('[POS useEffect] Running effect. Location:', location);
 		const appointmentNavData = location.state?.appointmentData;
 
+		// Defer processing appointment data until services are loaded
+		if (appointmentNavData && (loadingServices || !services || services.length === 0)) {
+			console.log('[POS useEffect] Services not loaded yet; deferring appointment data processing.');
+			return;
+		}
+
 		if (appointmentNavData) {
 			const currentNavKey = JSON.stringify(appointmentNavData);
 			console.log('[POS useEffect] Found appointmentData in location.state. Key:', currentNavKey);
@@ -1182,7 +1187,7 @@ export default function POS() {
 				processedNavKeyRef.current = null;
 			}
 		}
-	}, [location, services, clients, stylists, handleAddToOrder, navigate]); // Refined dependencies for this specific useEffect
+	}, [location, services, clients, stylists, loadingServices, handleAddToOrder, navigate]); // Refined dependencies for this specific useEffect
 
 	const fetchBalanceStockData = useCallback(async () => {
 		console.log("Fetching latest stock data from products table...");
@@ -1914,7 +1919,7 @@ export default function POS() {
 				const orderTotal = salonProducts.reduce((sum, product) => sum + product.total, 0);
 
 				// Create order record with fields exactly matching the pos_orders table schema
-				const orderData = {
+				const orderData: any = {
 					id: orderId,
 					created_at: orderDateToUse,
 					client_name: 'Salon Consumption',
@@ -2763,15 +2768,17 @@ export default function POS() {
 	const handleAddMembershipToOrder = useCallback((membership: POSMembership) => {
 		const newItem: OrderItem = {
 			id: uuidv4(),
+			order_id: '',                          // no parent order yet
 			item_id: membership.id,
 			item_name: membership.name,
 			price: membership.price,
 			quantity: 1,
+			total: membership.price * 1,         // price times quantity
 			type: 'membership',
 			category: 'membership',
 			duration_months: membership.duration_months
 		};
-
+		
 		setOrderItems(prev => [...prev, newItem]);
 		toast.success(`Added ${membership.name} membership to order`);
 	}, []);
