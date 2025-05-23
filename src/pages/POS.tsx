@@ -1157,8 +1157,8 @@ export default function POS() {
     setCurrentAppointmentId(appointmentNavData.id);
   }
   
-  // IMPORTANT: Build the order items array
-  const itemsToAdd: OrderItem[] = [];
+  // Clear existing order items before adding new ones
+  setOrderItems([]);
   
   try {
     console.log('[POS useEffect] Processing services');
@@ -1168,143 +1168,57 @@ export default function POS() {
       console.log('[POS useEffect] Found service collection with', appointmentNavData.services.length, 'services');
       
       // Process each service in the collection
-      appointmentNavData.services.forEach((service: any, idx: number) => {
-        console.log('[POS useEffect] Processing service', idx + 1, ':', service);
+      const newOrderItems = appointmentNavData.services.map((service: any) => {
+        console.log('[POS useEffect] Processing service:', service);
         
         if (!service.id || !service.name) {
           console.warn('[POS useEffect] Invalid service data:', service);
-          return; // Skip this invalid service
-                 }
+          return null; // Skip this invalid service
+        }
          
-         // Look up additional service details from services list if available
-         const serviceDetails: any = services.find(s => s.id === service.id);
-         console.log('[POS useEffect] Service details lookup:', serviceDetails ? 'found' : 'not found');
+        // Look up additional service details from services list if available
+        const serviceDetails = services.find(s => s.id === service.id);
+        console.log('[POS useEffect] Service details lookup:', serviceDetails ? 'found' : 'not found');
          
-         // Create the order item with available data
-         const orderItem: OrderItem = {
-           id: uuidv4(),
-           order_id: '',
-           item_id: service.id,
-           item_name: service.name,
-           price: service.price || (serviceDetails?.price || 0),
-           quantity: service.quantity || 1,
-           total: (service.price || (serviceDetails?.price || 0)) * (service.quantity || 1),
-           type: 'service',
-           category: service.category || (serviceDetails?.category) || 'service',
-           discount: 0,
-           discount_percentage: 0,
-           for_salon_use: false
-         };
-         
-         // Add HSN code and GST percentage if available
-         if (service.hsn_code || (serviceDetails?.hsn_code)) {
-           orderItem.hsn_code = service.hsn_code || serviceDetails?.hsn_code;
-         }
-         
-         if (service.gst_percentage || (serviceDetails?.gst_percentage)) {
-           orderItem.gst_percentage = service.gst_percentage || serviceDetails?.gst_percentage || serviceGstRate;
-         } else {
-           orderItem.gst_percentage = serviceGstRate; // Default GST rate
-         }
-        
-        // Add to items array
-        console.log('[POS useEffect] Adding service to order:', orderItem);
-        itemsToAdd.push(orderItem);
-      });
-    }
-    // CASE 2: Handle single service (legacy)
-    else if (appointmentNavData.serviceId) {
-      console.log('[POS useEffect] Found single service with ID:', appointmentNavData.serviceId);
-      
-             // Look up service details - cast as any to access extended properties
-      const serviceDetails: any = services.find(s => s.id === appointmentNavData.serviceId);
-      
-      if (serviceDetails) {
-        console.log('[POS useEffect] Found service details:', serviceDetails.name);
-        
-        // Create order item for single service
+        // Create the order item with available data
         const orderItem: OrderItem = {
           id: uuidv4(),
           order_id: '',
-          item_id: serviceDetails.id,
-          item_name: serviceDetails.name,
-          price: appointmentNavData.servicePrice || serviceDetails.price,
-          quantity: 1,
-          total: (appointmentNavData.servicePrice || serviceDetails.price),
+          item_id: service.id,
+          item_name: service.name,
+          price: service.price || (serviceDetails?.price || 0),
+          quantity: service.quantity || 1,
+          total: (service.price || (serviceDetails?.price || 0)) * (service.quantity || 1),
           type: 'service',
-          category: serviceDetails.category || 'service',
+          category: service.category || serviceDetails?.category || 'service',
+          hsn_code: service.hsn_code || serviceDetails?.hsn_code,
+          gst_percentage: service.gst_percentage || serviceDetails?.gst_percentage || 18,
           discount: 0,
           discount_percentage: 0,
           for_salon_use: false
         };
         
-        // Add HSN code and GST percentage if available
-        if (serviceDetails.hsn_code) {
-          orderItem.hsn_code = serviceDetails.hsn_code;
-        }
-        
-        if (serviceDetails.gst_percentage) {
-          orderItem.gst_percentage = serviceDetails.gst_percentage;
-        } else {
-          orderItem.gst_percentage = serviceGstRate; // Default GST rate
-        }
-        
-        // Add to items array
-        console.log('[POS useEffect] Adding single service to order:', orderItem);
-        itemsToAdd.push(orderItem);
+        return orderItem;
+      }).filter(Boolean) as OrderItem[];
+
+      // Add all valid order items at once
+      if (newOrderItems.length > 0) {
+        console.log('[POS useEffect] Adding order items:', newOrderItems);
+        setOrderItems(newOrderItems);
+        toast.success(`Added ${newOrderItems.length} services to order`);
       } else {
-        console.warn('[POS useEffect] Service not found for ID:', appointmentNavData.serviceId);
+        console.warn('[POS useEffect] No valid services to add to order');
+        toast.error('No valid services found in appointment data');
       }
-    }
-    
-    // If we have items to add, update the order
-    if (itemsToAdd.length > 0) {
-      console.log('[POS useEffect] Adding', itemsToAdd.length, 'items to order');
-      
-             // CRITICAL: Use setState callback to ensure we're working with the latest state
-      setOrderItems(currentItems => {
-        console.log('[POS useEffect] Current items before update:', currentItems.length);
-        const updatedItems = [...itemsToAdd];
-        console.log('[POS useEffect] New items list:', updatedItems.length);
-        
-        // Display success messages
-        itemsToAdd.forEach(item => {
-          toast.success(`Added ${item.item_name} to order`);
-        });
-        
-        // Add a delayed log to verify state updates
-        setTimeout(() => {
-          console.log('[DEBUG] Current orderItems state AFTER update:', orderItems);
-        }, 500);
-        
-        return updatedItems;
-      });
-      
-      // Double-verification: Force an update with a slight delay
-      setTimeout(() => {
-        console.log('[DEBUG] Verifying order items were added correctly...');
-        setOrderItems(current => {
-          if (current.length === 0 && itemsToAdd.length > 0) {
-            console.log('[DEBUG] Items missing from state, forcing update again');
-            return [...itemsToAdd];
-          }
-          return current;
-        });
-      }, 1000);
     } else {
-      console.warn('[POS useEffect] No valid services found to add to order');
-      toast.error('No valid services found in this appointment');
+      console.warn('[POS useEffect] No services found in appointment data');
+      toast.error('No services found in appointment data');
     }
   } catch (error) {
     console.error('[POS useEffect] Error processing appointment data:', error);
-    toast.error('Error adding services to order');
+    toast.error('Error processing appointment data');
   }
-  
-  // Clear the location state to prevent reprocessing on refresh
-  console.log('[POS useEffect] Clearing location state');
-  navigate(location.pathname, { replace: true, state: {} });
-  
-}, [location, navigate, services, clients, stylists, loadingServices, toast, serviceGstRate]);
+}, [location, services, loadingServices, clients, stylists, setTabValue, setCustomerName, setSelectedClient, setSelectedStylist, setCurrentAppointmentId, setOrderItems]);
 
 	const fetchBalanceStockData = useCallback(async () => {
 		console.log("Fetching latest stock data from products table...");

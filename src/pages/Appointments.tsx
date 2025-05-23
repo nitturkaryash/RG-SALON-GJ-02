@@ -2185,48 +2185,57 @@ export default function Appointments() {
               onClick={() => {
                 console.log("[Create Bill] Clicked. Editing Appointment:", editingAppointment);
                 console.log("[Create Bill] Client from clientEntries[0]:", clientEntries[0]?.client);
-                console.log("[Create Bill] Services from clientEntries[0] (fallback source):", clientEntries[0]?.services);
+                console.log("[Create Bill] Services from clientEntries[0]:", clientEntries[0]?.services);
 
-                if (editingAppointment && clientEntries[0]?.client) {
-                  // Directly use services from clientEntries, which is populated from MergedAppointment
-                  console.warn("[Create Bill] Populating services for POS from drawer state (clientEntries[0].services).");
-                  const servicesForPOS = clientEntries[0].services.map(s => ({ 
-                    id: s.id, 
-                    name: s.name, 
-                    price: s.price 
-                  }));
-                  console.log("[Create Bill] Raw services from clientEntries[0].services before mapping:", JSON.stringify(clientEntries[0].services, null, 2));
-                  console.log("[Create Bill] Mapped servicesForPOS to be sent to POS:", JSON.stringify(servicesForPOS, null, 2));
-                      
-                  if (servicesForPOS.length === 0) {
-                    toast.error("No services found for this appointment to create a bill.");
-                    console.log("[Create Bill] No services to send to POS.");
-                    return;
-                  }
-
-                  const appointmentDataForPOS = {
-                    clientName: clientEntries[0].client.full_name,
-                    stylistId: editingAppointment.stylist_id,
-                    services: servicesForPOS,
-                    id: editingAppointment.id,
-                    // Use 'service_collection' type when multiple services, else 'service'
-                    type: servicesForPOS.length > 1 ? 'service_collection' : 'service',
-                    // For single service, include serviceId and servicePrice for fallback
-                    ...(servicesForPOS.length === 1
-                      ? { serviceId: servicesForPOS[0].id, servicePrice: servicesForPOS[0].price }
-                      : {}),
-                    // End of appointment data object
-                  };
-                  console.log("[Create Bill] Final appointmentDataForPOS to be sent to /pos:", JSON.stringify(appointmentDataForPOS, null, 2));
-                  navigate('/pos', { state: { appointmentData: appointmentDataForPOS } });
-                  handleCloseDrawer(); 
-                } else {
+                if (!editingAppointment || !clientEntries[0]?.client) {
                   toast.error("Cannot create bill: Missing appointment or client details.");
                   console.error("[Create Bill] Pre-condition failed: editingAppointment or clientEntries[0].client is missing.");
+                  return;
                 }
+
+                if (!clientEntries[0]?.services?.length) {
+                  toast.error("No services found for this appointment to create a bill.");
+                  console.log("[Create Bill] No services to send to POS.");
+                  return;
+                }
+
+                // Map services with all necessary details
+                const servicesForPOS = clientEntries[0].services.map(s => ({ 
+                  id: s.id, 
+                  name: s.name, 
+                  price: s.price,
+                  type: 'service',
+                  hsn_code: s.hsn_code,
+                  gst_percentage: s.gst_percentage,
+                  category: s.category || 'service',
+                  quantity: 1
+                }));
+
+                console.log("[Create Bill] Mapped servicesForPOS:", JSON.stringify(servicesForPOS, null, 2));
+
+                const appointmentDataForPOS = {
+                  clientName: clientEntries[0].client.full_name,
+                  stylistId: editingAppointment.stylist_id,
+                  services: servicesForPOS,
+                  id: editingAppointment.id,
+                  type: servicesForPOS.length > 1 ? 'service_collection' : 'service',
+                  appointmentTime: editingAppointment.start_time,
+                  notes: appointmentNotes || '',
+                  // Include additional service details for single service case
+                  ...(servicesForPOS.length === 1 ? {
+                    serviceId: servicesForPOS[0].id,
+                    servicePrice: servicesForPOS[0].price,
+                    serviceHsnCode: servicesForPOS[0].hsn_code,
+                    serviceGstPercentage: servicesForPOS[0].gst_percentage
+                  } : {})
+                };
+
+                console.log("[Create Bill] Final appointmentDataForPOS:", JSON.stringify(appointmentDataForPOS, null, 2));
+                navigate('/pos', { state: { appointmentData: appointmentDataForPOS } });
+                handleCloseDrawer();
               }}
               variant="contained"
-              color="info" // Using a different color for distinction
+              color="info"
               startIcon={<ReceiptIcon />}
               sx={{ 
                 borderRadius: '8px',
