@@ -2151,12 +2151,20 @@ export default function InventoryManager() {
                       // Calculate totals based on discounted cost per unit (Ex. GST)
                       if (
                         typeof purchase.stock_after_purchase === 'number' &&
-                        purchase.stock_after_purchase > 0 &&
-                        purchase.purchase_cost_per_unit_ex_gst != null
+                        purchase.stock_after_purchase > 0
                       ) {
-                        // Total taxable value post-discount
-                        totalValueMRP =
-                          purchase.stock_after_purchase * purchase.purchase_cost_per_unit_ex_gst;
+                        // Calculate discounted purchase cost per unit
+                        const mrpExGst = calculatePriceExcludingGST(
+                          purchase.mrp_incl_gst ?? 0,
+                          purchase.gst_percentage ?? 0
+                        );
+                        const discountPercentage = purchase.discount_on_purchase_percentage ?? 0;
+                        const discountedPurchaseCostPerUnit = mrpExGst * (1 - (discountPercentage / 100));
+
+                        // Total taxable value = Current Stock × Discounted Purchase Cost Per Unit
+                        totalValueMRP = purchase.stock_after_purchase * discountedPurchaseCostPerUnit;
+
+                        // Calculate GST amounts based on the new total taxable value
                         if (purchase.purchase_igst && purchase.purchase_igst > 0) {
                           totalIGST = totalValueMRP * (gstRate / 100);
                         } else {
@@ -2195,7 +2203,15 @@ export default function InventoryManager() {
                             ).toFixed(2)}
                           </TableCell>
                           <TableCell align="right">{purchase.discount_on_purchase_percentage?.toFixed(2) || '0.00'}%</TableCell>
-                          <TableCell align="right">₹{purchase.purchase_cost_per_unit_ex_gst?.toFixed(2) || '0.00'}</TableCell>
+                          <TableCell align="right">₹{(() => {
+                            const mrpExGst = calculatePriceExcludingGST(
+                              purchase.mrp_incl_gst ?? 0,
+                              purchase.gst_percentage ?? 0
+                            );
+                            const discountPercentage = purchase.discount_on_purchase_percentage ?? 0;
+                            const priceAfterDiscount = mrpExGst * (1 - (discountPercentage / 100));
+                            return priceAfterDiscount.toFixed(2);
+                          })() || '0.00'}</TableCell>
                           <TableCell align="right">{purchase.gst_percentage?.toFixed(2) || '0.00'}%</TableCell>
                           <TableCell align="right">₹{purchase.purchase_taxable_value?.toFixed(2) || '0.00'}</TableCell>
                           <TableCell align="right">₹{(purchase.purchase_igst ?? 0) > 0 ? (purchase.purchase_igst ?? 0).toFixed(2) : "-"}</TableCell>

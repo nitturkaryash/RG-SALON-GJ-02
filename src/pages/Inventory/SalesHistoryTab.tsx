@@ -76,6 +76,7 @@ interface SalesItem {
   current_stock_sgst?: number;
   current_stock_total_value?: number;
   taxable_after_discount?: number;
+  purchase_cost_per_unit_ex_gst: number;
 }
 
 // Custom styled components
@@ -123,7 +124,7 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
   const tableData = useMemo(() => {
     return filteredData.map(item => {
       const qty = item.remaining_stock ?? 0;
-      const unitExcl = Number(item.unit_price_ex_gst) || 0;
+      const unitExcl = Number(item.purchase_cost_per_unit_ex_gst) || 0;
       const gstPct = Number(item.gst_percentage) || 0;
       
       // Calculate inclusive price from exclusive price and GST percentage
@@ -244,7 +245,9 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
           sgst_amount: Number(item.sgst_amount) || 0,
           total_purchase_cost: Number(item.total_purchase_cost) || 0,
           discount: Number(item.discount) || 0,
-          discount_percentage: Number(item.discount_percentage) || 0,
+          // Calculate discount percentage from absolute discount and taxable value
+          discount_percentage: item.taxable_value > 0 ? 
+            ((Number(item.discount) || 0) / Number(item.taxable_value)) * 100 : 0,
           tax: Number(item.tax) || 0,
           hsn_code: item.hsn_code || '',
           product_type: item.product_type || '',
@@ -254,7 +257,8 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
           igst_amount: Number(item.igst_amount) || 0,
           initial_stock: Number(item.initial_stock) || 0,
           remaining_stock: Number(item.remaining_stock) || 0,
-          current_stock: Number(item.current_stock) || 0
+          current_stock: Number(item.current_stock) || 0,
+          purchase_cost_per_unit_ex_gst: Number(item.purchase_cost_per_unit_ex_gst) || 0
         };
         
         // Log first item for debugging
