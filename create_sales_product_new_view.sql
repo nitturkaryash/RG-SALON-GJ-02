@@ -4,7 +4,7 @@ CREATE OR REPLACE VIEW sales_product_new AS
 WITH sales_data AS (
     SELECT
         po.id AS order_id,
-        (po.client_id IS NULL)       AS is_walk_in,
+        (po.client_name IS NULL OR po.client_name = 'Walk-in') AS is_walk_in,
         po.date AS order_date,
         item,
         (item->>'service_id')::UUID AS product_id,
@@ -22,7 +22,18 @@ WITH sales_data AS (
         po.payment_method AS payment_type,
         item->>'service_name' AS product_name,
         (item->>'id')::TEXT AS order_item_id,
-        poi.id AS order_item_pk
+        poi.id AS order_item_pk,
+        -- Get latest purchase cost information
+        COALESCE(
+            (
+                SELECT ip.purchase_cost_per_unit_ex_gst
+                FROM inventory_purchases ip
+                WHERE ip.product_name = (item->>'service_name')
+                ORDER BY ip.date DESC
+                LIMIT 1
+            ),
+            (item->>'unit_price')::NUMERIC
+        ) AS purchase_cost_per_unit_ex_gst
     FROM pos_orders po
     CROSS JOIN LATERAL jsonb_array_elements(po.services) AS item
     LEFT JOIN product_master pm ON pm.id = (item->>'service_id')::UUID
@@ -62,7 +73,8 @@ final_sales AS (
         ROUND(unit_price_ex_gst * quantity, 2) AS taxable_value,
         ROUND(unit_price_ex_gst * quantity * gst_percentage / 100 / 2, 2) AS cgst_amount,
         ROUND(unit_price_ex_gst * quantity * gst_percentage / 100 / 2, 2) AS sgst_amount,
-        ROUND(unit_price_ex_gst * quantity * (1 + gst_percentage / 100), 2) AS total_purchase_cost,
+        -- Use purchase cost for stock value calculations
+        ROUND(purchase_cost_per_unit_ex_gst * quantity * (1 + gst_percentage / 100), 2) AS total_purchase_cost,
         discount,
         discount / 100 AS discount_percentage,
         tax,
@@ -76,6 +88,12 @@ final_sales AS (
         initial_stock,
         initial_stock - cumulative_quantity_sold AS remaining_stock,
         current_stock,
+        -- Add purchase cost related fields
+        purchase_cost_per_unit_ex_gst,
+        ROUND(purchase_cost_per_unit_ex_gst * (remaining_stock), 2) AS current_stock_taxable_value,
+        ROUND(purchase_cost_per_unit_ex_gst * (remaining_stock) * gst_percentage / 100 / 2, 2) AS current_stock_cgst,
+        ROUND(purchase_cost_per_unit_ex_gst * (remaining_stock) * gst_percentage / 100 / 2, 2) AS current_stock_sgst,
+        ROUND(purchase_cost_per_unit_ex_gst * (remaining_stock) * (1 + gst_percentage / 100), 2) AS current_stock_total_value,
         is_walk_in,
         order_item_id,
         order_item_pk
