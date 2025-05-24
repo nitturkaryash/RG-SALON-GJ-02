@@ -48,6 +48,7 @@ export interface Purchase {
   discount_on_purchase_percentage?: number;
   vendor_name?: string;
   invoice_no?: string;
+  tax_inlcuding_disc?: number;
   created_at: string;
   updated_at?: string;
 }
@@ -188,6 +189,7 @@ export interface PurchaseFormState {
   purchase_cgst?: number;
   purchase_sgst?: number;
   purchase_invoice_value_rs?: number;
+  tax_inlcuding_disc?: number;
 }
 
 // Processing stats for batch operations

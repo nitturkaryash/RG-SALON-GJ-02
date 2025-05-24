@@ -90,11 +90,11 @@ interface SalesHistoryItem {
   discounted_sales_rate_ex_gst: number | null;
   invoice_value: number;
   igst_amount: number;
-  current_stock: number;
-  taxable_value_current_stock: number; // New field
-  cgst_current_stock: number; // New field
-  sgst_current_stock: number; // New field
-  total_value_current_stock: number; // New field
+  stock: number; // Changed from current_stock
+  stock_taxable_value: number; // Changed from taxable_value_current_stock
+  stock_cgst: number; // Changed from cgst_current_stock
+  stock_sgst: number; // Changed from sgst_current_stock
+  stock_total_value: number; // Changed from total_value_current_stock
 }
 
 // Define interface for salon consumption items
@@ -2388,11 +2388,11 @@ export default function InventoryManager() {
                   <SortableTableCell label="Invoice Value" property="invoice_value" align="right" />
                   <SortableTableCell label="MRP (Incl. GST)" property="mrp_incl_gst" align="right" />
                   <SortableTableCell label="Discounted Rate" property="discounted_sales_rate_ex_gst" align="right" />
-                  <SortableTableCell label="Current Stock" property="current_stock" align="right" />
-                  <SortableTableCell label="Taxable Value (Current Stock)" property="taxable_value_current_stock" align="right" />
-                  <SortableTableCell label="CGST (Current Stock)" property="cgst_current_stock" align="right" />
-                  <SortableTableCell label="SGST (Current Stock)" property="sgst_current_stock" align="right" />
-                  <SortableTableCell label="Total Value (Current Stock)" property="total_value_current_stock" align="right" />
+                  <SortableTableCell label="Stock" property="stock" align="right" />
+                  <SortableTableCell label="Stock Taxable Value" property="stock_taxable_value" align="right" />
+                  <SortableTableCell label="Stock CGST" property="stock_cgst" align="right" />
+                  <SortableTableCell label="Stock SGST" property="stock_sgst" align="right" />
+                  <SortableTableCell label="Stock Total Value" property="stock_total_value" align="right" />
                   <SortableTableCell label="Order ID" property="order_id" />
                  </TableRow>
                </TableHead>
@@ -2415,11 +2415,11 @@ export default function InventoryManager() {
                       const mrpInclGst = sale.mrp_incl_gst || unitPriceInclGst;
                       const discountedRate = sale.discounted_sales_rate_ex_gst || sale.unit_price_ex_gst;
                       
-                      // Calculate current stock values if missing
-                      const taxableValueCurrentStock = sale.taxable_value_current_stock || (sale.current_stock * sale.unit_price_ex_gst);
-                      const cgstCurrentStock = sale.cgst_current_stock || (taxableValueCurrentStock * (sale.gst_percentage / 200));
-                      const sgstCurrentStock = sale.sgst_current_stock || (taxableValueCurrentStock * (sale.gst_percentage / 200));
-                      const totalValueCurrentStock = sale.total_value_current_stock || (taxableValueCurrentStock + cgstCurrentStock + sgstCurrentStock);
+                      // Calculate stock values if missing
+                      const stockTaxableValue = sale.stock_taxable_value || (sale.stock * sale.unit_price_ex_gst);
+                      const stockCgst = sale.stock_cgst || (stockTaxableValue * (sale.gst_percentage / 200));
+                      const stockSgst = sale.stock_sgst || (stockTaxableValue * (sale.gst_percentage / 200));
+                      const stockTotalValue = sale.stock_total_value || (stockTaxableValue + stockCgst + stockSgst);
                       
                       return (
                       <TableRow key={sale.id || index} hover>
@@ -2443,11 +2443,11 @@ export default function InventoryManager() {
                         <TableCell align="right">₹{Number(sale.invoice_value).toFixed(2)}</TableCell>
                         <TableCell align="right">₹{Number(mrpInclGst).toFixed(2)}</TableCell>
                         <TableCell align="right">₹{Number(discountedRate).toFixed(2)}</TableCell>
-                        <TableCell align="right">{Number(sale.current_stock).toLocaleString()}</TableCell>
-                        <TableCell align="right">₹{Number(taxableValueCurrentStock).toFixed(2)}</TableCell>
-                        <TableCell align="right">₹{Number(cgstCurrentStock).toFixed(2)}</TableCell>
-                        <TableCell align="right">₹{Number(sgstCurrentStock).toFixed(2)}</TableCell>
-                        <TableCell align="right">₹{Number(totalValueCurrentStock).toFixed(2)}</TableCell>
+                        <TableCell align="right">{Number(sale.stock).toLocaleString()}</TableCell>
+                        <TableCell align="right">₹{Number(stockTaxableValue).toFixed(2)}</TableCell>
+                        <TableCell align="right">₹{Number(stockCgst).toFixed(2)}</TableCell>
+                        <TableCell align="right">₹{Number(stockSgst).toFixed(2)}</TableCell>
+                        <TableCell align="right">₹{Number(stockTotalValue).toFixed(2)}</TableCell>
                         <TableCell>{sale.order_id}</TableCell>
                       </TableRow>
                       );

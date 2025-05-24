@@ -1277,24 +1277,146 @@ export default function POS() {
 		}
 	}, [supabase]); // Add dependencies if needed
 
+	// Function to fetch latest purchase costs for all products
+	const fetchLatestPurchaseCosts = useCallback(async () => {
+		try {
+			console.log("Fetching latest purchase costs from purchase_history_with_stock...");
+			
+			// Get latest purchase cost for each product using DISTINCT ON
+			const { data, error } = await supabase
+				.from('purchase_history_with_stock')
+				.select('product_id, price_inlcuding_disc, date')
+				.order('product_id, date', { ascending: false });
+
+			if (error) {
+				console.error("Error fetching purchase costs:", error);
+				return {};
+			}
+
+			// Process data to get latest cost per product
+			const latestCosts: Record<string, number> = {};
+			const processedProducts = new Set<string>();
+
+			// Since we ordered by product_id, date desc, the first occurrence of each product_id is the latest
+			if (data && data.length > 0) {
+				for (const item of data) {
+					if (!processedProducts.has(item.product_id)) {
+						latestCosts[item.product_id] = item.price_inlcuding_disc || 0;
+						processedProducts.add(item.product_id);
+					}
+				}
+			}
+
+			console.log(`Found latest purchase costs for ${Object.keys(latestCosts).length} products`);
+			return latestCosts;
+		} catch (error) {
+			console.error("Error in fetchLatestPurchaseCosts:", error);
+			return {};
+		}
+	}, []);
+
+	// Function to fetch purchase costs from product_master table for salon consumption
+	const fetchProductMasterCosts = useCallback(async () => {
+		try {
+			console.log("Fetching purchase costs from product_master table...");
+			
+			// Get purchase costs from product_master table - using the correct column name
+			const { data, error } = await supabase
+				.from('product_master')
+				.select('id, name, "Purchase_Cost/Unit(Ex.GST)"');
+
+			if (error) {
+				console.error("Error fetching product master costs:", error);
+				return { costs: {}, costsByName: {} };
+			}
+
+			// Process data to get purchase cost per product
+			const productMasterCosts: Record<string, number> = {};
+			const productMasterCostsByName: Record<string, number> = {};
+			
+			if (data && data.length > 0) {
+				for (const item of data) {
+					if (item.id && item["Purchase_Cost/Unit(Ex.GST)"] !== null) {
+						const cost = parseFloat(item["Purchase_Cost/Unit(Ex.GST)"]) || 0;
+						productMasterCosts[item.id] = cost;
+						// Also store by name for fallback matching
+						if (item.name) {
+							productMasterCostsByName[item.name.toLowerCase().trim()] = cost;
+						}
+						console.log(`Found purchase cost for ${item.name} (${item.id}): ₹${item["Purchase_Cost/Unit(Ex.GST)"]}`);
+					}
+				}
+			}
+
+			console.log(`Found product master costs for ${Object.keys(productMasterCosts).length} products`);
+			return { costs: productMasterCosts, costsByName: productMasterCostsByName };
+		} catch (error) {
+			console.error("Error in fetchProductMasterCosts:", error);
+			return { costs: {}, costsByName: {} };
+		}
+	}, []);
+
+	// State to store product master costs for salon consumption
+	const [productMasterCosts, setProductMasterCosts] = useState<Record<string, number>>({});
+	const [productMasterCostsByName, setProductMasterCostsByName] = useState<Record<string, number>>({});
+
+	// Helper function to get purchase cost for a product
+	const getPurchaseCostForProduct = useCallback((productId: string, productName: string, fallbackPrice: number): number => {
+		// Try exact ID match first
+		if (productMasterCosts[productId]) {
+			return productMasterCosts[productId];
+		}
+		
+		// Try exact name match
+		const nameKey = productName.toLowerCase().trim();
+		if (productMasterCostsByName[nameKey]) {
+			return productMasterCostsByName[nameKey];
+		}
+		
+		// Fallback to provided price
+		return fallbackPrice;
+	}, [productMasterCosts, productMasterCostsByName]);
+
+	// Fetch product master costs when component mounts
+	useEffect(() => {
+		const loadProductMasterCosts = async () => {
+			const costs = await fetchProductMasterCosts();
+			setProductMasterCosts(costs.costs);
+			setProductMasterCostsByName(costs.costsByName);
+		};
+		loadProductMasterCosts();
+	}, [fetchProductMasterCosts]);
+
 	// Define fetchAllProducts BEFORE useEffect that uses it
 	const fetchAllProducts = useCallback(async () => {
 		setLoadingProducts(true);
 		try {
 			let allLoadedProducts: POSService[] = [];
+			
+			// First fetch latest purchase costs
+			const latestPurchaseCosts = await fetchLatestPurchaseCosts();
+			
 			if (inventoryProducts && inventoryProducts.length > 0) {
-				const mappedProducts = inventoryProducts.map((product) => ({
-					id: product.id,
-					name: product.name,
-					price: product.mrp_per_unit_excl_gst || product.mrp_incl_gst || product.price || 0,
-					description: `HSN: ${product.hsn_code || 'N/A'} | GST: ${product.gst_percentage}%`,
-					type: "product" as "product" | "service",
-					hsn_code: product.hsn_code,
-					units: product.units,
-					gst_percentage: product.gst_percentage,
-					stock_quantity: product.stock_quantity || 0,
-					active: product.active
-				}));
+				const mappedProducts = inventoryProducts.map((product) => {
+					// Use latest purchase cost if available, otherwise fallback to MRP
+					const purchaseCost = latestPurchaseCosts[product.id];
+					const finalPrice = purchaseCost || product.mrp_per_unit_excl_gst || product.mrp_incl_gst || product.price || 0;
+					
+					console.log(`Product ${product.name}: Purchase cost: ${purchaseCost || 'N/A'}, Final price: ${finalPrice}`);
+					
+					return {
+						id: product.id,
+						name: product.name,
+						price: finalPrice,
+						description: `HSN: ${product.hsn_code || 'N/A'} | GST: ${product.gst_percentage}% | ${purchaseCost ? 'Purchase Cost' : 'MRP'}`,
+						type: "product" as "product" | "service",
+						hsn_code: product.hsn_code,
+						units: product.units,
+						gst_percentage: product.gst_percentage,
+						stock_quantity: product.stock_quantity || 0,
+						active: product.active
+					};
+				});
 				allLoadedProducts = [...mappedProducts];
 			}
 			setAllProducts(allLoadedProducts);
@@ -1307,7 +1429,7 @@ export default function POS() {
 		} finally {
 			setLoadingProducts(false);
 		}
-	}, [inventoryProducts, fetchBalanceStockData]);
+	}, [inventoryProducts, fetchBalanceStockData, fetchLatestPurchaseCosts]);
 
 	// UseEffect for initial fetch
 	useEffect(() => {
@@ -1726,12 +1848,18 @@ export default function POS() {
 			(item) => item.item_id === service.id
 		);
 
+		// Get the purchase cost from product_master table, fallback to service price
+		const purchaseCost = getPurchaseCostForProduct(service.id, service.name, service.price);
+		console.log(`Using purchase cost for ${service.name}: ₹${purchaseCost} (from product_master)`);
+
 		if (existingProductIndex >= 0) {
 			// Product already exists, increase quantity
 			const updatedProducts = [...salonProducts];
 			updatedProducts[existingProductIndex].quantity += quantity;
 			updatedProducts[existingProductIndex].total =
-				updatedProducts[existingProductIndex].quantity * updatedProducts[existingProductIndex].price;
+				updatedProducts[existingProductIndex].quantity * purchaseCost;
+			// Update price to use purchase cost
+			updatedProducts[existingProductIndex].price = purchaseCost;
 			setSalonProducts(updatedProducts);
 		} else {
 			// Create a new order item for salon use
@@ -1741,8 +1869,8 @@ export default function POS() {
 				item_id: service.id,
 				item_name: service.name,
 				quantity: quantity,
-				price: service.price,
-				total: service.price * quantity,
+				price: purchaseCost, // Use purchase cost from product_master
+				total: purchaseCost * quantity,
 				type: 'product', // Always set as product for salon use
 				gst_percentage: service.gst_percentage,
 				hsn_code: service.hsn_code,
@@ -1754,7 +1882,7 @@ export default function POS() {
 
 			setSalonProducts((prev) => [...prev, newItem]);
 		}
-	}, [salonProducts, consumptionPurpose]);
+	}, [salonProducts, consumptionPurpose, getPurchaseCostForProduct]);
 
 	const handleRemoveSalonProduct = useCallback((serviceId: string) => {
 		setSalonProducts((prev) => prev.filter((item) => item.item_id !== serviceId));
@@ -2311,16 +2439,22 @@ export default function POS() {
 					</Typography>
 					<RefreshInventoryButton
 						onRefresh={async () => {
-							console.log("🔄 POS Salon: Forcefully refreshing product stock data");
+							console.log("🔄 POS Salon: Forcefully refreshing product stock data and purchase costs");
 							try {
 								// First fetch balance stock for current stock quantities
 								await fetchBalanceStockData();
 								// Then reload all products to ensure everything is up to date
+								
 								await fetchAllProducts();
-								toast.success("Stock data refreshed successfully");
-								console.log("🔄 POS Salon: Stock data refresh complete");
+								// Also refresh product master costs for salon consumption
+								const refreshedCosts = await fetchProductMasterCosts();
+								setProductMasterCosts(refreshedCosts.costs);
+								setProductMasterCostsByName(refreshedCosts.costsByName);
+								toast.success("Stock data and purchase costs refreshed successfully");
+								console.log("🔄 POS Salon: Stock data and purchase costs refresh complete");
 							} catch (error) {
 								console.error("🔄 POS Salon: Error refreshing stock data:", error);
+								
 								toast.error("Failed to refresh stock data");
 							}
 							return Promise.resolve();
@@ -2375,17 +2509,23 @@ export default function POS() {
 									` (${option.stock_quantity} in stock)` : '';
 								return `${option.name}${stockLabel}`;
 							}}
-							renderOption={(props, option) => (
-								<li {...props}>
-									<Box>
-										<Typography variant="body2">{option.name}</Typography>
-										<Typography variant="caption" color="text.secondary">
-											₹{option.price} • {option.stock_quantity !== undefined ? 
-												`${option.stock_quantity} in stock` : 'Stock not available'}
-										</Typography>
-									</Box>
-								</li>
-							)}
+							renderOption={(props, option) => {
+								// Get purchase cost from product_master table, fallback to option price
+								const purchaseCost = getPurchaseCostForProduct(option.id, option.name, option.price);
+								const priceSource = getPurchaseCostForProduct(option.id, option.name, option.price) ? 'Purchase Cost' : 'MRP';
+								
+								return (
+									<li {...props}>
+										<Box>
+											<Typography variant="body2">{option.name}</Typography>
+											<Typography variant="caption" color="text.secondary">
+												₹{purchaseCost} ({priceSource}) • {option.stock_quantity !== undefined ? 
+													`${option.stock_quantity} in stock` : 'Stock not available'}
+											</Typography>
+										</Box>
+									</li>
+								);
+							}}
 							value={null}
 							onChange={(_, newProduct) => {
 								if (newProduct) {
@@ -2393,7 +2533,9 @@ export default function POS() {
 										toast.error(`${newProduct.name} is out of stock`);
 									} else {
 										handleAddSalonProduct(newProduct);
-										toast.success(`Added ${newProduct.name} for salon use`);
+										const purchaseCost = getPurchaseCostForProduct(newProduct.id, newProduct.name, newProduct.price);
+										const priceSource = getPurchaseCostForProduct(newProduct.id, newProduct.name, newProduct.price) ? 'purchase cost' : 'MRP price';
+										toast.success(`Added ${newProduct.name} for salon use at ₹${purchaseCost} (${priceSource})`);
 									}
 								}
 							}}
@@ -2403,6 +2545,7 @@ export default function POS() {
 									variant="outlined" 
 									fullWidth 
 									size="small"
+									helperText="Prices shown are Purchase Cost/Unit (Ex.GST) from product master"
 								/>
 							)}
 							sx={{ flex: 1 }}
@@ -2435,7 +2578,7 @@ export default function POS() {
 									<TableRow>
 										<TableCell>Product</TableCell>
 										<TableCell align="right">Quantity</TableCell>
-										<TableCell align="right">Price</TableCell>
+										<TableCell align="right">Purchase Cost/Unit (Ex.GST)</TableCell>
 										<TableCell align="right">Total</TableCell>
 										<TableCell></TableCell>
 									</TableRow>
@@ -2451,8 +2594,15 @@ export default function POS() {
 													value={product.quantity}
 													onChange={(e) => {
 														const newQuantity = Math.max(1, parseInt(e.target.value) || 1);
+														// Get the purchase cost from product_master table, fallback to current price
+														const purchaseCost = getPurchaseCostForProduct(product.item_id, product.item_name, product.price);
 														const updatedProducts = salonProducts.map(p => 
-															p.id === product.id ? {...p, quantity: newQuantity, total: product.price * newQuantity} : p
+															p.id === product.id ? {
+																...p, 
+																quantity: newQuantity, 
+																price: purchaseCost, // Update price to use purchase cost
+																total: purchaseCost * newQuantity
+															} : p
 														);
 														setSalonProducts(updatedProducts);
 													}}
@@ -3732,7 +3882,7 @@ export default function POS() {
 													<TableRow>
 														<TableCell>Product</TableCell>
 														<TableCell align="right">Quantity</TableCell>
-														<TableCell align="right">Price</TableCell>
+														<TableCell align="right">Purchase Cost/Unit (Ex.GST)</TableCell>
 														<TableCell align="right">Total</TableCell>
 														<TableCell></TableCell>
 													</TableRow>

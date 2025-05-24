@@ -25,6 +25,7 @@ export interface PurchaseTransaction {
   updated_at?: string;
   supplier?: string;
   stock_after_purchase?: number | null;
+  price_inlcuding_disc?: number;
   // Fields for current stock valuation
   current_stock_taxable_value?: number;
   current_stock_cgst?: number;
@@ -50,7 +51,7 @@ export const usePurchaseHistory = () => {
           'purchase_qty,mrp_incl_gst,mrp_excl_gst,discount_on_purchase_percentage,gst_percentage,' +
           'purchase_taxable_value,purchase_igst,purchase_cgst,purchase_sgst,purchase_invoice_value_rs,' +
           'supplier,current_stock_at_purchase,computed_stock_taxable_value,computed_stock_cgst,' +
-          'computed_stock_sgst,computed_stock_igst,computed_stock_total_value,created_at,updated_at'
+          'computed_stock_sgst,computed_stock_igst,computed_stock_total_value,"Purchase_Cost/Unit(Ex.GST)",created_at,updated_at'
         )
         .order('date', { ascending: true });
 
@@ -78,7 +79,7 @@ export const usePurchaseHistory = () => {
           purchase_qty: Number(item.purchase_qty),
           mrp_incl_gst: item.mrp_incl_gst,
           mrp_excl_gst: item.mrp_excl_gst,
-          purchase_cost_per_unit_ex_gst: item.mrp_excl_gst,
+          purchase_cost_per_unit_ex_gst: item["Purchase_Cost/Unit(Ex.GST)"],
           discount_on_purchase_percentage: item.discount_on_purchase_percentage,
           gst_percentage: item.gst_percentage,
           purchase_taxable_value: item.purchase_taxable_value,
@@ -90,6 +91,7 @@ export const usePurchaseHistory = () => {
           updated_at: item.updated_at,
           supplier: item.supplier,
           stock_after_purchase: currentStockQty,
+          price_inlcuding_disc: item["Purchase_Cost/Unit(Ex.GST)"],
           // Add calculated current stock values
           current_stock_taxable_value: currentTaxable,
           current_stock_cgst: currentCgst,

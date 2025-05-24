@@ -322,6 +322,14 @@ const PurchaseTab: React.FC<PurchaseTabProps> = ({ purchases, isLoading, error }
     if (!validateForm()) return;
     
     try {
+      // Calculate taxable value and Purchase Cost/Unit (Ex.GST) first
+      const taxableValue = 
+        (formState.mrp_incl_gst * formState.purchase_qty) / 
+        (1 + (formState.gst_percentage / 100)) * 
+        (1 - (formState.discount_on_purchase_percentage / 100));
+      
+      const purchaseCostPerUnitExGst = formState.purchase_qty > 0 ? taxableValue / formState.purchase_qty : 0;
+      
       let existingProduct = existingProducts.find(p => 
         p.name.toLowerCase() === formState.product_name.toLowerCase()
       );
@@ -393,6 +401,7 @@ const PurchaseTab: React.FC<PurchaseTabProps> = ({ purchases, isLoading, error }
                   purchase_cgst: formState.purchase_cgst,
                   purchase_sgst: formState.purchase_sgst,
                   purchase_invoice_value_rs: formState.purchase_invoice_value_rs,
+                  tax_inlcuding_disc: parseFloat(purchaseCostPerUnitExGst.toFixed(2)),
                   updated_at: new Date().toISOString()
                 })
                 .eq('product_id', data.product_id)
@@ -410,11 +419,6 @@ const PurchaseTab: React.FC<PurchaseTabProps> = ({ purchases, isLoading, error }
         }
       }
       
-      const taxableValue = 
-        (formState.mrp_incl_gst * formState.purchase_qty) / 
-        (1 + (formState.gst_percentage / 100)) * 
-        (1 - (formState.discount_on_purchase_percentage / 100));
-      
       const totalGstAmount = taxableValue * (formState.gst_percentage / 100);
       const cgstAmount = totalGstAmount / 2;
       const sgstAmount = totalGstAmount / 2;
@@ -425,6 +429,7 @@ const PurchaseTab: React.FC<PurchaseTabProps> = ({ purchases, isLoading, error }
         purchase_cgst: parseFloat(cgstAmount.toFixed(2)),
         purchase_sgst: parseFloat(sgstAmount.toFixed(2)),
         purchase_invoice_value_rs: parseFloat((taxableValue + totalGstAmount).toFixed(2)),
+        tax_inlcuding_disc: parseFloat(purchaseCostPerUnitExGst.toFixed(2)),
         invoice_no: formState.purchase_invoice_number
       };
       
