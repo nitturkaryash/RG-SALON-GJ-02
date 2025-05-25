@@ -239,7 +239,7 @@ const CustomAutocompleteListbox = React.forwardRef<HTMLUListElement, CustomListb
 CustomAutocompleteListbox.displayName = 'CustomAutocompleteListbox';
 
 export default function Appointments() {
-  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  const [selectedDate, setSelectedDate] = useState(new Date());
   const [selectedSlot, setSelectedSlot] = useState<DateSelectArg | null>(null);
   const [selectedStylistId, setSelectedStylistId] = useState<string | null>(null);
   const [clientEntries, setClientEntries] = useState<ExtendedClientAppointmentEntry[]>([{ 
@@ -281,7 +281,6 @@ export default function Appointments() {
   const [drawerDatePickerAnchorEl, setDrawerDatePickerAnchorEl] = useState<HTMLElement | null>(null)
   const datePickerOpen = Boolean(drawerDatePickerAnchorEl)
   const [drawerDate, setDrawerDate] = useState<Date>(new Date())
-
   // Timesoptions initialization (15-minute interval)
   const timeOptions = useMemo(() => generateTimeOptions(15), []); // Generate 15-minute interval options
   const navigate = useNavigate();
@@ -1016,13 +1015,15 @@ export default function Appointments() {
   };
 
   const handleAddBreak = async (stylistId: string, breakData: Omit<Break, 'id'>) => {
-      try {
+    try {
       const stylist = (allStylists || []).find(s => s.id === stylistId);
       if (!stylist) throw new Error("Stylist not found");
       const newBreak = { ...breakData, id: uuidv4() };
       const currentBreaks = Array.isArray(stylist.breaks) ? stylist.breaks : [];
       const updatedBreaks = [...currentBreaks, newBreak];
       await updateStylist({ id: stylistId, breaks: updatedBreaks });
+      
+      // The cache will be automatically updated by react-query
       toast.success('Break added successfully');
     } catch (error) {
       console.error('Error adding break:', error);

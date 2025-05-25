@@ -468,8 +468,7 @@ export default function POS() {
 	const [currentAppointmentId, setCurrentAppointmentId] = useState<string | null>(null);
 	const [isSplitPayment, setIsSplitPayment] = useState(false);
 	const [splitPayments, setSplitPayments] = useState<any[]>([]);
-	const [newPaymentAmount, setNewPaymentAmount] = useState(0);
-	const [newPaymentMethod, setNewPaymentMethod] = useState<PaymentMethod>("cash");
+
 	const [processing, setProcessing] = useState(false);
 	const [snackbarOpen, setSnackbarOpen] = useState(false);
 	const [snackbarMessage, setSnackbarMessage] = useState("");
@@ -1025,11 +1024,7 @@ export default function POS() {
 		);
 	}, [salonProducts]);
 
-	// Define pendingAmount AFTER getAmountPaid is defined
-	const pendingAmount = useMemo(() => {
-		const amountPaid = getAmountPaid(); // Now safe to call
-		return total - amountPaid;
-	}, [total, getAmountPaid]); // Add getAmountPaid dependency
+
 
 	// Payment amounts map for editable multi-method entries
 	const [paymentAmounts, setPaymentAmounts] = useState<Record<PaymentMethod, number>>({
@@ -1041,28 +1036,39 @@ export default function POS() {
 		membership: 0
 	});
 
-	// Auto-update cash amount when total changes (if not split payment)
+	// Auto-update payment amounts when total changes or split payment is disabled
 	useEffect(() => {
+		const currentTotal = calculateTotalAmount();
+		
 		if (!isSplitPayment) {
-			const currentTotal = calculateTotalAmount();
+			// When split payment is disabled, put entire amount in cash
 			const sumEntered = Object.values(paymentAmounts).reduce((a, b) => a + b, 0);
 			if (sumEntered === 0 || Math.abs(sumEntered - currentTotal) > 0.01) {
-				setPaymentAmounts(prev => ({ ...prev, cash: currentTotal }));
+				setPaymentAmounts({
+					cash: currentTotal,
+					credit_card: 0,
+					debit_card: 0,
+					upi: 0,
+					bnpl: 0,
+					membership: 0
+				});
 			}
 		}
 	}, [calculateTotalAmount, isSplitPayment, orderItems, walkInDiscount, walkInDiscountPercentage]);
 
-	// Auto-fill cash based on other payment methods
+	// Auto-distribute remaining amount when split payment is enabled
 	useEffect(() => {
-		if (!isSplitPayment) {
+		if (isSplitPayment) {
 			const currentTotal = calculateTotalAmount();
 			const sumOthers = (paymentAmounts.credit_card || 0) + (paymentAmounts.debit_card || 0) + (paymentAmounts.upi || 0) + (paymentAmounts.bnpl || 0) + (paymentAmounts.membership || 0);
-			const newCash = Math.max(0, currentTotal - sumOthers);
-			if (Math.abs(paymentAmounts.cash - newCash) > 0.01) {
-				setPaymentAmounts(prev => ({ ...prev, cash: newCash }));
+			const remainingAmount = Math.max(0, currentTotal - sumOthers);
+			
+			// Only update cash if it's different from the calculated remaining amount
+			if (Math.abs(paymentAmounts.cash - remainingAmount) > 0.01) {
+				setPaymentAmounts(prev => ({ ...prev, cash: remainingAmount }));
 			}
 		}
-	}, [paymentAmounts.credit_card, paymentAmounts.debit_card, paymentAmounts.upi, paymentAmounts.bnpl, paymentAmounts.membership, calculateTotalAmount, isSplitPayment, orderItems, walkInDiscount, walkInDiscountPercentage]);
+	}, [paymentAmounts.credit_card, paymentAmounts.debit_card, paymentAmounts.upi, paymentAmounts.bnpl, paymentAmounts.membership, calculateTotalAmount, isSplitPayment]);
 
 	// Filtered products and services based on search terms
 	const filteredProducts = useMemo(() => {
@@ -1205,23 +1211,23 @@ export default function POS() {
         const serviceDetails = services.find(s => s.id === service.id);
         console.log('[POS useEffect] Service details lookup:', serviceDetails ? 'found' : 'not found');
          
-        // Create the order item with available data
-        const orderItem: OrderItem = {
-          id: uuidv4(),
-          order_id: '',
-          item_id: service.id,
-          item_name: service.name,
-          price: service.price || (serviceDetails?.price || 0),
-          quantity: service.quantity || 1,
-          total: (service.price || (serviceDetails?.price || 0)) * (service.quantity || 1),
-          type: 'service',
-          category: service.category || serviceDetails?.category || 'service',
-          hsn_code: service.hsn_code || serviceDetails?.hsn_code,
-          gst_percentage: service.gst_percentage || serviceDetails?.gst_percentage || 18,
-          discount: 0,
-          discount_percentage: 0,
-          for_salon_use: false
-        };
+        						// Create the order item with available data
+						const orderItem: OrderItem = {
+							id: uuidv4(),
+							order_id: '',
+							item_id: service.id,
+							item_name: service.name,
+							price: service.price || (serviceDetails?.price || 0),
+							quantity: service.quantity || 1,
+							total: (service.price || (serviceDetails?.price || 0)) * (service.quantity || 1),
+							type: 'service',
+							category: service.category || serviceDetails?.category || 'service',
+							hsn_code: (service as any).hsn_code || serviceDetails?.hsn_code,
+							gst_percentage: (service as any).gst_percentage || serviceDetails?.gst_percentage || 18,
+							discount: 0,
+							discount_percentage: 0,
+							for_salon_use: false
+						};
         
         return orderItem;
       }).filter(Boolean) as OrderItem[];
@@ -1468,21 +1474,7 @@ export default function POS() {
 	// Generate time slots (defined after helper function)
 	const timeSlots = useMemo(() => generateTimeSlots(8, 20, 15), []);
 
-	const handleAddSplitPayment = useCallback(() => {
-		const newPayment = {
-			id: Date.now().toString(),
-			payment_method: newPaymentMethod,
-			amount: newPaymentAmount,
-		};
 
-		// Add payment and set next payment amount to remaining pending
-		setSplitPayments(prev => [...prev, newPayment]);
-		setNewPaymentAmount(Math.max(0, pendingAmount - newPaymentAmount));
-	}, [splitPayments, newPaymentMethod, newPaymentAmount, pendingAmount]);
-
-	const handleRemoveSplitPayment = useCallback((id: string) => {
-		setSplitPayments(splitPayments.filter((payment) => payment.id !== id));
-	}, [splitPayments]);
 
 	// Modify the isStepValid function to check all required fields at once
 	const isOrderValid = useCallback(() => {
@@ -1492,11 +1484,13 @@ export default function POS() {
 		// Order items validation
 		const orderItemsValid = orderItems.length > 0;
 		
-		// Payment validation (only for split payment)
-		const paymentValid = !isSplitPayment || (isSplitPayment && pendingAmount <= 0);
+		// Payment validation - check if total payment amount matches order total
+		const totalPaymentAmount = Object.values(paymentAmounts).reduce((a, b) => a + b, 0);
+		const orderTotal = calculateTotalAmount();
+		const paymentValid = Math.abs(totalPaymentAmount - orderTotal) < 0.01; // Allow for small rounding differences
 		
 		return customerInfoValid && orderItemsValid && paymentValid;
-	}, [customerName, selectedStylist, orderItems, isSplitPayment, pendingAmount]);
+	}, [customerName, selectedStylist, orderItems, paymentAmounts, calculateTotalAmount]);
 
 	// Modify handleCreateWalkInOrder to use the isOrderValid function
 	const handleCreateWalkInOrder = useCallback(async () => {
@@ -1851,8 +1845,7 @@ export default function POS() {
 		setWalkInPaymentMethod("cash");
 		setIsSplitPayment(false);
 		setSplitPayments([]); // Keep for any remaining logic, though paymentAmounts is primary
-		setNewPaymentAmount(0); // Keep for any remaining logic
-		setNewPaymentMethod("cash"); // Keep for any remaining logic
+
 		setWalkInDiscount(0);
 		setWalkInDiscountPercentage(0); // Reset percentage discount
 		setCurrentAppointmentId(null); // <-- Reset appointment ID
@@ -3626,11 +3619,30 @@ export default function POS() {
 											value={paymentAmounts[method]}
 											onChange={(e) => {
 												const newValue = Math.max(0, Number(e.target.value) || 0);
-												setPaymentAmounts(prev => ({ ...prev, [method]: newValue }));
+												const currentTotal = calculateTotalAmount();
+												
+												if (isSplitPayment) {
+													// In split payment mode, allow manual entry and auto-adjust cash
+													setPaymentAmounts(prev => ({ ...prev, [method]: newValue }));
+												} else {
+													// In single payment mode, clear other methods and set only this one
+													const newPaymentAmounts = {
+														cash: 0,
+														credit_card: 0,
+														debit_card: 0,
+														upi: 0,
+														bnpl: 0,
+														membership: 0
+													};
+													newPaymentAmounts[method] = currentTotal;
+													setPaymentAmounts(newPaymentAmounts);
+													setWalkInPaymentMethod(method);
+												}
 											}}
 											InputProps={{
 												startAdornment: <InputAdornment position="start">₹</InputAdornment>
 											}}
+											disabled={!isSplitPayment && paymentAmounts[method] === 0}
 										/>
 									</Box>
 								))}
@@ -3665,7 +3677,23 @@ export default function POS() {
 													Math.min(currentTotal, activeClientMembership.currentBalance),
 													Math.max(0, Number(e.target.value) || 0)
 												);
-												setPaymentAmounts(prev => ({ ...prev, membership: val }));
+												
+												if (isSplitPayment) {
+													// In split payment mode, allow manual entry and auto-adjust cash
+													setPaymentAmounts(prev => ({ ...prev, membership: val }));
+												} else {
+													// In single payment mode, clear other methods and set only membership
+													const newPaymentAmounts = {
+														cash: 0,
+														credit_card: 0,
+														debit_card: 0,
+														upi: 0,
+														bnpl: 0,
+														membership: currentTotal
+													};
+													setPaymentAmounts(newPaymentAmounts);
+													setWalkInPaymentMethod('membership');
+												}
 											}}
 											InputProps={{
 												startAdornment: <InputAdornment position="start">₹</InputAdornment>,
@@ -3674,6 +3702,7 @@ export default function POS() {
 													max: Math.min(calculateTotalAmount(), activeClientMembership.currentBalance)
 												}
 											}}
+											disabled={!isSplitPayment && paymentAmounts.membership === 0}
 										/>
 										<Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
 											Available: Rs. {activeClientMembership.currentBalance.toLocaleString()}
@@ -3681,6 +3710,37 @@ export default function POS() {
 									</Box>
 								)}
 							</Box>
+							
+							{/* Payment Summary */}
+							{isSplitPayment && (
+								<Box sx={{ mt: 2, p: 2, bgcolor: 'background.paper', borderRadius: '8px', border: '1px solid', borderColor: 'divider' }}>
+									<Typography variant="subtitle2" gutterBottom>
+										Payment Summary
+									</Typography>
+									<Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+										<Typography variant="body2">Total Amount:</Typography>
+										<Typography variant="body2" fontWeight="medium">
+											{formatCurrency(calculateTotalAmount())}
+										</Typography>
+									</Box>
+									<Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+										<Typography variant="body2">Amount Paid:</Typography>
+										<Typography variant="body2" fontWeight="medium">
+											{formatCurrency(Object.values(paymentAmounts).reduce((a, b) => a + b, 0))}
+										</Typography>
+									</Box>
+									<Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+										<Typography variant="body2">Remaining:</Typography>
+										<Typography 
+											variant="body2" 
+											fontWeight="medium"
+											color={Object.values(paymentAmounts).reduce((a, b) => a + b, 0) < calculateTotalAmount() ? "error" : "success"}
+										>
+											{formatCurrency(Math.max(0, calculateTotalAmount() - Object.values(paymentAmounts).reduce((a, b) => a + b, 0)))}
+										</Typography>
+									</Box>
+								</Box>
+							)}
 							
 							<Grid container spacing={2} sx={{ mt: 1 }}>
 								<Grid item xs={12} sm={6}>
@@ -3743,17 +3803,32 @@ export default function POS() {
 										control={
 											<Switch
 												checked={isSplitPayment}
-												onChange={(e) =>
-													setIsSplitPayment(e.target.checked)
-												}
+												onChange={(e) => {
+													setIsSplitPayment(e.target.checked);
+													if (!e.target.checked) {
+														// When disabling split payment, reset to cash only
+														const currentTotal = calculateTotalAmount();
+														setPaymentAmounts({
+															cash: currentTotal,
+															credit_card: 0,
+															debit_card: 0,
+															upi: 0,
+															bnpl: 0,
+															membership: 0
+														});
+														setWalkInPaymentMethod('cash');
+													}
+												}}
 												color="primary"
 												size="small"
 											/>
 										}
 										label={
 											<Box sx={{ display: 'flex', alignItems: 'center' }}>
-												<Typography variant="body2" sx={{ mr: 1 }}>Split Payment</Typography>
-												<Tooltip title="Split the total amount across multiple payment methods">
+												<Typography variant="body2" sx={{ mr: 1 }}>
+													{isSplitPayment ? 'Multiple Payment Methods' : 'Single Payment Method'}
+												</Typography>
+												<Tooltip title={isSplitPayment ? "Allow splitting payment across multiple methods" : "Use only one payment method"}>
 													<IconButton size="small">
 														<InfoIcon fontSize="small" />
 													</IconButton>
@@ -3763,112 +3838,6 @@ export default function POS() {
 									/>
 								</Grid>
 							</Grid>
-							{/* Split payment collapse and fields */}
-							
-							<Collapse in={isSplitPayment}>
-								<Box sx={{ mt: 2, p: 2, bgcolor: 'background.paper', borderRadius: '8px', border: '1px solid', borderColor: 'divider' }}>
-									<Typography variant="subtitle2" gutterBottom>
-										Add Payment
-									</Typography>
-
-									<Box sx={{ display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
-										<Box sx={{ flex: '1 1 40%', minWidth: '100px' }}>
-											<TextField
-												fullWidth
-												label="Amount"
-												variant="outlined"
-												type="number"
-												size="small"
-												value={newPaymentAmount}
-												onChange={(e) => setNewPaymentAmount(Math.round(Number(e.target.value)))}
-												InputProps={{
-													inputProps: { min: 0, step: 1 },
-													startAdornment: <InputAdornment position="start">₹</InputAdornment>,
-												}}
-											/>
-										</Box>
-										<Box sx={{ flex: '1 1 40%', minWidth: '100px' }}>
-											<FormControl fullWidth size="small">
-												<InputLabel id="new-payment-method-label">Method</InputLabel>
-												<Select
-													labelId="new-payment-method-label"
-													value={newPaymentMethod}
-													onChange={(e) => setNewPaymentMethod(e.target.value as PaymentMethod)}
-													label="Method"
-												>
-													{PAYMENT_METHODS.map((method) => (
-														<MenuItem key={method} value={method}>{PAYMENT_METHOD_LABELS[method]}</MenuItem>
-													))}
-												</Select>
-											</FormControl>
-										</Box>
-										<Box sx={{ flexShrink: 0 }}>
-											<Button
-												variant="contained"
-												color="primary"
-												size="small"
-												onClick={handleAddSplitPayment}
-												disabled={newPaymentAmount <= 0 || newPaymentAmount > pendingAmount}
-												sx={{ whiteSpace: 'nowrap' }}
-											>
-												Add
-											</Button>
-										</Box>
-									</Box>
-
-									{/* Display pending amount */}
-									<Box sx={{ mt: 2, display: "flex", justifyContent: "space-between" }}>
-										<Typography variant="body2">Pending Amount:</Typography>
-										<Typography
-											variant="body2"
-											fontWeight="medium"
-											color={pendingAmount > 0 ? "error" : "success"}
-										>
-											{formatCurrency(pendingAmount)}
-										</Typography>
-									</Box>
-
-									{/* Show split payments */}
-									{splitPayments.length > 0 && (
-										<TableContainer component={Paper} variant="outlined" sx={{ mt: 2, borderRadius: '4px' }}>
-											<Table size="small">
-												<TableHead>
-													<TableRow>
-														<TableCell>Method</TableCell>
-														<TableCell align="right">Amount</TableCell>
-														<TableCell></TableCell>
-													</TableRow>
-												</TableHead>
-												<TableBody>
-													{splitPayments.map((payment) => (
-														<TableRow key={payment.id}>
-															<TableCell>
-																{PAYMENT_METHOD_LABELS[payment.payment_method as string]}
-															</TableCell>
-															<TableCell align="right">
-																{formatCurrency(payment.amount)}
-															</TableCell>
-															<TableCell align="right">
-																<IconButton
-																	size="small"
-																	color="error"
-																	onClick={() =>
-																		handleRemoveSplitPayment(
-																			payment.id,
-																		)
-																	}
-																>
-																	<DeleteOutlineIcon fontSize="small" />
-																</IconButton>
-															</TableCell>
-														</TableRow>
-													))}
-												</TableBody>
-											</Table>
-										</TableContainer>
-									)}
-								</Box>
-							</Collapse>
 							
 							{/* Complete Order Button */}
 							<Button
@@ -3877,14 +3846,8 @@ export default function POS() {
 								fullWidth
 								sx={{ mt: 2 }}
 								onClick={async () => {
-									// Calculate total based on payment method
-									const orderTotal = useMembershipPayment ? 
-										calculateProductSubtotal() + calculateServiceSubtotal() + calculateMembershipSubtotal() : // No GST for membership
-										calculateTotalAmount(); // Include GST for other methods
-
-									// Build payments array from paymentAmounts
-									if (isSplitPayment && !useMembershipPayment) {
-										// Only setup split payments if split payment mode is enabled and not using membership
+									// Build payments array from paymentAmounts for split payment
+									if (isSplitPayment) {
 										const payments = Object.entries(paymentAmounts)
 											.filter(([_, amt]) => amt > 0)
 											.map(([method, amt]) => ({ 
@@ -3893,14 +3856,14 @@ export default function POS() {
 												amount: amt 
 											}));
 										setSplitPayments(payments);
+									} else {
+										// For single payment, find the active payment method
+										const activePaymentMethod = Object.entries(paymentAmounts).find(([_, amt]) => amt > 0)?.[0] as PaymentMethod || 'cash';
+										setWalkInPaymentMethod(activePaymentMethod);
 									}
 									await handleCreateWalkInOrder();
 								}}
-								disabled={processing || (
-									useMembershipPayment ? 
-										paymentAmounts.membership < (calculateProductSubtotal() + calculateServiceSubtotal() + calculateMembershipSubtotal()) : // Check without GST for membership
-										Object.values(paymentAmounts).reduce((a, b) => a + b, 0) < calculateTotalAmount() // Check with GST for other methods
-								)}
+								disabled={processing || Object.values(paymentAmounts).reduce((a, b) => a + b, 0) < calculateTotalAmount()}
 								startIcon={processing ? <CircularProgress size={20} /> : <CheckIcon />}
 							>
 								{processing ? 'Processing...' : 'Complete Order'}

@@ -52,6 +52,7 @@ import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import ErrorBoundary from './ErrorBoundary';
 import { toast } from 'react-hot-toast';
 import { createFilterOptions } from '@mui/material/Autocomplete';
+import { sendAppointmentNotification } from '../utils/whatsapp';
 
 // Custom implementations of date-fns functions
 const formatTime = (time: string | Date): string => {
@@ -863,6 +864,33 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
       // Update the appointment with the new data
       if (onUpdateAppointment) {
         await onUpdateAppointment(selectedAppointment.id, appointmentUpdates);
+
+        // Send WhatsApp notification for the update
+        try {
+          // Prepare notification data
+          const notificationData = {
+            clientName: primaryClient.full_name,
+            clientPhone: primaryClient.phone || '',
+            services: editFormData.clientEntries[0].services.map(s => s.name),
+            stylists: editFormData.clientEntries[0].stylistList?.map(s => s.name) || [],
+            startTime: formattedStartTime,
+            endTime: formattedEndTime,
+            status: selectedAppointment.status,
+            notes: editFormData.notes || ''
+          };
+
+          if (notificationData.clientPhone) {
+            await sendAppointmentNotification('updated', notificationData);
+            console.log('Appointment update notification sent successfully');
+            toast.success('Appointment updated and notification sent');
+          } else {
+            console.warn('Could not send appointment update notification: Missing client phone number');
+            toast.error('Appointment updated but notification could not be sent: Missing client contact information');
+          }
+        } catch (whatsappError) {
+          console.error('Failed to send appointment update notification:', whatsappError);
+          toast.error('Appointment updated but notification could not be sent. Please contact the client directly.');
+        }
       }
       
       // Close the dialog and reset state
@@ -913,7 +941,39 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
     
     if (window.confirm('Are you sure you want to delete this appointment?')) {
       try {
+        // Get client details before deleting the appointment
+        const clientDetails = selectedAppointment.clientDetails?.[0] || allClients.find(c => c.id === selectedAppointment.client_id);
+        const stylistDetails = stylists.find(s => s.id === selectedAppointment.stylist_id);
+        const serviceDetails = services.find(s => s.id === selectedAppointment.service_id);
+
         await onDeleteAppointment(selectedAppointment.id);
+
+        // Send WhatsApp notification for the cancellation
+        if (clientDetails?.phone) {
+          try {
+            const notificationData = {
+              clientName: clientDetails.full_name,
+              clientPhone: clientDetails.phone,
+              services: [serviceDetails?.name || 'Unknown Service'],
+              stylists: [stylistDetails?.name || 'Unknown Stylist'],
+              startTime: selectedAppointment.start_time,
+              endTime: selectedAppointment.end_time,
+              status: 'cancelled',
+              notes: selectedAppointment.notes || ''
+            };
+
+            await sendAppointmentNotification('cancelled', notificationData);
+            console.log('Appointment cancellation notification sent successfully');
+            toast.success('Appointment cancelled and notification sent');
+          } catch (whatsappError) {
+            console.error('Failed to send appointment cancellation notification:', whatsappError);
+            toast.error('Appointment cancelled but notification could not be sent. Please contact the client directly.');
+          }
+        } else {
+          console.warn('Could not send appointment cancellation notification: Missing client phone number');
+          toast.error('Appointment cancelled but notification could not be sent: Missing client contact information');
+        }
+
         handleEditDialogClose();
       } catch (error) {
         console.error('Failed to delete appointment:', error);
@@ -1378,21 +1438,7 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
         reason: ''
       });
 
-      // Update local state
-      const newBreak: Break = {
-        ...breakData,
-        id: `break-${Date.now()}` // Generate a temporary ID
-      };
-
-      const updatedStylists = stylists.map(stylist => 
-        stylist.id === selectedStylist.id 
-          ? { ...stylist, breaks: [...stylist.breaks, newBreak] }
-          : stylist
-      );
-      
-      setStylists(updatedStylists);
-      setSelectedStylist({ ...selectedStylist, breaks: [...selectedStylist.breaks, newBreak] });
-      
+      // Remove local state updates since they will be handled by the parent component
       setSnackbarMessage('Break added successfully');
       setSnackbarOpen(true);
     } catch (error) {
@@ -1431,13 +1477,24 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
         // After successful server update, update the local state
         const updatedBreaks = stylistWithBreak.breaks.filter(b => b.id !== breakId);
         
+        // Update both the stylists array and the selected stylist
         const updatedStylists = stylists.map(stylist => 
           stylist.id === stylistWithBreak.id 
             ? { ...stylist, breaks: updatedBreaks }
             : stylist
         );
         
+        // Update local state
         setStylists(updatedStylists);
+        if (selectedStylist && selectedStylist.id === stylistWithBreak.id) {
+          setSelectedStylist({ ...selectedStylist, breaks: updatedBreaks });
+        }
+
+        // Update the parent component's state if callback exists
+        if (onStylistsChange) {
+          onStylistsChange(updatedStylists);
+        }
+        
         setSnackbarMessage('Break time removed successfully');
         setSnackbarOpen(true);
       } else {
@@ -2067,7 +2124,10 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
           {/* Use the renderTimeColumn function to create the time column */}
           {renderTimeColumn()}
           
-          {stylists.map((stylist, index, allStylists) => (
+          {stylists
+            .slice() // Create a copy to avoid mutating the original array
+            .sort((a, b) => a.name.localeCompare(b.name)) // Sort alphabetically by name
+            .map((stylist, index, allStylists) => (
             <StylistColumn
               key={stylist.id}
               className="stylist-column"

@@ -170,7 +170,7 @@ const TEMPLATES = {
   CONFIRMATION: 'appointment_confirmation',
   REMINDER: 'appointment_reminder',
   UPDATE: 'appointment_change',
-  CANCELLATION: 'appointment_cancellation'
+  CANCELLATION: 'appointment_cancellation'  // Use the correct template name from Facebook Manager
 };
 
 // Text headers for different templates
@@ -488,25 +488,210 @@ export async function sendAppointmentUpdate(data: AppointmentNotificationData): 
  * Send appointment cancellation notification with header
  */
 export async function sendAppointmentCancellation(data: AppointmentNotificationData): Promise<any> {
-  const formattedDate = formatDateForTemplate(data.startTime);
-  const formattedTime = formatTimeForTemplate(data.startTime);
-  const reason = data.notes || 'No reason provided';
-  const contactPhone = WHATSAPP_CONFIG.businessPhone;
-  
-  // Use header override if provided, otherwise use default text header
-  const headerParam = data._headerOverride || {
-    type: 'text' as const,
-    value: TEXT_HEADERS.CANCELLATION
-  };
+  console.log('DEBUG - Sending appointment cancellation template message');
   
   try {
-    return await sendTemplateMessage(
-      data,
-      TEMPLATES.CANCELLATION,
-      'en_US'
+    if (!validateConfig()) {
+      throw new Error('Invalid WhatsApp configuration');
+    }
+    
+    // Format the phone number
+    const formattedPhone = formatPhoneNumber(data.clientPhone);
+    
+    // Format date and time for template
+    const date = new Date(data.startTime);
+    const formattedDate = date.toLocaleDateString('en-IN', { 
+      day: '2-digit', 
+      month: '2-digit', 
+      year: 'numeric' 
+    }).replace(/\//g, '-');  // Convert to DD-MM-YYYY format
+    
+    const formattedTime = date.toLocaleTimeString('en-IN', { 
+      hour: 'numeric', 
+      minute: 'numeric', 
+      hour12: true 
+    });
+    
+    // Create template message request body for cancellation
+    const requestBody = {
+      messaging_product: "whatsapp",
+      to: formattedPhone,
+      type: "template",
+      template: {
+        name: "appointment_cancellation",
+        language: {
+          code: "en"
+        },
+        components: [
+          {
+            type: "body",
+            parameters: [
+              {
+                type: "text",
+                text: data.clientName
+              },
+              {
+                type: "text",
+                text: formattedDate
+              },
+              {
+                type: "text",
+                text: formattedTime
+              }
+            ]
+          }
+        ]
+      }
+    };
+    
+    console.log('DEBUG - Sending cancellation template request');
+    
+    // Make the API call
+    const response = await fetch(
+      `https://graph.facebook.com/v17.0/${WHATSAPP_CONFIG.phoneNumberId}/messages`,
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${WHATSAPP_CONFIG.token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestBody),
+      }
     );
+    
+    const responseData = await response.json();
+    
+    if (!response.ok) {
+      console.error('DEBUG - Cancellation template message error:', responseData);
+      throw new Error(`WhatsApp API error: ${JSON.stringify(responseData)}`);
+    }
+    
+    console.log('DEBUG - Cancellation template message sent successfully:', responseData);
+    return responseData;
   } catch (error) {
     console.error('Failed to send appointment cancellation:', error);
+    throw error;
+  }
+}
+
+/**
+ * Send appointment reminder notification
+ */
+export async function sendAppointmentReminder(
+  data: AppointmentNotificationData,
+  reminderType: '24h' | '2h' = '24h'
+): Promise<any> {
+  console.log(`DEBUG - Sending ${reminderType} appointment reminder`);
+  
+  try {
+    if (!validateConfig()) {
+      throw new Error('Invalid WhatsApp configuration');
+    }
+    
+    // Format the phone number
+    const formattedPhone = formatPhoneNumber(data.clientPhone);
+    
+    // Format date and time for template
+    const date = new Date(data.startTime);
+    const formattedDate = date.toLocaleDateString('en-IN', { 
+      day: '2-digit', 
+      month: '2-digit', 
+      year: 'numeric' 
+    }).replace(/\//g, '-');
+    
+    const formattedTime = date.toLocaleTimeString('en-IN', { 
+      hour: 'numeric', 
+      minute: 'numeric', 
+      hour12: true 
+    });
+    
+    // Get first service and first stylist
+    const service = data.services[0] || 'Salon Service';
+    const stylist = data.stylists[0] || 'Our Stylist';
+    
+    // Create different reminder messages based on timing
+    let reminderMessage = '';
+    if (reminderType === '24h') {
+      reminderMessage = `🔔 APPOINTMENT REMINDER - TOMORROW\n\nHi ${data.clientName}!\n\nThis is a friendly reminder about your appointment tomorrow:\n\n📅 Date: ${formattedDate}\n⏰ Time: ${formattedTime}\n💇 Service: ${service}\n👨‍💼 Stylist: ${stylist}\n\n📍 Location: RG Salon\n\nPlease arrive 10 minutes early. Looking forward to seeing you!\n\nNeed to reschedule? Please call us at least 2 hours before your appointment.`;
+    } else {
+      reminderMessage = `⏰ APPOINTMENT REMINDER - IN 2 HOURS\n\nHi ${data.clientName}!\n\nYour appointment is coming up soon:\n\n📅 Today: ${formattedDate}\n⏰ Time: ${formattedTime}\n💇 Service: ${service}\n👨‍💼 Stylist: ${stylist}\n\n📍 Location: RG Salon\n\nPlease arrive 10 minutes early. We're excited to see you!\n\nRunning late? Please give us a call.`;
+    }
+    
+    // Try to use template first, fallback to direct message
+    try {
+      // Use the appointment confirmation template but with reminder context
+      const requestBody = {
+        messaging_product: "whatsapp",
+        to: formattedPhone,
+        type: "template",
+        template: {
+          name: "appointment_confirmation",
+          language: {
+            code: "en"
+          },
+          components: [
+            {
+              type: "body",
+              parameters: [
+                {
+                  type: "text",
+                  text: data.clientName
+                },
+                {
+                  type: "text",
+                  text: formattedDate
+                },
+                {
+                  type: "text",
+                  text: formattedTime
+                },
+                {
+                  type: "text",
+                  text: service
+                },
+                {
+                  type: "text",
+                  text: stylist
+                }
+              ]
+            }
+          ]
+        }
+      };
+      
+      console.log(`DEBUG - Sending ${reminderType} reminder template`);
+      
+      const response = await fetch(
+        `https://graph.facebook.com/v17.0/${WHATSAPP_CONFIG.phoneNumberId}/messages`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${WHATSAPP_CONFIG.token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(requestBody),
+        }
+      );
+      
+      const responseData = await response.json();
+      
+      if (!response.ok) {
+        console.error(`DEBUG - ${reminderType} reminder template error:`, responseData);
+        throw new Error(`WhatsApp template API error: ${JSON.stringify(responseData)}`);
+      }
+      
+      console.log(`DEBUG - ${reminderType} reminder template sent successfully:`, responseData);
+      return responseData;
+      
+    } catch (templateError) {
+      console.warn(`DEBUG - Template failed for ${reminderType} reminder, trying direct message:`, templateError);
+      
+      // Fallback to direct text message
+      return await sendDirectTextMessage(formattedPhone, reminderMessage);
+    }
+    
+  } catch (error) {
+    console.error(`DEBUG - Error sending ${reminderType} appointment reminder:`, error);
     throw error;
   }
 }

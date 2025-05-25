@@ -35,49 +35,48 @@ export interface Stylist {
 export function useStylists() {
   const queryClient = useQueryClient()
 
-  const { data: stylists, isLoading } = useQuery({
+  const { data: stylists = [], isLoading } = useQuery({
     queryKey: ['stylists'],
     queryFn: async () => {
-      try {
-        console.log('Fetching stylists from database...');
-        // Fetch stylists from Supabase
-        const { data: stylistsData, error } = await supabase
-          .from('stylists')
-          .select('*')
-          .order('name', { ascending: true });
+      // Fetch stylists
+      const { data: stylistsData, error: stylistsError } = await supabase
+        .from('stylists')
+        .select('*');
 
-        if (error) {
-          console.error('Error fetching stylists:', error);
-          throw error;
-        }
-
-        if (stylistsData && stylistsData.length > 0) {
-          console.log('Stylists data fetched successfully:', stylistsData.length);
-          
-          // Process the data to ensure it matches our expected format
-          // Convert snake_case database fields to camelCase for JavaScript
-          return stylistsData.map(stylist => ({
-            id: stylist.id,
-            name: stylist.name,
-            specialties: stylist.specialties || [],
-            bio: stylist.bio || '',
-            gender: stylist.gender || 'other',
-            available: stylist.available !== false, // Default to true if not specified
-            imageUrl: stylist.image_url || '', // Convert snake_case to camelCase
-            email: stylist.email || '',
-            phone: stylist.phone || '',
-            breaks: stylist.breaks || [],
-            holidays: stylist.holidays || []
-          })) as Stylist[];
-        } else {
-          console.warn('No stylists found in the database.');
-          return [] as Stylist[];
-        }
-      } catch (error) {
-        console.error('Error in stylists hook:', error);
-        return [] as Stylist[];
+      if (stylistsError) {
+        throw stylistsError;
       }
-    },
+
+      // Fetch breaks for all stylists
+      const { data: breaksData, error: breaksError } = await supabase
+        .from('breaks')
+        .select('*');
+
+      if (breaksError) {
+        throw breaksError;
+      }
+
+      // Group breaks by stylist_id
+      const breaksByStyleId = breaksData.reduce((acc: Record<string, any[]>, breakItem: any) => {
+        if (!acc[breakItem.stylist_id]) {
+          acc[breakItem.stylist_id] = [];
+        }
+        acc[breakItem.stylist_id].push({
+          id: breakItem.id,
+          startTime: breakItem.start_time,
+          endTime: breakItem.end_time,
+          reason: breakItem.description
+        });
+        return acc;
+      }, {});
+
+      // Combine stylists with their breaks
+      return stylistsData.map((stylist: any) => ({
+        ...stylist,
+        imageUrl: stylist.image_url,
+        breaks: breaksByStyleId[stylist.id] || []
+      }));
+    }
   });
 
   const createStylist = useMutation({
@@ -154,59 +153,78 @@ export function useStylists() {
         processedUpdates.image_url = updates.imageUrl;
       }
       
-      // If breaks are provided, ensure they are properly formatted
+      // If breaks are provided, update them in the breaks table
       if (updates.breaks) {
-        // Validate each break to ensure dates are properly formatted
-        processedUpdates.breaks = updates.breaks.map(breakItem => {
-          // Ensure startTime and endTime are valid ISO strings
-          let startTime = breakItem.startTime;
-          let endTime = breakItem.endTime;
+        // First, get existing breaks for this stylist
+        const { data: existingBreaks, error: breaksError } = await supabase
+          .from('breaks')
+          .select('id')
+          .eq('stylist_id', updates.id);
           
-          // If they're not valid ISO strings, try to fix them
-          if (!(typeof startTime === 'string' && startTime.includes('T'))) {
-            try {
-              startTime = new Date(startTime).toISOString();
-            } catch (e) {
-              console.error('Invalid start time:', startTime, e);
-            }
+        if (breaksError) {
+          throw new Error(`Failed to fetch existing breaks: ${breaksError.message}`);
+        }
+        
+        // Delete all existing breaks for this stylist
+        if (existingBreaks.length > 0) {
+          const { error: deleteError } = await supabase
+            .from('breaks')
+            .delete()
+            .eq('stylist_id', updates.id);
+            
+          if (deleteError) {
+            throw new Error(`Failed to delete existing breaks: ${deleteError.message}`);
           }
-          
-          if (!(typeof endTime === 'string' && endTime.includes('T'))) {
-            try {
-              endTime = new Date(endTime).toISOString();
-            } catch (e) {
-              console.error('Invalid end time:', endTime, e);
-            }
+        }
+        
+        // Insert new breaks
+        if (updates.breaks.length > 0) {
+          const { error: insertError } = await supabase
+            .from('breaks')
+            .insert(updates.breaks.map(breakItem => ({
+              stylist_id: updates.id,
+              start_time: breakItem.startTime,
+              end_time: breakItem.endTime,
+              description: breakItem.reason
+            })));
+            
+          if (insertError) {
+            throw new Error(`Failed to insert new breaks: ${insertError.message}`);
           }
-          
-          return {
-            ...breakItem,
-            startTime,
-            endTime
-          };
-        });
+        }
       }
       
+      // Update the stylist record
       const { data, error } = await supabase
         .from('stylists')
         .update(processedUpdates)
         .eq('id', updates.id)
         .select();
-      
+        
       if (error) {
-        console.error("Supabase update error:", error);
         throw error;
       }
-
-      // Convert snake_case back to camelCase for returned data
-      if (data && data[0]) {
-        return {
-          ...data[0],
-          imageUrl: data[0].image_url
-        } as Stylist;
+      
+      // Fetch the updated breaks for this stylist
+      const { data: updatedBreaks, error: breaksError } = await supabase
+        .from('breaks')
+        .select('*')
+        .eq('stylist_id', updates.id);
+        
+      if (breaksError) {
+        throw new Error(`Failed to fetch updated breaks: ${breaksError.message}`);
       }
       
-      return updates as Stylist;
+      // Return the stylist with the updated breaks
+      return {
+        ...data[0],
+        breaks: updatedBreaks.map(breakItem => ({
+          id: breakItem.id,
+          startTime: breakItem.start_time,
+          endTime: breakItem.end_time,
+          reason: breakItem.description
+        }))
+      };
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['stylists'] });
