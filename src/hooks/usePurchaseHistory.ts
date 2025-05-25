@@ -34,6 +34,26 @@ export interface PurchaseTransaction {
   current_stock_total_amount_incl_gst?: number;
 }
 
+// Interface for updating purchase transactions
+export interface UpdatePurchaseTransactionData {
+  date?: string;
+  Vendor?: string;
+  purchase_invoice_number?: string;
+  hsn_code?: string;
+  units?: string;
+  purchase_qty?: number;
+  gst_percentage?: number;
+  mrp_incl_gst?: number;
+  mrp_excl_gst?: number;
+  discount_on_purchase_percentage?: number;
+  purchase_igst?: number;
+  purchase_cost_per_unit_ex_gst?: number;
+  purchase_taxable_value?: number;
+  purchase_cgst?: number;
+  purchase_sgst?: number;
+  purchase_invoice_value_rs?: number;
+}
+
 export const usePurchaseHistory = () => {
   const [purchases, setPurchases] = useState<PurchaseTransaction[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -101,6 +121,8 @@ export const usePurchaseHistory = () => {
         };
       });
 
+      console.log('Fetched purchase records:', transformedData.map(p => ({ id: p.purchase_id, date: p.date, product: p.product_name })));
+
       setPurchases(transformedData);
       return transformedData;
     } catch (err) {
@@ -148,11 +170,65 @@ export const usePurchaseHistory = () => {
     }
   }, [setPurchases]);
 
+  // Update a purchase transaction
+  const updatePurchaseTransaction = useCallback(async (
+    purchaseId: string, 
+    updateData: UpdatePurchaseTransactionData
+  ): Promise<boolean> => {
+    try {
+      // Prepare the update object with proper date formatting and updated_at timestamp
+      const updatePayload = {
+        ...updateData,
+        // Ensure date is properly formatted as ISO string if provided
+        ...(updateData.date && { date: new Date(updateData.date).toISOString() }),
+        updated_at: new Date().toISOString()
+      };
+
+      console.log('Updating purchase with ID:', purchaseId);
+      console.log('Update payload:', updatePayload);
+
+      // Update only the main purchases table
+      // The purchase_history_with_stock view will automatically reflect changes
+      const { error: purchaseError } = await supabase
+        .from(TABLES.PURCHASES)
+        .update(updatePayload)
+        .eq('purchase_id', purchaseId);
+
+      if (purchaseError) {
+        console.error('Error updating purchase record:', purchaseError);
+        throw handleSupabaseError(purchaseError);
+      }
+
+      console.log('Purchase updated successfully in database');
+
+      // Update local state to reflect the changes
+      setPurchases(prev => prev.map(purchase => 
+        purchase.purchase_id === purchaseId 
+          ? { ...purchase, ...updateData, updated_at: updatePayload.updated_at }
+          : purchase
+      ));
+
+      // Refresh the data to get updated computed values from the view
+      console.log('Refreshing purchase data...');
+      await new Promise(resolve => setTimeout(resolve, 500)); // Wait 500ms for database to update
+      await fetchPurchases();
+      console.log('Purchase data refreshed');
+
+      return true;
+    } catch (err) {
+      console.error('Error updating purchase transaction:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Failed to update purchase transaction';
+      setError(errorMessage);
+      return false;
+    }
+  }, [setPurchases, fetchPurchases]);
+
   return {
     purchases,
     isLoading,
     error,
     fetchPurchases,
-    deletePurchaseTransaction
+    deletePurchaseTransaction,
+    updatePurchaseTransaction
   };
 }; 
