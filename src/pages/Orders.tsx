@@ -699,6 +699,59 @@ export default function Orders() {
 
   const { serviceCollections, isLoading: isLoadingServiceCollections } = useServiceCollections();
 
+  // Add this function before the return statement
+  const formatOrderId = (order: ExtendedOrder) => {
+    if (!order.id) return 'Unknown';
+    
+    // Check if this is a salon consumption order
+    const isSalonOrder = isSalonConsumptionOrder(order);
+    
+    if (!orders) return order.id;
+    
+    // Sort orders by creation date to maintain consistent numbering
+    const sortedOrders = [...orders].sort((a, b) => {
+      const dateA = new Date(a.created_at || '').getTime();
+      const dateB = new Date(b.created_at || '').getTime();
+      return dateA - dateB;
+    });
+
+    // Find the index of the current order in the sorted list
+    const orderIndex = sortedOrders.findIndex(o => o.id === order.id);
+    
+    // Get all orders of the same type (salon or sales) that come before this one
+    const sameTypeOrders = sortedOrders
+      .slice(0, orderIndex + 1)
+      .filter(o => isSalonConsumptionOrder(o) === isSalonOrder);
+    
+    // Get the position of this order among orders of the same type
+    const orderNumber = sameTypeOrders.length;
+    
+    // Format with leading zeros to ensure 4 digits
+    const formattedNumber = String(orderNumber).padStart(4, '0');
+    
+    // Return the formatted ID based on order type
+    return isSalonOrder ? `salon-${formattedNumber}` : `sales-${formattedNumber}`;
+  };
+
+  // Add this function before the return statement
+  const renderPaymentMethods = (order: ExtendedOrder) => {
+    if (order.payments && order.payments.length > 0) {
+      return (
+        <Box>
+          {order.payments.map((payment, index) => (
+            <Chip
+              key={index}
+              size="small"
+              label={PAYMENT_METHOD_LABELS[payment.payment_method as PaymentMethod] || payment.payment_method}
+              sx={{ mr: 0.5, mb: 0.5 }}
+            />
+          ))}
+        </Box>
+      );
+    }
+    return PAYMENT_METHOD_LABELS[order.payment_method as PaymentMethod] || order.payment_method || 'Unknown';
+  };
+
   if (isLoading) {
     return (
       <Box display="flex" justifyContent="center" alignItems="center" height="100vh">
@@ -1104,7 +1157,7 @@ export default function Orders() {
                   >
                     <TableCell>
                       <Typography variant="body2" fontFamily="monospace">
-                        {order.id.substring(0, 8)}...
+                        {formatOrderId(order)}
                       </Typography>
                     </TableCell>
                     <TableCell>
@@ -1128,7 +1181,7 @@ export default function Orders() {
                     <TableCell>
                       {renderPurchaseTypeChip(getPurchaseType(order), order)}
                     </TableCell>
-                    <TableCell>{order.payment_method || 'Unknown'}</TableCell>
+                    <TableCell>{renderPaymentMethods(order)}</TableCell>
                     <TableCell>
                       <Chip
                         size="small"
@@ -1229,7 +1282,7 @@ export default function Orders() {
               <Typography variant="subtitle1" gutterBottom>Order Information</Typography>
               <Box sx={{ mb: 2 }}>
                 <Typography variant="body2">
-                  <strong>Order ID:</strong> {selectedOrder.id}
+                  <strong>Order ID:</strong> {formatOrderId(selectedOrder)}
                 </Typography>
                 <Typography variant="body2">
                   <strong>Date:</strong> {new Date(selectedOrder.created_at).toLocaleString()}
