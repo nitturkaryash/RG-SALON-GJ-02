@@ -42,11 +42,6 @@ import { styled } from '@mui/material/styles';
 import { supabase, handleSupabaseError } from '../utils/supabase/supabaseClient';
 import { usePurchaseHistory } from '../hooks/usePurchaseHistory';
 
-// Define unit options for dropdown
-const unitOptions = [
-  'pcs', 'bottles', 'boxes', 'packets', 'grams', 'ml', 'liters', 'kgs'
-];
-
 const StyledTableCell = styled(TableCell)(({ theme }) => ({
   fontWeight: 'bold',
   backgroundColor: theme.palette.primary.light,
@@ -78,7 +73,6 @@ interface ProductFormState {
   name: string;
   hsn_code: string;
   gst_percentage: number;
-  units: string;
   mrp_excl_gst: number;
   mrp_incl_gst: number;
   active: boolean;
@@ -93,7 +87,6 @@ const initialFormState: ProductFormState = {
   name: '',
   hsn_code: '',
   gst_percentage: 18, // Default 18%
-  units: 'pcs', // Default unit
   mrp_excl_gst: 0,
   mrp_incl_gst: 0,
   active: true,
@@ -203,7 +196,6 @@ export default function ProductMaster() {
       name: selectedProduct.product_name,
       hsn_code: selectedProduct.hsn_code || '',
       gst_percentage: selectedProduct.gst_percentage || 18,
-      units: selectedProduct.units || 'pcs',
       mrp_excl_gst: selectedProduct.mrp_excl_gst || 0,
       mrp_incl_gst: selectedProduct.mrp_incl_gst || 0,
       active: true,
@@ -238,7 +230,6 @@ export default function ProductMaster() {
       name: product.name,
       hsn_code: product.hsn_code || '',
       gst_percentage: product.gst_percentage || 18,
-      units: product.units || 'pcs',
       mrp_excl_gst: product.mrp_excl_gst || 0,
       mrp_incl_gst: product.mrp_incl_gst || 0,
       active: product.active,
@@ -269,11 +260,6 @@ export default function ProductMaster() {
     
     if (formData.gst_percentage < 0 || formData.gst_percentage > 100) {
       setSnackbar({ open: true, message: 'GST percentage must be between 0 and 100', severity: 'error' });
-      return false;
-    }
-    
-    if (!formData.units.trim()) {
-      setSnackbar({ open: true, message: 'Unit of measure is required', severity: 'error' });
       return false;
     }
     
@@ -312,7 +298,6 @@ export default function ProductMaster() {
         name: formData.name,
         hsn_code: formData.hsn_code,
         gst_percentage: formData.gst_percentage,
-        units: formData.units,
         price: formData.mrp_excl_gst, // Using mrp_excl_gst as the base price
         mrp_excl_gst: formData.mrp_excl_gst,
         mrp_incl_gst: formData.mrp_incl_gst,
@@ -494,7 +479,6 @@ export default function ProductMaster() {
               <TableRow>
                 <StyledTableCell>Name</StyledTableCell>
                 <StyledTableCell>HSN Code</StyledTableCell>
-                <StyledTableCell>Unit</StyledTableCell>
                 <StyledTableCell align="right">GST %</StyledTableCell>
                 <StyledTableCell align="right">Price (Excl. GST)</StyledTableCell>
                 <StyledTableCell align="right">MRP (Incl. GST)</StyledTableCell>
@@ -507,7 +491,7 @@ export default function ProductMaster() {
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={10} align="center" sx={{ py: 3 }}>
+                  <TableCell colSpan={9} align="center" sx={{ py: 3 }}>
                     <CircularProgress size={40} />
                   </TableCell>
                 </TableRow>
@@ -525,7 +509,6 @@ export default function ProductMaster() {
                     >
                       <TableCell>{product.name}</TableCell>
                       <TableCell>{product.hsn_code || '-'}</TableCell>
-                      <TableCell>{product.units || '-'}</TableCell>
                       <TableCell align="right">{product.gst_percentage || 0}%</TableCell>
                       <TableCell align="right">₹{product.mrp_excl_gst?.toFixed(2) || '0.00'}</TableCell>
                       <TableCell align="right">₹{product.mrp_incl_gst?.toFixed(2) || '0.00'}</TableCell>
@@ -573,7 +556,7 @@ export default function ProductMaster() {
                   ))
               ) : (
                 <TableRow>
-                  <TableCell colSpan={10} align="center" sx={{ py: 3 }}>
+                  <TableCell colSpan={9} align="center" sx={{ py: 3 }}>
                     No products found. Click "Add Product" to create one.
                   </TableCell>
                 </TableRow>
@@ -644,35 +627,6 @@ export default function ProductMaster() {
                 InputProps={{
                   readOnly: formData.fromPurchaseHistory
                 }}
-              />
-            </Grid>
-            <Grid item xs={12} sm={6}>
-              <Autocomplete
-                freeSolo
-                options={unitOptions}
-                value={formData.units}
-                onChange={(event, newValue) => {
-                  setFormData((prev) => ({
-                    ...prev,
-                    units: typeof newValue === 'string' ? newValue : '',
-                  }));
-                }}
-                onInputChange={(event, newInputValue, reason) => {
-                  if (reason === 'input') {
-                    setFormData((prev) => ({
-                      ...prev,
-                      units: newInputValue,
-                    }));
-                  }
-                }}
-                renderInput={(params) => (
-                  <TextField
-                    {...params}
-                    label="Unit of Measure *"
-                    required
-                  />
-                )}
-                disabled={formData.fromPurchaseHistory}
               />
             </Grid>
             <Grid item xs={12} sm={6}>
