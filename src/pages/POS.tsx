@@ -862,6 +862,17 @@ export default function POS() {
 			}, 0);
 	}, [orderItems]);
 
+	const calculateMembershipSubtotal = useCallback(() => {
+		return orderItems
+			.filter(item => item.type === 'membership')
+			.reduce((sum, item) => {
+				// Calculate item subtotal with individual discount
+				const itemTotal = item.price * item.quantity;
+				const itemDiscount = item.discount || 0;
+				return sum + (itemTotal - itemDiscount);
+			}, 0);
+	}, [orderItems]);
+
 	const calculateProductGstAmount = useCallback((subtotal: number) => {
 		// If using membership payment and not split payment, disable GST
 		if (useMembershipPayment && !isSplitPayment) {
@@ -878,6 +889,15 @@ export default function POS() {
 		return isServiceGstApplied ? (subtotal * serviceGstRate) / 100 : 0;
 	}, [isServiceGstApplied, serviceGstRate, useMembershipPayment, isSplitPayment]);
 
+	const calculateMembershipGstAmount = useCallback((subtotal: number) => {
+		// If using membership payment and not split payment, disable GST
+		if (useMembershipPayment && !isSplitPayment) {
+			return 0;
+		}
+		// Memberships typically have GST applied at 18%
+		return subtotal * 18 / 100;
+	}, [useMembershipPayment, isSplitPayment]);
+
 	const calculateTotalDiscount = useCallback(() => {
 		// Sum all individual discounts
 		const individualDiscounts = orderItems.reduce((sum, item) => sum + (item.discount || 0), 0);
@@ -886,10 +906,11 @@ export default function POS() {
 		const globalDiscount = walkInDiscount;
 		
 		// Add percentage discount (apply it to the already discounted subtotal)
-		const subtotalAfterIndividualDiscounts = calculateProductSubtotal() + calculateServiceSubtotal();
+		const subtotalAfterIndividualDiscounts = calculateProductSubtotal() + calculateServiceSubtotal() + calculateMembershipSubtotal();
 		const subtotalWithGST = subtotalAfterIndividualDiscounts + 
 			calculateProductGstAmount(calculateProductSubtotal()) + 
-			calculateServiceGstAmount(calculateServiceSubtotal());
+			calculateServiceGstAmount(calculateServiceSubtotal()) +
+			calculateMembershipGstAmount(calculateMembershipSubtotal());
 		const percentageDiscountAmount = (subtotalWithGST * walkInDiscountPercentage) / 100;
 		
 		console.log('Discount calculation:', { 
@@ -900,20 +921,22 @@ export default function POS() {
 		});
 		
 		return individualDiscounts + globalDiscount + percentageDiscountAmount;
-	}, [orderItems, walkInDiscount, walkInDiscountPercentage, calculateProductSubtotal, calculateServiceSubtotal, calculateProductGstAmount, calculateServiceGstAmount]);
+	}, [orderItems, walkInDiscount, walkInDiscountPercentage, calculateProductSubtotal, calculateServiceSubtotal, calculateMembershipSubtotal, calculateProductGstAmount, calculateServiceGstAmount, calculateMembershipGstAmount]);
 
 	const calculateTotalAmount = useCallback(() => {
 		const prodSubtotal = calculateProductSubtotal();
 		const servSubtotal = calculateServiceSubtotal();
+		const membershipSubtotal = calculateMembershipSubtotal();
 		const prodGst = calculateProductGstAmount(prodSubtotal);
 		const servGst = calculateServiceGstAmount(servSubtotal);
-		const combinedSubtotal = prodSubtotal + servSubtotal + prodGst + servGst;
+		const membershipGst = calculateMembershipGstAmount(membershipSubtotal);
+		const combinedSubtotal = prodSubtotal + servSubtotal + membershipSubtotal + prodGst + servGst + membershipGst;
 		
 		// Use the separate discount calculation
 		const totalDiscount = calculateTotalDiscount();
 		
 		return Math.max(0, combinedSubtotal - totalDiscount); // Ensure total is not negative
-	}, [calculateProductSubtotal, calculateServiceSubtotal, calculateProductGstAmount, calculateServiceGstAmount, calculateTotalDiscount]);
+	}, [calculateProductSubtotal, calculateServiceSubtotal, calculateMembershipSubtotal, calculateProductGstAmount, calculateServiceGstAmount, calculateMembershipGstAmount, calculateTotalDiscount]);
 
 	const calculateSalonGST = useCallback(() => {
 		// Calculate taxable value and GST components for each product
@@ -1010,7 +1033,7 @@ export default function POS() {
 
 	// Payment amounts map for editable multi-method entries
 	const [paymentAmounts, setPaymentAmounts] = useState<Record<PaymentMethod, number>>({
-		cash: total,
+		cash: 0,
 		credit_card: 0,
 		debit_card: 0,
 		upi: 0,
@@ -1021,23 +1044,25 @@ export default function POS() {
 	// Auto-update cash amount when total changes (if not split payment)
 	useEffect(() => {
 		if (!isSplitPayment) {
+			const currentTotal = calculateTotalAmount();
 			const sumEntered = Object.values(paymentAmounts).reduce((a, b) => a + b, 0);
-			if (sumEntered === 0) {
-				setPaymentAmounts(prev => ({ ...prev, cash: total }));
+			if (sumEntered === 0 || Math.abs(sumEntered - currentTotal) > 0.01) {
+				setPaymentAmounts(prev => ({ ...prev, cash: currentTotal }));
 			}
 		}
-	}, [total, isSplitPayment]);
+	}, [calculateTotalAmount, isSplitPayment, orderItems, walkInDiscount, walkInDiscountPercentage]);
 
 	// Auto-fill cash based on other payment methods
 	useEffect(() => {
 		if (!isSplitPayment) {
+			const currentTotal = calculateTotalAmount();
 			const sumOthers = (paymentAmounts.credit_card || 0) + (paymentAmounts.debit_card || 0) + (paymentAmounts.upi || 0) + (paymentAmounts.bnpl || 0) + (paymentAmounts.membership || 0);
-			const newCash = Math.max(0, total - sumOthers);
-			if (paymentAmounts.cash !== newCash) {
+			const newCash = Math.max(0, currentTotal - sumOthers);
+			if (Math.abs(paymentAmounts.cash - newCash) > 0.01) {
 				setPaymentAmounts(prev => ({ ...prev, cash: newCash }));
 			}
 		}
-	}, [paymentAmounts.credit_card, paymentAmounts.debit_card, paymentAmounts.upi, paymentAmounts.bnpl, paymentAmounts.membership, total, isSplitPayment]);
+	}, [paymentAmounts.credit_card, paymentAmounts.debit_card, paymentAmounts.upi, paymentAmounts.bnpl, paymentAmounts.membership, calculateTotalAmount, isSplitPayment, orderItems, walkInDiscount, walkInDiscountPercentage]);
 
 	// Filtered products and services based on search terms
 	const filteredProducts = useMemo(() => {
@@ -1597,6 +1622,26 @@ export default function POS() {
 				discount_percentage: item.discount_percentage || 0
 			}));
 			
+			// Convert memberships to format expected by standalone function
+			const membershipItems = orderItems.filter(item => item.type === 'membership');
+			const formattedMemberships = membershipItems.map(item => ({
+				id: item.item_id,
+				name: item.item_name,
+				price: item.price,
+				quantity: item.quantity,
+				type: 'membership' as const,
+				gst_percentage: 18, // Memberships typically have 18% GST
+				hsn_code: item.hsn_code || '',
+				service_id: item.item_id,
+				service_name: item.item_name,
+				product_id: item.item_id,
+				product_name: item.item_name,
+				category: 'membership',
+				discount: item.discount || 0,
+				discount_percentage: item.discount_percentage || 0,
+				duration_months: item.duration_months || 12
+			}));
+			
 			// Format selected stylist
 			const staffInfo = selectedStylist ? {
 				id: selectedStylist.id,
@@ -1610,12 +1655,13 @@ export default function POS() {
 				customerName: clientNameToUse, 
 				products: formattedProducts.length,
 				services: formattedServices.length,
+				memberships: formattedMemberships.length,
 				staffInfo
 			});
 			
 			// Call the standalone function with the correct parameters
-			const subtotal = calculateProductSubtotal() + calculateServiceSubtotal();
-			const tax = calculateProductGstAmount(calculateProductSubtotal()) + calculateServiceGstAmount(calculateServiceSubtotal());
+			const subtotal = calculateProductSubtotal() + calculateServiceSubtotal() + calculateMembershipSubtotal();
+			const tax = calculateProductGstAmount(calculateProductSubtotal()) + calculateServiceGstAmount(calculateServiceSubtotal()) + calculateMembershipGstAmount(calculateMembershipSubtotal());
 			// Always use the full amount regardless of payment method
 			const totalAmount = subtotal + tax - walkInDiscount;
 			
@@ -1628,7 +1674,7 @@ export default function POS() {
 				stylist_name: staffInfo?.name || '',
 				items: [],
 				// Make sure to include individual item discounts in the services array
-				services: ([...formattedProducts, ...formattedServices].map(item => ({
+				services: ([...formattedProducts, ...formattedServices, ...formattedMemberships].map(item => ({
 					...item,
 					// Ensure discount and discount_percentage are included
 					discount: item.discount || 0,
@@ -1734,8 +1780,8 @@ export default function POS() {
 			}
 
 			// Initialize balance for new memberships
-			const membershipItems = orderItems.filter(i => i.category === 'membership');
-			for (const item of membershipItems) {
+			const membershipItemsForProcessing = orderItems.filter(i => i.type === 'membership' || i.category === 'membership');
+			for (const item of membershipItemsForProcessing) {
 				// Check if membership already exists for this client
 				const { data: existingMembership } = await supabase
 					.from('members')
@@ -2635,10 +2681,12 @@ export default function POS() {
 	const renderOrderSummary = () => {
 		const productSubtotal = calculateProductSubtotal();
 		const serviceSubtotal = calculateServiceSubtotal();
-		const combinedSubtotal = productSubtotal + serviceSubtotal;
+		const membershipSubtotal = calculateMembershipSubtotal();
+		const combinedSubtotal = productSubtotal + serviceSubtotal + membershipSubtotal;
 		const productGstAmount = calculateProductGstAmount(productSubtotal);
 		const serviceGstAmount = calculateServiceGstAmount(serviceSubtotal);
-		const combinedGstAmount = productGstAmount + serviceGstAmount;
+		const membershipGstAmount = calculateMembershipGstAmount(membershipSubtotal);
+		const combinedGstAmount = productGstAmount + serviceGstAmount + membershipGstAmount;
 		const subtotalIncludingGST = combinedSubtotal + combinedGstAmount;
 
 		// Calculate individual item discounts total
@@ -2668,6 +2716,7 @@ export default function POS() {
 									<Typography variant="body1" sx={{ fontWeight: 500, display: 'flex', alignItems: 'center' }}>
 										{item.type === 'service' && <ContentCutIcon fontSize="inherit" sx={{ verticalAlign: 'middle', mr: 0.5, color: 'primary.main' }} />}
 										{item.type === 'product' && <Inventory fontSize="inherit" sx={{ verticalAlign: 'middle', mr: 0.5, color: 'secondary.main' }} />}
+										{item.type === 'membership' && <CardMembershipIcon fontSize="inherit" sx={{ verticalAlign: 'middle', mr: 0.5, color: 'success.main' }} />}
 										{item.item_name}
 										<Typography component="span" variant="body2" color="text.secondary" sx={{ ml: 0.5 }}>
 											(x{item.quantity})
@@ -2776,6 +2825,12 @@ export default function POS() {
 					<Typography variant="body2">Service Subtotal:</Typography>
 					<Typography variant="body2" fontWeight="500">{formatCurrency(serviceSubtotal)}</Typography>
 				</Box>
+				{membershipSubtotal > 0 && (
+					<Box sx={{ mb: 1, display: 'flex', justifyContent: 'space-between' }}>
+						<Typography variant="body2">Membership Subtotal:</Typography>
+						<Typography variant="body2" fontWeight="500">{formatCurrency(membershipSubtotal)}</Typography>
+					</Box>
+				)}
 				
 				{/* Manual date selection */}
 				<Box sx={{ mb: 2, mt: 2 }}>
@@ -2876,6 +2931,13 @@ export default function POS() {
 					</Box>
 					<Typography fontWeight="medium">{formatCurrency(productGstAmount)}</Typography>
 				</Box>
+				{/* GST Section for Memberships */}
+				{membershipSubtotal > 0 && (
+					<Box sx={{ mb: 1, display: 'flex', justifyContent: 'space-between' }}>
+						<Typography variant="body2">Membership GST (18%):</Typography>
+						<Typography variant="body2" fontWeight="500">{formatCurrency(membershipGstAmount)}</Typography>
+					</Box>
+				)}
 				{/* Combined GST */}
 				<Box sx={{ mb: 1, display: 'flex', justifyContent: 'space-between' }}>
 					<Typography>Total GST:</Typography>
@@ -3502,7 +3564,7 @@ export default function POS() {
 													setUseMembershipPayment(e.target.checked);
 													if (e.target.checked) {
 														// When using membership, use the subtotal without GST
-														const subtotal = calculateProductSubtotal() + calculateServiceSubtotal();
+														const subtotal = calculateProductSubtotal() + calculateServiceSubtotal() + calculateMembershipSubtotal();
 														const paymentAmount = Math.min(subtotal, activeClientMembership.currentBalance);
 														setPaymentAmounts(prev => ({
 															...prev,
@@ -3598,8 +3660,9 @@ export default function POS() {
 											type="number"
 											value={paymentAmounts.membership}
 											onChange={(e) => {
+												const currentTotal = calculateTotalAmount();
 												const val = Math.min(
-													Math.min(total, activeClientMembership.currentBalance),
+													Math.min(currentTotal, activeClientMembership.currentBalance),
 													Math.max(0, Number(e.target.value) || 0)
 												);
 												setPaymentAmounts(prev => ({ ...prev, membership: val }));
@@ -3608,7 +3671,7 @@ export default function POS() {
 												startAdornment: <InputAdornment position="start">₹</InputAdornment>,
 												inputProps: {
 													min: 0,
-													max: Math.min(total, activeClientMembership.currentBalance)
+													max: Math.min(calculateTotalAmount(), activeClientMembership.currentBalance)
 												}
 											}}
 										/>
@@ -3632,7 +3695,7 @@ export default function POS() {
 												const fixedDiscount = Math.round(Number(e.target.value));
 												setWalkInDiscount(fixedDiscount);
 												// Calculate and set percentage discount
-												const currentTotal = calculateProductSubtotal() + calculateServiceSubtotal() + calculateProductGstAmount(calculateProductSubtotal()) + calculateServiceGstAmount(calculateServiceSubtotal());
+												const currentTotal = calculateProductSubtotal() + calculateServiceSubtotal() + calculateMembershipSubtotal() + calculateProductGstAmount(calculateProductSubtotal()) + calculateServiceGstAmount(calculateServiceSubtotal()) + calculateMembershipGstAmount(calculateMembershipSubtotal());
 												const remainingAmount = currentTotal - fixedDiscount;
 												const calculatedPercentage = currentTotal > 0 ? ((currentTotal - remainingAmount) / currentTotal) * 100 : 0;
 												setWalkInDiscountPercentage(Math.max(0, Math.min(100, parseFloat(calculatedPercentage.toFixed(2)))));
@@ -3660,7 +3723,7 @@ export default function POS() {
 											const percentage = parseFloat(e.target.value);
 											setWalkInDiscountPercentage(isNaN(percentage) ? 0 : Math.max(0, Math.min(100, percentage)));
 											// Calculate and set fixed discount
-											const currentTotal = calculateProductSubtotal() + calculateServiceSubtotal() + calculateProductGstAmount(calculateProductSubtotal()) + calculateServiceGstAmount(calculateServiceSubtotal());
+											const currentTotal = calculateProductSubtotal() + calculateServiceSubtotal() + calculateMembershipSubtotal() + calculateProductGstAmount(calculateProductSubtotal()) + calculateServiceGstAmount(calculateServiceSubtotal()) + calculateMembershipGstAmount(calculateMembershipSubtotal());
 											const calculatedFixedDiscount = (currentTotal * (isNaN(percentage) ? 0 : Math.max(0, Math.min(100, percentage)))) / 100;
 											setWalkInDiscount(calculatedFixedDiscount);
 										}}
@@ -3816,7 +3879,7 @@ export default function POS() {
 								onClick={async () => {
 									// Calculate total based on payment method
 									const orderTotal = useMembershipPayment ? 
-										calculateProductSubtotal() + calculateServiceSubtotal() : // No GST for membership
+										calculateProductSubtotal() + calculateServiceSubtotal() + calculateMembershipSubtotal() : // No GST for membership
 										calculateTotalAmount(); // Include GST for other methods
 
 									// Build payments array from paymentAmounts
@@ -3835,7 +3898,7 @@ export default function POS() {
 								}}
 								disabled={processing || (
 									useMembershipPayment ? 
-										paymentAmounts.membership < (calculateProductSubtotal() + calculateServiceSubtotal()) : // Check without GST for membership
+										paymentAmounts.membership < (calculateProductSubtotal() + calculateServiceSubtotal() + calculateMembershipSubtotal()) : // Check without GST for membership
 										Object.values(paymentAmounts).reduce((a, b) => a + b, 0) < calculateTotalAmount() // Check with GST for other methods
 								)}
 								startIcon={processing ? <CircularProgress size={20} /> : <CheckIcon />}

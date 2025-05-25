@@ -58,6 +58,7 @@ import {
   Refresh as RefreshIcon,
   ContentCut as ContentCutIcon,
   Delete as DeleteIcon,
+  CardMembership as CardMembershipIcon,
 } from '@mui/icons-material'
 import { useOrders } from '../hooks/useOrders'
 import { formatCurrency } from '../utils/format'
@@ -107,6 +108,7 @@ enum OrderTab {
   SALON_CONSUMPTION = 'salon_consumption',
   SERVICES = 'services',
   PRODUCTS = 'products',
+  MEMBERSHIPS = 'memberships',
 }
 
 // Interface for date range filter
@@ -338,10 +340,14 @@ export default function Orders() {
     const hasProducts = order.services.some((service: any) => 
       service && service.type === 'product'
     );
+    const hasMemberships = order.services.some((service: any) => 
+      service && (service.type === 'membership' || service.category === 'membership')
+    );
     
-    // Check product and service subcategories
+    // Check product, service, and membership subcategories
     const productCategories = new Set();
     const serviceCategories = new Set();
+    const membershipCategories = new Set();
     
     order.services.forEach((service: any) => {
       if (service) {
@@ -349,6 +355,8 @@ export default function Orders() {
           productCategories.add(service.category.toLowerCase());
         } else if ((!service.type || service.type === 'service') && service.category) {
           serviceCategories.add(service.category.toLowerCase());
+        } else if (service.type === 'membership' || service.category === 'membership') {
+          membershipCategories.add('membership');
         }
       }
     });
@@ -356,9 +364,20 @@ export default function Orders() {
     // Store the categories for filtering
     (order as any)._productCategories = Array.from(productCategories);
     (order as any)._serviceCategories = Array.from(serviceCategories);
+    (order as any)._membershipCategories = Array.from(membershipCategories);
     
-    if (hasServices && hasProducts) return 'both';
+    // Return membership if only memberships are present
+    if (hasMemberships && !hasServices && !hasProducts) return 'membership';
+    
+    // Return combined types if multiple types are present
+    const types = [];
+    if (hasServices) types.push('service');
+    if (hasProducts) types.push('product');
+    if (hasMemberships) types.push('membership');
+    
+    if (types.length > 1) return 'both';
     if (hasProducts) return 'product';
+    if (hasMemberships) return 'membership';
     return 'service';
   };
 
@@ -413,6 +432,9 @@ export default function Orders() {
         break;
       case OrderTab.PRODUCTS:
         setPurchaseTypeFilter('product');
+        break;
+      case OrderTab.MEMBERSHIPS:
+        setPurchaseTypeFilter('membership');
         break;
       default:
         // Reset all filters when going to "All" tab
@@ -574,6 +596,16 @@ export default function Orders() {
             variant="outlined"
           />
         );
+      case 'membership':
+        return (
+          <Chip
+            icon={<CardMembershipIcon fontSize="small" />}
+            label="Membership"
+            size="small"
+            color="warning"
+            variant="outlined"
+          />
+        );
       case 'both':
         return (
           <Chip
@@ -721,7 +753,7 @@ export default function Orders() {
     // Get all orders of the same type (salon or sales) that come before this one
     const sameTypeOrders = sortedOrders
       .slice(0, orderIndex + 1)
-      .filter(o => isSalonConsumptionOrder(o) === isSalonOrder);
+      .filter(o => isSalonConsumptionOrder(normalizeOrder(o)) === isSalonOrder);
     
     // Get the position of this order among orders of the same type
     const orderNumber = sameTypeOrders.length;
@@ -739,17 +771,52 @@ export default function Orders() {
       return (
         <Box>
           {order.payments.map((payment, index) => (
-            <Chip
-              key={index}
-              size="small"
-              label={PAYMENT_METHOD_LABELS[payment.payment_method as PaymentMethod] || payment.payment_method}
-              sx={{ mr: 0.5, mb: 0.5 }}
-            />
+            <Box key={index} sx={{ mb: 0.5 }}>
+              <Chip
+                size="small"
+                label={`${PAYMENT_METHOD_LABELS[payment.payment_method as PaymentMethod] || payment.payment_method}: ${formatCurrency(payment.amount)}`}
+                sx={{ mr: 0.5 }}
+              />
+            </Box>
           ))}
+          {(order.pending_amount || 0) > 0 && (
+            <Box sx={{ mb: 0.5 }}>
+              <Chip
+                size="small"
+                label={`Pending: ${formatCurrency(order.pending_amount || 0)}`}
+                color="warning"
+                variant="outlined"
+              />
+            </Box>
+          )}
         </Box>
       );
     }
-    return PAYMENT_METHOD_LABELS[order.payment_method as PaymentMethod] || order.payment_method || 'Unknown';
+    
+    // For single payment orders, show payment method with total amount
+    const paymentMethod = PAYMENT_METHOD_LABELS[order.payment_method as PaymentMethod] || order.payment_method || 'Unknown';
+    const totalAmount = order.total || order.total_amount || 0;
+    
+    return (
+      <Box>
+        <Chip
+          size="small"
+          label={`${paymentMethod}: ${formatCurrency(totalAmount)}`}
+          color="primary"
+          variant="outlined"
+        />
+                 {(order.pending_amount || 0) > 0 && (
+           <Box sx={{ mt: 0.5 }}>
+             <Chip
+               size="small"
+               label={`Pending: ${formatCurrency(order.pending_amount || 0)}`}
+               color="warning"
+               variant="outlined"
+             />
+           </Box>
+         )}
+      </Box>
+    );
   };
 
   if (isLoading) {
@@ -957,6 +1024,12 @@ export default function Orders() {
             iconPosition="start"
             label={`Products (${orderStats.products})`} 
             value={OrderTab.PRODUCTS}
+          />
+          <Tab 
+            icon={<CardMembershipIcon sx={{ fontSize: 22 }} />}
+            iconPosition="start"
+            label={`Memberships`} 
+            value={OrderTab.MEMBERSHIPS}
           />
         </Tabs>
       </Paper>
