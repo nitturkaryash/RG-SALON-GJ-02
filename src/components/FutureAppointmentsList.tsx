@@ -37,18 +37,55 @@ const AppointmentCard = ({ appointment, onDeleteClick, onEditClick }: Appointmen
   const navigate = useNavigate();
 
   const handlePosClick = () => {
+    // Get all services for this appointment from clientDetails
+    const allServices = appointment.clientDetails?.[0]?.services || [];
+    
+    // If no services in clientDetails, fall back to single service from appointment
+    let servicesForPOS = [];
+    
+    if (allServices.length > 0) {
+      // Map all services with proper structure
+      servicesForPOS = allServices.map((service: any) => ({
+        id: service.id,
+        name: service.name,
+        price: service.price || 0,
+        type: 'service',
+        hsn_code: service.hsn_code,
+        gst_percentage: service.gst_percentage,
+        category: service.category || 'service',
+        quantity: 1
+      }));
+    } else {
+      // Fallback to single service if clientDetails is empty
+      servicesForPOS = [{
+        id: appointment.service_id,
+        name: appointment.serviceName || 'Unknown Service',
+        price: appointment.servicePrice || 0,
+        type: 'service',
+        quantity: 1
+      }];
+    }
+
+    const appointmentDataForPOS = {
+      id: appointment.id,
+      clientName: appointment.clientDetails?.[0]?.full_name || 'Unknown Client',
+      stylistId: appointment.stylist_id,
+      services: servicesForPOS,
+      type: servicesForPOS.length > 1 ? 'service_collection' : 'service',
+      appointmentTime: appointment.start_time,
+      notes: appointment.notes || '',
+      // Include additional service details for single service case
+      ...(servicesForPOS.length === 1 ? {
+        serviceId: servicesForPOS[0].id,
+        servicePrice: servicesForPOS[0].price,
+        serviceHsnCode: servicesForPOS[0].hsn_code,
+        serviceGstPercentage: servicesForPOS[0].gst_percentage
+      } : {})
+    };
+
     navigate('/pos', {
       state: {
-        appointmentData: {
-          id: appointment.id,
-          clientName: appointment.clientDetails?.[0]?.full_name || '',
-          stylistId: appointment.stylist_id,
-          serviceId: appointment.service_id,
-          serviceName: appointment.serviceName || '',
-          servicePrice: appointment.servicePrice || 0,
-          appointmentTime: appointment.start_time,
-          type: 'service'
-        }
+        appointmentData: appointmentDataForPOS
       }
     });
   };
@@ -157,6 +194,7 @@ const FutureAppointmentsList: React.FC<FutureAppointmentsListProps> = ({
   
   // Categories for tabs
   const categories = [
+    { label: 'Past', value: 'past' },
     { label: 'Today', value: 'today' },
     { label: 'Tomorrow', value: 'tomorrow' },
     { label: 'Future', value: 'future' }
@@ -173,19 +211,27 @@ const FutureAppointmentsList: React.FC<FutureAppointmentsListProps> = ({
     let filtered = [];
     
     switch (tabIndex) {
-      case 0: // Today
+      case 0: // Past
+        filtered = appointments.filter(app => {
+          const appDate = new Date(app.start_time);
+          return isBefore(appDate, today);
+        });
+        // Sort past appointments in descending order (most recent first)
+        filtered.sort((a, b) => new Date(b.start_time).getTime() - new Date(a.start_time).getTime());
+        break;
+      case 1: // Today
         filtered = appointments.filter(app => {
           const appDate = new Date(app.start_time);
           return isSameDay(appDate, today);
         });
         break;
-      case 1: // Tomorrow
+      case 2: // Tomorrow
         filtered = appointments.filter(app => {
           const appDate = new Date(app.start_time);
           return isSameDay(appDate, tomorrow);
         });
         break;
-      case 2: // Future (beyond tomorrow)
+      case 3: // Future (beyond tomorrow)
         filtered = appointments.filter(app => {
           const appDate = new Date(app.start_time);
           return isAfter(appDate, endOfDay(tomorrow));
@@ -195,8 +241,10 @@ const FutureAppointmentsList: React.FC<FutureAppointmentsListProps> = ({
         filtered = appointments;
     }
     
-    // Sort by date/time
-    filtered.sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
+    // Sort by date/time (ascending for future appointments)
+    if (tabIndex !== 0) {
+      filtered.sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
+    }
     
     // Enrich appointment data with related info
     filtered = filtered.map(appointment => {
@@ -333,12 +381,26 @@ const FutureAppointmentsList: React.FC<FutureAppointmentsListProps> = ({
             ))}
           </Grid>
         )}
+        
+        {tabValue === 3 && filteredAppointments.length > 0 && (
+          <Grid container spacing={2}>
+            {filteredAppointments.map((appointment) => (
+              <Grid item xs={12} sm={6} md={4} lg={3} key={appointment.id}>
+                <AppointmentCard
+                  appointment={appointment}
+                  onDeleteClick={handleDeleteClick}
+                  onEditClick={() => handleEditClick(appointment)}
+                />
+              </Grid>
+            ))}
+          </Grid>
+        )}
 
         {/* No appointments message */}
         {filteredAppointments.length === 0 && (
           <Box sx={{ p: 3, textAlign: 'center' }}>
             <Typography color="text.secondary">
-              No {tabValue === 0 ? 'today' : tabValue === 1 ? 'tomorrow' : 'future'} appointments
+              No {tabValue === 0 ? 'past' : tabValue === 1 ? 'today' : tabValue === 2 ? 'tomorrow' : 'future'} appointments
             </Typography>
           </Box>
         )}
