@@ -759,6 +759,63 @@ export default function Appointments() {
       setSnackbarOpen(true);
       return;
     }
+
+    // --- Break Conflict Validation ---
+    for (const entry of clientEntries) {
+      for (const service of entry.services) {
+        if (!service.stylistId) continue;
+
+        // Calculate service start and end times
+        const [startHour, startMinute] = service.fromTime.split(':').map(Number);
+        const [endHour, endMinute] = service.toTime.split(':').map(Number);
+        
+        const baseDate = new Date(drawerDate);
+        baseDate.setHours(0, 0, 0, 0);
+        
+        const serviceStartTime = new Date(baseDate);
+        serviceStartTime.setHours(startHour, startMinute, 0, 0);
+        
+        const serviceEndTime = new Date(baseDate);
+        serviceEndTime.setHours(endHour, endMinute, 0, 0);
+        if (serviceEndTime <= serviceStartTime) {
+          serviceEndTime.setDate(serviceEndTime.getDate() + 1);
+        }
+
+        // Find the stylist and check for break conflicts
+        const stylist = allStylists.find(s => s.id === service.stylistId);
+        if (stylist && stylist.breaks && stylist.breaks.length > 0) {
+          const hasBreakConflict = stylist.breaks.some((breakItem: StylistBreak) => {
+            const breakStartTime = new Date(breakItem.startTime);
+            const breakEndTime = new Date(breakItem.endTime);
+            
+            // Only check breaks on the same day
+            if (!isSameDay(breakStartTime, baseDate)) {
+              return false;
+            }
+
+            // Check for overlap between service time and break time
+            return (
+              (serviceStartTime >= breakStartTime && serviceStartTime < breakEndTime) || // Service starts during break
+              (serviceEndTime > breakStartTime && serviceEndTime <= breakEndTime) || // Service ends during break
+              (serviceStartTime <= breakStartTime && serviceEndTime >= breakEndTime) // Break is within service time
+            );
+          });
+
+          if (hasBreakConflict) {
+            const stylistName = stylist.name;
+            const serviceName = service.name;
+            const timeRange = `${service.fromTime} - ${service.toTime}`;
+            
+            setSnackbarMessage(`Cannot book appointment: ${serviceName} for ${stylistName} (${timeRange}) conflicts with break time.`);
+            setSnackbarSeverity('error');
+            setSnackbarOpen(true);
+            return;
+          }
+        }
+      }
+    }
+    // --- End Break Conflict Validation ---
+    
     // --- End Validation ---
 
     try {

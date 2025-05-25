@@ -555,13 +555,13 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
   const handleSlotClick = (stylistId: string, hour: number, minute: number) => {
     // Check if this time slot is during a break
     if (isBreakTime(stylistId, hour, minute)) {
-      setSnackbarMessage('Cannot book during a break time');
+      setSnackbarMessage('Cannot book appointment during break time');
+      setSnackbarSeverity('error');
       setSnackbarOpen(true);
-      return; // Don't allow booking during breaks
+      return;
     }
-    
-    // Create a new date object for the selected time with exact minutes
-    const selectedTime = new Date(
+
+    const slotTime = new Date(
       currentDate.getFullYear(),
       currentDate.getMonth(),
       currentDate.getDate(),
@@ -571,15 +571,26 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
       0
     );
     
-    // Find the stylist
-    const selectedStylist = stylists.find(s => s.id === stylistId);
-    if (!selectedStylist) {
-      console.error('Stylist not found:', stylistId);
+    // Check if there's already an appointment at this exact time slot
+    const existingAppointment = appointments.find(appointment => {
+      if (appointment.stylist_id !== stylistId) return false;
+      
+      const appointmentStart = new Date(appointment.start_time);
+      const appointmentEnd = new Date(appointment.end_time);
+      
+      // Check if the slot time falls within an existing appointment
+      return slotTime >= appointmentStart && slotTime < appointmentEnd;
+    });
+    
+    if (existingAppointment) {
+      setSnackbarMessage('Time slot is already booked');
+      setSnackbarSeverity('warning');
+      setSnackbarOpen(true);
       return;
     }
     
-    // Call the onSelectTimeSlot callback with the stylist ID and formatted time
-    onSelectTimeSlot(stylistId, selectedTime);
+    console.log('Slot clicked:', { stylistId, hour, minute, slotTime });
+    onSelectTimeSlot(stylistId, slotTime);
   };
 
   const handleAppointmentClick = (appointment: any) => {
@@ -737,9 +748,45 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
     
     if (!isValid) {
       setSnackbarMessage('Please fill in all required fields');
+      setSnackbarSeverity('error');
       setSnackbarOpen(true);
       return;
     }
+
+    // --- Break Conflict Validation ---
+    // Format times for validation
+    const selectedDay = new Date(currentDate);
+    const [startHour, startMinute] = editFormData.startTime.split(':').map(Number);
+    const [endHour, endMinute] = editFormData.endTime.split(':').map(Number);
+    
+    const start = new Date(selectedDay);
+    start.setHours(startHour, startMinute, 0, 0);
+    
+    const end = new Date(selectedDay);
+    end.setHours(endHour, endMinute, 0, 0);
+    
+    // Handle overnight bookings
+    if (end <= start) {
+      end.setDate(end.getDate() + 1);
+    }
+
+    // Check for break conflicts with all assigned stylists
+    for (const entry of editFormData.clientEntries) {
+      if (entry.stylistList) {
+        for (const stylist of entry.stylistList) {
+          const hasBreakConflict = checkBreakConflict(stylist.id, start.toISOString(), end.toISOString());
+          if (hasBreakConflict) {
+            const stylistName = stylists.find(s => s.id === stylist.id)?.name || 'Unknown';
+            setSnackbarMessage(`Cannot update appointment: Conflicts with break time for ${stylistName}`);
+            setSnackbarSeverity('error');
+            setSnackbarOpen(true);
+            return;
+          }
+        }
+      }
+    }
+    // --- End Break Conflict Validation ---
+    
     // --- End Validation ---
     
     try {
@@ -780,22 +827,6 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
           };
         })
       );
-      
-      // Format times for ISO string conversion
-      const selectedDay = new Date(currentDate);
-      const [startHour, startMinute] = editFormData.startTime.split(':').map(Number);
-      const [endHour, endMinute] = editFormData.endTime.split(':').map(Number);
-      
-      const start = new Date(selectedDay);
-      start.setHours(startHour, startMinute, 0, 0);
-      
-      const end = new Date(selectedDay);
-      end.setHours(endHour, endMinute, 0, 0);
-      
-      // Handle overnight bookings
-      if (end <= start) {
-        end.setDate(end.getDate() + 1);
-      }
       
       // Format the start and end times as ISO strings for the database
       const formattedStartTime = start.toISOString();
@@ -1164,6 +1195,7 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
   // Add state for snackbar
   const [snackbarOpen, setSnackbarOpen] = useState(false);
   const [snackbarMessage, setSnackbarMessage] = useState('');
+  const [snackbarSeverity, setSnackbarSeverity] = useState<'success' | 'warning' | 'error'>('success');
 
   // Add handleSnackbarClose function
   const handleSnackbarClose = () => {
@@ -2789,7 +2821,7 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
         onClose={handleSnackbarClose}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
       >
-        <Alert onClose={handleSnackbarClose} severity="warning">
+        <Alert onClose={handleSnackbarClose} severity={snackbarSeverity}>
           {snackbarMessage}
         </Alert>
       </Snackbar>
