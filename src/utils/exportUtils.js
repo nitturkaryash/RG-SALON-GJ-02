@@ -83,7 +83,8 @@ export const exportToPDF = (data, fileName, headers, title) => {
             if (typeof value === 'number') {
                 // Check if it might be a currency value by key name
                 if (key.includes('price') || key.includes('total') || key.includes('tax') ||
-                    key.includes('subtotal') || key.includes('discount') || key.includes('cost')) {
+                    key.includes('subtotal') || key.includes('discount') || key.includes('cost') ||
+                    key.includes('cgst') || key.includes('sgst')) {
                     return formatCurrency(value);
                 }
                 return value.toString();
@@ -125,20 +126,54 @@ export const exportToPDF = (data, fileName, headers, title) => {
  * @returns Formatted array for export
  */
 export const formatOrdersForExport = (orders) => {
-    return orders.map(order => ({
-        id: order.id,
-        created_at: new Date(order.created_at).toLocaleString(),
-        client_name: order.client_name,
-        stylist_name: order.stylist_name,
-        subtotal: order.subtotal,
-        tax: order.tax,
-        discount: order.discount,
-        total: order.total,
-        payment_method: order.payment_method.replace('_', ' ').replace(/\b\w/g, (l) => l.toUpperCase()),
-        status: order.status,
-        is_walk_in: order.is_walk_in ? 'Walk-in' : 'Appointment',
-        services: order.services.map((s) => s.service_name).join(', ')
-    }));
+    return orders.map(order => {
+        // Calculate CGST and SGST (9% each from total 18% GST)
+        const totalTax = order.tax || 0;
+        const cgst = totalTax / 2; // 9% CGST
+        const sgst = totalTax / 2; // 9% SGST
+        
+        // Format payment information with amounts
+        let paymentInfo = '';
+        if (order.payments && order.payments.length > 0) {
+            // For split payments, show each payment method with amount
+            paymentInfo = order.payments.map((payment) => {
+                const method = payment.payment_method?.replace('_', ' ').replace(/\b\w/g, (l) => l.toUpperCase()) || 'Unknown';
+                const amount = payment.amount || 0;
+                return `${method}: ₹${amount}`;
+            }).join(', ');
+            
+            // Add pending amount if exists
+            if (order.pending_amount && order.pending_amount > 0) {
+                paymentInfo += `, Pending: ₹${order.pending_amount}`;
+            }
+        } else {
+            // For single payment, show payment method with total amount
+            const method = order.payment_method?.replace('_', ' ').replace(/\b\w/g, (l) => l.toUpperCase()) || 'Unknown';
+            const totalAmount = order.total || order.total_amount || 0;
+            paymentInfo = `${method}: ₹${totalAmount}`;
+            
+            // Add pending amount if exists
+            if (order.pending_amount && order.pending_amount > 0) {
+                paymentInfo += `, Pending: ₹${order.pending_amount}`;
+            }
+        }
+        
+        return {
+            id: order.id,
+            created_at: new Date(order.created_at).toLocaleString(),
+            client_name: order.client_name,
+            stylist_name: order.stylist_name,
+            subtotal: order.subtotal,
+            cgst: cgst,
+            sgst: sgst,
+            discount: order.discount,
+            total: order.total,
+            payment_details: paymentInfo,
+            status: order.status,
+            is_walk_in: order.is_walk_in ? 'Walk-in' : 'Appointment',
+            services: order.services.map((s) => s.service_name).join(', ')
+        };
+    });
 };
 /**
  * Order export header definitions
@@ -149,10 +184,11 @@ export const orderExportHeaders = {
     client_name: 'Customer',
     stylist_name: 'Stylist',
     subtotal: 'Subtotal (₹)',
-    tax: 'GST (₹)',
+    cgst: 'CGST 9% (₹)',
+    sgst: 'SGST 9% (₹)',
     discount: 'Discount (₹)',
     total: 'Total (₹)',
-    payment_method: 'Payment Method',
+    payment_details: 'Payment Details',
     status: 'Status',
     is_walk_in: 'Type',
     services: 'Services'
