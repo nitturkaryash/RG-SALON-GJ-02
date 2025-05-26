@@ -357,13 +357,17 @@ export default function Layout({ children }: LayoutProps) {
           backgroundColor: 'background.default',
         }}
       >
-        <FramerMotion.AnimatePresence initial={false} mode="wait">
+        <FramerMotion.AnimatePresence initial={false} mode="sync">
           <FramerMotion.motion.div
             key={location.pathname}
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
-            transition={{ duration: 0.3 }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ 
+              duration: 0.2,
+              ease: "easeInOut"
+            }}
+            style={{ width: '100%', height: '100%' }}
           >
             {children}
           </FramerMotion.motion.div>

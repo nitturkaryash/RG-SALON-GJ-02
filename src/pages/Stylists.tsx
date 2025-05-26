@@ -32,8 +32,6 @@ import {
   TableHead,
   TableRow,
   Badge,
-  Tab,
-  Tabs,
   Tooltip,
   Alert
 } from '@mui/material'
@@ -49,8 +47,7 @@ import {
   Add as AddIcon,
   HolidayVillage as HolidayIcon,
   EventBusy as EventBusyIcon,
-  CalendarMonth,
-  CalendarViewMonth
+  CalendarMonth
 } from '@mui/icons-material'
 import { useStylists, Stylist } from '../hooks/useStylists'
 import { useStylistHolidays, StylistHoliday } from '../hooks/useStylistHolidays'
@@ -113,7 +110,6 @@ export default function Stylists() {
   const [holidayDialogOpen, setHolidayDialogOpen] = useState<boolean>(false)
   const [selectedStylistForHoliday, setSelectedStylistForHoliday] = useState<Stylist | null>(null)
   const [editingHoliday, setEditingHoliday] = useState<StylistHoliday | null>(null)
-  const [viewType, setViewType] = useState<'report'>('report')
   const [reportMonth, setReportMonth] = useState<Date>(new Date())
   const [holidayReports, setHolidayReports] = useState<HolidayReport[]>([])
   const [stylistHolidays, setStylistHolidays] = useState<Record<string, StylistHoliday[]>>({})
@@ -420,14 +416,6 @@ export default function Stylists() {
                 : `${stylistsOnHolidayToday.length} stylists are on holiday today: ${stylistsOnHolidayToday.map(s => s.name).join(', ')}`
               }
             </Typography>
-            <Button 
-              size="small" 
-              variant="outlined" 
-              color="warning"
-              onClick={() => setViewType('report')}
-            >
-              View Holiday Report
-            </Button>
           </Box>
         </Alert>
       )}
@@ -443,19 +431,6 @@ export default function Stylists() {
           Stylists
         </Typography>
         <Box sx={{ display: 'flex', gap: 2 }}>
-          <Tabs 
-            value={viewType} 
-            onChange={(_, newValue) => setViewType(newValue)}
-            sx={{ 
-              mr: 2,
-              '& .MuiTab-root': {
-                minWidth: 'unset',
-                p: '6px 16px'
-              }
-            }}
-          >
-            <Tab value="report" icon={<CalendarViewMonth />} label="Holiday Report" />
-          </Tabs>
           <Button 
             variant="contained" 
             color="primary" 
@@ -472,13 +447,14 @@ export default function Stylists() {
         <Paper sx={{ p: 3, width: '100%', borderRadius: 2 }}>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
             <Typography variant="h5">
-              Holiday Report: {format(reportMonth, 'MMMM yyyy')}
+              Holiday Report: {format(reportMonth, 'MMMM')}
             </Typography>
             <LocalizationProvider dateAdapter={AdapterDateFns}>
               <DatePicker
-                views={[ 'year', 'month' ]}
+                views={[ 'month' ]}
                 value={reportMonth}
                 onChange={(newValue) => newValue && setReportMonth(newValue)}
+                format="MMMM"
                 slotProps={{
                   textField: {
                     size: 'small',
@@ -493,11 +469,16 @@ export default function Stylists() {
           {/* Summary section */}
           <Box sx={{ mb: 3 }}>
             <Typography variant="subtitle1" sx={{ mb: 1 }}>
-              Summary for {format(reportMonth, 'MMMM yyyy')}:
+              Summary for {format(reportMonth, 'MMMM')}
             </Typography>
             <Grid container spacing={2}>
               <Grid item xs={12} sm={4}>
-                <Paper sx={{ p: 2, bgcolor: 'primary.light', color: 'primary.contrastText' }}>
+                <Paper sx={{ 
+                  p: 2, 
+                  bgcolor: 'rgba(107, 142, 35, 0.15)', 
+                  color: '#6B8E23',
+                  boxShadow: '0 2px 4px rgba(0,0,0,0.08)'
+                }}>
                   <Typography variant="h6">
                     {holidayReports.reduce((sum, report) => sum + report.totalHolidays, 0)}
                   </Typography>
@@ -507,7 +488,12 @@ export default function Stylists() {
                 </Paper>
               </Grid>
               <Grid item xs={12} sm={4}>
-                <Paper sx={{ p: 2, bgcolor: 'warning.light', color: 'warning.contrastText' }}>
+                <Paper sx={{ 
+                  p: 2, 
+                  bgcolor: 'rgba(107, 142, 35, 0.4)', 
+                  color: 'white',
+                  boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+                }}>
                   <Typography variant="h6">
                     {stylistsOnHolidayToday.length}
                   </Typography>
@@ -517,7 +503,12 @@ export default function Stylists() {
                 </Paper>
               </Grid>
               <Grid item xs={12} sm={4}>
-                <Paper sx={{ p: 2, bgcolor: 'success.light', color: 'success.contrastText' }}>
+                <Paper sx={{ 
+                  p: 2, 
+                  bgcolor: '#6B8E23', 
+                  color: 'white',
+                  boxShadow: '0 2px 4px rgba(0,0,0,0.12)'
+                }}>
                   <Typography variant="h6">
                     {stylists.length - stylistsOnHolidayToday.length}
                   </Typography>

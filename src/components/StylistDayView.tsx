@@ -37,7 +37,7 @@ import {
   Menu
 } from '@mui/material';
 import { styled } from '@mui/material/styles';
-import { ChevronLeft, ChevronRight, Today, Receipt, CalendarMonth, Delete as DeleteIcon, Close as CloseIcon, Add as AddIcon, Edit as EditIcon, Save as SaveIcon } from '@mui/icons-material';
+import { ChevronLeft, ChevronRight, Today, Receipt, CalendarMonth, Delete as DeleteIcon, Close as CloseIcon, Add as AddIcon, Edit as EditIcon, Save as SaveIcon, Refresh as RefreshIcon } from '@mui/icons-material';
 import { format, addDays, isSameDay } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
 import { useClients, Client } from '../hooks/useClients';
@@ -88,6 +88,7 @@ const DayViewContainer = styled(Paper)(({ theme }) => ({
   backgroundColor: theme.palette.background.default,
   border: 'none',
   borderRadius: 0,
+  boxShadow: 'none',
 }));
 
 const DayViewHeader = styled(Box)(({ theme }) => ({
@@ -95,9 +96,7 @@ const DayViewHeader = styled(Box)(({ theme }) => ({
   justifyContent: 'space-between',
   alignItems: 'center',
   padding: theme.spacing(2),
-  borderBottom: `1px solid ${theme.palette.divider}`,
   backgroundColor: theme.palette.background.paper, // White background
-  boxShadow: '0px 1px 4px rgba(0, 0, 0, 0.05)',
   borderTopLeftRadius: 28, // Match container
   borderTopRightRadius: 28, // Match container
 }));
@@ -110,6 +109,8 @@ const ScheduleGrid = styled(Box)(({ theme }) => ({
   overflowX: 'visible',   // defer horizontal scroll to outer wrapper for reliable sticky behavior
   position: 'relative',
   width: 'max-content', // expand to fit all columns so TimeColumn sticks across full scroll
+  border: 'none',
+  borderTop: 'none'
 }));
 
 const TimeColumn = styled(Box)(({ theme }) => ({
@@ -121,7 +122,8 @@ const TimeColumn = styled(Box)(({ theme }) => ({
   backgroundColor: theme.palette.background.paper,
   zIndex: 12, // Higher than StylistHeader to ensure it stays above
   paddingTop: 0,
-  marginTop: 0
+  marginTop: 0,
+  borderTop: 'none'
 }));
 
 // Update HeaderWrapper for better transition
@@ -132,7 +134,6 @@ const HeaderWrapper = styled(Box)(({ theme }) => ({
   right: 0,
   zIndex: 1000, // Very high z-index to ensure it's on top
   pointerEvents: 'none', // Let clicks pass through the wrapper
-  boxShadow: '0 4px 8px rgba(0,0,0,0.15)',
   transition: 'all 0.2s ease-in-out',
 }));
 
@@ -164,6 +165,7 @@ const StylistColumn = styled(Box)(({ theme }) => ({
   overflow: 'visible',
   display: 'flex',
   flexDirection: 'column',
+  borderTop: 'none',
   // Removed CSS containment to ensure sticky headers can function
 }));
 
@@ -173,6 +175,7 @@ const StylistHeader = styled(Box)(({ theme }) => ({
   textAlign: 'center',
   borderBottom: `1px solid ${theme.palette.divider}`,
   borderRight: `1px solid ${theme.palette.divider}`,
+  borderTop: 'none',
   backgroundColor: theme.palette.salon.oliveLight,
   position: 'sticky',
   top: 0,
@@ -181,7 +184,6 @@ const StylistHeader = styled(Box)(({ theme }) => ({
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
-  boxShadow: '0 1px 2px rgba(0,0,0,0.1)', // subtle shadow for separation
 }));
 
 const TimeSlot = styled(Box)(({ theme }) => ({
@@ -190,6 +192,7 @@ const TimeSlot = styled(Box)(({ theme }) => ({
     height: Math.floor(TIME_SLOT_HEIGHT * 0.7),
   },
   borderBottom: `1px solid ${theme.palette.divider}`,
+  borderTop: 'none',
   display: 'flex',
   alignItems: 'center',
   padding: theme.spacing(0.75),
@@ -197,6 +200,9 @@ const TimeSlot = styled(Box)(({ theme }) => ({
   position: 'relative',
   '&:last-child': {
     borderBottom: 'none',
+  },
+  '&:first-of-type': {
+    borderTop: 'none',
   },
 }));
 
@@ -212,6 +218,7 @@ const AppointmentSlot = styled(Box)(({ theme }) => ({
   height: TIME_SLOT_HEIGHT,
   borderBottom: `1px solid ${theme.palette.divider}`,
   borderRight: `1px solid ${theme.palette.divider}`, // Add right border to every slot
+  borderTop: 'none',
   cursor: 'pointer',
   transition: 'background-color 0.2s',
   '&:hover': {
@@ -223,6 +230,9 @@ const AppointmentSlot = styled(Box)(({ theme }) => ({
     '&:hover': {
       backgroundColor: 'rgba(211, 47, 47, 0.2)',
     },
+  },
+  '&:first-of-type': {
+    borderTop: 'none',
   },
 }));
 
@@ -1812,6 +1822,7 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
             backgroundColor: '#f5f5f5',
             borderRight: '1px solid rgba(0, 0, 0, 0.12)',
             borderBottom: '1px solid rgba(0, 0, 0, 0.12)',
+            borderTop: 'none',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -1988,15 +1999,19 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
 
   // Add a wrapper component to handle horizontal scrolling separately
   const GridWrapper = styled(Box)(({ theme }) => ({
-    display: 'flex', // Make wrapper a flex container
-    flexDirection: 'column',
-    flex: 1,         // Take remaining vertical space
-    overflowX: 'auto',  // enable horizontal scroll within calendar wrapper for TimeColumn stickiness
-    overflowY: 'visible', // Allow vertical scroll for ScheduleGrid
-    width: '100%',
-    position: 'relative', // Create stacking context
-    // Removed CSS containment so sticky headers can anchor correctly
-  }));
+  display: 'flex', // Make wrapper a flex container
+  flexDirection: 'column',
+  flex: 1,         // Take remaining vertical space
+  overflowX: 'auto',  // enable horizontal scroll within calendar wrapper for TimeColumn stickiness
+  overflowY: 'visible', // Allow vertical scroll for ScheduleGrid
+  width: '100%',
+  position: 'relative', // Create stacking context
+  border: 'none',
+  borderTop: 'none',
+  boxShadow: 'none',
+  // Removed the ::before pseudo-element that might be causing the border issue
+  // Removed CSS containment so sticky headers can anchor correctly
+}));
 
   // Context menu handlers for check-in
   const handleContextMenu = (event: React.MouseEvent, appointment: any) => {
@@ -2029,7 +2044,11 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
 
   return (
     <DayViewContainer>
-      <DayViewHeader>
+      <DayViewHeader sx={{ 
+        borderBottom: 'none', 
+        mb: 0, 
+        pb: 2 
+      }}>
         <Box display="flex" alignItems="center">
           <IconButton onClick={handlePrevDay}>
             <ChevronLeft />
@@ -2116,10 +2135,20 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
         </Box>
       </DayViewHeader>
       
-      <GridWrapper>
+      <Box sx={{ 
+        height: '1px', 
+        width: '100%', 
+        bgcolor: 'transparent',
+        position: 'relative',
+        zIndex: 15,
+        pointerEvents: 'none'
+      }} />
+      
+      <GridWrapper sx={{ mt: 0 }}>
         <ScheduleGrid 
           className="schedule-grid" 
           ref={gridRef}
+          sx={{ borderTop: 'none', mt: 0 }}
         >
           {/* Use the renderTimeColumn function to create the time column */}
           {renderTimeColumn()}
@@ -2174,12 +2203,11 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
                       borderRight: 'none'
                     }),
                     ...(isBreakTime(stylist.id, slot.hour, slot.minute) && { 
-                      backgroundColor: 'rgba(220, 53, 69, 0.3)', // Light red background
-                      backgroundImage: 'repeating-linear-gradient(135deg, transparent, transparent 6px, rgba(220, 53, 69, 0.5) 6px, rgba(220, 53, 69, 0.5) 12px)', // Red stripes
-                      border: '1px dashed rgba(220, 0, 0, 0.8)', // Red dashed border
+                      backgroundColor: 'rgba(220, 53, 69, 0.6)', // Solid red background
+                      border: '1px solid rgba(220, 0, 0, 0.8)', // Solid red border
                       cursor: 'not-allowed',
                       '&:hover': {
-                        backgroundColor: 'rgba(220, 53, 69, 0.4)' // Slightly darker on hover
+                        backgroundColor: 'rgba(220, 53, 69, 0.7)' // Slightly darker on hover
                       }
                     })
                   }}
@@ -2218,15 +2246,15 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
                       color: 'white',
                       borderRadius: '8px',
                       padding: theme.spacing(1, 1.5),
-                      boxShadow: '0 2px 4px rgba(0,0,0,0.15)',
+                      boxShadow: 'none',
                       zIndex: 5,
                       display: 'flex',
                       flexDirection: 'column',
                       justifyContent: 'space-between',
                       border: '1px solid rgba(255, 255, 255, 0.25)',
                       '&:hover': {
-                        boxShadow: '0 3px 6px rgba(0,0,0,0.2)',
-                        transform: 'translateY(-2px)'
+                        boxShadow: 'none',
+                        transform: 'none'
                       }
                     }}
                     onClick={() => handleEditBreakDialogOpen(breakItem)}
@@ -2293,7 +2321,17 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
       {/* Edit Appointment Drawer */}
       <Drawer anchor="right" variant="persistent" open={editDialogOpen} onClose={handleEditDialogClose}
               ModalProps={{ keepMounted: true }}
-              PaperProps={{ sx: { width: 500, display: 'flex', flexDirection: 'column' } }}>
+              PaperProps={{
+                sx: {
+                  width: 500,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  transition: theme.transitions.create('transform', {
+                    duration: theme.transitions.duration.complex,
+                    easing: theme.transitions.easing.easeInOut,
+                  }),
+                }
+              }}>
         
         {/* Header with calendar icon */}
         <Box sx={{ p: 3, pb: 1, display: 'flex', alignItems: 'center', borderBottom: '1px solid', borderColor: 'divider', position: 'relative' }}>

@@ -1424,28 +1424,30 @@ export default function POS() {
 		try {
 			let allLoadedProducts: POSService[] = [];
 			
-			// First fetch latest purchase costs
-			const latestPurchaseCosts = await fetchLatestPurchaseCosts();
+			// First fetch latest purchase costs (though not used as primary price for walk-in)
+			// const latestPurchaseCosts = await fetchLatestPurchaseCosts(); // This line can be kept if latestPurchaseCosts is used elsewhere, or removed if only for the old price logic.
+			// For this change, we are simplifying the price logic for allProducts based on user request.
 			
 			if (inventoryProducts && inventoryProducts.length > 0) {
 				const mappedProducts = inventoryProducts.map((product) => {
-					// Use latest purchase cost if available, otherwise fallback to MRP
-					const purchaseCost = latestPurchaseCosts[product.id];
-					const finalPrice = purchaseCost || product.mrp_per_unit_excl_gst || product.mrp_incl_gst || product.price || 0;
+					// For walk-in orders, the primary price displayed and used should be "MRP Ex. GST (Rs.)"
+					// Assuming product.mrp_per_unit_excl_gst holds this value.
+					const mrpExGSTForWalkIn = product.mrp_per_unit_excl_gst || product.price || 0; 
 					
-					console.log(`Product ${product.name}: Purchase cost: ${purchaseCost || 'N/A'}, Final price: ${finalPrice}`);
+					console.log(`Product ${product.name}: MRP Ex. GST for Walk-In: ${mrpExGSTForWalkIn.toFixed(2)}`);
 					
 					return {
 						id: product.id,
 						name: product.name,
-						price: finalPrice,
-						description: `HSN: ${product.hsn_code || 'N/A'} | GST: ${product.gst_percentage}% | ${purchaseCost ? 'Purchase Cost' : 'MRP'}`,
+						price: mrpExGSTForWalkIn, // Use MRP Ex. GST as the primary price for POSService objects
+						description: `MRP Ex. GST: ₹${mrpExGSTForWalkIn.toFixed(2)} | Stock: ${product.stock_quantity || 0}`, // Updated description
 						type: "product" as "product" | "service",
 						hsn_code: product.hsn_code,
 						units: product.units,
 						gst_percentage: product.gst_percentage,
 						stock_quantity: product.stock_quantity || 0,
 						active: product.active
+						// Ensure all necessary fields from 'product' are carried over if needed elsewhere
 					};
 				});
 				allLoadedProducts = [...mappedProducts];
@@ -1460,7 +1462,7 @@ export default function POS() {
 		} finally {
 			setLoadingProducts(false);
 		}
-	}, [inventoryProducts, fetchBalanceStockData, fetchLatestPurchaseCosts]);
+	}, [inventoryProducts, fetchBalanceStockData]); // Removed fetchLatestPurchaseCosts from dependencies if it's no longer used directly here.
 
 	// UseEffect for initial fetch
 	useEffect(() => {
@@ -2549,16 +2551,19 @@ export default function POS() {
 								return `${option.name}${stockLabel}`;
 							}}
 							renderOption={(props, option) => {
-								// Get purchase cost from product_master table, fallback to option price
+								// Get purchase cost from product_master table, fallback to option price (which is mrpExclGst from fetchAllProducts)
 								const purchaseCost = getPurchaseCostForProduct(option.id, option.name, option.price);
-								const priceSource = getPurchaseCostForProduct(option.id, option.name, option.price) ? 'Purchase Cost' : 'MRP';
+								// Determine if the purchaseCost came from product_master or was a fallback
+								const actualPurchaseCostFromMaster = productMasterCosts[option.id] || productMasterCostsByName[option.name.toLowerCase().trim()];
+								const priceToDisplay = actualPurchaseCostFromMaster !== undefined ? actualPurchaseCostFromMaster : purchaseCost;
+								const priceSource = actualPurchaseCostFromMaster !== undefined ? 'Purchase Cost (Ex.GST)' : `MRP Ex.GST (Fallback)`;
 								
 								return (
 									<li {...props}>
 										<Box>
 											<Typography variant="body2">{option.name}</Typography>
 											<Typography variant="caption" color="text.secondary">
-												₹{purchaseCost} ({priceSource}) • {option.stock_quantity !== undefined ? 
+												₹{priceToDisplay.toFixed(2)} ({priceSource}) • {option.stock_quantity !== undefined ? 
 													`${option.stock_quantity} in stock` : 'Stock not available'}
 											</Typography>
 										</Box>
@@ -2571,10 +2576,11 @@ export default function POS() {
 									if (newProduct.stock_quantity !== undefined && newProduct.stock_quantity <= 0) {
 										toast.error(`${newProduct.name} is out of stock`);
 									} else {
-										handleAddSalonProduct(newProduct);
-										const purchaseCost = getPurchaseCostForProduct(newProduct.id, newProduct.name, newProduct.price);
-										const priceSource = getPurchaseCostForProduct(newProduct.id, newProduct.name, newProduct.price) ? 'purchase cost' : 'MRP price';
-										toast.success(`Added ${newProduct.name} for salon use at ₹${purchaseCost} (${priceSource})`);
+										handleAddSalonProduct(newProduct); // handleAddSalonProduct uses getPurchaseCostForProduct internally
+										const purchaseCostForToast = getPurchaseCostForProduct(newProduct.id, newProduct.name, newProduct.price);
+										const actualPurchaseCostFromMasterForToast = productMasterCosts[newProduct.id] || productMasterCostsByName[newProduct.name.toLowerCase().trim()];
+                						const priceSourceForToast = actualPurchaseCostFromMasterForToast !== undefined ? 'Purchase Cost (Ex.GST)' : `MRP Ex.GST (Fallback)`;
+										toast.success(`Added ${newProduct.name} for salon use at ₹${purchaseCostForToast.toFixed(2)} (${priceSourceForToast})`);
 									}
 								}
 							}}
@@ -2811,7 +2817,7 @@ export default function POS() {
 				<Divider sx={{ my: 2 }} />
 				{/* Subtotals */}
 				<Box sx={{ mb: 1, display: 'flex', justifyContent: 'space-between' }}>
-					<Typography variant="body2">Product Subtotal:</Typography>
+					<Typography variant="body2">Product Subtotal (MRP Ex.GST):</Typography>
 					<Typography variant="body2" fontWeight="500">{formatCurrency(productSubtotal)}</Typography>
 				</Box>
 				<Box sx={{ mb: 1, display: 'flex', justifyContent: 'space-between' }}>
@@ -2830,8 +2836,8 @@ export default function POS() {
 					<Typography variant="body2" fontWeight="500" gutterBottom>Order Date:</Typography>
 					<LocalizationProvider dateAdapter={AdapterDateFns}>
 						<DatePicker
-							value={salonConsumptionDate}
-							onChange={(newDate) => setSalonConsumptionDate(newDate)}
+							value={salonConsumptionDate} // This was used for salon consumption, ensure it's correct here for walk-in order date
+							onChange={(newDate) => setSalonConsumptionDate(newDate)} // Make sure this state is appropriate for walk-in order date setting
 							slotProps={{
 								textField: {
 									fullWidth: true,
@@ -2847,11 +2853,7 @@ export default function POS() {
 
 				{/* GST Section */}
 				<Box sx={{ mb: 1, display: 'flex', justifyContent: 'space-between' }}>
-					<Typography variant="body2">Product GST ({productGstRate}%):</Typography>
-					<Typography variant="body2" fontWeight="500">{formatCurrency(productGstAmount)}</Typography>
-				</Box>
-				<Box sx={{ mb: 1, display: 'flex', justifyContent: 'space-between' }}>
-					<Typography>Subtotal:</Typography>
+					<Typography>Subtotal (Excl. GST):</Typography> {/* Changed label for clarity */}
 					<Typography fontWeight="medium">{formatCurrency(combinedSubtotal)}</Typography>
 				</Box>
 				{/* GST Section for Services */}
@@ -2953,13 +2955,13 @@ export default function POS() {
 						)}
 						{walkInDiscount > 0 && (
 							<Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-								<Typography variant="body2" color="text.secondary">Global Discount:</Typography>
+								<Typography variant="body2" color="text.secondary">Global Fixed Discount:</Typography> {/* Clarified label */}
 								<Typography variant="body2" color="text.secondary">-{formatCurrency(walkInDiscount)}</Typography>
 							</Box>
 						)}
-						{percentageDiscountAmount > 0 && (
+						{percentageDiscountAmount > 0 && walkInDiscountPercentage > 0 && ( // Ensure percentage is also > 0
 							<Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-								<Typography variant="body2" color="text.secondary">Percentage Discount ({walkInDiscountPercentage}%):</Typography>
+								<Typography variant="body2" color="text.secondary">Global Percentage Discount ({walkInDiscountPercentage.toFixed(2)}%):</Typography> {/* Clarified label */}
 								<Typography variant="body2" color="text.secondary">-{formatCurrency(percentageDiscountAmount)}</Typography>
 							</Box>
 						)}
@@ -2969,7 +2971,7 @@ export default function POS() {
 				<Divider sx={{ my: 2 }} />
 				{/* Total Amount */}
 				<Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
-					<Typography variant="h6" fontWeight="bold">Total:</Typography>
+					<Typography variant="h6" fontWeight="bold">Total (Incl. GST):</Typography> {/* Clarified label */}
 					<Typography variant="h6" fontWeight="bold">{formatCurrency(totalAmount)}</Typography>
 				</Box>
 				{/* Customer & Stylist Info */}
@@ -3557,14 +3559,13 @@ export default function POS() {
 													setUseMembershipPayment(e.target.checked);
 													if (e.target.checked) {
 														// When using membership, use the subtotal without GST
-														const subtotal = calculateProductSubtotal() + calculateServiceSubtotal() + calculateMembershipSubtotal();
+														const subtotal = calculateProductSubtotal() + calculateServiceSubtotal() + calculateMembershipSubtotal(); // This subtotal uses item.price which is now MRP ex GST for products
 														const paymentAmount = Math.min(subtotal, activeClientMembership.currentBalance);
 														setPaymentAmounts(prev => ({
 															...prev,
-															membership: paymentAmount, // Use subtotal for membership
-															cash: 0 // No cash payment needed
+															membership: paymentAmount, 
+															cash: Math.max(0, subtotal - paymentAmount) // Cover remaining with cash if any
 														}));
-														// Set walkInPaymentMethod to membership
 														setWalkInPaymentMethod('membership');
 													} else {
 														// When disabling, move amount from membership to cash
@@ -3574,7 +3575,6 @@ export default function POS() {
 															membership: 0,
 															cash: prev.cash + membershipAmount
 														}));
-														// Reset walkInPaymentMethod to cash
 														setWalkInPaymentMethod('cash');
 													}
 												}}
@@ -3619,7 +3619,7 @@ export default function POS() {
 											value={paymentAmounts[method]}
 											onChange={(e) => {
 												const newValue = Math.max(0, Number(e.target.value) || 0);
-												const currentTotal = calculateTotalAmount();
+												const currentTotal = calculateTotalAmount(); // This total is based on item.price which is MRP ex GST
 												
 												if (isSplitPayment) {
 													// In split payment mode, allow manual entry and auto-adjust cash
@@ -3672,7 +3672,7 @@ export default function POS() {
 											type="number"
 											value={paymentAmounts.membership}
 											onChange={(e) => {
-												const currentTotal = calculateTotalAmount();
+												const currentTotal = calculateTotalAmount(); // This total is based on item.price which is MRP ex GST
 												const val = Math.min(
 													Math.min(currentTotal, activeClientMembership.currentBalance),
 													Math.max(0, Number(e.target.value) || 0)
@@ -3752,13 +3752,18 @@ export default function POS() {
 											size="small"
 											value={walkInDiscount}
 											onChange={(e) => {
-												const fixedDiscount = Math.round(Number(e.target.value));
+												const fixedDiscount = Math.max(0, Number(e.target.value) || 0); // Ensure discount is not negative
 												setWalkInDiscount(fixedDiscount);
-												// Calculate and set percentage discount
-												const currentTotal = calculateProductSubtotal() + calculateServiceSubtotal() + calculateMembershipSubtotal() + calculateProductGstAmount(calculateProductSubtotal()) + calculateServiceGstAmount(calculateServiceSubtotal()) + calculateMembershipGstAmount(calculateMembershipSubtotal());
-												const remainingAmount = currentTotal - fixedDiscount;
-												const calculatedPercentage = currentTotal > 0 ? ((currentTotal - remainingAmount) / currentTotal) * 100 : 0;
-												setWalkInDiscountPercentage(Math.max(0, Math.min(100, parseFloat(calculatedPercentage.toFixed(2)))));
+												// Calculate and set percentage discount based on total *after* item discounts but *before* global fixed discount
+												const subtotalAfterItemDiscounts = orderItems.reduce((sum, item) => sum + (item.price * item.quantity - (item.discount || 0)), 0);
+												const totalWithGST = subtotalAfterItemDiscounts + calculateProductGstAmount(calculateProductSubtotal()) + calculateServiceGstAmount(calculateServiceSubtotal()) + calculateMembershipGstAmount(calculateMembershipSubtotal());
+
+												if (totalWithGST > 0) {
+													const calculatedPercentageFromFixed = (fixedDiscount / totalWithGST) * 100;
+													setWalkInDiscountPercentage(Math.max(0, Math.min(100, parseFloat(calculatedPercentageFromFixed.toFixed(2)))));
+												} else {
+													setWalkInDiscountPercentage(0);
+												}
 											}}
 											InputProps={{
 												inputProps: { min: 0, step: 1 },
@@ -3781,11 +3786,14 @@ export default function POS() {
 										value={walkInDiscountPercentage}
 										onChange={(e) => {
 											const percentage = parseFloat(e.target.value);
-											setWalkInDiscountPercentage(isNaN(percentage) ? 0 : Math.max(0, Math.min(100, percentage)));
-											// Calculate and set fixed discount
-											const currentTotal = calculateProductSubtotal() + calculateServiceSubtotal() + calculateMembershipSubtotal() + calculateProductGstAmount(calculateProductSubtotal()) + calculateServiceGstAmount(calculateServiceSubtotal()) + calculateMembershipGstAmount(calculateMembershipSubtotal());
-											const calculatedFixedDiscount = (currentTotal * (isNaN(percentage) ? 0 : Math.max(0, Math.min(100, percentage)))) / 100;
-											setWalkInDiscount(calculatedFixedDiscount);
+											const validPercentage = isNaN(percentage) ? 0 : Math.max(0, Math.min(100, percentage));
+											setWalkInDiscountPercentage(validPercentage);
+											// Calculate and set fixed discount based on total *after* item discounts
+											const subtotalAfterItemDiscounts = orderItems.reduce((sum, item) => sum + (item.price * item.quantity - (item.discount || 0)), 0);
+											const totalWithGST = subtotalAfterItemDiscounts + calculateProductGstAmount(calculateProductSubtotal()) + calculateServiceGstAmount(calculateServiceSubtotal()) + calculateMembershipGstAmount(calculateMembershipSubtotal());
+											
+											const calculatedFixedDiscountFromPercentage = (totalWithGST * validPercentage) / 100;
+											setWalkInDiscount(parseFloat(calculatedFixedDiscountFromPercentage.toFixed(2)));
 										}}
 										InputProps={{
 											inputProps: { min: 0, max: 100, step: 0.1 },
@@ -3994,39 +4002,9 @@ export default function POS() {
 					) : clientServiceHistory.length === 0 ? (
 						<Box sx={{ p: 3, textAlign: 'center', bgcolor: 'background.paper', borderRadius: 1 }}>
 							<Typography color="text.secondary">No previous services found for this client.</Typography>
-							<Button 
-								variant="contained" 
-								size="small" 
-								startIcon={<RefreshIcon />}
-								onClick={() => {
-									if (selectedClient?.full_name) {
-										setIsHistoryLoading(true);
-										fetchClientHistory(selectedClient.full_name);
-									}
-								}}
-								sx={{ mt: 2 }}
-							>
-								Refresh History
-							</Button>
 						</Box>
 					) : (
 						<>
-							<Box sx={{ mb: 2, display: 'flex', justifyContent: 'flex-end' }}>
-								<Button 
-									variant="contained"
-									color="primary"
-									startIcon={<RefreshIcon />} 
-									size="small"
-									onClick={() => {
-										if (selectedClient?.full_name) {
-											setIsHistoryLoading(true);
-											fetchClientHistory(selectedClient.full_name);
-										}
-									}}
-								>
-									Refresh History
-								</Button>
-							</Box>
 							<List sx={{ 
 								maxHeight: 'calc(100vh - 120px)', 
 								overflowY: 'auto',

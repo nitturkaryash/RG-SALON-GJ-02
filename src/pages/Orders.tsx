@@ -1273,7 +1273,7 @@ export default function Orders() {
                         fontWeight="medium" 
                         color={isSalonOrder ? '#FF6B00' : 'text.primary'}
                       >
-                        ₹{order.total_amount || order.total || 0}
+                        ₹{Math.round(order.total_amount || order.total || 0)}
                       </Typography>
                     </TableCell>
                     <TableCell align="right">

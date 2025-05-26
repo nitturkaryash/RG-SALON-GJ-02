@@ -13,6 +13,9 @@ export interface Service {
   active?: boolean;
   collection_id?: string;
   gender?: string;
+  hsn_code?: string; // Optional: Harmonized System of Nomenclature code for GST
+  gst_percentage?: number; // Optional: GST percentage applicable
+  // category?: string; // Already present, commented out to avoid duplication if accidental paste
 }
 
 export function useServices() {

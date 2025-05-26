@@ -35,7 +35,8 @@ import {
   ListSubheader,
   Checkbox,
   FormControlLabel,
-  Popover
+  Popover,
+  useTheme
 } from '@mui/material'
 import { useAppointments, Appointment, MergedAppointment } from '../hooks/useAppointments'
 import { useStylists, Stylist, StylistBreak } from '../hooks/useStylists'
@@ -120,6 +121,9 @@ interface ServiceEntry {
   toTime: string;
   appointmentInstanceId?: string; // Unique ID of the appointment record in the DB for this service instance
   isNew?: boolean; // Flag to indicate if this service was newly added in the drawer during an edit session
+  hsn_code?: string; // Optional: Harmonized System of Nomenclature code for GST
+  gst_percentage?: number; // Optional: GST percentage applicable
+  category?: string; // Optional: Category of the service
 }
 
 interface ClientAppointmentEntry {
@@ -138,6 +142,9 @@ const filterClients = createFilterOptions<Client & { inputValue?: string }>();
 // Extend the Service interface to include gender property
 interface ServiceWithGender extends BaseService {
   gender?: string;
+  hsn_code?: string;
+  gst_percentage?: number;
+  category?: string;
 }
 
 // Define service option with groupHeader for the Autocomplete component
@@ -239,6 +246,7 @@ const CustomAutocompleteListbox = React.forwardRef<HTMLUListElement, CustomListb
 CustomAutocompleteListbox.displayName = 'CustomAutocompleteListbox';
 
 export default function Appointments() {
+  const theme = useTheme();
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [selectedSlot, setSelectedSlot] = useState<DateSelectArg | null>(null);
   const [selectedStylistId, setSelectedStylistId] = useState<string | null>(null);
@@ -331,7 +339,10 @@ export default function Appointments() {
               stylistId: '',
               stylistName: '',
               fromTime: appointmentTime.startTime || '10:00',
-              toTime: appointmentTime.endTime || '11:00'
+              toTime: appointmentTime.endTime || '11:00',
+              hsn_code: service.hsn_code,
+              gst_percentage: service.gst_percentage,
+              category: service.category
             }));
             return { ...entry, ...updates, services: convertedServices };
           }
@@ -414,7 +425,10 @@ export default function Appointments() {
                 fromTime: `${startDate.getHours()}:${String(startDate.getMinutes()).padStart(2,'0')}`,
                 toTime: `${endDate.getHours()}:${String(endDate.getMinutes()).padStart(2,'0')}`,
                 appointmentInstanceId: originalAppointmentId,
-                isNew: false
+                isNew: false,
+                hsn_code: serviceFromDetail.hsn_code,
+                gst_percentage: serviceFromDetail.gst_percentage,
+                category: serviceFromDetail.category
               });
               servicesAddedFromDetail = true;
             });
@@ -436,7 +450,10 @@ export default function Appointments() {
             fromTime: `${startDate.getHours()}:${String(startDate.getMinutes()).padStart(2,'0')}`,
             toTime: `${endDate.getHours()}:${String(endDate.getMinutes()).padStart(2,'0')}`,
             appointmentInstanceId: app.id,
-            isNew: false
+            isNew: false,
+            hsn_code: serviceDef.hsn_code,
+            gst_percentage: serviceDef.gst_percentage,
+            category: serviceDef.category
           });
           if (stylist) involvedStylistIds.add(stylist.id);
         }
@@ -842,7 +859,7 @@ export default function Appointments() {
               stylistIds: [service.stylistId]
             }];
             // Update the existing appointment instance on the new date/time
-            const updateData = {
+            const updateData: Partial<Appointment> & { id: string } = {
               id: service.appointmentInstanceId!,
               start_time: startTime.toISOString(),
               end_time: endTime.toISOString(),
@@ -880,9 +897,9 @@ export default function Appointments() {
           const originalAppointmentInstanceIds = new Set<string>();
           // Re-fetch or use a more reliable source for original appointment IDs if possible
           // For now, we assume editingAppointment.clientDetails was the source for initial load
-          (editingAppointment.clientDetails || []).forEach(cd => {
+          (editingAppointment.clientDetails || []).forEach((cd: any) => { // Added any type for cd
             if (cd.id === clientId) {
-              (cd.services || []).forEach(s => {
+              (cd.services || []).forEach((s: any) => { // Added any type for s
                 const originalAppId = (s as any).original_appointment_id || (s as any).appointment_id;
                 if (originalAppId) originalAppointmentInstanceIds.add(originalAppId);
               });
@@ -955,7 +972,7 @@ export default function Appointments() {
               // Check if this originalId corresponds to any service still in drawer (e.g. if ID was lost and re-added)
               // This check is simplified; robustly it might mean checking service_id, stylist_id, and time proximity.
               const stillExistsWithDifferentOrNoInstanceId = servicesInDrawer.find(
-                s => s.id === editingAppointment.service_id && s.stylistId === editingAppointment.stylist_id
+                (s: ServiceEntry) => s.id === editingAppointment.service_id && s.stylistId === editingAppointment.stylist_id
                 // This is a very naive check. A proper check would need to compare against the original service details for `originalId`
               );
               if (!stillExistsWithDifferentOrNoInstanceId) { // Only delete if truly gone
@@ -1137,11 +1154,11 @@ export default function Appointments() {
     try {
       // Filter appointments for this client
       const clientAppointments = appointments.filter(
-        appointment => appointment.client_id === selectedClient.id
+        (appointment: MergedAppointment) => appointment.client_id === selectedClient.id
       );
       
       // Sort by date (newest first)
-      clientAppointments.sort((a, b) => 
+      clientAppointments.sort((a: MergedAppointment, b: MergedAppointment) => 
         new Date(b.start_time).getTime() - new Date(a.start_time).getTime()
       );
       
@@ -1333,7 +1350,7 @@ export default function Appointments() {
         }}
       >
         <Typography variant="h5" component="h1">
-          {viewMode === 'calendar' ? '' : 'Upcoming Appointments'}
+          {viewMode === 'calendar' ? '' : ''}
         </Typography>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
           <ToggleButtonGroup
@@ -1466,9 +1483,9 @@ export default function Appointments() {
         </Popover>
 
         {/* Form Content Area - Allow Scrolling */}
-        <Box sx={{ p: 3, overflowY: 'auto', flexGrow: 1, bgcolor: '#F5F5F5' }}>
-          {/* Guest Details Section */}
-          <Box sx={{ mb: 3, bgcolor: 'white', p: 3, borderRadius: 2 }}>
+        <Box sx={{ p: 3, overflowY: 'auto', flexGrow: 1, bgcolor: '#f5f5f0' }}>
+                      {/* Guest Details Section */}
+            <Box sx={{ mb: 3, bgcolor: 'background.paper', p: 3, borderRadius: 2, boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
               <Typography variant="body1" fontWeight="medium">
                 <span style={{ marginRight: '8px' }}>1.</span> Guest Details
@@ -1748,7 +1765,7 @@ export default function Appointments() {
           </Box>
 
           {/* Service Details Section */}
-          <Box sx={{ mb: 3, bgcolor: 'white', p: 3, borderRadius: 2 }}>
+          <Box sx={{ mb: 3, bgcolor: 'background.paper', p: 3, borderRadius: 2, boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
             <Typography variant="body1" fontWeight="medium" mb={2}>
               <span style={{ marginRight: '8px' }}>2.</span> Service Details
             </Typography>
@@ -1853,33 +1870,41 @@ export default function Appointments() {
                 
                 {/* Expert selection */}
                 <Box sx={{ p: 2 }}>
-                  <FormControl fullWidth sx={{ mb: 2 }}>
-                    <InputLabel>Expert</InputLabel>
-                    <Select
-                      value={service.stylistId}
-                      label="Expert"
-                      onChange={(e) => {
-                        const stylist = allStylists.find(s => s.id === e.target.value);
-                        if (stylist) {
-                          updateServiceStylist(clientEntries[0].id, serviceIndex, stylist);
-                        }
-                      }}
-                      endAdornment={
-                        <Box component="span" sx={{ display: 'flex', marginRight: 1, pointerEvents: 'none' }}>
-                          <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-                            <path d="M6 9L12 15L18 9" stroke="#757575" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                          </svg>
-                        </Box>
+                  <Autocomplete<Stylist, false, false, false>
+                    fullWidth
+                    options={allStylists.filter((stylist: Stylist) => stylist.available !== false)}
+                    getOptionLabel={(option: Stylist) => option.name}
+                    value={allStylists.find((s: Stylist) => s.id === service.stylistId) || null}
+                    onChange={(_, newValue: Stylist | null) => {
+                      if (newValue) {
+                        updateServiceStylist(clientEntries[0].id, serviceIndex, newValue);
+                      } else {
+                        // Handle case where selection is cleared if necessary
+                        const clearedStylist: Stylist = { 
+                          id: '', 
+                          name: '', 
+                          phone: '', 
+                          email: '', 
+                          available: true, 
+                          // created_at: '', // Removed as it's not in the expected Stylist type for this context
+                          breaks: [], 
+                          specialties: []
+                        };
+                        updateServiceStylist(clientEntries[0].id, serviceIndex, clearedStylist);
                       }
-                    >
-                      {allStylists
-                        .filter(stylist => stylist.available !== false)
-                        .map(stylist => (
-                          <MenuItem key={stylist.id} value={stylist.id}>{stylist.name}</MenuItem>
-                        ))
-                      }
-                    </Select>
-                  </FormControl>
+                    }}
+                    renderInput={(params) => (
+                      <TextField
+                        {...params}
+                        label="Expert"
+                        variant="outlined"
+                        InputProps={{
+                          ...params.InputProps,
+                        }}
+                        sx={{ mb: 2 }}
+                      />
+                    )}
+                  />
                   
                   {/* From/To Time Selection */}
                   <Grid container spacing={2}>
@@ -1890,13 +1915,6 @@ export default function Appointments() {
                           value={service.fromTime}
                           label="From Time"
                           onChange={(e) => updateServiceTime(clientEntries[0].id, serviceIndex, 'fromTime', e.target.value)}
-                          endAdornment={
-                            <Box component="span" sx={{ display: 'flex', marginRight: 1, pointerEvents: 'none' }}>
-                              <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-                                <path d="M6 9L12 15L18 9" stroke="#757575" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                              </svg>
-                            </Box>
-                          }
                         >
                           {timeOptions.map(option => (
                             <MenuItem key={`from-${option.value}`} value={option.value}>{option.label}</MenuItem>
@@ -1911,13 +1929,6 @@ export default function Appointments() {
                           value={service.toTime}
                           label="To Time"
                           onChange={(e) => updateServiceTime(clientEntries[0].id, serviceIndex, 'toTime', e.target.value)}
-                          endAdornment={
-                            <Box component="span" sx={{ display: 'flex', marginRight: 1, pointerEvents: 'none' }}>
-                              <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-                                <path d="M6 9L12 15L18 9" stroke="#757575" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                              </svg>
-                            </Box>
-                          }
                         >
                           {timeOptions.map(option => (
                             <MenuItem key={`to-${option.value}`} value={option.value}>{option.label}</MenuItem>
@@ -2057,33 +2068,29 @@ export default function Appointments() {
                 />
                 
                 {/* Expert Selection */}
-                <FormControl fullWidth sx={{ mb: 2 }}>
-                  <InputLabel>Expert</InputLabel>
-                  <Select
-                    value={inlineServiceData.stylistId}
-                    label="Expert"
-                    onChange={(e) => {
-                      setInlineServiceData(prev => ({
-                        ...prev,
-                        stylistId: e.target.value as string
-                      }));
-                    }}
-                    endAdornment={
-                      <Box component="span" sx={{ display: 'flex', marginRight: 1, pointerEvents: 'none' }}>
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-                          <path d="M6 9L12 15L18 9" stroke="#757575" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                        </svg>
-                      </Box>
-                    }
-                  >
-                    {allStylists
-                      .filter(stylist => stylist.available !== false)
-                      .map(stylist => (
-                        <MenuItem key={stylist.id} value={stylist.id}>{stylist.name}</MenuItem>
-                      ))
-                    }
-                  </Select>
-                </FormControl>
+                <Autocomplete<Stylist, false, false, false>
+                  fullWidth
+                  options={allStylists.filter((stylist: Stylist) => stylist.available !== false)}
+                  getOptionLabel={(option: Stylist) => option.name}
+                  value={allStylists.find((s: Stylist) => s.id === inlineServiceData.stylistId) || null}
+                  onChange={(_, newValue: Stylist | null) => { // Added type for newValue
+                    setInlineServiceData(prev => ({
+                      ...prev,
+                      stylistId: newValue ? newValue.id : ''
+                    }));
+                  }}
+                  renderInput={(params) => (
+                    <TextField
+                      {...params}
+                      label="Expert"
+                      variant="outlined"
+                      InputProps={{
+                        ...params.InputProps,
+                      }}
+                      sx={{ mb: 2 }}
+                    />
+                  )}
+                />
                 
                 {/* Time Selection */}
                 <Grid container spacing={2} sx={{ mb: 2 }}>
@@ -2118,13 +2125,6 @@ export default function Appointments() {
                             }));
                           }
                         }}
-                        endAdornment={
-                          <Box component="span" sx={{ display: 'flex', marginRight: 1, pointerEvents: 'none' }}>
-                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-                              <path d="M6 9L12 15L18 9" stroke="#757575" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                            </svg>
-                          </Box>
-                        }
                       >
                         {timeOptions.map(option => (
                           <MenuItem key={`inline-from-${option.value}`} value={option.value}>{option.label}</MenuItem>
@@ -2144,13 +2144,6 @@ export default function Appointments() {
                             toTime: e.target.value as string
                           }));
                         }}
-                        endAdornment={
-                          <Box component="span" sx={{ display: 'flex', marginRight: 1, pointerEvents: 'none' }}>
-                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-                              <path d="M6 9L12 15L18 9" stroke="#757575" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                            </svg>
-                          </Box>
-                        }
                       >
                         {timeOptions.map(option => (
                           <MenuItem key={`inline-to-${option.value}`} value={option.value}>{option.label}</MenuItem>
@@ -2195,7 +2188,7 @@ export default function Appointments() {
           </Box>
           
           {/* Instruction Details Section */}
-          <Box sx={{ mb: 3, bgcolor: 'white', p: 3, borderRadius: 2 }}>
+          <Box sx={{ mb: 3, bgcolor: 'background.paper', p: 3, borderRadius: 2, boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
             <Typography variant="body1" fontWeight="medium" mb={2}>
               <span style={{ marginRight: '8px' }}>3.</span> Instruction Details
             </Typography>

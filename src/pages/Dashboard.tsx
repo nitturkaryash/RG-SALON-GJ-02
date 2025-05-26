@@ -9,9 +9,7 @@ import {
   Fade,
   Alert,
   Stack,
-  Badge,
   Chip,
-  Skeleton,
   Container,
   IconButton,
   Tooltip,
@@ -20,13 +18,8 @@ import {
 import { 
   AttachMoney as MoneyIcon,
   CalendarToday as CalendarIcon,
-  Spa as SpaIcon,
-  People as PeopleIcon,
   Receipt as ReceiptIcon,
-  Assignment as AssignmentIcon,
-  EmojiPeople as StylistIcon,
-  Refresh as RefreshIcon,
-  Event as EventIcon
+  Refresh as RefreshIcon
 } from '@mui/icons-material'
 import { format } from 'date-fns'
 import { useDashboardAnalytics } from '../hooks/useDashboardAnalytics'
@@ -37,10 +30,6 @@ import BarChart from '../components/charts/BarChart'
 import PieChart from '../components/charts/PieChart'
 import GaugeChart from '../components/charts/GaugeChart'
 import DashboardSettings from '../components/dashboard/DashboardSettings'
-import FutureAppointmentsList from '../components/FutureAppointmentsList'
-import { useStylists } from '../hooks/useStylists'
-import { useAppointments } from '../hooks/useAppointments'
-import { useServices } from '../hooks/useServices'
 
 export default function Dashboard() {
   const [endDate, setEndDate] = useState<string>(new Date().toISOString().split('T')[0]);
@@ -155,11 +144,6 @@ export default function Dashboard() {
   
   console.log('Dashboard render - Analytics summary:', analyticsSummary);
   console.log('Dashboard loading state:', isLoading);
-  
-  // Get appointments data
-  const { appointments, isLoading: appointmentsLoading, deleteAppointment, updateAppointment } = useAppointments();
-  const { stylists, isLoading: stylistsLoading } = useStylists();
-  const { services, isLoading: servicesLoading } = useServices();
   
   return (
     <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
@@ -521,41 +505,6 @@ export default function Dashboard() {
           onSettingsChange={updateSettings}
           onRefresh={refetchAnalytics}
         />
-        
-        {/* Add Future Appointments List section */}
-        <Grid item xs={12}>
-          <Box mt={4} mb={2} display="flex" alignItems="center">
-            <EventIcon color="primary" sx={{ mr: 1 }} />
-            <Typography variant="h5" component="div">
-              Upcoming Appointments
-            </Typography>
-          </Box>
-          
-          {(appointmentsLoading || stylistsLoading || servicesLoading) ? (
-            <Paper 
-              elevation={0} 
-              sx={{ 
-                p: 3, 
-                borderRadius: 2,
-                border: '1px solid',
-                borderColor: 'divider',
-              }}
-            >
-              <Skeleton variant="rectangular" height={400} />
-            </Paper>
-          ) : (
-            <FutureAppointmentsList 
-              appointments={appointments || []}
-              stylists={stylists || []}
-              services={services || []}
-              onDeleteAppointment={deleteAppointment}
-              onEditAppointment={(appointment) => {
-                // Handle appointment editing - this could navigate to calendar view
-                console.log("Edit appointment:", appointment);
-              }}
-            />
-          )}
-        </Grid>
       </Grid>
     </Container>
   )
