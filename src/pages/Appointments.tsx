@@ -39,9 +39,51 @@ import {
   useTheme
 } from '@mui/material'
 import { useAppointments, Appointment, MergedAppointment } from '../hooks/useAppointments'
+// Import UpdateAppointmentData type for proper typing
+
+// Define CreateAppointmentData type
+interface CreateAppointmentData {
+  clientDetails: {
+    clientId: string;
+    serviceIds: string[];
+    stylistIds: string[];
+  }[];
+  start_time: string;
+  end_time: string;
+  notes?: string;
+  status: Appointment['status'];
+  paid?: boolean;
+  billed?: boolean;
+  is_for_someone_else?: boolean;
+  client_id: string;
+  stylist_id: string;
+  service_id: string;
+  booking_id: string; // Required for creation
+}
+
+type UpdateAppointmentData = {
+  id: string;
+  clientDetails?: {
+    clientId: string;
+    serviceIds: string[];
+    stylistIds: string[];
+  }[];
+  start_time?: string;
+  end_time?: string;
+  notes?: string;
+  status?: Appointment['status'];
+  paid?: boolean;
+  billed?: boolean;
+  is_for_someone_else?: boolean;
+  client_id?: string;
+  stylist_id?: string;
+  service_id?: string;
+  booking_id?: string | null; // Allow null for updates
+}
 import { useStylists, Stylist, StylistBreak } from '../hooks/useStylists'
 import { useServices, Service as BaseService } from '../hooks/useServices'
 import { useClients, Client } from '../hooks/useClients'
+import { useStylistHolidays, StylistHoliday } from '../hooks/useStylistHolidays'
 import { format, addDays, subDays, isSameDay } from 'date-fns'
 import { useServiceCollections } from '../hooks/useServiceCollections'
 import StylistDayView, { Break } from '../components/StylistDayView'
@@ -60,6 +102,7 @@ import { useNavigate } from 'react-router-dom'
 import { DatePicker } from '@mui/x-date-pickers/DatePicker'
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider'
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns'
+import { useAuthContext } from '../contexts/AuthContext'
 
 // Define Drawer width as a constant
 const drawerWidth = 500;
@@ -292,21 +335,41 @@ export default function Appointments() {
   // Timesoptions initialization (15-minute interval)
   const timeOptions = useMemo(() => generateTimeOptions(15), []); // Generate 15-minute interval options
   const navigate = useNavigate();
+  const [lastBookedAppointmentTime, setLastBookedAppointmentTime] = useState<string | undefined>(undefined);
+  const { user } = useAuthContext();
+  const [holidaysByType, setHolidaysByType] = useState<Record<string, StylistHoliday[]>>({});
 
   // Hook calls
-  const { appointments = [], isLoading: loadingAppointments, updateAppointment, createAppointment, deleteAppointment } = useAppointments();
-  const { services: allServices = [], isLoading: loadingServices } = useServices();
-  const { stylists: allStylists = [], isLoading: loadingStylists, updateStylist } = useStylists();
-  const { clients: allClients = [], isLoading: loadingClients, updateClientFromAppointment } = useClients();
-  const { serviceCollections = [], isLoading: loadingCollections } = useServiceCollections();
+  const { appointments: allAppointments = [], isLoading: loadingAppointments, updateAppointment, createAppointment, deleteAppointment } = useAppointments();
+  const { services = [], isLoading: loadingServices } = useServices();
+  const { stylists = [], isLoading: loadingStylists, updateStylist } = useStylists();
+  const { clients = [], isLoading: loadingClients, updateClientFromAppointment } = useClients();
+  const { serviceCollections: collections = [], isLoading: loadingCollections } = useServiceCollections();
+  const { holidays = [], isLoading: loadingHolidays } = useStylistHolidays();
+
+  // ============================================
+  // Rendering Logic
+  // ============================================
+
+  useEffect(() => {
+    if (editingAppointment) {
+      setDrawerDate(new Date(editingAppointment.start_time));
+    } else if (selectedSlot) {
+      setDrawerDate(new Date(selectedSlot.start));
+    } else {
+      setDrawerDate(selectedDate);
+    }
+  }, [editingAppointment, selectedSlot, selectedDate]);
+
+  const showDrawer = !!selectedSlot || !!editingAppointment;
 
   // --- Frontend filtering of services to use
   const activeServices = useMemo(() => {
-    return (allServices || []).filter(service => service.active !== false);
-  }, [allServices]);
+    return (services || []).filter(service => service.active !== false);
+  }, [services]);
 
   // We will use allStylists directly for stylist day view
-  const processedStylists = allStylists || [];
+  const processedStylists = stylists || [];
 
   // --- Other Helper Functions ---
   const addBlankEntry = () => {
@@ -372,7 +435,7 @@ export default function Appointments() {
     setEditingAppointment(appointment);
     setSelectedSlot(null);
 
-    const primaryClientInfo = allClients.find(c => c.id === appointment.client_id);
+    const primaryClientInfo = clients.find(c => c.id === appointment.client_id);
 
     if (!primaryClientInfo) {
       console.warn(`[handleAppointmentClick] Primary client data not found for ID: ${appointment.client_id}. Cannot populate drawer.`);
@@ -388,7 +451,7 @@ export default function Appointments() {
     const clickedDate = new Date(appointment.start_time);
     const groupAppointments = appointment.is_for_someone_else
       ? [appointment]
-      : appointments.filter((a: MergedAppointment) =>
+      : allAppointments.filter((a: MergedAppointment) =>
           a.client_id === appointment.client_id &&
           isSameDay(new Date(a.start_time), clickedDate) &&
           !a.is_for_someone_else
@@ -412,7 +475,7 @@ export default function Appointments() {
                                           (serviceFromDetail as any).start_time || app.start_time;
               const serviceEndTimeStr = (serviceFromDetail as any).original_end_time ||
                                         (serviceFromDetail as any).end_time || app.end_time;
-              const stylist = allStylists.find(s => s.id === serviceStylistId);
+              const stylist = stylists.find(s => s.id === serviceStylistId);
               if (stylist) involvedStylistIds.add(stylist.id);
               const startDate = new Date(serviceStartTimeStr);
               const endDate = new Date(serviceEndTimeStr);
@@ -426,9 +489,9 @@ export default function Appointments() {
                 toTime: `${endDate.getHours()}:${String(endDate.getMinutes()).padStart(2,'0')}`,
                 appointmentInstanceId: originalAppointmentId,
                 isNew: false,
-                hsn_code: serviceFromDetail.hsn_code,
-                gst_percentage: serviceFromDetail.gst_percentage,
-                category: serviceFromDetail.category
+                hsn_code: (serviceFromDetail as any).hsn_code,
+                gst_percentage: (serviceFromDetail as any).gst_percentage,
+                category: (serviceFromDetail as any).category
               });
               servicesAddedFromDetail = true;
             });
@@ -436,8 +499,8 @@ export default function Appointments() {
         });
       }
       if (!servicesAddedFromDetail && app.id && app.service_id) {
-        const serviceDef = allServices.find(s => s.id === app.service_id);
-        const stylist = allStylists.find(s => s.id === app.stylist_id);
+        const serviceDef = services.find(s => s.id === app.service_id);
+        const stylist = stylists.find(s => s.id === app.stylist_id);
         if (serviceDef) {
           const startDate = new Date(app.start_time);
           const endDate = new Date(app.end_time);
@@ -470,7 +533,7 @@ export default function Appointments() {
         return true;
       })
       .map(id => {
-        const stylist = allStylists.find(s => s.id === id);
+        const stylist = stylists.find(s => s.id === id);
         return stylist ? { id: stylist.id, name: stylist.name } : null;
       })
       .filter((s): s is Pick<Stylist, 'id' | 'name'> => s !== null);
@@ -540,7 +603,7 @@ export default function Appointments() {
       startTime: `${time.getHours()}:${String(time.getMinutes()).padStart(2, '0')}`,
       endTime: `${defaultEndTime.getHours()}:${String(defaultEndTime.getMinutes()).padStart(2, '0')}`
     });
-    const preSelectedStylist = (allStylists || []).find(s => s.id === stylistId);
+    const preSelectedStylist = (stylists || []).find(s => s.id === stylistId);
     setClientEntries([{ 
       id: uuidv4(), 
       client: null, 
@@ -578,7 +641,7 @@ export default function Appointments() {
     // Use the initial clicked stylist when no previous service or explicit selection exists
     let stylistId = lastService?.stylistId || selectedStylistId || '';
     let stylistName = lastService?.stylistName
-      || (selectedStylistId ? (allStylists.find(s => s.id === selectedStylistId)?.name || '') : '')
+      || (selectedStylistId ? (stylists.find(s => s.id === selectedStylistId)?.name || '') : '')
       || '';
 
     const newService: ServiceEntry = {
@@ -780,32 +843,25 @@ export default function Appointments() {
     for (const entry of clientEntries) {
       for (const service of entry.services) {
         if (!service.stylistId) continue;
-
-        // Calculate service start and end times
         const [startHour, startMinute] = service.fromTime.split(':').map(Number);
         const [endHour, endMinute] = service.toTime.split(':').map(Number);
-        
-        const baseDate = new Date(drawerDate);
-        baseDate.setHours(0, 0, 0, 0);
-        
-        const serviceStartTime = new Date(baseDate);
+        const baseDateForValidation = new Date(drawerDate);
+        baseDateForValidation.setHours(0, 0, 0, 0);
+        const serviceStartTime = new Date(baseDateForValidation);
         serviceStartTime.setHours(startHour, startMinute, 0, 0);
-        
-        const serviceEndTime = new Date(baseDate);
+        const serviceEndTime = new Date(baseDateForValidation);
         serviceEndTime.setHours(endHour, endMinute, 0, 0);
         if (serviceEndTime <= serviceStartTime) {
           serviceEndTime.setDate(serviceEndTime.getDate() + 1);
         }
-
-        // Find the stylist and check for break conflicts
-        const stylist = allStylists.find(s => s.id === service.stylistId);
+        const stylist = stylists.find(s => s.id === service.stylistId);
         if (stylist && stylist.breaks && stylist.breaks.length > 0) {
           const hasBreakConflict = stylist.breaks.some((breakItem: StylistBreak) => {
             const breakStartTime = new Date(breakItem.startTime);
             const breakEndTime = new Date(breakItem.endTime);
             
-            // Only check breaks on the same day
-            if (!isSameDay(breakStartTime, baseDate)) {
+            // Only check breaks on the same day as drawerDate (baseDateForValidation)
+            if (!isSameDay(breakStartTime, baseDateForValidation)) {
               return false;
             }
 
@@ -834,196 +890,133 @@ export default function Appointments() {
     
     // --- End Validation ---
 
-    try {
-      // Simple date/time shift for single-service update
-      if (editingAppointment && clientEntries.length === 1) {
-        const entry = clientEntries[0];
-        if (entry.services.length === 1) {
-          const service = entry.services[0];
-          if (service.appointmentInstanceId && !service.isNew) {
-            // Calculate new start and end based on selected drawer date
+    const newBookingId = uuidv4();
+
+    if (!editingAppointment) {
+      // --- CREATE NEW APPOINTMENT(S) ---
+      try {
+        const appointmentsToCreatePromises = clientEntries.flatMap(entry =>
+          entry.services.map(async service => {
+            let currentClientId = entry.client?.id;
+            if (!currentClientId && entry.client) {
+              const newClient = await handleAddNewClient(entry); 
+              if (newClient) currentClientId = newClient.id;
+              else throw new Error('Failed to ensure client exists for new appointment.');
+            }
+            if (!currentClientId) throw new Error('Client ID is missing for a new appointment entry.');
+
             const [startHour, startMinute] = service.fromTime.split(':').map(Number);
             const [endHour, endMinute] = service.toTime.split(':').map(Number);
             const baseDate = new Date(drawerDate);
-            baseDate.setHours(0, 0, 0, 0);
-            const startTime = new Date(baseDate);
-            startTime.setHours(startHour, startMinute, 0, 0);
-            const endTime = new Date(baseDate);
-            endTime.setHours(endHour, endMinute, 0, 0);
-            if (endTime <= startTime) {
-              endTime.setDate(endTime.getDate() + 1);
-            }
-            const clientDetailsPayload = [{
-              clientId: entry.client?.id!,
-              serviceIds: [service.id],
-              stylistIds: [service.stylistId]
-            }];
-            // Update the existing appointment instance on the new date/time
-            const updateData: Partial<Appointment> & { id: string } = {
-              id: service.appointmentInstanceId!,
-              start_time: startTime.toISOString(),
-              end_time: endTime.toISOString(),
-              notes: appointmentNotes,
-              status: editingAppointment.status,
-              client_id: entry.client?.id!,
-              stylist_id: service.stylistId,
-              service_id: service.id,
-              is_for_someone_else: entry.isForSomeoneElse,
-              clientDetails: clientDetailsPayload
-            };
-            await updateAppointment(updateData);
-            toast.success('Appointment shifted successfully!');
-            handleCloseDrawer();
-            return;
-          }
-        }
-      }
-      for (const entry of clientEntries) {
-        let clientId = entry.client?.id;
-        if (!clientId && entry.client) {
-          const newClient = await handleAddNewClient(entry);
-          if (newClient) clientId = newClient.id;
-          else throw new Error('Failed to create client.');
-        }
-        if (!clientId) throw new Error('Client ID is missing.');
-
-        const servicesInDrawer = entry.services;
-        // Use drawerDate for base date instead of selectedSlot or selectedDate
-        const baseDateForNew = new Date(drawerDate)
-        baseDateForNew.setHours(0,0,0,0)
-
-        if (editingAppointment) {
-          // UPDATE LOGIC FOR EXISTING GROUPED/SINGLE APPOINTMENT
-          const originalAppointmentInstanceIds = new Set<string>();
-          // Re-fetch or use a more reliable source for original appointment IDs if possible
-          // For now, we assume editingAppointment.clientDetails was the source for initial load
-          (editingAppointment.clientDetails || []).forEach((cd: any) => { // Added any type for cd
-            if (cd.id === clientId) {
-              (cd.services || []).forEach((s: any) => { // Added any type for s
-                const originalAppId = (s as any).original_appointment_id || (s as any).appointment_id;
-                if (originalAppId) originalAppointmentInstanceIds.add(originalAppId);
-              });
-            }
-          });
-          // If clientDetails was empty or not structured well, and we only had the primary editingAppointment.id
-          if (originalAppointmentInstanceIds.size === 0 && editingAppointment.id) {
-            originalAppointmentInstanceIds.add(editingAppointment.id);
-          }
-
-          const drawerInstanceIds = new Set<string>();
-
-          for (const service of servicesInDrawer) {
-            const [startHour, startMinute] = service.fromTime.split(':').map(Number);
-            const [endHour, endMinute] = service.toTime.split(':').map(Number);
             
-            // Use editingAppointment's date as the base for existing appointments
-            const baseDateForExisting = new Date(drawerDate)
-            baseDateForExisting.setHours(0,0,0,0)
-
-            const startTime = new Date(baseDateForExisting);
-            startTime.setHours(startHour, startMinute, 0, 0);
-            const endTime = new Date(baseDateForExisting);
-            endTime.setHours(endHour, endMinute, 0, 0);
+            const startTime = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate(), startHour, startMinute);
+            const endTime = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate(), endHour, endMinute);
             if (endTime <= startTime) endTime.setDate(endTime.getDate() + 1);
 
-            const clientDetailsPayload = [{
-              clientId: clientId!,
-              serviceIds: [service.id],
-              stylistIds: [service.stylistId]
-            }];
-
-            if (service.appointmentInstanceId && !service.isNew && originalAppointmentInstanceIds.has(service.appointmentInstanceId)) {
-              // UPDATE EXISTING APPOINTMENT INSTANCE
-              const updateData = {
-                id: service.appointmentInstanceId,
-                start_time: startTime.toISOString(),
-                end_time: endTime.toISOString(),
-                notes: appointmentNotes,
-                status: editingAppointment.status, // Or derive based on changes
-                client_id: clientId!,
-                stylist_id: service.stylistId,
-                service_id: service.id, // service_definition_id
-                is_for_someone_else: entry.isForSomeoneElse,
-                clientDetails: clientDetailsPayload
-              };
-              await updateAppointment(updateData);
-              drawerInstanceIds.add(service.appointmentInstanceId);
-            } else {
-              // CREATE NEW APPOINTMENT INSTANCE (either truly new or was part of group but lost its ID somehow)
-              const appointmentData = {
-                start_time: startTime.toISOString(),
-                end_time: endTime.toISOString(),
-                notes: appointmentNotes,
-                status: 'scheduled' as const,
-                client_id: clientId!,
-                stylist_id: service.stylistId,
-                service_id: service.id, // service_definition_id
-                is_for_someone_else: entry.isForSomeoneElse,
-                clientDetails: clientDetailsPayload
-              };
-              await createAppointment(appointmentData);
-              // Note: we don't add to drawerInstanceIds as these are new
-            }
-          }
-
-          // DELETE APPOINTMENTS that were in the original group but are no longer in the drawer
-          for (const originalId of Array.from(originalAppointmentInstanceIds)) {
-            if (!drawerInstanceIds.has(originalId)) {
-              // Check if this originalId corresponds to any service still in drawer (e.g. if ID was lost and re-added)
-              // This check is simplified; robustly it might mean checking service_id, stylist_id, and time proximity.
-              const stillExistsWithDifferentOrNoInstanceId = servicesInDrawer.find(
-                (s: ServiceEntry) => s.id === editingAppointment.service_id && s.stylistId === editingAppointment.stylist_id
-                // This is a very naive check. A proper check would need to compare against the original service details for `originalId`
-              );
-              if (!stillExistsWithDifferentOrNoInstanceId) { // Only delete if truly gone
-                 await deleteAppointment(originalId);
-              }
-            }
-          }
-
-        } else {
-          // CREATE NEW APPOINTMENTS (original logic for new booking)
-          for (const service of servicesInDrawer) {
-            const [startHour, startMinute] = service.fromTime.split(':').map(Number);
-            const [endHour, endMinute] = service.toTime.split(':').map(Number);
-            
-            const startTime = new Date(baseDateForNew);
-            startTime.setHours(startHour, startMinute, 0, 0);
-            const endTime = new Date(baseDateForNew);
-            endTime.setHours(endHour, endMinute, 0, 0);
-            if (endTime <= startTime) endTime.setDate(endTime.getDate() + 1);
-            
-            const appointmentData = {
-              start_time: startTime.toISOString(),
-              end_time: endTime.toISOString(),
-              notes: appointmentNotes,
-              status: 'scheduled' as const,
-              client_id: clientId!,
+            return {
+              client_id: currentClientId,
               stylist_id: service.stylistId,
               service_id: service.id,
-              is_for_someone_else: entry.isForSomeoneElse,
-              clientDetails: [{
-                clientId: clientId!,
+              start_time: startTime.toISOString(),
+              end_time: endTime.toISOString(),
+              status: 'scheduled' as Appointment['status'],
+              notes: appointmentNotes,
+              clientDetails: [{ 
+                clientId: currentClientId,
                 serviceIds: [service.id],
                 stylistIds: [service.stylistId]
-              }]
+              }],
+              booking_id: newBookingId
             };
-            await createAppointment(appointmentData);
-          }
+          })
+        );
+        const appointmentsToCreate = await Promise.all(appointmentsToCreatePromises);
+
+        if (appointmentsToCreate.length === 0) {
+          setSnackbarMessage('No services selected to book.');
+          setSnackbarSeverity('warning');
+          setSnackbarOpen(true);
+          return;
         }
+
+        await Promise.all(appointmentsToCreate.map(appData => 
+          createAppointment(appData as CreateAppointmentData)
+        ));
+
+        setSnackbarMessage('Appointment(s) created successfully!');
+        setSnackbarSeverity('success');
+        setSnackbarOpen(true);
+        handleCloseDrawer();
+        // fetchHolidays(); // Commented out as fetchHolidays is not defined
+        setLastBookedAppointmentTime(new Date().toISOString());
+
+      } catch (error) {
+        console.error('Error creating appointment(s):', error);
+        setSnackbarMessage(`Error: ${error instanceof Error ? error.message : 'Could not create appointments'}`);
+        setSnackbarSeverity('error');
+        setSnackbarOpen(true);
       }
-      
-      toast.success(editingAppointment ? 'Appointment updated successfully!' : 'Appointment booked successfully!');
-      handleCloseDrawer();
-      
-    } catch (error) {
-      const action = editingAppointment ? 'Update' : 'Booking';
-      console.error(`Error during appointment ${action.toLowerCase()}:`, error);
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      toast.error(`${action} failed: ${errorMessage}`);
-      setSnackbarMessage(`${action} failed: ${errorMessage}`);
-      setSnackbarSeverity('error');
-      setSnackbarOpen(true);
+    } else {
+      // --- UPDATE EXISTING APPOINTMENT ---
+      if (!editingAppointment.id) { // Use editingAppointment.id and ensure editingAppointment itself is checked if necessary
+        setSnackbarMessage('Error: No appointment selected for update.');
+        setSnackbarSeverity('error');
+        setSnackbarOpen(true);
+        return;
+      }
+      // Removed extra brace that was here
+
+      const primaryEntry = clientEntries[0]; 
+      if (!primaryEntry || !primaryEntry.client?.id || primaryEntry.services.length === 0) {
+        setSnackbarMessage('Client and at least one service are required for update.');
+        setSnackbarSeverity('warning');
+        setSnackbarOpen(true);
+        return;
+      }
+      const existingAppointmentDbData = allAppointments.find(app => app.id === editingAppointment!.id); // Added non-null assertion as editingAppointment.id is checked
+
+      const [startHour, startMinute] = primaryEntry.services[0].fromTime.split(':').map(Number);
+      const [endHour, endMinute] = primaryEntry.services[0].toTime.split(':').map(Number);
+      const baseDate = new Date(drawerDate);
+
+      const startTime = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate(), startHour, startMinute);
+      const endTime = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate(), endHour, endMinute);
+      if (endTime <= startTime) endTime.setDate(endTime.getDate() + 1);
+
+      try {
+        const updatePayload: UpdateAppointmentData = {
+          id: editingAppointment.id, // Use editingAppointment.id
+          client_id: primaryEntry.client.id,
+          stylist_id: primaryEntry.services[0].stylistId, 
+          service_id: primaryEntry.services[0].id, 
+          start_time: startTime.toISOString(),
+          end_time: endTime.toISOString(),
+          notes: appointmentNotes, // Use appointmentNotes
+          status: editingAppointment.status || 'scheduled', 
+          paid: editingAppointment.paid || false,
+          billed: editingAppointment.billed || false,
+          is_for_someone_else: primaryEntry.isForSomeoneElse,
+          booking_id: existingAppointmentDbData?.booking_id || editingAppointment.booking_id || null,
+          clientDetails: clientEntries.map(entry => ({
+            clientId: entry.client!.id,
+            serviceIds: entry.services.map(s => s.id),
+            stylistIds: entry.services.map(s => s.stylistId) 
+          }))
+        };
+        
+        await updateAppointment(updatePayload as any);
+        
+        setSnackbarMessage('Appointment updated successfully!');
+        setSnackbarSeverity('success');
+        setSnackbarOpen(true);
+        handleCloseDrawer();
+        // fetchHolidays(); // Commented out as fetchHolidays is not defined
+      } catch (error) {
+        console.error('Error updating appointment:', error);
+        setSnackbarMessage(`Error: ${error instanceof Error ? error.message : 'Could not update appointment'}`);
+        setSnackbarSeverity('error');
+        setSnackbarOpen(true);
+      }
     }
   };
 
@@ -1033,7 +1026,7 @@ export default function Appointments() {
 
   const handleAddBreak = async (stylistId: string, breakData: Omit<Break, 'id'>) => {
     try {
-      const stylist = (allStylists || []).find(s => s.id === stylistId);
+      const stylist = (stylists || []).find(s => s.id === stylistId);
       if (!stylist) throw new Error("Stylist not found");
       const newBreak = { ...breakData, id: uuidv4() };
       const currentBreaks = Array.isArray(stylist.breaks) ? stylist.breaks : [];
@@ -1051,17 +1044,17 @@ export default function Appointments() {
   const handleDeleteBreak = async (stylistId: string, breakId: string) => {
     try {
       console.log('Deleting break:', { stylistId, breakId });
-      const stylist = (allStylists || []).find(s => s.id === stylistId);
+      const stylist = (stylists || []).find(s => s.id === stylistId);
       if (!stylist || !stylist.breaks) throw new Error("Stylist or breaks not found");
       
       // Confirm stylist has this break in their array
-      const breakExists = stylist.breaks.some(b => b.id === breakId);
+      const breakExists = stylist.breaks.some((b: any) => b.id === breakId);
       if (!breakExists) {
         console.error('Break not found in stylist breaks array:', { breakId, stylistBreaks: stylist.breaks });
         throw new Error(`Break with ID ${breakId} not found for stylist`);
       }
       
-      const updatedBreaks = stylist.breaks.filter(b => b.id !== breakId);
+      const updatedBreaks = stylist.breaks.filter((b: any) => b.id !== breakId);
       console.log('Updated breaks array:', updatedBreaks);
       
       // Update the stylist with the new breaks array
@@ -1076,17 +1069,17 @@ export default function Appointments() {
   const handleUpdateBreak = async (stylistId: string, breakId: string, breakData: Omit<Break, 'id'>) => {
     try {
       console.log('Updating break:', { stylistId, breakId, breakData });
-      const stylist = (allStylists || []).find(s => s.id === stylistId);
+      const stylist = (stylists || []).find(s => s.id === stylistId);
       if (!stylist || !stylist.breaks) throw new Error("Stylist or breaks not found");
       
       // Confirm stylist has this break in their array
-      const breakIndex = stylist.breaks.findIndex(b => b.id === breakId);
+      const breakIndex = stylist.breaks.findIndex((b: any) => b.id === breakId);
       if (breakIndex === -1) {
         console.error('Break not found in stylist breaks array:', { breakId, stylistBreaks: stylist.breaks });
         throw new Error(`Break with ID ${breakId} not found for stylist`);
       }
       
-      const updatedBreaks = stylist.breaks.map(b => 
+      const updatedBreaks = stylist.breaks.map((b: any) => 
         b.id === breakId ? { ...breakData, id: breakId } : b
       );
       
@@ -1153,7 +1146,7 @@ export default function Appointments() {
     
     try {
       // Filter appointments for this client
-      const clientAppointments = appointments.filter(
+      const clientAppointments = allAppointments.filter(
         (appointment: MergedAppointment) => appointment.client_id === selectedClient.id
       );
       
@@ -1169,7 +1162,7 @@ export default function Appointments() {
       console.error('Error fetching client history:', error);
       toast.error('Could not load client history');
     }
-  }, [clientEntries, appointments]);
+  }, [clientEntries, allAppointments]);
 
   // Close client history panel
   const handleCloseClientHistory = () => {
@@ -1263,7 +1256,7 @@ export default function Appointments() {
     }
     
     // Find stylist details
-    const selectedStylist = allStylists.find(s => s.id === inlineServiceData.stylistId);
+    const selectedStylist = stylists.find(s => s.id === inlineServiceData.stylistId);
     if (!selectedStylist) {
       toast.error("Selected expert not found");
       return;
@@ -1309,25 +1302,15 @@ export default function Appointments() {
     }
   };
 
-  useEffect(() => {
-    if (editingAppointment) {
-      setDrawerDate(new Date(editingAppointment.start_time))
-    } else if (selectedSlot) {
-      setDrawerDate(new Date(selectedSlot.start))
-    } else {
-      setDrawerDate(selectedDate)
-    }
-  }, [editingAppointment, selectedSlot, selectedDate])
-
-  // ============================================
-  // Rendering Logic
-  // ============================================
-
-  if (loadingAppointments || loadingServices || loadingStylists || loadingClients || loadingCollections) {
-    return <CircularProgress />;
+  // New loading check after all hooks and before main return
+  const isLoading = loadingAppointments || loadingServices || loadingStylists || loadingClients || loadingCollections;
+  if (isLoading) {
+    return (
+      <Box sx={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+        <CircularProgress />
+      </Box>
+    );
   }
-
-  const showDrawer = !!selectedSlot || !!editingAppointment;
 
   return (
     <Box sx={{ 
@@ -1394,9 +1377,9 @@ export default function Appointments() {
           {viewMode === 'calendar' ? (
             <StylistDayView
               key={selectedDate.toISOString()}
-              stylists={(allStylists?.map(s => ({ ...s, breaks: s.breaks || [] })) || []) as any}
-              appointments={appointments}
-              services={allServices}
+              stylists={(stylists?.map(s => ({ ...s, breaks: s.breaks || [] })) || []) as any}
+              appointments={allAppointments}
+              services={services}
               selectedDate={selectedDate}
               onSelectTimeSlot={handleDayViewSelect}
               onAppointmentClick={handleAppointmentClick}
@@ -1404,15 +1387,20 @@ export default function Appointments() {
               onDeleteBreak={handleDeleteBreak}
               onUpdateBreak={handleUpdateBreak}
               onDateChange={setSelectedDate}
-              onUpdateAppointment={(appointmentId, appointmentUpdates) => Promise.resolve(
-                updateAppointment({ id: appointmentId, ...appointmentUpdates })
-              )}
+              onUpdateAppointment={(appointmentId, appointmentUpdates) => 
+                Promise.resolve(updateAppointment({ id: appointmentId, ...appointmentUpdates }))
+              }
+              onDeleteAppointment={(appointmentId) => 
+                Promise.resolve(deleteAppointment(appointmentId))
+              }
+              lastBookedAppointmentTime={lastBookedAppointmentTime}
+              holidays={holidays}
             />
           ) : (
             <FutureAppointmentsList
-              appointments={appointments || []}
-              stylists={allStylists || []}
-              services={allServices || []}
+              appointments={allAppointments || []}
+              stylists={stylists || []}
+              services={services || []}
               onDeleteAppointment={deleteAppointment}
               onEditAppointment={handleAppointmentClick}
             />
@@ -1527,7 +1515,7 @@ export default function Appointments() {
                 }
                 return filtered;
               }}
-              options={allClients || []}
+              options={clients || []}
               getOptionLabel={(option) => {
                 // Value selected with enter, right from the input
                 if (typeof option === 'string') {
@@ -1700,9 +1688,9 @@ export default function Appointments() {
                   <List>
                     {clientHistory.map(appointment => {
                       // Find service details
-                      const service = allServices.find(s => s.id === appointment.service_id);
+                      const service = services.find(s => s.id === appointment.service_id);
                       // Find stylist details
-                      const stylist = allStylists.find(s => s.id === appointment.stylist_id);
+                      const stylist = stylists.find(s => s.id === appointment.stylist_id);
                       
                       return (
                         <ListItem
@@ -1872,9 +1860,9 @@ export default function Appointments() {
                 <Box sx={{ p: 2 }}>
                   <Autocomplete<Stylist, false, false, false>
                     fullWidth
-                    options={allStylists.filter((stylist: Stylist) => stylist.available !== false)}
+                    options={stylists.filter((stylist: Stylist) => stylist.available !== false)}
                     getOptionLabel={(option: Stylist) => option.name}
-                    value={allStylists.find((s: Stylist) => s.id === service.stylistId) || null}
+                    value={stylists.find((s: Stylist) => s.id === service.stylistId) || null}
                     onChange={(_, newValue: Stylist | null) => {
                       if (newValue) {
                         updateServiceStylist(clientEntries[0].id, serviceIndex, newValue);
@@ -2070,9 +2058,9 @@ export default function Appointments() {
                 {/* Expert Selection */}
                 <Autocomplete<Stylist, false, false, false>
                   fullWidth
-                  options={allStylists.filter((stylist: Stylist) => stylist.available !== false)}
+                  options={stylists.filter((stylist: Stylist) => stylist.available !== false)}
                   getOptionLabel={(option: Stylist) => option.name}
-                  value={allStylists.find((s: Stylist) => s.id === inlineServiceData.stylistId) || null}
+                  value={stylists.find((s: Stylist) => s.id === inlineServiceData.stylistId) || null}
                   onChange={(_, newValue: Stylist | null) => { // Added type for newValue
                     setInlineServiceData(prev => ({
                       ...prev,

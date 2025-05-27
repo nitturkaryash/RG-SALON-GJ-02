@@ -50,6 +50,7 @@ export interface Appointment {
   stylist_ids?: string[];
   service_ids?: string[];
   is_for_someone_else?: boolean;
+  booking_id?: string | null;
 }
 
 export interface MergedAppointment extends Appointment {
@@ -63,6 +64,7 @@ export interface MergedAppointment extends Appointment {
     stylists: Pick<Stylist, 'id' | 'name'>[];
     selectedCollectionId: string | null;
   }[];
+  booking_id?: string | null;
 }
 
 // Add a function to check if an appointment conflicts with a stylist's break
@@ -152,6 +154,7 @@ interface CreateAppointmentData {
   phone?: string;     // Optional phone
   email?: string;     // Optional email
   is_for_someone_else?: boolean;
+  booking_id?: string | null;
 }
 
 // Define the expected input type for the update mutation
@@ -175,6 +178,7 @@ interface UpdateAppointmentData {
   client_id?: string; 
   stylist_id?: string;
   service_id?: string;
+  booking_id?: string | null;
 }
 
 interface ServiceResponse {
@@ -192,12 +196,27 @@ interface StylistResponse {
   };
 }
 
+export interface AppointmentNotificationData {
+  clientName: string;
+  clientPhone: string;
+  services: string[];
+  stylists: string[];
+  startTime: string;
+  endTime: string;
+  status: string;
+  notes?: string;
+  id: string;
+  serviceDetails: Array<{name: string; duration: number; price: number}>;
+  totalAmount: number;
+  booking_id?: string | null;
+}
+
 const prepareNotificationData = async (appointmentId: string): Promise<AppointmentNotificationData | null> => {
   try {
     // Fetch all necessary data for the appointment
     const { data: appointment, error: appointmentError } = await supabase
       .from('appointments')
-      .select('id, client_id, start_time, end_time, status, notes')
+      .select('id, client_id, start_time, end_time, status, notes, booking_id')
       .eq('id', appointmentId)
       .single();
 
@@ -309,10 +328,11 @@ const prepareNotificationData = async (appointmentId: string): Promise<Appointme
       startTime: appointment.start_time,
       endTime: appointment.end_time,
       status: appointment.status,
-      notes: appointment.notes,
+      notes: appointment.notes || '',
       id: appointmentId, // Include the appointment ID
       serviceDetails,
-      totalAmount
+      totalAmount,
+      booking_id: appointment.booking_id
     };
   } catch (error) {
     console.error('Error preparing notification data:', error);
@@ -440,7 +460,8 @@ export function useAppointments() {
           // Combine base appointment data with the structured client details
           return {
             ...appointment, // Spread base appointment fields
-            clientDetails: clientDetailsForThisAppointment // Add the structured array
+            clientDetails: clientDetailsForThisAppointment, // Add the structured array
+            booking_id: appointment.booking_id
           };
         });
         console.log("Finished merging appointment data.");
@@ -470,6 +491,7 @@ export function useAppointments() {
         serviceIds: string[];
         stylistIds: string[];
       }[];
+      booking_id?: string | null;
     }) => {
       const { clientDetails, ...appointmentBaseData } = data;
 
@@ -486,7 +508,8 @@ export function useAppointments() {
           ...appointmentBaseData,
           start_time: formattedStartTime, // Use formatted times
           end_time: formattedEndTime,
-          paid: false // Default paid status
+          paid: false, // Default paid status
+          booking_id: appointmentBaseData.booking_id // Save booking_id
         })
         .select() // Select the newly created appointment record
         .single();
@@ -675,7 +698,8 @@ export function useAppointments() {
         billed, 
         client_id, 
         stylist_id, 
-        service_id 
+        service_id,
+        booking_id
       } = appointmentBaseUpdates;
 
       const validBaseUpdateData: Partial<Appointment> & { updated_at?: string } = {
@@ -688,7 +712,7 @@ export function useAppointments() {
         ...(service_id && { service_id }),
         ...(paid !== undefined && { paid }),
         ...(billed !== undefined && { billed }),
-        ...(data.is_for_someone_else !== undefined && { is_for_someone_else: data.is_for_someone_else }),
+        ...(booking_id !== undefined && { booking_id }),
         updated_at: new Date().toISOString()
       };
       

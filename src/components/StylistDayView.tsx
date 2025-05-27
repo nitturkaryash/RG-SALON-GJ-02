@@ -1,4 +1,33 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+/**
+ * StylistDayView Component
+ * 
+ * SCROLL POSITION PRESERVATION:
+ * This component implements a comprehensive scroll preservation system to prevent
+ * unwanted scroll resets during user interactions:
+ * 
+ * FIXED ISSUES:
+ * 1. ❌ Right-click context menu operations causing scroll reset
+ * 2. ❌ Check-in/Check-out actions resetting scroll position  
+ * 3. ❌ Opening appointment drawer resetting scroll position
+ * 4. ❌ Opening break management dialogs resetting scroll position
+ * 5. ❌ State changes triggering automatic scroll restoration
+ * 
+ * SOLUTION IMPLEMENTED:
+ * - Removed problematic useEffect that restored scroll on every state change
+ * - Store scroll position before any dialog/context menu operations
+ * - Restore scroll position only when all dialogs/menus are closed
+ * - Use immediate scroll restoration (behavior: 'auto') to prevent animation conflicts
+ * - Simplified timeouts and removed nested setTimeout calls
+ * 
+ * SCROLL MANAGEMENT STRATEGY:
+ * - scrollPositionRef: Stores current scroll position
+ * - isScrollRestoringRef: Prevents recursive scroll handling
+ * - Enhanced scroll handler: Only updates position when not in restoration mode
+ * - Dialog handlers: Store position on open, restore on close
+ * - Context menu: Preserves position during right-click operations
+ */
+
+import React, { useState, useEffect, useMemo, useCallback, useRef, memo } from 'react';
 import { 
   Box, 
   Paper, 
@@ -53,6 +82,7 @@ import ErrorBoundary from './ErrorBoundary';
 import { toast } from 'react-hot-toast';
 import { createFilterOptions } from '@mui/material/Autocomplete';
 import { sendAppointmentNotification } from '../utils/whatsapp';
+import { StylistHoliday } from '../hooks/useStylistHolidays';
 
 // Custom implementations of date-fns functions
 const formatTime = (time: string | Date): string => {
@@ -238,20 +268,25 @@ const AppointmentSlot = styled(Box)(({ theme }) => ({
 
 // Update the AppointmentCard component
 const AppointmentCard = styled(Box, {
-  shouldForwardProp: (prop) => prop !== 'isPaid' && prop !== 'duration' && prop !== 'status',
-})<{ duration: number; isPaid: boolean; status: 'scheduled' | 'completed' | 'cancelled' }>(({ theme, duration, isPaid, status }) => ({
+  shouldForwardProp: (prop) => prop !== 'isPaid' && prop !== 'duration' && prop !== 'status' && prop !== 'isCheckedIn',
+})<{ duration: number; isPaid: boolean; status: 'scheduled' | 'completed' | 'cancelled'; isCheckedIn?: boolean }>(
+  ({ theme, duration, isPaid, status, isCheckedIn }) => ({
   position: 'absolute',
   left: theme.spacing(0.75),
   right: theme.spacing(0.75),
   height: `${Math.max(duration, TIME_SLOT_HEIGHT / 2)}px`, // Ensure minimum height
-  backgroundColor: 
-    status === 'completed' 
+  // backgroundColor is effectively overridden by inline style for checked-in state,
+  // this is the fallback.
+  backgroundColor:
+    status === 'completed'
       ? theme.palette.grey[400] // Grey background for completed appointments
-      : isPaid 
+      : isPaid
         ? theme.palette.success.light // Green if paid (and not completed)
         : theme.palette.primary.main, // Default olive if scheduled/cancelled and not paid
-  color: 
-    status === 'completed'
+  color:
+    isCheckedIn // Precedence for checked-in state
+      ? theme.palette.getContrastText('#D2B48C') // Contrast text for Tan
+      : status === 'completed'
       ? theme.palette.getContrastText(theme.palette.grey[400]) // Contrast text for grey
       : isPaid
         ? theme.palette.success.contrastText // Contrast text for success
@@ -259,7 +294,12 @@ const AppointmentCard = styled(Box, {
   borderRadius: 8,
   padding: theme.spacing(1, 1.5),
   overflow: 'hidden',
-  boxShadow: status === 'completed' ? '0px 2px 6px rgba(0, 0, 0, 0.15)' : '0px 4px 12px rgba(107, 142, 35, 0.25)', // Different shadow for completed
+  boxShadow:
+    status === 'completed'
+      ? '0px 2px 6px rgba(0, 0, 0, 0.15)' // Grey shadow for completed
+      : isCheckedIn
+      ? '0px 4px 12px rgba(177, 137, 99, 0.3)' // Tan-complementary shadow for checked-in
+      : '0px 4px 12px rgba(107, 142, 35, 0.25)', // Default green shadow
   zIndex: 1,
   fontSize: '0.9rem',
   display: 'flex',
@@ -400,6 +440,7 @@ interface Stylist {
   name: string;
   breaks: Break[];
   available?: boolean;
+  holidays?: StylistHoliday[]; // Add holidays array to stylist
   // ... other stylist properties ...
 }
 
@@ -426,10 +467,43 @@ interface StylistDayViewProps {
   onDateChange?: (date: Date) => void;
   onStylistsChange?: (updatedStylists: Stylist[]) => void;
   onAppointmentClick?: (appointment: any) => void;
+  lastBookedAppointmentTime?: string; // New prop to track last booked appointment time
+  holidays?: StylistHoliday[]; // Add holidays prop
 }
 
 // Define filter for freeSolo client options
 const filterClients = createFilterOptions<{ id: string; full_name: string; phone?: string; inputValue?: string }>();
+
+// Memoized AppointmentCard component to prevent unnecessary re-renders
+const MemoizedAppointmentCard = memo(({ 
+  appointment, 
+  isCheckedIn, 
+  bgColor, 
+  duration, 
+  isPaid, 
+  status, 
+  onDragStart, 
+  onClick, 
+  onContextMenu, 
+  style, 
+  children 
+}: any) => (
+  <AppointmentCard
+    draggable
+    onDragStart={onDragStart}
+    onClick={onClick}
+    onContextMenu={onContextMenu}
+    style={style}
+    duration={duration}
+    isPaid={isPaid}
+    status={status}
+    isCheckedIn={isCheckedIn}
+  >
+    {children}
+  </AppointmentCard>
+));
+
+MemoizedAppointmentCard.displayName = 'MemoizedAppointmentCard';
 
 const StylistDayView: React.FC<StylistDayViewProps> = ({
   stylists: initialStylists,
@@ -445,60 +519,67 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
   onDateChange,
   onStylistsChange,
   onAppointmentClick,
+  lastBookedAppointmentTime,
+  holidays,
 }) => {
   const theme = useTheme();
   const { clients: allClients = [], isLoading: isLoadingClients } = useClients(); // Add default empty array
+  const navigate = useNavigate();
 
+  // Basic component state
   const [stylists, setStylists] = useState<Stylist[]>(initialStylists);
   const [selectedStylist, setSelectedStylist] = useState<Stylist | null>(null);
   const [currentDate, setCurrentDate] = useState<Date>(selectedDate || new Date());
   const [selectedAppointment, setSelectedAppointment] = useState<any | null>(null);
   const [editDialogOpen, setEditDialogOpen] = useState<boolean>(false);
-  // Track checked-in appointments and context menu state
-  const [checkedInIds, setCheckedInIds] = useState<Set<string>>(new Set());
-  const [contextMenuPosition, setContextMenuPosition] = useState<{ mouseX: number; mouseY: number } | null>(null);
-  const [contextMenuAppointment, setContextMenuAppointment] = useState<any | null>(null);
-  // Add state for scroll position tracking
-  const [scrollTop, setScrollTop] = useState(0);
-  const [scrollLeft, setScrollLeft] = useState(0);
-  const [gridRect, setGridRect] = useState<DOMRect | null>(null);
-  const gridRef = useRef<HTMLDivElement>(null);
   
-  // Track both vertical and horizontal scroll position
-  const handleScroll = useCallback(() => {
-    const gridElement = gridRef.current;
-    if (gridElement) {
-      // Update scroll positions
-      setScrollTop(gridElement.scrollTop);
-      setScrollLeft(gridElement.scrollLeft);
-      // Recalculate container bounds for accurate positioning
-      setGridRect(gridElement.getBoundingClientRect());
-    }
-  }, []);
-  
-  // Set up scroll listener
-  useEffect(() => {
-    const gridElement = gridRef.current;
-    if (!gridElement) return;
-    // Initialize positions
-    handleScroll();
-    // Listen for scroll
-    gridElement.addEventListener('scroll', handleScroll);
-    // Listen for resize to adjust bounds
-    window.addEventListener('resize', handleScroll);
-    return () => {
-      gridElement.removeEventListener('scroll', handleScroll);
-      window.removeEventListener('resize', handleScroll);
-    };
-  }, [handleScroll]);
-
-  // Add break dialog state
+  // Break state
   const [breakDialogOpen, setBreakDialogOpen] = useState<boolean>(false);
   const [breakFormData, setBreakFormData] = useState({
     startTime: '',
     endTime: '',
     reason: ''
   });
+  
+  // Edit break state
+  const [editingBreak, setEditingBreak] = useState<Break | null>(null);
+  const [editBreakDialogOpen, setEditBreakDialogOpen] = useState(false);
+  const [editBreakFormData, setEditBreakFormData] = useState({
+    startTime: '',
+    endTime: '',
+    reason: ''
+  });
+
+  // Track checked-in appointments and context menu state
+  const [checkedInIds, setCheckedInIds] = useState<Set<string>>(new Set());
+  const [contextMenuPosition, setContextMenuPosition] = useState<{ mouseX: number; mouseY: number } | null>(null);
+  const [contextMenuAppointment, setContextMenuAppointment] = useState<any | null>(null);
+  
+  // State variables for scroll position tracking
+  const [scrollTop, setScrollTop] = useState(0);
+  const [scrollLeft, setScrollLeft] = useState(0);
+  const [gridRect, setGridRect] = useState<DOMRect | null>(null);
+  const gridRef = useRef<HTMLDivElement>(null);
+  const isContextMenuOpen = useRef<boolean>(false);
+  
+  // Enhanced scroll position preservation
+  const scrollPositionRef = useRef({ top: 0, left: 0 });
+  const isScrollRestoringRef = useRef(false);
+  
+  // Add state to track stylist holidays
+  const [stylistHolidays, setStylistHolidays] = useState<Record<string, StylistHoliday[]>>({});
+
+  // Update stylistHolidays when holidays prop changes
+  useEffect(() => {
+    if (holidays && stylists?.length) {
+      const holidaysMap: Record<string, StylistHoliday[]> = {};
+      stylists.forEach(stylist => {
+        holidaysMap[stylist.id] = holidays.filter(h => h.stylist_id === stylist.id);
+      });
+      setStylistHolidays(holidaysMap);
+    }
+  }, [holidays, stylists]);
+  
   // Update the editFormData state type
   const [editFormData, setEditFormData] = useState<{
     clientName: string;
@@ -525,6 +606,7 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
     isNewClient: false,
     clientEntries: []
   });
+  
   // State for drag and drop
   const [draggedAppointment, setDraggedAppointment] = useState<any | null>(null);
   
@@ -532,8 +614,112 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
   const [datePickerAnchorEl, setDatePickerAnchorEl] = useState<HTMLButtonElement | null>(null);
   const datePickerOpen = Boolean(datePickerAnchorEl);
   
+  // Add state for service collections and search
+  const [serviceCollections, setServiceCollections] = useState<any[]>([]);
+  const [selectedServiceCollection, setSelectedServiceCollection] = useState<any>(null);
+  const [serviceSearchQuery, setServiceSearchQuery] = useState<string>('');
+  const [isLoadingCollectionServices, setIsLoadingCollectionServices] = useState(false);
+  const [loadingStylists, setLoadingStylists] = useState(false);
+  
+  // Add state for snackbar
+  const [snackbarOpen, setSnackbarOpen] = useState(false);
+  const [snackbarMessage, setSnackbarMessage] = useState('');
+  const [snackbarSeverity, setSnackbarSeverity] = useState<'success' | 'warning' | 'error'>('success');
+  
   const timeSlots = generateTimeSlots();
   const timeOptions = generateTimeOptions();
+  
+  // Memoized handlers to prevent unnecessary re-renders
+  const memoizedHandleCloseContextMenu = useCallback(() => {
+    // Mark context menu as closed
+    isContextMenuOpen.current = false;
+    
+    // Update state to close the context menu
+    // This will trigger the useEffect hook that handles scroll restoration
+    setContextMenuAppointment(null);
+    setContextMenuPosition(null);
+    
+    // The scroll restoration is now handled by the useEffect hook
+    // that listens to changes in contextMenuPosition.
+  }, []);
+
+  const memoizedHandleContextMenu = useCallback((event: React.MouseEvent, appointment: any) => {
+    event.preventDefault();
+    event.stopPropagation();
+    
+    // Store current scroll position before any state changes
+    const gridElement = gridRef.current;
+    if (gridElement) {
+      scrollPositionRef.current = {
+        top: gridElement.scrollTop,
+        left: gridElement.scrollLeft
+      };
+    }
+    
+    // Mark context menu as open
+    isContextMenuOpen.current = true;
+    
+    // Set context menu state with viewport-relative coordinates for fixed positioning
+    setContextMenuAppointment(appointment);
+    setContextMenuPosition({ 
+      mouseX: event.clientX, 
+      mouseY: event.clientY 
+    });
+  }, []);
+
+  const memoizedHandleCheckIn = useCallback(() => {
+    if (contextMenuAppointment) {
+      setCheckedInIds(prev => new Set(prev).add(contextMenuAppointment.id));
+      // TODO: optionally call onUpdateAppointment to persist check-in status
+    }
+    memoizedHandleCloseContextMenu();
+  }, [contextMenuAppointment, memoizedHandleCloseContextMenu]);
+
+  const memoizedHandleCheckOut = useCallback(() => {
+    if (contextMenuAppointment) {
+      setCheckedInIds(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(contextMenuAppointment.id);
+        return newSet;
+      });
+      // TODO: optionally call onUpdateAppointment to persist check-out status
+    }
+    memoizedHandleCloseContextMenu();
+  }, [contextMenuAppointment, memoizedHandleCloseContextMenu]);
+
+  // Enhanced scroll handler that respects context menu state and scroll restoration
+  const enhancedHandleScroll = useCallback(() => {
+    const gridElement = gridRef.current;
+    if (gridElement && !isContextMenuOpen.current && !isScrollRestoringRef.current) {
+      // Only update stored scroll positions when not in context menu mode or restoring
+      scrollPositionRef.current = {
+        top: gridElement.scrollTop,
+        left: gridElement.scrollLeft
+      };
+      setScrollTop(gridElement.scrollTop);
+      setScrollLeft(gridElement.scrollLeft);
+      setGridRect(gridElement.getBoundingClientRect());
+    }
+  }, []);
+
+  // Update the original handleScroll to use enhanced version
+  const handleScroll = enhancedHandleScroll;
+  
+  // Set up scroll listener
+  useEffect(() => {
+    const gridElement = gridRef.current;
+    if (!gridElement) return;
+    // Initialize positions
+    handleScroll();
+    // Listen for scroll
+    gridElement.addEventListener('scroll', handleScroll);
+    // Listen for resize to adjust bounds
+    window.addEventListener('resize', handleScroll);
+    return () => {
+      gridElement.removeEventListener('scroll', handleScroll);
+      window.removeEventListener('resize', handleScroll);
+    };
+  }, [handleScroll]);
   
   const handlePrevDay = () => {
     const newDate = addDays(currentDate, -1);
@@ -562,8 +748,58 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
     }
   };
   
-  // Update the handleSlotClick function to not open the edit dialog
+  // Function to check if a stylist is on holiday for a specific date
+  function isStylistOnHolidayForDate(stylist: Stylist, date: Date): boolean {
+    // First check if stylist is manually set as unavailable
+    if (stylist.available === false) {
+      return true; 
+    }
+    
+    // Then check holidays from stylistHolidays map
+    if (stylist?.id && stylistHolidays[stylist.id]?.length > 0) {
+      const formattedDate = format(date, 'yyyy-MM-dd');
+      return stylistHolidays[stylist.id].some(holiday => 
+        holiday.holiday_date === formattedDate
+      );
+    }
+    
+    // Finally, check holidays directly on stylist object
+    if (stylist?.holidays && stylist.holidays.length > 0) {
+      const formattedDate = format(date, 'yyyy-MM-dd');
+      return stylist.holidays.some(holiday => {
+        // Need to handle both possible formats
+        if (typeof holiday === 'object') {
+          return (
+            (holiday.holiday_date && holiday.holiday_date === formattedDate) ||
+            // Support legacy holiday format if it exists
+            ((holiday as any).date && (holiday as any).date === formattedDate)
+          );
+        }
+        return false;
+      });
+    }
+    
+    return false;
+  }
+
   const handleSlotClick = (stylistId: string, hour: number, minute: number) => {
+    // Find the stylist
+    const stylist = stylists.find(s => s.id === stylistId);
+    if (!stylist) {
+      setSnackbarMessage('Stylist not found');
+      setSnackbarSeverity('error');
+      setSnackbarOpen(true);
+      return;
+    }
+    
+    // Check if the stylist is on holiday for the current date
+    if (isStylistOnHolidayForDate(stylist, currentDate)) {
+      setSnackbarMessage(`Cannot book appointment: ${stylist.name} is on holiday`);
+      setSnackbarSeverity('error');
+      setSnackbarOpen(true);
+      return;
+    }
+    
     // Check if this time slot is during a break
     if (isBreakTime(stylistId, hour, minute)) {
       setSnackbarMessage('Cannot book appointment during break time');
@@ -606,6 +842,16 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
 
   const handleAppointmentClick = (appointment: any) => {
     console.log("Internal StylistDayView handleAppointmentClick called", appointment); // Debug log
+    
+    // Store scroll position before opening drawer
+    const gridElement = gridRef.current;
+    if (gridElement) {
+      scrollPositionRef.current = {
+        top: gridElement.scrollTop,
+        left: gridElement.scrollLeft
+      };
+    }
+    
     // Ensure the prop function is called if it exists
     if (onAppointmentClick) {
       console.log("Calling onAppointmentClick prop..."); // Debug log
@@ -698,6 +944,15 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
   };
   
   const handleEditDialogClose = () => {
+    // Store current scroll before closing
+    const gridElement = gridRef.current;
+    if (gridElement) {
+      scrollPositionRef.current = {
+        top: gridElement.scrollTop,
+        left: gridElement.scrollLeft
+      };
+    }
+    
     setEditDialogOpen(false);
     setSelectedAppointment(null);
     
@@ -1168,8 +1423,6 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
     }
   };
 
-  const navigate = useNavigate();
-
   // Handle navigation to POS with appointment data
   const handleCreateBill = () => {
     if (!selectedAppointment) return;
@@ -1262,11 +1515,6 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
     });
   };
 
-  // Add state for snackbar
-  const [snackbarOpen, setSnackbarOpen] = useState(false);
-  const [snackbarMessage, setSnackbarMessage] = useState('');
-  const [snackbarSeverity, setSnackbarSeverity] = useState<'success' | 'warning' | 'error'>('success');
-
   // Add handleSnackbarClose function
   const handleSnackbarClose = () => {
     setSnackbarOpen(false);
@@ -1339,6 +1587,15 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
   };
 
   const handleBreakDialogOpen = (stylistId: string) => {
+    // Store scroll position before opening break dialog
+    const gridElement = gridRef.current;
+    if (gridElement) {
+      scrollPositionRef.current = {
+        top: gridElement.scrollTop,
+        left: gridElement.scrollLeft
+      };
+    }
+    
     const foundStylist = stylists.find(s => s.id === stylistId);
     if (foundStylist) {
       setSelectedStylist(foundStylist);
@@ -1352,6 +1609,15 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
   };
 
   const handleBreakDialogClose = () => {
+    // Store current scroll before closing
+    const gridElement = gridRef.current;
+    if (gridElement) {
+      scrollPositionRef.current = {
+        top: gridElement.scrollTop,
+        left: gridElement.scrollLeft
+      };
+    }
+    
     setBreakDialogOpen(false);
     setSelectedStylist(null);
     setBreakFormData({
@@ -1520,6 +1786,15 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
   };
 
   const handleEditBreakDialogOpen = (breakItem: Break) => {
+    // Store scroll position before opening edit break dialog
+    const gridElement = gridRef.current;
+    if (gridElement) {
+      scrollPositionRef.current = {
+        top: gridElement.scrollTop,
+        left: gridElement.scrollLeft
+      };
+    }
+    
     setEditingBreak(breakItem);
     
     // Convert ISO times to HH:MM format for the form
@@ -1541,6 +1816,15 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
   };
   
   const handleEditBreakDialogClose = () => {
+    // Store current scroll before closing
+    const gridElement = gridRef.current;
+    if (gridElement) {
+      scrollPositionRef.current = {
+        top: gridElement.scrollTop,
+        left: gridElement.scrollLeft
+      };
+    }
+    
     setEditBreakDialogOpen(false);
     setEditingBreak(null);
   };
@@ -1696,6 +1980,8 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
       setCurrentDate(selectedDate);
     }
   }, [selectedDate]);
+
+
 
   // Add date picker handlers
   const handleDatePickerClick = (event: React.MouseEvent<HTMLButtonElement>) => {
@@ -1877,9 +2163,9 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
         const startTime = formatTime(appointment.start_time);
         const endTime = formatTime(appointment.end_time);
         
-        // Compute background color, yellow if checked in
+        // Compute background color, warm tan if checked in
         const bgColor = isCheckedIn
-          ? theme.palette.warning.main
+          ? '#D2B48C' // Warm Tan color that complements the default olive green
           : status === 'completed'
             ? theme.palette.grey[400]
             : isPaid
@@ -1887,57 +2173,38 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
               : theme.palette.primary.main;
         
         return (
-          <Tooltip
+          <MemoizedAppointmentCard
             key={appointment.id}
-            title={`${appointment.clientDetails?.[0]?.full_name || allClients.find(c => c.id === appointment.client_id)?.full_name || 'Unknown Client'} - ${serviceName} (${startTime} - ${endTime})`}
-            arrow
+            appointment={appointment}
+            isCheckedIn={isCheckedIn}
+            bgColor={bgColor}
+            duration={getAppointmentDuration(appointment.start_time, appointment.end_time)}
+            isPaid={isPaid}
+            status={status}
+            onDragStart={(e: React.DragEvent) => handleDragStart(e, appointment)}
+            onClick={() => handleAppointmentClick(appointment)}
+            onContextMenu={(e: React.MouseEvent) => memoizedHandleContextMenu(e, appointment)}
+            style={{
+              top: `${getAppointmentPosition(appointment.start_time)}px`,
+              height: `${getAppointmentDuration(appointment.start_time, appointment.end_time)}px`,
+              backgroundColor: bgColor, // Ensure the calculated bgColor is applied here
+            }}
           >
-            <AppointmentCard
-              draggable
-              onDragStart={(e) => handleDragStart(e, appointment)}
-              onClick={() => handleAppointmentClick(appointment)}
-              onContextMenu={(e) => handleContextMenu(e, appointment)}
-              style={{
-                top: `${getAppointmentPosition(appointment.start_time)}px`,
-                height: `${getAppointmentDuration(appointment.start_time, appointment.end_time)}px`,
-                backgroundColor: bgColor
-              }}
-              duration={getAppointmentDuration(appointment.start_time, appointment.end_time)}
-              isPaid={isPaid}
-              status={status as 'scheduled' | 'completed' | 'cancelled'}
-            >
-              <Typography variant="subtitle2" className="appointment-client-name">
-                {appointment.clientDetails?.[0]?.full_name
-                  || allClients.find(c => c.id === appointment.client_id)?.full_name
-                  || 'Unknown Client'}
-              </Typography>
-              <Typography variant="body2" className="appointment-service">
-                {serviceName}
-              </Typography>
-              <Typography variant="caption" className="appointment-time">
-                {`${startTime} - ${endTime}`}
-              </Typography>
-            </AppointmentCard>
-          </Tooltip>
+            <Typography variant="subtitle2" className="appointment-client-name">
+              {appointment.clientDetails?.[0]?.full_name
+                || allClients.find(c => c.id === appointment.client_id)?.full_name
+                || 'Unknown Client'}
+            </Typography>
+            <Typography variant="body2" className="appointment-service">
+              {serviceName}
+            </Typography>
+            <Typography variant="caption" className="appointment-time">
+              {`${startTime} - ${endTime}`}
+            </Typography>
+          </MemoizedAppointmentCard>
         );
       });
   };
-
-  // Add state for edit break functionality
-  const [editingBreak, setEditingBreak] = useState<Break | null>(null);
-  const [editBreakDialogOpen, setEditBreakDialogOpen] = useState(false);
-  const [editBreakFormData, setEditBreakFormData] = useState({
-    startTime: '',
-    endTime: '',
-    reason: ''
-  });
-
-  // Add state for service collections
-  const [serviceCollections, setServiceCollections] = useState<any[]>([]);
-  const [selectedServiceCollection, setSelectedServiceCollection] = useState('');
-  const [serviceSearchQuery, setServiceSearchQuery] = useState('');
-  const [isLoadingCollectionServices, setIsLoadingCollectionServices] = useState(false);
-  const [loadingStylists, setLoadingStylists] = useState(false);
 
   // Use the useServiceCollections hook to get service collections
   const { serviceCollections: fetchedServiceCollections, isLoading: isLoadingServiceCollections } = useServiceCollections();
@@ -1948,6 +2215,71 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
       setServiceCollections(fetchedServiceCollections);
     }
   }, [fetchedServiceCollections]);
+
+  // Restore scroll position when dialogs close or context menu closes
+  useEffect(() => {
+    const gridElement = gridRef.current;
+    if (gridElement && 
+        !editDialogOpen && 
+        !contextMenuPosition && 
+        !breakDialogOpen && 
+        !editBreakDialogOpen && 
+        scrollPositionRef.current) {
+      // Only restore if we have a stored position and no dialogs/menus are open
+      const currentTop = gridElement.scrollTop;
+      const currentLeft = gridElement.scrollLeft;
+      const storedTop = scrollPositionRef.current.top;
+      const storedLeft = scrollPositionRef.current.left;
+      
+      // Only restore if position has changed
+      if (currentTop !== storedTop || currentLeft !== storedLeft) {
+        isScrollRestoringRef.current = true;
+        gridElement.scrollTo({
+          top: storedTop,
+          left: storedLeft,
+          behavior: 'auto' // 'auto' is important for immediate restoration
+        });
+        setTimeout(() => {
+          isScrollRestoringRef.current = false;
+        }, 100); // Increased delay to 100ms for safety
+      }
+    }
+  }, [editDialogOpen, contextMenuPosition, breakDialogOpen, editBreakDialogOpen]);
+
+  // Auto-scroll to last booked appointment time
+  useEffect(() => {
+    const gridElement = gridRef.current;
+    
+    // Only auto-scroll if we have a last booked appointment time and the grid is ready
+    if (gridElement && lastBookedAppointmentTime && !editDialogOpen && !contextMenuPosition) {
+      try {
+        // Calculate the scroll position for the last booked appointment
+        const scrollToPosition = getAppointmentPosition(lastBookedAppointmentTime);
+        
+        // Add some buffer to show a bit before the appointment (about 2 time slots = 30 minutes)
+        const bufferPosition = Math.max(0, scrollToPosition - (TIME_SLOT_HEIGHT * 2));
+        
+        // Store this as our target position
+        scrollPositionRef.current = {
+          top: bufferPosition,
+          left: 0
+        };
+        
+        // Scroll to the calculated position with smooth behavior
+        setTimeout(() => {
+          gridElement.scrollTo({
+            top: bufferPosition,
+            left: 0,
+            behavior: 'smooth'
+          });
+        }, 100); // Small delay to ensure the grid is fully rendered
+        
+        console.log(`Auto-scrolling to last booked appointment at ${lastBookedAppointmentTime}, position: ${scrollToPosition}px`);
+      } catch (error) {
+        console.error('Error auto-scrolling to last booked appointment:', error);
+      }
+    }
+  }, [lastBookedAppointmentTime, editDialogOpen, contextMenuPosition]);
 
   // Add a function to handle service search and selection
   const handleServiceSearch = (event: React.ChangeEvent<HTMLInputElement>, entryId: string) => {
@@ -2015,32 +2347,29 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
 
   // Context menu handlers for check-in
   const handleContextMenu = (event: React.MouseEvent, appointment: any) => {
-    event.preventDefault();
-    setContextMenuAppointment(appointment);
-    setContextMenuPosition({ mouseX: event.clientX - 2, mouseY: event.clientY - 4 });
+    memoizedHandleContextMenu(event, appointment);
   };
-  const handleCloseContextMenu = () => {
-    setContextMenuAppointment(null);
-    setContextMenuPosition(null);
-  };
-  const handleCheckIn = () => {
-    if (contextMenuAppointment) {
-      setCheckedInIds(prev => new Set(prev).add(contextMenuAppointment.id));
-      // TODO: optionally call onUpdateAppointment to persist check-in status
-    }
-    handleCloseContextMenu();
-  };
-  const handleCheckOut = () => {
-    if (contextMenuAppointment) {
-      setCheckedInIds(prev => {
-        const newSet = new Set(prev);
-        newSet.delete(contextMenuAppointment.id);
-        return newSet;
-      });
-      // TODO: optionally call onUpdateAppointment to persist check-out status
-    }
-    handleCloseContextMenu();
-  };
+  
+  const handleCloseContextMenu = memoizedHandleCloseContextMenu;
+  
+  const handleCheckIn = memoizedHandleCheckIn;
+  
+  const handleCheckOut = memoizedHandleCheckOut;
+
+  // Count stylists on holiday today
+  const stylistsOnHolidayToday = stylists?.filter(stylist => {
+    // Check if stylist is on holiday today
+    const today = format(new Date(), 'yyyy-MM-dd');
+    return stylistHolidays[stylist.id]?.some(h => h.holiday_date === today) || false;
+  }) || [];
+
+  // Add function to check if a stylist is on holiday on a specific date
+  const getStylistHolidayForDate = (stylist: Stylist, date: Date): StylistHoliday | undefined => {
+    const formattedDate = format(date, 'yyyy-MM-dd');
+    return stylistHolidays[stylist.id]?.find(holiday => 
+      holiday.holiday_date === formattedDate
+    );
+  }
 
   return (
     <DayViewContainer>
@@ -2161,9 +2490,9 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
               key={stylist.id}
               className="stylist-column"
               sx={{
-                // Dim and disable interaction for unavailable stylists (e.g., on holiday)
-                opacity: stylist.available !== false ? 1 : 0.5,
-                pointerEvents: stylist.available !== false ? 'auto' : 'none'
+                // Check both general availability and if stylist is on holiday for current date
+                opacity: (stylist.available !== false && !isStylistOnHolidayForDate(stylist, currentDate)) ? 1 : 0.5,
+                pointerEvents: (stylist.available !== false && !isStylistOnHolidayForDate(stylist, currentDate)) ? 'auto' : 'none'
               }}
             >
               <StylistHeader
@@ -2923,23 +3252,58 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
           {snackbarMessage}
         </Alert>
       </Snackbar>
-      {/* Context menu for appointment check-in */}
-      <Menu
-        open={contextMenuPosition !== null}
-        onClose={handleCloseContextMenu}
-        anchorReference="anchorPosition"
-        anchorPosition={
-          contextMenuPosition !== null
-            ? { top: contextMenuPosition.mouseY, left: contextMenuPosition.mouseX }
-            : undefined
-        }
-      >
-        {contextMenuAppointment && checkedInIds.has(contextMenuAppointment.id) ? (
-          <MenuItem onClick={handleCheckOut}>Check Out</MenuItem>
-        ) : (
-          <MenuItem onClick={handleCheckIn}>Check In</MenuItem>
-        )}
-      </Menu>
+      {/* Custom context menu to prevent scroll interference */}
+      {contextMenuPosition && (
+        <Box
+          tabIndex={-1}
+          sx={{
+            position: 'fixed',
+            top: contextMenuPosition.mouseY,
+            left: contextMenuPosition.mouseX,
+            zIndex: 9999,
+            backgroundColor: 'white',
+            boxShadow: 3,
+            borderRadius: 1,
+            minWidth: '120px',
+            border: '1px solid',
+            borderColor: 'divider'
+          }}
+          onContextMenu={(e) => e.preventDefault()}
+        >
+          <Box
+            tabIndex={-1}
+            onClick={contextMenuAppointment && checkedInIds.has(contextMenuAppointment.id) ? handleCheckOut : handleCheckIn}
+            sx={{
+              px: 2,
+              py: 1.5,
+              cursor: 'pointer',
+              fontSize: '0.875rem',
+              '&:hover': {
+                backgroundColor: 'action.hover'
+              }
+            }}
+          >
+            {contextMenuAppointment && checkedInIds.has(contextMenuAppointment.id) ? 'Check Out' : 'Check In'}
+          </Box>
+        </Box>
+      )}
+      
+      {contextMenuPosition && (
+        <Box
+          tabIndex={-1}
+          sx={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            width: '100vw',
+            height: '100vh',
+            zIndex: 9998,
+            backgroundColor: 'transparent'
+          }}
+          onClick={handleCloseContextMenu}
+          onContextMenu={handleCloseContextMenu}
+        />
+      )}
     </DayViewContainer>
   );
 }
