@@ -7,12 +7,15 @@ export const formatCurrency = (amount: number | null | undefined) => {
   // Default to 0 if amount is null or undefined
   const safeAmount = amount ?? 0;
   
+  // Round the amount to remove decimals
+  const roundedAmount = Math.round(safeAmount);
+  
   return new Intl.NumberFormat('en-IN', {
     style: 'currency',
     currency: 'INR',
     minimumFractionDigits: 0,
-    maximumFractionDigits: 2, // Allow up to 2 decimal places for precise pricing
-  }).format(safeAmount);
+    maximumFractionDigits: 0, // No decimal places
+  }).format(roundedAmount);
 }
 
 /**
@@ -21,5 +24,5 @@ export const formatCurrency = (amount: number | null | undefined) => {
  * @returns Formatted string with % symbol
  */
 export const formatPercentage = (value: number) => {
-  return `${value.toFixed(2)}%`
+  return `${Math.round(value)}%`
 } 
