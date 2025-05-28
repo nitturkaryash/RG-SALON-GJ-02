@@ -6,17 +6,21 @@
  * Format a number or string as currency (INR)
  */
 export function formatCurrency(value: string | number | null | undefined): string {
-  if (value === null || value === undefined || value === '') return '₹0.00';
+  if (value === null || value === undefined || value === '') return '₹0';
   
   const numValue = typeof value === 'string' ? parseFloat(value) : value;
   
-  if (isNaN(numValue)) return '₹0.00';
+  if (isNaN(numValue)) return '₹0';
+  
+  // Round the value to remove decimals
+  const roundedValue = Math.round(numValue);
   
   return new Intl.NumberFormat('en-IN', {
     style: 'currency',
     currency: 'INR',
-    minimumFractionDigits: 2
-  }).format(numValue);
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0 // No decimal places
+  }).format(roundedValue);
 }
 
 /**
