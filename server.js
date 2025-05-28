@@ -1,6 +1,9 @@
 import express from 'express';
 import cors from 'cors';
 import nodemailer from 'nodemailer';
+import * as WhatsAppModule from './dist/whatsapp/business-api/services/whatsappService.js';
+
+const { WhatsAppService } = WhatsAppModule;
 
 const app = express();
 app.use(cors());
@@ -108,6 +111,52 @@ app.post('/api/notifications/email', async (req, res) => {
       success: false,
       error: error.message
     });
+  }
+});
+
+// WhatsApp appointment notification endpoint (placeholder)
+app.post('/api/whatsapp/appointment-notification', async (req, res) => {
+  console.log('[Express API CALLED] /api/whatsapp/appointment-notification reached');
+  console.log('Request body:', req.body);
+
+  const { type, phoneNumber, clientName, appointmentTime, oldAppointmentTime, services, stylist, totalAmount } = req.body;
+
+  if (!type || !phoneNumber || !clientName || !appointmentTime) {
+    return res.status(400).json({ success: false, error: 'Missing required fields for WhatsApp notification (type, phoneNumber, clientName, appointmentTime)' });
+  }
+
+  try {
+    let response;
+    const appointmentDate = new Date(appointmentTime);
+
+    switch (type) {
+      case 'booked':
+        if (!services || !stylist) {
+          return res.status(400).json({ success: false, error: 'Missing services or stylist for booked notification' });
+        }
+        response = await WhatsAppService.sendAppointmentConfirmation(phoneNumber, clientName, appointmentDate, services, stylist);
+        break;
+      case 'updated':
+        if (!oldAppointmentTime || !services || !stylist || !totalAmount) {
+          return res.status(400).json({ success: false, error: 'Missing oldAppointmentTime, services, stylist, or totalAmount for updated notification' });
+        }
+        const oldDate = new Date(oldAppointmentTime);
+        response = await WhatsAppService.sendAppointmentUpdate(phoneNumber, clientName, oldDate, appointmentDate, services, stylist, totalAmount);
+        break;
+      case 'cancelled':
+        response = await WhatsAppService.sendAppointmentCancellation(phoneNumber, clientName, appointmentDate);
+        break;
+      default:
+        return res.status(400).json({ success: false, error: 'Invalid WhatsApp notification type' });
+    }
+
+    console.log('WhatsApp notification sent successfully:', response);
+    res.status(200).json({ success: true, message: `WhatsApp ${type} notification sent successfully.`, data: response });
+  } catch (error) {
+    console.error(`Error sending WhatsApp ${type} notification:`, error.message);
+    // Log the full error for more details, especially if it's a custom error from WhatsAppService
+    console.error(error); 
+    res.status(500).json({ success: false, error: error.message || 'Failed to send WhatsApp notification' });
   }
 });
 

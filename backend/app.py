@@ -12,11 +12,19 @@ import re
 import tempfile
 import json
 
+# Import WhatsApp service
+from whatsapp_service_selenium import get_whatsapp_service, SalonMessageTemplates
+
 # Load environment variables from .env file
 load_dotenv()
 
 app = Flask(__name__)
 CORS(app)
+
+# Initialize WhatsApp service
+def get_whatsapp_instance():
+    """Get WhatsApp service instance."""
+    return get_whatsapp_service()
 
 # Database connection configuration
 DB_CONFIG = {
@@ -1331,6 +1339,234 @@ def sync_pos_with_inventory():
             'processed_sales': processed_sales,
             'errors': errors
         }), 200
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+# =============================================================================
+# WhatsApp Notification Endpoints
+# =============================================================================
+
+@app.route('/api/whatsapp/send-message', methods=['POST'])
+def send_whatsapp_message():
+    """Send a custom WhatsApp message."""
+    try:
+        data = request.json
+        
+        if not data or 'phone' not in data or 'message' not in data:
+            return jsonify({'error': 'Phone number and message are required'}), 400
+        
+        phone = data['phone']
+        message = data['message']
+        
+        whatsapp_service = get_whatsapp_instance()
+        result = whatsapp_service.send_message(phone, message)
+        
+        return jsonify(result)
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/whatsapp/login', methods=['POST'])
+def whatsapp_login():
+    """Initialize WhatsApp Web login."""
+    try:
+        whatsapp_service = get_whatsapp_instance()
+        result = whatsapp_service.login_to_whatsapp_web()
+        return jsonify(result)
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/whatsapp/order-created', methods=['POST'])
+def send_order_created_notification():
+    """Send WhatsApp notification for new order creation."""
+    try:
+        data = request.json
+        
+        required_fields = ['client_name', 'client_phone', 'order_id', 'items', 'total_amount']
+        if not all(field in data for field in required_fields):
+            return jsonify({'error': f'Missing required fields: {required_fields}'}), 400
+        
+        # Generate message from template
+        message = SalonMessageTemplates.order_created(
+            client_name=data['client_name'],
+            order_id=data['order_id'],
+            items=data['items'],
+            total_amount=float(data['total_amount'])
+        )
+        
+        # Send message
+        whatsapp_service = get_whatsapp_instance()
+        result = whatsapp_service.send_message(
+            phone=data['client_phone'],
+            message=message
+        )
+        
+        return jsonify(result)
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/whatsapp/order-updated', methods=['POST'])
+def send_order_updated_notification():
+    """Send WhatsApp notification for order updates."""
+    try:
+        data = request.json
+        
+        required_fields = ['client_name', 'client_phone', 'order_id', 'status']
+        if not all(field in data for field in required_fields):
+            return jsonify({'error': f'Missing required fields: {required_fields}'}), 400
+        
+        # Generate message from template
+        message = SalonMessageTemplates.order_updated(
+            client_name=data['client_name'],
+            order_id=data['order_id'],
+            status=data['status'],
+            items=data.get('items')
+        )
+        
+        # Send message
+        whatsapp_service = get_whatsapp_instance()
+        result = whatsapp_service.send_message(
+            phone=data['client_phone'],
+            message=message
+        )
+        
+        return jsonify(result)
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/whatsapp/order-deleted', methods=['POST'])
+def send_order_deleted_notification():
+    """Send WhatsApp notification for order cancellation."""
+    try:
+        data = request.json
+        
+        required_fields = ['client_name', 'client_phone', 'order_id']
+        if not all(field in data for field in required_fields):
+            return jsonify({'error': f'Missing required fields: {required_fields}'}), 400
+        
+        # Generate message from template
+        message = SalonMessageTemplates.order_deleted(
+            client_name=data['client_name'],
+            order_id=data['order_id'],
+            reason=data.get('reason')
+        )
+        
+        # Send message
+        whatsapp_service = get_whatsapp_instance()
+        result = whatsapp_service.send_message(
+            phone=data['client_phone'],
+            message=message
+        )
+        
+        return jsonify(result)
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/whatsapp/appointment-reminder', methods=['POST'])
+def send_appointment_reminder():
+    """Send WhatsApp appointment reminder."""
+    try:
+        data = request.json
+        
+        required_fields = ['client_name', 'client_phone', 'service', 'date', 'time']
+        if not all(field in data for field in required_fields):
+            return jsonify({'error': f'Missing required fields: {required_fields}'}), 400
+        
+        # Generate message from template
+        message = SalonMessageTemplates.appointment_reminder(
+            client_name=data['client_name'],
+            service=data['service'],
+            date=data['date'],
+            time=data['time']
+        )
+        
+        # Send message
+        whatsapp_service = get_whatsapp_instance()
+        result = whatsapp_service.send_message(
+            phone=data['client_phone'],
+            message=message
+        )
+        
+        return jsonify(result)
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/whatsapp/inventory-alert', methods=['POST'])
+def send_inventory_alert():
+    """Send WhatsApp low stock alert."""
+    try:
+        data = request.json
+        
+        required_fields = ['manager_phone', 'item_name', 'current_stock', 'min_threshold']
+        if not all(field in data for field in required_fields):
+            return jsonify({'error': f'Missing required fields: {required_fields}'}), 400
+        
+        # Generate message from template
+        message = SalonMessageTemplates.inventory_low_stock(
+            item_name=data['item_name'],
+            current_stock=int(data['current_stock']),
+            min_threshold=int(data['min_threshold'])
+        )
+        
+        # Send message
+        whatsapp_service = get_whatsapp_instance()
+        result = whatsapp_service.send_message(
+            phone=data['manager_phone'],
+            message=message
+        )
+        
+        return jsonify(result)
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/whatsapp/client-welcome', methods=['POST'])
+def send_client_welcome():
+    """Send WhatsApp welcome message to new client."""
+    try:
+        data = request.json
+        
+        required_fields = ['client_name', 'client_phone']
+        if not all(field in data for field in required_fields):
+            return jsonify({'error': f'Missing required fields: {required_fields}'}), 400
+        
+        # Generate message from template
+        message = SalonMessageTemplates.client_welcome(
+            client_name=data['client_name'],
+            phone=data['client_phone']
+        )
+        
+        # Send message
+        whatsapp_service = get_whatsapp_instance()
+        result = whatsapp_service.send_message(
+            phone=data['client_phone'],
+            message=message
+        )
+        
+        return jsonify(result)
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/whatsapp/test', methods=['GET'])
+def test_whatsapp():
+    """Test WhatsApp service functionality."""
+    try:
+        # Test message
+        test_message = "🧪 *WhatsApp Service Test* 🧪\n\nIf you receive this message, the WhatsApp automation is working perfectly! ✅"
+        
+        return jsonify({
+            'success': True,
+            'message': 'WhatsApp service is configured correctly',
+            'test_message': test_message,
+            'instructions': 'Call POST /api/whatsapp/send-message with phone and message to send this test'
+        })
         
     except Exception as e:
         return jsonify({'error': str(e)}), 500

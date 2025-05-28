@@ -103,6 +103,7 @@ import { DatePicker } from '@mui/x-date-pickers/DatePicker'
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider'
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns'
 import { useAuthContext } from '../contexts/AuthContext'
+import { sendAppointmentWhatsAppNotification, isWhatsAppEnabled, isValidPhoneNumber } from '../utils/whatsappNotifications'
 
 // Define Drawer width as a constant
 const drawerWidth = 500;
@@ -943,6 +944,75 @@ export default function Appointments() {
           createAppointment(appData as CreateAppointmentData)
         ));
 
+        // Send WhatsApp notifications for new appointments
+        if (isWhatsAppEnabled()) {
+          const primaryEntry = clientEntries[0];
+          if (primaryEntry.client && primaryEntry.client.phone && isValidPhoneNumber(primaryEntry.client.phone)) {
+            try {
+              // Get the first created appointment for notification data
+              const firstService = primaryEntry.services[0];
+              if (firstService) {
+                const appointmentBaseDate = new Date(drawerDate); // Fixed variable scope issue
+                const appointmentData = {
+                  id: newBookingId, // Use booking ID as reference
+                  client_id: primaryEntry.client.id || '',
+                  stylist_id: firstService.stylistId,
+                  service_id: firstService.id,
+                  start_time: new Date(appointmentBaseDate.getFullYear(), appointmentBaseDate.getMonth(), appointmentBaseDate.getDate(), 
+                    parseInt(firstService.fromTime.split(':')[0]), 
+                    parseInt(firstService.fromTime.split(':')[1])
+                  ).toISOString(),
+                  end_time: new Date(appointmentBaseDate.getFullYear(), appointmentBaseDate.getMonth(), appointmentBaseDate.getDate(), 
+                    parseInt(firstService.toTime.split(':')[0]), 
+                    parseInt(firstService.toTime.split(':')[1])
+                  ).toISOString(),
+                  status: 'scheduled' as const,
+                  notes: appointmentNotes
+                };
+
+                const clientData = {
+                  id: primaryEntry.client.id || '',
+                  full_name: primaryEntry.client.full_name,
+                  phone: primaryEntry.client.phone,
+                  email: primaryEntry.client.email || ''
+                };
+
+                const servicesData = primaryEntry.services.map(service => ({
+                  id: service.id,
+                  name: service.name,
+                  price: service.price,
+                  duration: 60 // Default duration
+                }));
+
+                const stylistsData = primaryEntry.services.map(service => {
+                  const stylist = stylists.find(s => s.id === service.stylistId);
+                  return {
+                    id: service.stylistId,
+                    name: stylist?.name || 'Unknown'
+                  };
+                });
+
+                // Send WhatsApp notification
+                await sendAppointmentWhatsAppNotification(
+                  'created',
+                  appointmentData,
+                  clientData,
+                  servicesData,
+                  stylistsData
+                );
+
+                console.log('[WhatsApp] Appointment confirmation sent successfully');
+              }
+            } catch (whatsappError) {
+              console.error('[WhatsApp] Failed to send appointment confirmation:', whatsappError);
+              // Don't block the appointment creation if WhatsApp fails
+              toast.warning('Appointment created successfully, but WhatsApp notification failed to send');
+            }
+          } else {
+            console.log('[WhatsApp] Skipping notification - invalid or missing phone number');
+          }
+        }
+
         setSnackbarMessage('Appointment(s) created successfully!');
         setSnackbarSeverity('success');
         setSnackbarOpen(true);
@@ -1005,6 +1075,67 @@ export default function Appointments() {
         };
         
         await updateAppointment(updatePayload as any);
+        
+        // Send WhatsApp notifications for appointment updates
+        if (isWhatsAppEnabled()) {
+          const primaryEntry = clientEntries[0];
+          if (primaryEntry.client && primaryEntry.client.phone && isValidPhoneNumber(primaryEntry.client.phone)) {
+            try {
+              const firstService = primaryEntry.services[0];
+              if (firstService && editingAppointment) {
+                const appointmentData = {
+                  id: editingAppointment.id,
+                  client_id: primaryEntry.client.id,
+                  stylist_id: firstService.stylistId,
+                  service_id: firstService.id,
+                  start_time: startTime.toISOString(),
+                  end_time: endTime.toISOString(),
+                  status: editingAppointment.status || 'scheduled',
+                  notes: appointmentNotes
+                };
+
+                const clientData = {
+                  id: primaryEntry.client.id,
+                  full_name: primaryEntry.client.full_name,
+                  phone: primaryEntry.client.phone,
+                  email: primaryEntry.client.email || ''
+                };
+
+                const servicesData = primaryEntry.services.map(service => ({
+                  id: service.id,
+                  name: service.name,
+                  price: service.price,
+                  duration: 60 // Default duration
+                }));
+
+                const stylistsData = primaryEntry.services.map(service => {
+                  const stylist = stylists.find(s => s.id === service.stylistId);
+                  return {
+                    id: service.stylistId,
+                    name: stylist?.name || 'Unknown'
+                  };
+                });
+
+                // Send WhatsApp notification for update
+                await sendAppointmentWhatsAppNotification(
+                  'updated',
+                  appointmentData,
+                  clientData,
+                  servicesData,
+                  stylistsData
+                );
+
+                console.log('[WhatsApp] Appointment update notification sent successfully');
+              }
+            } catch (whatsappError) {
+              console.error('[WhatsApp] Failed to send appointment update notification:', whatsappError);
+              // Don't block the appointment update if WhatsApp fails
+              toast.warning('Appointment updated successfully, but WhatsApp notification failed to send');
+            }
+          } else {
+            console.log('[WhatsApp] Skipping update notification - invalid or missing phone number');
+          }
+        }
         
         setSnackbarMessage('Appointment updated successfully!');
         setSnackbarSeverity('success');
@@ -1127,6 +1258,63 @@ export default function Appointments() {
     if (!editingAppointment) return;
     
     try {
+      // Send WhatsApp cancellation notification before deleting
+      if (isWhatsAppEnabled() && editingAppointment) {
+        const client = clients.find(c => c.id === editingAppointment.client_id);
+        if (client && client.phone && isValidPhoneNumber(client.phone)) {
+          try {
+            const service = services.find(s => s.id === editingAppointment.service_id);
+            const stylist = stylists.find(s => s.id === editingAppointment.stylist_id);
+            
+            if (service && stylist) {
+              const appointmentData = {
+                id: editingAppointment.id,
+                client_id: editingAppointment.client_id,
+                stylist_id: editingAppointment.stylist_id,
+                service_id: editingAppointment.service_id,
+                start_time: editingAppointment.start_time,
+                end_time: editingAppointment.end_time,
+                status: editingAppointment.status,
+                notes: editingAppointment.notes || ''
+              };
+
+              const clientData = {
+                id: client.id,
+                full_name: client.full_name,
+                phone: client.phone,
+                email: client.email || ''
+              };
+
+              const servicesData = [{
+                id: service.id,
+                name: service.name,
+                price: service.price || 0,
+                duration: service.duration || 60
+              }];
+
+              const stylistsData = [{
+                id: stylist.id,
+                name: stylist.name
+              }];
+
+              // Send WhatsApp cancellation notification
+              await sendAppointmentWhatsAppNotification(
+                'cancelled',
+                appointmentData,
+                clientData,
+                servicesData,
+                stylistsData
+              );
+
+              console.log('[WhatsApp] Appointment cancellation notification sent successfully');
+            }
+          } catch (whatsappError) {
+            console.error('[WhatsApp] Failed to send cancellation notification:', whatsappError);
+            // Continue with deletion even if WhatsApp fails
+          }
+        }
+      }
+
       await deleteAppointment(editingAppointment.id);
       toast.success('Appointment deleted successfully');
       setDeleteDialogOpen(false);

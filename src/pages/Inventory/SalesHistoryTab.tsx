@@ -79,6 +79,24 @@ interface SalesItem {
   purchase_cost_per_unit_ex_gst: number;
 }
 
+// New interface for grouped sales by order
+interface GroupedSalesItem {
+  id: string; // order_id
+  serial_no: string | number;
+  order_id: string;
+  date: string;
+  products: SalesItem[]; // Array of products in this order
+  total_quantity: number;
+  total_taxable_value: number;
+  total_cgst_amount: number;
+  total_sgst_amount: number;
+  total_discount: number;
+  total_invoice_value: number;
+  combined_product_names: string;
+  combined_hsn_codes: string;
+  gst_percentage: number; // Most common GST percentage in the order
+}
+
 // Custom styled components
 const HeaderCell = styled(TableCell)(({ theme }) => ({
   backgroundColor: '#f8f9fa',
@@ -103,13 +121,14 @@ interface SalesHistoryTabProps {
 const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
   // State for data and UI
   const [salesData, setSalesData] = useState<SalesItem[]>([]);
-  const [filteredData, setFilteredData] = useState<SalesItem[]>([]);
+  const [groupedSalesData, setGroupedSalesData] = useState<GroupedSalesItem[]>([]);
+  const [filteredData, setFilteredData] = useState<GroupedSalesItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [searchTerm, setSearchTerm] = useState('');
-  const [sortBy, setSortBy] = useState<{column: keyof SalesItem | null, direction: 'asc' | 'desc'}>({
+  const [sortBy, setSortBy] = useState<{column: keyof GroupedSalesItem | null, direction: 'asc' | 'desc'}>({
     column: 'date',
     direction: 'desc'
   });
@@ -123,40 +142,34 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
   // Compute remaining-stock tax breakdown on the client
   const tableData = useMemo(() => {
     return filteredData.map(item => {
-      const qty = item.remaining_stock ?? 0;
-      const unitExcl = Number(item.purchase_cost_per_unit_ex_gst) || 0;
-      const gstPct = Number(item.gst_percentage) || 0;
+      // For grouped data, we calculate aggregated current stock values
+      const totalCurrentStockTaxable = item.products.reduce((sum, product) => {
+        const qty = product.remaining_stock ?? 0;
+        const unitExcl = Number(product.purchase_cost_per_unit_ex_gst) || 0;
+        return sum + (qty * unitExcl);
+      }, 0);
       
-      // Calculate inclusive price from exclusive price and GST percentage
-      const unitIncl = unitExcl * (1 + gstPct / 100);
-
-      // 1 Taxable Value
-      const taxable = qty * unitExcl;
-
-      // 2/3/4 GST splits
-      const igst = 0; // IGST is always 0
-      const cgst = taxable * gstPct / 200; // Always calculate CGST
-      const sgst = taxable * gstPct / 200; // Always calculate SGST
-
-      // 5 Total value
-      const totalVal = taxable + igst + cgst + sgst;
-
-      // Calculate taxable after discount
-      const discountPct = Number(item.discount_percentage) || 0;
-      const taxableAfterDiscount = (Number(item.taxable_value) || 0) * (1 - (discountPct / 100));
+      const totalCurrentStockCgst = item.products.reduce((sum, product) => {
+        const qty = product.remaining_stock ?? 0;
+        const unitExcl = Number(product.purchase_cost_per_unit_ex_gst) || 0;
+        const gstPct = Number(product.gst_percentage) || 0;
+        const taxable = qty * unitExcl;
+        return sum + (taxable * gstPct / 200);
+      }, 0);
+      
+      const totalCurrentStockSgst = totalCurrentStockCgst; // Same as CGST
+      const totalCurrentStockTotalValue = totalCurrentStockTaxable + totalCurrentStockCgst + totalCurrentStockSgst;
 
       return {
         ...item,
-        gst_percentage: gstPct,
-        order_item_id: item.order_item_id || '',
-        unit_price_inc_gst: unitIncl,
-        current_stock_taxable_value: taxable,
-        discount_percentage: discountPct,
-        taxable_after_discount: taxableAfterDiscount,
-        current_stock_igst: igst,
-        current_stock_cgst: cgst,
-        current_stock_sgst: sgst,
-        current_stock_total_value: totalVal
+        current_stock_taxable_value: totalCurrentStockTaxable,
+        current_stock_cgst: totalCurrentStockCgst,
+        current_stock_sgst: totalCurrentStockSgst,
+        current_stock_total_value: totalCurrentStockTotalValue,
+        // Calculate discount percentage from absolute discount and taxable value
+        discount_percentage: item.total_taxable_value > 0 ? 
+          (item.total_discount / item.total_taxable_value) * 100 : 0,
+        taxable_after_discount: item.total_taxable_value * (1 - (item.total_discount / item.total_taxable_value || 0))
       };
     });
   }, [filteredData]);
@@ -174,103 +187,92 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
       setIsLoading(true);
       setError(null);
       
-      console.log('Fetching data from view:', SALES_VIEW);
+      console.log('Fetching data from pos_orders table directly like Orders.tsx');
       
-      // Continue to fetch from the view for reading
-      const { data, error } = await supabase
-        .from(SALES_VIEW)
+      // Query pos_orders directly like Orders.tsx does
+      const { data: ordersData, error } = await supabase
+        .from('pos_orders')
         .select('*')
-        // Include all product orders within the date range
-        .gte('date', dateRange.startDate)
-        .lte('date', dateRange.endDate)
-        .order('date', { ascending: false });
+        .eq('type', 'sale')
+        .gte('created_at', dateRange.startDate)
+        .lte('created_at', dateRange.endDate)
+        .order('created_at', { ascending: false });
 
-      // Check for fetch error and log the view name for debugging
+      // Check for fetch error
       if (error) {
-        console.error(`Error fetching data from ${SALES_VIEW}:`, error);
+        console.error('Error fetching orders data:', error);
         setError(`Failed to load sales data: ${error.message || 'Unknown error'}`);
         setIsLoading(false);
         return;
       }
 
       // Check if data exists
-      if (!data || data.length === 0) {
-        console.warn(`No data found in ${SALES_VIEW}.`);
+      if (!ordersData || ordersData.length === 0) {
+        console.warn('No orders data found.');
         setSalesData([]);
+        setGroupedSalesData([]);
         setFilteredData([]);
         setIsLoading(false);
         return;
       }
 
-      console.log(`Received ${data.length} records from ${SALES_VIEW}`);
+      console.log(`Received ${ordersData.length} orders from pos_orders table`);
+      console.log('Sample order:', ordersData[0]);
       
-      // Check if any records have order_item_pk
-      const hasOrderItemPk = data.some(item => item.order_item_pk);
-      console.log('Records have order_item_pk?', hasOrderItemPk);
-      
-      if (!hasOrderItemPk) {
-        console.warn('No order_item_pk found in any records! First record sample:', data[0]);
-      } else {
-        console.log('Sample order_item_pk value:', data[0].order_item_pk);
-      }
-      
-      // Process raw table rows - adjust field mappings for sales_product_new
-      const sortedData = data.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-      const processedData: SalesItem[] = sortedData.map((item, index) => {
-        // Log the first few records to debug primary key issues
-        if (index < 3) {
-          console.log(`Record ${index} raw data:`, {
-            order_item_pk: item.order_item_pk,
-            order_id: item.order_id,
-            order_item_id: item.order_item_id
-          });
-        }
+      // Process orders to extract and group product data like Orders.tsx does
+      const groupedData: GroupedSalesItem[] = ordersData.map((order, index) => {
+        // Extract product items from the services array
+        const productServices = order.services?.filter((service: any) => service.type === 'product') || [];
         
-        // Only use the actual primary key from the view for deletion
-        const primaryKey = item.order_item_pk || '';
+        // Calculate totals from all product services in this order
+        const totalQuantity = productServices.reduce((sum: number, service: any) => sum + (service.quantity || 1), 0);
+        const totalTaxableValue = productServices.reduce((sum: number, service: any) => {
+          const price = service.price || 0;
+          const quantity = service.quantity || 1;
+          return sum + (price * quantity);
+        }, 0);
+        const totalGstAmount = productServices.reduce((sum: number, service: any) => {
+          const price = service.price || 0;
+          const quantity = service.quantity || 1;
+          const gstRate = service.gst_percentage || 18;
+          const taxable = price * quantity;
+          return sum + (taxable * gstRate / 200); // CGST (half of total GST)
+        }, 0);
         
-        const processedItem = {
-          id: item.order_id, // Using order_id as the main id for row identification
-          order_item_pk: primaryKey, // Ensure we always have a value here for deletion
-          serial_no: index + 1,
-          order_id: item.order_id,
-          order_item_id: item.order_item_id || '',
-          date: item.date,
-          product_name: item.product_name,
-          quantity: item.quantity,
-          unit_price_ex_gst: Number(item.unit_price_ex_gst) || 0,
-          gst_percentage: Number(item.gst_percentage) || 0,
-          taxable_value: Number(item.taxable_value) || 0,
-          cgst_amount: Number(item.cgst_amount) || 0,
-          sgst_amount: Number(item.sgst_amount) || 0,
-          total_purchase_cost: Number(item.total_purchase_cost) || 0,
-          discount: Number(item.discount) || 0,
-          // Calculate discount percentage from absolute discount and taxable value
-          discount_percentage: item.taxable_value > 0 ? 
-            ((Number(item.discount) || 0) / Number(item.taxable_value)) * 100 : 0,
-          tax: Number(item.tax) || 0,
-          hsn_code: item.hsn_code || '',
-          product_type: item.product_type || '',
-          mrp_incl_gst: Number(item.mrp_incl_gst) || 0,
-          discounted_sales_rate_ex_gst: Number(item.discounted_sales_rate_ex_gst) || 0,
-          invoice_value: Number(item.invoice_value) || 0,
-          igst_amount: Number(item.igst_amount) || 0,
-          initial_stock: Number(item.initial_stock) || 0,
-          remaining_stock: Number(item.remaining_stock) || 0,
-          current_stock: Number(item.current_stock) || 0,
-          purchase_cost_per_unit_ex_gst: Number(item.purchase_cost_per_unit_ex_gst) || 0
-        };
+        const totalInvoiceValue = totalTaxableValue + (totalGstAmount * 2); // CGST + SGST
         
-        // Log first item for debugging
-        if (index === 0) {
-          console.log('First processed item:', processedItem);
-        }
+        // Get product names and HSN codes
+        const productNames = productServices.map((service: any) => service.service_name).join(', ');
+        const hsnCodes = [...new Set(productServices.map((service: any) => service.hsn_code).filter(Boolean))].join(', ');
         
-        return processedItem;
-      });
+        // Get the most common GST percentage
+        const gstPercentages = productServices.map((service: any) => service.gst_percentage || 18);
+        const avgGstPercentage = gstPercentages.length > 0 ? gstPercentages.reduce((a: number, b: number) => a + b, 0) / gstPercentages.length : 18;
 
-      setSalesData(processedData);
-      setFilteredData(processedData);
+        return {
+          id: order.id,
+          serial_no: index + 1,
+          order_id: order.id,
+          date: order.created_at || order.date,
+          products: [], // Not needed for display
+          total_quantity: totalQuantity,
+          total_taxable_value: totalTaxableValue,
+          total_cgst_amount: totalGstAmount,
+          total_sgst_amount: totalGstAmount,
+          total_discount: order.discount || 0,
+          total_invoice_value: totalInvoiceValue,
+          combined_product_names: productNames,
+          combined_hsn_codes: hsnCodes,
+          gst_percentage: avgGstPercentage
+        };
+      }).filter(item => item.total_quantity > 0); // Only include orders with products
+
+      console.log('Processed grouped data:', groupedData);
+      
+      // Set the data
+      setSalesData([]); // Not needed for the grouped approach
+      setGroupedSalesData(groupedData);
+      setFilteredData(groupedData);
     } catch (err) {
       console.error('Error fetching data:', err);
       setError('An unexpected error occurred while loading sales data.');
@@ -307,8 +309,8 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
     setPage(0);
   };
   
-  // Handle sorting
-  const handleSort = (column: keyof SalesItem) => {
+  // Handle sorting for grouped data
+  const handleSort = (column: keyof GroupedSalesItem) => {
     setSortBy(prev => ({
       column,
       direction: prev.column === column && prev.direction === 'asc' ? 'desc' : 'asc'
@@ -316,25 +318,26 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
   };
   
   // Utility function to reindex serial numbers after filtering or sorting
-  const reindexSerialNumbers = (data: SalesItem[]): SalesItem[] => {
+  const reindexSerialNumbers = (data: GroupedSalesItem[]): GroupedSalesItem[] => {
     return data.map((item, index) => ({
       ...item,
       serial_no: index + 1
     }));
   };
 
-  // Handle search
+  // Handle search for grouped data
   const handleSearch = (event: React.ChangeEvent<HTMLInputElement>) => {
     const searchValue = event.target.value.toLowerCase();
     setSearchTerm(searchValue);
     
     // Apply the search filter
     if (searchValue.trim() === '') {
-      setFilteredData(salesData);
+      setFilteredData(groupedSalesData);
     } else {
-      const filtered = salesData.filter(item => 
-        (item.product_name && item.product_name.toLowerCase().includes(searchValue)) ||
-        (item.hsn_code && item.hsn_code.toLowerCase().includes(searchValue))
+      const filtered = groupedSalesData.filter(item => 
+        item.combined_product_names.toLowerCase().includes(searchValue) ||
+        item.combined_hsn_codes.toLowerCase().includes(searchValue) ||
+        item.order_id.toLowerCase().includes(searchValue)
       );
       setFilteredData(filtered);
     }
@@ -362,34 +365,24 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
       
       // Build header and row arrays so Excel columns exactly match the UI table
       const headers = [
-        'Serial No.', 'Date', 'Product Name', 'HSN Code', 'Units', 'Qty.',
-        'Unit Price (Inc. GST)', 'Unit Price (Ex.GST)', 'Taxable Value', 'GST %',
-        'Discount %', 'Taxable After Discount', 'CGST', 'SGST', 'Total Value',
-        'Initial Stock', 'Current Stock', 'Taxable Value', 'IGST (Rs.)', 'CGST (Rs.)', 'SGST (Rs.)', 'Total Value (Rs.)'
+        'Serial No.', 'Date', 'Product Names', 'HSN Codes', 'Total Qty.',
+        'Taxable Value', 'GST %', 'Discount %', 'Taxable After Discount', 
+        'CGST', 'SGST', 'Total Value', 'Order ID'
       ];
       const dataRows = tableData.map(item => [
         item.serial_no,
         formatDate(item.date),
-        item.product_name,
-        item.hsn_code || 'N/A',
-        item.product_type || 'N/A',
-        item.quantity,
-        item.unit_price_inc_gst,
-        item.unit_price_ex_gst,
-        item.taxable_value,
+        item.combined_product_names,
+        item.combined_hsn_codes || 'N/A',
+        item.total_quantity,
+        item.total_taxable_value,
         Number(item.gst_percentage ?? 0).toFixed(2) + '%',
         Number(item.discount_percentage ?? 0).toFixed(2) + '%',
         item.taxable_after_discount ?? 0,
-        item.cgst_amount,
-        item.sgst_amount,
-        item.invoice_value,
-        item.initial_stock,
-        item.remaining_stock,
-        item.current_stock_taxable_value ?? 0,
-        item.current_stock_igst ?? 0,
-        item.current_stock_cgst ?? 0,
-        item.current_stock_sgst ?? 0,
-        item.current_stock_total_value ?? 0
+        item.total_cgst_amount,
+        item.total_sgst_amount,
+        item.total_invoice_value,
+        item.order_id
       ]);
       const worksheet = XLSX.utils.aoa_to_sheet([headers, ...dataRows]);
       
@@ -428,17 +421,12 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
     };
 
     return {
-      quantity: safeAdd(sum.quantity, item.quantity),
-      taxableValue: safeAdd(sum.taxableValue, item.taxable_value),
+      quantity: safeAdd(sum.quantity, item.total_quantity),
+      taxableValue: safeAdd(sum.taxableValue, item.total_taxable_value),
       taxableAfterDiscount: safeAdd(sum.taxableAfterDiscount, item.taxable_after_discount),
-      cgst: safeAdd(sum.cgst, item.cgst_amount),
-      sgst: safeAdd(sum.sgst, item.sgst_amount),
-      totalValue: safeAdd(sum.totalValue, item.invoice_value),
-      currentStockTaxable: safeAdd(sum.currentStockTaxable, (item.current_stock_taxable_value ?? 0)),
-      currentStockIgst: safeAdd(sum.currentStockIgst, (item.current_stock_igst ?? 0)),
-      currentStockCgst: safeAdd(sum.currentStockCgst, (item.current_stock_cgst ?? 0)),
-      currentStockSgst: safeAdd(sum.currentStockSgst, (item.current_stock_sgst ?? 0)),
-      currentStockTotalValue: safeAdd(sum.currentStockTotalValue, (item.current_stock_total_value ?? 0))
+      cgst: safeAdd(sum.cgst, item.total_cgst_amount),
+      sgst: safeAdd(sum.sgst, item.total_sgst_amount),
+      totalValue: safeAdd(sum.totalValue, item.total_invoice_value)
     };
   }, {
     quantity: 0,
@@ -446,16 +434,11 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
     taxableAfterDiscount: 0,
     cgst: 0,
     sgst: 0,
-    totalValue: 0,
-    currentStockTaxable: 0,
-    currentStockIgst: 0,
-    currentStockCgst: 0,
-    currentStockSgst: 0,
-    currentStockTotalValue: 0
+    totalValue: 0
   });
   
   // Helper for rendering sortable table headers
-  const renderSortableHeader = (column: keyof SalesItem | null, label: string) => ( // Make column possibly null
+  const renderSortableHeader = (column: keyof GroupedSalesItem | null, label: string) => ( // Make column possibly null
     <HeaderCell
       onClick={() => column && handleSort(column)} // Check if column is not null before calling handleSort
       style={{ cursor: column ? 'pointer' : 'default' }} // Only show pointer if sortable
@@ -487,7 +470,7 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
           <Grid item xs={12} md={4}>
             <TextField
               fullWidth
-              placeholder="Search by product name or HSN code"
+              placeholder="Search by product name, HSN code, or order ID"
               value={searchTerm}
               onChange={handleSearch}
               variant="outlined"
@@ -559,33 +542,23 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
                 <TableCell padding="checkbox" /> {/* For expand/collapse */}
                 {renderSortableHeader('serial_no', 'Serial No.')}
                 {renderSortableHeader('date', 'Date')}
-                {renderSortableHeader('product_name', 'Product Name')}
-                {renderSortableHeader('hsn_code', 'HSN Code')}
-                {renderSortableHeader('product_type', 'Units')}
-                {renderSortableHeader('quantity', 'Qty.')}
-                {renderSortableHeader('unit_price_inc_gst', 'Unit Price (Inc. GST)')}
-                {renderSortableHeader('unit_price_ex_gst', 'Unit Price (Ex. GST)')}
-                {renderSortableHeader('taxable_value', 'Taxable Value')}
+                {renderSortableHeader('combined_product_names', 'Product Names')}
+                {renderSortableHeader('combined_hsn_codes', 'HSN Codes')}
+                {renderSortableHeader('total_quantity', 'Total Qty.')}
+                {renderSortableHeader('total_taxable_value', 'Taxable Value')}
                 {renderSortableHeader('gst_percentage', 'GST %')}
-                {renderSortableHeader('discount_percentage', 'Discount %')}
-                {renderSortableHeader('taxable_after_discount', 'Taxable After Discount')}
-                {renderSortableHeader('cgst_amount', 'CGST')}
-                {renderSortableHeader('sgst_amount', 'SGST')}
-                {renderSortableHeader('invoice_value', 'Total Value')}
-                {renderSortableHeader('initial_stock', 'Initial Stock')}
-                {renderSortableHeader('remaining_stock', 'Current Stock')}
-                {renderSortableHeader('current_stock_taxable_value', 'Taxable Value')}
-                {renderSortableHeader('current_stock_igst', 'IGST (Rs.)')}
-                {renderSortableHeader('current_stock_cgst', 'CGST (Rs.)')}
-                {renderSortableHeader('current_stock_sgst', 'SGST (Rs.)')}
-                {renderSortableHeader('current_stock_total_value', 'Total Value (Rs.)')}
+                {renderSortableHeader(null, 'Discount %')}
+                {renderSortableHeader(null, 'Taxable After Discount')}
+                {renderSortableHeader('total_cgst_amount', 'CGST')}
+                {renderSortableHeader('total_sgst_amount', 'SGST')}
+                {renderSortableHeader('total_invoice_value', 'Total Value')}
                 {renderSortableHeader('order_id', 'Order ID')}
               </TableRow>
             </TableHead>
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={21} align="center" sx={{ py: 3 }}>
+                  <TableCell colSpan={14} align="center" sx={{ py: 3 }}>
                     <CircularProgress />
                     <Typography variant="body2" sx={{ mt: 1 }}>
                       Loading sales data...
@@ -600,26 +573,16 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
                       <TableCell padding="checkbox" />
                       <TableCell align="center">{row.serial_no}</TableCell>
                       <TableCell align="center">{formatDate(row.date)}</TableCell>
-                      <TableCell align="left">{row.product_name}</TableCell>
-                      <TableCell align="center">{row.hsn_code}</TableCell>
-                      <TableCell align="center">{row.product_type}</TableCell>
-                      <TableCell align="center">{row.quantity}</TableCell>
-                      <TableCell align="right">{formatCurrency(row.unit_price_inc_gst)}</TableCell>
-                      <TableCell align="right">{formatCurrency(row.unit_price_ex_gst)}</TableCell>
-                      <TableCell align="right">{formatCurrency(row.taxable_value)}</TableCell>
+                      <TableCell align="left">{row.combined_product_names}</TableCell>
+                      <TableCell align="center">{row.combined_hsn_codes}</TableCell>
+                      <TableCell align="center">{row.total_quantity}</TableCell>
+                      <TableCell align="right">{formatCurrency(row.total_taxable_value)}</TableCell>
                       <TableCell align="right">{Number(row.gst_percentage ?? 0).toFixed(2)}%</TableCell>
                       <TableCell align="right">{Number(row.discount_percentage ?? 0).toFixed(2)}%</TableCell>
                       <TableCell align="right">{formatCurrency(row.taxable_after_discount)}</TableCell>
-                      <TableCell align="right">{formatCurrency(row.cgst_amount)}</TableCell>
-                      <TableCell align="right">{formatCurrency(row.sgst_amount)}</TableCell>
-                      <TableCell align="right">{formatCurrency(row.invoice_value)}</TableCell>
-                      <TableCell align="right">{row.initial_stock}</TableCell>
-                      <TableCell align="right">{row.remaining_stock}</TableCell>
-                      <TableCell align="right">{formatCurrency(row.current_stock_taxable_value)}</TableCell>
-                      <TableCell align="right">{formatCurrency(row.current_stock_igst)}</TableCell>
-                      <TableCell align="right">{formatCurrency(row.current_stock_cgst)}</TableCell>
-                      <TableCell align="right">{formatCurrency(row.current_stock_sgst)}</TableCell>
-                      <TableCell align="right">{formatCurrency(row.current_stock_total_value)}</TableCell>
+                      <TableCell align="right">{formatCurrency(row.total_cgst_amount)}</TableCell>
+                      <TableCell align="right">{formatCurrency(row.total_sgst_amount)}</TableCell>
+                      <TableCell align="right">{formatCurrency(row.total_invoice_value)}</TableCell>
                       <TableCell align="center">
                         <Tooltip title={row.order_id}>
                           <Typography variant="body2" sx={{ color: 'text.secondary', fontSize: '0.75rem', maxWidth: 80, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -631,7 +594,7 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
                   ))
               ) : (
                 <TableRow>
-                  <TableCell colSpan={21} align="center" sx={{ py: 3 }}>
+                  <TableCell colSpan={14} align="center" sx={{ py: 3 }}>
                     <Typography variant="body1">No sales data found</Typography>
                     <Typography variant="body2" color="textSecondary" sx={{ mt: 1 }}>
                       {searchTerm 
@@ -647,20 +610,13 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
                 <TableRow sx={{ backgroundColor: '#f8f9fa' }}>
                   <TableCell colSpan={5} align="right" sx={{ fontWeight: 'bold' }}>Totals:</TableCell>
                   <TableCell align="right" sx={{ fontWeight: 'bold' }}>{totals.quantity}</TableCell>
-                  <TableCell align="right" sx={{ fontWeight: 'bold' }}></TableCell>
-                  <TableCell align="right" sx={{ fontWeight: 'bold' }}></TableCell>
                   <TableCell align="right" sx={{ fontWeight: 'bold' }}>{formatCurrency(totals.taxableValue)}</TableCell>
                   <TableCell align="right" sx={{ fontWeight: 'bold' }}></TableCell>
                   <TableCell align="right" sx={{ fontWeight: 'bold' }}></TableCell>
+                  <TableCell align="right" sx={{ fontWeight: 'bold' }}>{formatCurrency(totals.taxableAfterDiscount)}</TableCell>
                   <TableCell align="right" sx={{ fontWeight: 'bold' }}>{formatCurrency(totals.cgst)}</TableCell>
                   <TableCell align="right" sx={{ fontWeight: 'bold' }}>{formatCurrency(totals.sgst)}</TableCell>
                   <TableCell align="right" sx={{ fontWeight: 'bold' }}>{formatCurrency(totals.totalValue)}</TableCell>
-                  <TableCell colSpan={3}></TableCell>
-                  <TableCell align="right" sx={{ fontWeight: 'bold' }}>{formatCurrency(totals.currentStockTaxable)}</TableCell>
-                  <TableCell align="right" sx={{ fontWeight: 'bold' }}>{formatCurrency(totals.currentStockIgst)}</TableCell>
-                  <TableCell align="right" sx={{ fontWeight: 'bold' }}>{formatCurrency(totals.currentStockCgst)}</TableCell>
-                  <TableCell align="right" sx={{ fontWeight: 'bold' }}>{formatCurrency(totals.currentStockSgst)}</TableCell>
-                  <TableCell align="right" sx={{ fontWeight: 'bold' }}>{formatCurrency(totals.currentStockTotalValue)}</TableCell>
                   <TableCell></TableCell>
                 </TableRow>
               )}

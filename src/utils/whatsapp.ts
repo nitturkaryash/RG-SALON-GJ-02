@@ -1,144 +1,55 @@
 import { format } from 'date-fns';
+import { sendAppointmentWhatsAppNotification as sendViaSeleniumAPI } from '../utils/whatsappNotifications';
 
-// Helper function to safely access environment variables in both server and client contexts
+// Helper function to safely access environment variables (can be simplified if only used for Selenium)
 const getEnvVariable = (key: string, fallback: string): string => {
-  // Use hardcoded tokens to ensure they're always available
+  // For Selenium setup, we might not need these Facebook-specific tokens here anymore.
+  // However, keeping the function structure for now in case other parts of the app use it.
   const hardcodedValues: Record<string, string> = {
-    'NEXT_PUBLIC_WHATSAPP_TOKEN': 'EAAQjirsfZCZCcBO3vcBGSRYdtVgGbD3J07UkZC9bEsaE2F6xIiWLjP38fSFnY13gdxdSvlkOhFphneOrULcZB4Q8v9yKDW4xKm4FOIxHYSuGs31ebx7XJuUh4FadR8nncvkNJe2rwlfPCzETFdzdEOeuOO8JvzbTug7LWrn6n0OiWTNZCBYmDSjlhnyoOUZBQnmgZDZD',
-    'NEXT_PUBLIC_WHATSAPP_PHONE_NUMBER_ID': '649515451575660',
-    'NEXT_PUBLIC_WHATSAPP_BUSINESS_ACCOUNT_ID': '593695986423772',
-    'NEXT_PUBLIC_WHATSAPP_BUSINESS_PHONE': '+918956860024'
+    // These are Facebook API specific, likely not needed if only using Selenium
+    // 'NEXT_PUBLIC_WHATSAPP_TOKEN': 'YOUR_FB_TOKEN_IF_YOU_HAD_ONE',
+    // 'NEXT_PUBLIC_WHATSAPP_PHONE_NUMBER_ID': 'YOUR_FB_PHONE_ID_IF_YOU_HAD_ONE',
   };
 
-  // Always prioritize the hardcoded values for critical WhatsApp tokens
   if (hardcodedValues[key]) {
     console.log(`DEBUG - Using hardcoded value for ${key}`);
     return hardcodedValues[key];
   }
 
-  // Otherwise try normal env methods
   if (typeof window !== 'undefined') {
-    // Client-side
     return (window as any).__ENV__?.[key] || 
            (typeof process !== 'undefined' && process.env ? process.env[key] : undefined) || 
            fallback;
   }
-  // Server-side
   return typeof process !== 'undefined' && process.env ? (process.env[key] || fallback) : fallback;
 };
 
-// WhatsApp Cloud API Configuration
+// This WHATSAPP_CONFIG is for Facebook API, can be largely removed or ignored if only using Selenium.
 const WHATSAPP_CONFIG = {
-  token: getEnvVariable('NEXT_PUBLIC_WHATSAPP_TOKEN', 'EAAQjirsfZCZCcBO3vcBGSRYdtVgGbD3J07UkZC9bEsaE2F6xIiWLjP38fSFnY13gdxdSvlkOhFphneOrULcZB4Q8v9yKDW4xKm4FOIxHYSuGs31ebx7XJuUh4FadR8nncvkNJe2rwlfPCzETFdzdEOeuOO8JvzbTug7LWrn6n0OiWTNZCBYmDSjlhnyoOUZBQnmgZDZD'),
-  phoneNumberId: getEnvVariable('NEXT_PUBLIC_WHATSAPP_PHONE_NUMBER_ID', '649515451575660'),
-  businessAccountId: getEnvVariable('NEXT_PUBLIC_WHATSAPP_BUSINESS_ACCOUNT_ID', '593695986423772'),
-  businessPhone: getEnvVariable('NEXT_PUBLIC_WHATSAPP_BUSINESS_PHONE', '+918956860024') // Your salon's contact phone
+  token: getEnvVariable('NEXT_PUBLIC_WHATSAPP_TOKEN', ''), // No longer primary
+  phoneNumberId: getEnvVariable('NEXT_PUBLIC_WHATSAPP_PHONE_NUMBER_ID', ''), // No longer primary
+  businessAccountId: getEnvVariable('NEXT_PUBLIC_WHATSAPP_BUSINESS_ACCOUNT_ID', ''), // No longer primary
+  businessPhone: getEnvVariable('NEXT_PUBLIC_WHATSAPP_BUSINESS_PHONE', '+918956860024') // Still useful for display
 };
 
-// Validate configuration
+// This validation is for Facebook API, can be simplified.
 const validateConfig = () => {
-  const missingVars = [];
-  if (!WHATSAPP_CONFIG.token) missingVars.push('WhatsApp Token');
-  if (!WHATSAPP_CONFIG.phoneNumberId) missingVars.push('Phone Number ID');
-  if (!WHATSAPP_CONFIG.businessAccountId) missingVars.push('Business Account ID');
-
-  if (missingVars.length > 0) {
-    console.error(`Missing WhatsApp configuration: ${missingVars.join(', ')}`);
-    return false;
-  }
+  // For Selenium, we don't need to validate Facebook tokens here.
+  // We might need other validations if your Selenium script requires specific env vars.
+  console.log('DEBUG - Skipping Facebook API config validation as Selenium is used.');
   return true;
 };
 
-// Function to check WhatsApp configuration
+// This function is Facebook API specific and can be removed or heavily modified.
 export async function checkWhatsAppConfig() {
-  console.log('Checking WhatsApp Configuration...');
-  
-  // Check if environment variables are set
-  const configStatus = {
-    token: {
-      exists: !!WHATSAPP_CONFIG.token,
-      value: WHATSAPP_CONFIG.token ? `${WHATSAPP_CONFIG.token.substring(0, 10)}...` : 'Missing',
-    },
-    phoneNumberId: {
-      exists: !!WHATSAPP_CONFIG.phoneNumberId,
-      value: WHATSAPP_CONFIG.phoneNumberId || 'Missing',
-    },
-    businessAccountId: {
-      exists: !!WHATSAPP_CONFIG.businessAccountId,
-      value: WHATSAPP_CONFIG.businessAccountId || 'Missing',
-    },
-  };
-
-  console.log('Configuration Status:');
-  console.log('- WhatsApp Token:', configStatus.token.exists ? 'Present' : 'Missing');
-  console.log('- Phone Number ID:', configStatus.phoneNumberId.value);
-  console.log('- Business Account ID:', configStatus.businessAccountId.value);
-
-  // Test API connection if all configs are present
-  if (configStatus.token.exists && configStatus.phoneNumberId.exists) {
-    try {
-      const response = await fetch(
-        `https://graph.facebook.com/v17.0/${WHATSAPP_CONFIG.phoneNumberId}`,
-        {
-          headers: {
-            'Authorization': `Bearer ${WHATSAPP_CONFIG.token}`,
-          },
-        }
-      );
-
-      const data = await response.json();
-      
-      if (response.ok) {
-        console.log('✅ WhatsApp API Connection Test: Successful');
-        console.log('API Response:', data);
-        return { success: true, config: configStatus, apiTest: data };
-      } else {
-        console.error('❌ WhatsApp API Connection Test Failed:', data);
-        return { success: false, config: configStatus, error: data };
-      }
-    } catch (error) {
-      console.error('❌ WhatsApp API Connection Test Failed:', error);
-      return { success: false, config: configStatus, error };
-    }
-  } else {
-    console.error('❌ Cannot test API connection: Missing configuration');
-    return { success: false, config: configStatus, error: 'Missing configuration' };
-  }
+  console.log('DEBUG - checkWhatsAppConfig called, but using Selenium. No Facebook API check performed.');
+  return { success: true, message: 'Using Selenium-based WhatsApp. No Facebook API configuration to check.', config: {}, apiTest: null };
 }
 
-// Function to get the WhatsApp Phone Number ID
+// This function is Facebook API specific and can be removed.
 export async function getWhatsAppPhoneNumberId() {
-  try {
-    const response = await fetch(
-      'https://graph.facebook.com/v17.0/me/phone_numbers',
-      {
-        headers: {
-          'Authorization': `Bearer ${WHATSAPP_CONFIG.token}`,
-        },
-      }
-    );
-
-    if (!response.ok) {
-      throw new Error(`Failed to get phone numbers: ${response.statusText}`);
-    }
-
-    const data = await response.json();
-    console.log('Available WhatsApp phone numbers:', data);
-    
-    // Find the phone number ID that matches our business number
-    const phoneNumber = data.data?.find(
-      (phone: any) => phone.display_phone_number?.includes(WHATSAPP_CONFIG.phoneNumberId)
-    );
-
-    if (!phoneNumber) {
-      throw new Error('Phone number not found in WhatsApp Business Account');
-    }
-
-    return phoneNumber.id;
-  } catch (error) {
-    console.error('Error getting WhatsApp phone number ID:', error);
-    throw error;
-  }
+  console.warn('DEBUG - getWhatsAppPhoneNumberId called, but is Facebook API specific and not used with Selenium.');
+  throw new Error('Facebook API specific function, not applicable for Selenium setup.');
 }
 
 export interface AppointmentNotificationData {
@@ -148,132 +59,24 @@ export interface AppointmentNotificationData {
   stylists: string[];
   startTime: string;
   endTime: string;
-  status: string;
+  status: string; // Example: 'scheduled', 'confirmed', 'cancelled', 'updated'
   notes?: string;
-  id?: string; // Appointment ID for reference
-  // Optional header override for testing
-  _headerOverride?: {
-    type: 'image' | 'text' | 'document' | 'video';
-    value: string;
-  };
-  // Add service details for dynamic content
+  id?: string;
   serviceDetails?: Array<{
     name: string;
-    duration: number; // Duration in minutes
-    price: number;    // Price in rupees
+    duration: number;
+    price: number;
   }>;
-  totalAmount?: number; // Total price of all services
+  totalAmount?: number;
 }
 
-// Template types and names
-const TEMPLATES = {
-  CONFIRMATION: 'appointment_confirmation',
-  REMINDER: 'appointment_reminder',
-  UPDATE: 'appointment_change',
-  CANCELLATION: 'appointment_cancellation'  // Use the correct template name from Facebook Manager
-};
+// TEMPLATES and TEXT_HEADERS are Facebook API specific and can be removed or ignored.
+// const TEMPLATES = { ... };
+// const TEXT_HEADERS = { ... };
 
-// Text headers for different templates
-const TEXT_HEADERS = {
-  CONFIRMATION: "APPOINTMENT CONFIRMED",
-  REMINDER: "UPCOMING APPOINTMENT",
-  UPDATE: "APPOINTMENT UPDATED",
-  CANCELLATION: "APPOINTMENT CANCELLED"
-};
+// This function was for Facebook API templates and can be removed.
+// export async function sendTemplateMessage(...) { ... }
 
-/**
- * Send a template message via WhatsApp
- */
-export async function sendTemplateMessage(
-  data: AppointmentNotificationData,
-  templateName: string,
-  language: string = 'en_US'
-): Promise<any> {
-  console.log('DEBUG - Sending template message:', templateName);
-  
-  try {
-    if (!validateConfig()) {
-      throw new Error('Invalid WhatsApp configuration');
-    }
-    
-    // Format the phone number
-    const to = formatPhoneNumber(data.clientPhone);
-    
-    // Prepare components based on template type
-    let components = [];
-    
-    if (templateName === 'appointment_confirmation') {
-      // Format date and time for template
-      const formattedDate = formatDateForTemplate(data.startTime);
-      const formattedTime = formatTimeForTemplate(data.startTime);
-      
-      components = [
-        {
-          type: "body",
-          parameters: [
-            { type: "text", text: data.clientName },
-            { type: "text", text: formattedDate },
-            { type: "text", text: formattedTime },
-            { type: "text", text: data.services.join(', ') },
-            { type: "text", text: data.stylists.join(', ') },
-          ]
-        }
-      ];
-    } else {
-      // For other templates, implement as needed
-      components = [
-        {
-          type: "body",
-          parameters: [
-            { type: "text", text: data.clientName }
-          ]
-        }
-      ];
-    }
-    
-    console.log('DEBUG - Template components:', JSON.stringify(components));
-    
-    // Make API request to send template
-    const response = await fetch(
-      `https://graph.facebook.com/v17.0/${WHATSAPP_CONFIG.phoneNumberId}/messages`,
-      {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${WHATSAPP_CONFIG.token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          messaging_product: 'whatsapp',
-          recipient_type: 'individual',
-          to: to,
-          type: 'template',
-          template: {
-            name: templateName,
-            language: { code: language },
-            components: components
-          }
-        }),
-      }
-    );
-    
-    console.log('DEBUG - Template response status:', response.status);
-    const responseData = await response.json();
-    console.log('DEBUG - Template response data:', JSON.stringify(responseData));
-    
-    if (!response.ok) {
-      throw new Error(`Template message failed: ${JSON.stringify(responseData)}`);
-    }
-    
-    return responseData;
-  } catch (error) {
-    console.error('DEBUG - Error sending template message:', error);
-    throw error;
-  }
-}
-
-/**
- * Format a date string to a readable date format
- */
 function formatDateForTemplate(dateStr: string): string {
   try {
     return format(new Date(dateStr), 'EEEE, MMMM d, yyyy');
@@ -282,9 +85,6 @@ function formatDateForTemplate(dateStr: string): string {
   }
 }
 
-/**
- * Format a time string to a readable time format
- */
 function formatTimeForTemplate(dateStr: string): string {
   try {
     return format(new Date(dateStr), 'h:mm a');
@@ -293,559 +93,153 @@ function formatTimeForTemplate(dateStr: string): string {
   }
 }
 
-/**
- * Generate a user-friendly reference ID
- * Format: SALON-YYYYMMDD-XXXX where XXXX is a short unique identifier
- */
-function generateReferenceId(appointmentId: string, date: Date): string {
-  const datePart = format(date, 'yyyyMMdd');
-  const shortId = appointmentId.substring(0, 4).toUpperCase();
-  return `SALON-${datePart}-${shortId}`;
-}
+// This was for Facebook API.
+// function generateReferenceId(...) { ... }
 
+// CORE NOTIFICATION FUNCTION - THIS WILL NOW CALL THE SELENIUM API HANDLER
 /**
- * Send appointment confirmation using the approved template
+ * Send notification based on appointment action using the Selenium-based API endpoint.
  */
-export async function sendAppointmentConfirmationTemplate(data: AppointmentNotificationData): Promise<any> {
-  console.log('DEBUG - Sending appointment confirmation template message');
+export async function sendAppointmentNotification(
+  action: 'created' | 'updated' | 'cancelled',
+  data: AppointmentNotificationData
+): Promise<any> {
+  console.log(`DEBUG - [Selenium] sendAppointmentNotification called with action: ${action}`);
+  console.log(`DEBUG - [Selenium] Client phone: "${data.clientPhone}", Name: "${data.clientName}"`);
   
   try {
-    // Format the phone number
-    const formattedPhone = formatPhoneNumber(data.clientPhone);
-    
-    // Format date parts - extract from the startTime
-    const date = new Date(data.startTime);
-    const formattedDate = date.toLocaleDateString('en-IN', { 
-      day: '2-digit', 
-      month: '2-digit', 
-      year: 'numeric' 
-    }).replace(/\//g, '-');  // Convert to DD-MM-YYYY format
-    
-    const formattedTime = date.toLocaleTimeString('en-IN', { 
-      hour: 'numeric', 
-      minute: 'numeric', 
-      hour12: true 
-    });
-    
-    // Get first service and first stylist
-    const service = data.services[0] || 'Salon Service';
-    const stylist = data.stylists[0] || 'Our Stylist';
-    
-    // Create template message request body
-    const requestBody = {
-      messaging_product: "whatsapp",
-      to: formattedPhone,
-      type: "template",
-      template: {
-        name: "appointment_confirmation",
-        language: {
-          code: "en"
-        },
-        components: [
-          {
-            type: "body",
-            parameters: [
-              {
-                type: "text",
-                text: data.clientName
-              },
-              {
-                type: "text",
-                text: formattedDate
-              },
-              {
-                type: "text",
-                text: formattedTime
-              },
-              {
-                type: "text",
-                text: service
-              },
-              {
-                type: "text",
-                text: stylist
-              }
-            ]
-          }
-        ]
-      }
-    };
-    
-    console.log('DEBUG - Sending template request for appointment confirmation');
-    
-    // Make the API call
-    const response = await fetch(
-      `https://graph.facebook.com/v17.0/${WHATSAPP_CONFIG.phoneNumberId}/messages`,
-      {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${WHATSAPP_CONFIG.token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(requestBody),
-      }
-    );
-    
-    const responseData = await response.json();
-    
-    if (!response.ok) {
-      console.error('DEBUG - Template message error:', responseData);
-      throw new Error(`WhatsApp API error: ${JSON.stringify(responseData)}`);
-    }
-    
-    console.log('DEBUG - Template message sent successfully:', responseData);
-    return responseData;
-  } catch (error) {
-    console.error('DEBUG - Error sending appointment confirmation template:', error);
-    throw error;
-  }
-}
-
-/**
- * Send notification based on appointment action
- */
-export async function sendAppointmentNotification(action: 'created' | 'updated' | 'cancelled' | 'template', data: AppointmentNotificationData): Promise<any> {
-  console.log(`DEBUG - sendAppointmentNotification called with action: ${action}`);
-  console.log(`DEBUG - Client phone: "${data.clientPhone}", Name: "${data.clientName}"`);
-  
-  try {
-    // Validate WhatsApp configuration
-    if (!validateConfig()) {
-      console.error('WhatsApp configuration is invalid. Check your environment variables.');
-      throw new Error('Invalid WhatsApp configuration');
-    }
-
-    // Validate critical data
     if (!data.clientPhone) {
+      console.error('[Selenium] Missing client phone number for notification.');
       throw new Error('Missing client phone number');
     }
-    
-    // First, validate and format the phone number
-    const formattedPhone = formatPhoneNumber(data.clientPhone);
-    if (!formattedPhone) {
-      throw new Error(`Invalid phone number format: ${data.clientPhone}`);
-    }
-    
-    console.log(`DEBUG - Using formatted phone: ${formattedPhone}`);
-    
-    // IMPORTANT UPDATE: Use template for all first contacts to comply with WhatsApp policies
-    if (action === 'created') {
-      // Always use template for appointment confirmation
-      console.log('DEBUG - Using template for appointment confirmation');
-      return await sendAppointmentConfirmationTemplate(data);
-    }
-    
-    // For regular notifications
-    switch (action) {
-      case 'updated':
-        console.log('DEBUG - Sending appointment update');
-        return sendAppointmentUpdate(data);
-      case 'cancelled':
-        console.log('DEBUG - Sending appointment cancellation');
-        return sendAppointmentCancellation(data);
-      default:
-        throw new Error(`Unknown notification action: ${action}`);
-    }
-  } catch (error) {
-    console.error(`DEBUG - Error in sendAppointmentNotification (${action}):`, error);
-    if (error instanceof Error) {
-      console.error('DEBUG - Error message:', error.message);
-      console.error('DEBUG - Error stack:', error.stack);
-    }
-    throw error;
-  }
-}
 
-/**
- * Send appointment update notification with header
- */
-export async function sendAppointmentUpdate(data: AppointmentNotificationData): Promise<any> {
-  const formattedDate = formatDateForTemplate(data.startTime);
-  const formattedTime = formatTimeForTemplate(data.startTime);
-  const servicesList = data.services.join(', ');
-  const stylistsList = data.stylists.join(', ');
-  const contactPhone = WHATSAPP_CONFIG.businessPhone;
-  
-  // Use header override if provided, otherwise use default text header
-  const headerParam = data._headerOverride || { 
-    type: 'text' as const, 
-    value: TEXT_HEADERS.UPDATE
-  };
-  
-  try {
-    return await sendTemplateMessage(
-      data,
-      TEMPLATES.UPDATE,
-      'en_US'
-    );
-  } catch (error) {
-    console.error('Failed to send appointment update:', error);
-    throw error;
-  }
-}
-
-/**
- * Send appointment cancellation notification with header
- */
-export async function sendAppointmentCancellation(data: AppointmentNotificationData): Promise<any> {
-  console.log('DEBUG - Sending appointment cancellation template message');
-  
-  try {
-    if (!validateConfig()) {
-      throw new Error('Invalid WhatsApp configuration');
-    }
-    
-    // Format the phone number
-    const formattedPhone = formatPhoneNumber(data.clientPhone);
-    
-    // Format date and time for template
-    const date = new Date(data.startTime);
-    const formattedDate = date.toLocaleDateString('en-IN', { 
-      day: '2-digit', 
-      month: '2-digit', 
-      year: 'numeric' 
-    }).replace(/\//g, '-');  // Convert to DD-MM-YYYY format
-    
-    const formattedTime = date.toLocaleTimeString('en-IN', { 
-      hour: 'numeric', 
-      minute: 'numeric', 
-      hour12: true 
-    });
-    
-    // Create template message request body for cancellation
-    const requestBody = {
-      messaging_product: "whatsapp",
-      to: formattedPhone,
-      type: "template",
-      template: {
-        name: "appointment_cancellation",
-        language: {
-          code: "en"
-        },
-        components: [
-          {
-            type: "body",
-            parameters: [
-              {
-                type: "text",
-                text: data.clientName
-              },
-              {
-                type: "text",
-                text: formattedDate
-              },
-              {
-                type: "text",
-                text: formattedTime
-              }
-            ]
-          }
-        ]
-      }
+    const client = {
+      id: data.id || 'unknown-client-id', // Assuming data.id might be client_id or appointment_id related
+      full_name: data.clientName,
+      phone: data.clientPhone,
     };
-    
-    console.log('DEBUG - Sending cancellation template request');
-    
-    // Make the API call
-    const response = await fetch(
-      `https://graph.facebook.com/v17.0/${WHATSAPP_CONFIG.phoneNumberId}/messages`,
-      {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${WHATSAPP_CONFIG.token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(requestBody),
-      }
+
+    const appointmentForSelenium = {
+      id: data.id || 'unknown-appointment-id',
+      client_id: client.id, // Or however you get this
+      stylist_id: data.stylists.join(',') || 'unknown-stylist', // Simplification
+      service_id: data.services.join(',') || 'unknown-service', // Simplification
+      start_time: data.startTime,
+      end_time: data.endTime,
+      status: data.status, // Pass the action directly as status, or map it
+      notes: data.notes,
+    };
+
+    const servicesForSelenium = data.serviceDetails || data.services.map(s_name => ({ name: s_name, duration: 60, price: 0 }));
+    const stylistsForSelenium = data.stylists.map(s_name => ({ id: s_name, name: s_name }));
+
+    console.log(`[Selenium] Calling sendViaSeleniumAPI for action: ${action}`);
+    // The sendViaSeleniumAPI (imported from whatsappNotifications.ts) is expected
+    // to hit your /api/whatsapp/appointment-notification endpoint.
+    return await sendViaSeleniumAPI(
+      action, 
+      appointmentForSelenium, 
+      client, 
+      servicesForSelenium, 
+      stylistsForSelenium
     );
-    
-    const responseData = await response.json();
-    
-    if (!response.ok) {
-      console.error('DEBUG - Cancellation template message error:', responseData);
-      throw new Error(`WhatsApp API error: ${JSON.stringify(responseData)}`);
-    }
-    
-    console.log('DEBUG - Cancellation template message sent successfully:', responseData);
-    return responseData;
+
   } catch (error) {
-    console.error('Failed to send appointment cancellation:', error);
-    throw error;
+    console.error(`DEBUG - [Selenium] Error in sendAppointmentNotification (${action}):`, error);
+    if (error instanceof Error) {
+      console.error('DEBUG - [Selenium] Error message:', error.message);
+      // console.error('DEBUG - [Selenium] Error stack:', error.stack);
+    }
+    throw error; // Re-throw the error so the caller (e.g., useAppointments) can handle it
   }
 }
 
-/**
- * Send appointment reminder notification
- */
+// The following functions were specific to Facebook API templates and are now effectively bypassed
+// or will not be called if sendAppointmentNotification is the main entry point.
+// They can be removed if not called from elsewhere.
+
+export async function sendAppointmentConfirmationTemplate(data: AppointmentNotificationData): Promise<any> {
+  console.warn('Deprecated: sendAppointmentConfirmationTemplate. Using generic sendAppointmentNotification for Selenium.');
+  return sendAppointmentNotification('created', data);
+}
+
+export async function sendAppointmentUpdate(data: AppointmentNotificationData): Promise<any> {
+  console.warn('Deprecated: sendAppointmentUpdate. Using generic sendAppointmentNotification for Selenium.');
+  return sendAppointmentNotification('updated', data);
+}
+
+export async function sendAppointmentCancellation(data: AppointmentNotificationData): Promise<any> {
+  console.warn('Deprecated: sendAppointmentCancellation. Using generic sendAppointmentNotification for Selenium.');
+  return sendAppointmentNotification('cancelled', data);
+}
+
 export async function sendAppointmentReminder(
   data: AppointmentNotificationData,
   reminderType: '24h' | '2h' = '24h'
 ): Promise<any> {
-  console.log(`DEBUG - Sending ${reminderType} appointment reminder`);
-  
-  try {
-    if (!validateConfig()) {
-      throw new Error('Invalid WhatsApp configuration');
-    }
-    
-    // Format the phone number
-    const formattedPhone = formatPhoneNumber(data.clientPhone);
-    
-    // Format date and time for template
-    const date = new Date(data.startTime);
-    const formattedDate = date.toLocaleDateString('en-IN', { 
-      day: '2-digit', 
-      month: '2-digit', 
-      year: 'numeric' 
-    }).replace(/\//g, '-');
-    
-    const formattedTime = date.toLocaleTimeString('en-IN', { 
-      hour: 'numeric', 
-      minute: 'numeric', 
-      hour12: true 
-    });
-    
-    // Get first service and first stylist
-    const service = data.services[0] || 'Salon Service';
-    const stylist = data.stylists[0] || 'Our Stylist';
-    
-    // Create different reminder messages based on timing
-    let reminderMessage = '';
-    if (reminderType === '24h') {
-      reminderMessage = `🔔 APPOINTMENT REMINDER - TOMORROW\n\nHi ${data.clientName}!\n\nThis is a friendly reminder about your appointment tomorrow:\n\n📅 Date: ${formattedDate}\n⏰ Time: ${formattedTime}\n💇 Service: ${service}\n👨‍💼 Stylist: ${stylist}\n\n📍 Location: RG Salon\n\nPlease arrive 10 minutes early. Looking forward to seeing you!\n\nNeed to reschedule? Please call us at least 2 hours before your appointment.`;
-    } else {
-      reminderMessage = `⏰ APPOINTMENT REMINDER - IN 2 HOURS\n\nHi ${data.clientName}!\n\nYour appointment is coming up soon:\n\n📅 Today: ${formattedDate}\n⏰ Time: ${formattedTime}\n💇 Service: ${service}\n👨‍💼 Stylist: ${stylist}\n\n📍 Location: RG Salon\n\nPlease arrive 10 minutes early. We're excited to see you!\n\nRunning late? Please give us a call.`;
-    }
-    
-    // Try to use template first, fallback to direct message
-    try {
-      // Use the appointment confirmation template but with reminder context
-      const requestBody = {
-        messaging_product: "whatsapp",
-        to: formattedPhone,
-        type: "template",
-        template: {
-          name: "appointment_confirmation",
-          language: {
-            code: "en"
-          },
-          components: [
-            {
-              type: "body",
-              parameters: [
-                {
-                  type: "text",
-                  text: data.clientName
-                },
-                {
-                  type: "text",
-                  text: formattedDate
-                },
-                {
-                  type: "text",
-                  text: formattedTime
-                },
-                {
-                  type: "text",
-                  text: service
-                },
-                {
-                  type: "text",
-                  text: stylist
-                }
-              ]
-            }
-          ]
-        }
-      };
-      
-      console.log(`DEBUG - Sending ${reminderType} reminder template`);
-      
-      const response = await fetch(
-        `https://graph.facebook.com/v17.0/${WHATSAPP_CONFIG.phoneNumberId}/messages`,
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${WHATSAPP_CONFIG.token}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(requestBody),
-        }
-      );
-      
-      const responseData = await response.json();
-      
-      if (!response.ok) {
-        console.error(`DEBUG - ${reminderType} reminder template error:`, responseData);
-        throw new Error(`WhatsApp template API error: ${JSON.stringify(responseData)}`);
-      }
-      
-      console.log(`DEBUG - ${reminderType} reminder template sent successfully:`, responseData);
-      return responseData;
-      
-    } catch (templateError) {
-      console.warn(`DEBUG - Template failed for ${reminderType} reminder, trying direct message:`, templateError);
-      
-      // Fallback to direct text message
-      return await sendDirectTextMessage(formattedPhone, reminderMessage);
-    }
-    
-  } catch (error) {
-    console.error(`DEBUG - Error sending ${reminderType} appointment reminder:`, error);
-    throw error;
-  }
+  console.warn(`Deprecated: sendAppointmentReminder (${reminderType}). Using generic sendAppointmentNotification for Selenium if needed, or implement specific Selenium logic.`);
+  // You might want to map reminderType to a specific 'action' or handle it differently
+  // For now, treating it as an 'updated' type action for demonstration
+  const reminderAction = 'updated'; // Or a new action type like 'reminder_24h'
+  return sendAppointmentNotification(reminderAction, { ...data, notes: `Reminder: ${reminderType} for your appointment.` });
 }
 
-/**
- * Format a phone number to include country code
- */
 export function formatPhoneNumber(phone: string): string {
   if (!phone) return '';
-  
-  // Debug original phone format
-  console.log('DEBUG - Original phone format:', phone);
-  
-  // Remove any non-digit characters
   const cleaned = phone.replace(/\D/g, '');
-  console.log('DEBUG - Cleaned phone number:', cleaned);
-  
-  // Add country code if not present (default to 91 for India)
   let formattedPhone = cleaned;
   if (!cleaned.startsWith('91') && cleaned.length > 6) {
     formattedPhone = `91${cleaned}`;
   }
-  
-  console.log('DEBUG - Final formatted phone:', formattedPhone);
   return formattedPhone;
 }
 
-// Legacy function for backward compatibility
+// Legacy function - ensure it also uses the Selenium path
 export async function sendWhatsAppMessage(to: string, message: string, clientName?: string): Promise<any> {
-  console.warn('sendWhatsAppMessage is deprecated. Use sendAppointmentNotification instead.');
-  // This is just for backward compatibility
-  try {
-    const data = {
-      clientName: clientName || 'Customer',
-      clientPhone: to,
-      services: ['Your booked service'],
-      stylists: ['Your stylist'],
-      startTime: new Date().toISOString(),
-      endTime: new Date().toISOString(),
-      status: 'scheduled',
-      notes: message
-    };
-    
-    return await sendAppointmentConfirmationTemplate(data);
-  } catch (error) {
-    console.error('Error in legacy sendWhatsAppMessage:', error);
-    throw error;
-  }
+  console.warn('sendWhatsAppMessage is deprecated. Routing to Selenium-based notification.');
+  const now = new Date().toISOString();
+  const dummyData: AppointmentNotificationData = {
+    clientName: clientName || 'Customer',
+    clientPhone: to,
+    services: ['General Message'], // Placeholder
+    stylists: ['Salon'], // Placeholder
+    startTime: now,
+    endTime: now,
+    status: 'created', // Or a more generic status like 'message'
+    notes: message,
+    id: 'legacy-' + Date.now().toString()
+  };
+  return sendAppointmentNotification('created', dummyData);
 }
 
 export function formatAppointmentMessage(action: 'created' | 'updated' | 'deleted', data: AppointmentNotificationData): string {
-  console.warn('formatAppointmentMessage is deprecated. WhatsApp now uses templates.');
+  console.warn('formatAppointmentMessage is deprecated. Selenium script will handle message formatting.');
   return `Appointment ${action}: ${data.clientName}, ${formatDateForTemplate(data.startTime)}`;
 }
 
 export async function testWhatsAppIntegration(testPhoneNumber: string) {
+  console.log('[Selenium] Testing WhatsApp integration...');
+  const now = new Date().toISOString();
+  const testData: AppointmentNotificationData = {
+    clientName: 'Test Client',
+    clientPhone: testPhoneNumber,
+    services: ['Test Service'],
+    stylists: ['Test Stylist'],
+    startTime: now,
+    endTime: now,
+    status: 'created', // Using 'created' as the action for the test
+    notes: 'This is a test message from your salon appointment system (Selenium).',
+    id: 'test-' + Date.now().toString()
+  };
   try {
-    const message = "🔔 Test Message\n\nThis is a test message from your salon appointment system.\n\nIf you received this message, the WhatsApp integration is working correctly! 🎉";
-    
-    console.log('Testing WhatsApp integration...');
-    console.log('Sending test message to:', testPhoneNumber);
-    
-    const result = await sendWhatsAppMessage(formatPhoneNumber(testPhoneNumber), message);
-    console.log('Test message sent successfully:', result);
+    const result = await sendAppointmentNotification('created', testData);
+    console.log('[Selenium] Test message attempt result:', result);
     return result;
   } catch (error) {
-    console.error('WhatsApp integration test failed:', error);
+    console.error('[Selenium] WhatsApp integration test failed:', error);
     throw error;
   }
 }
 
-/**
- * Send a direct text message to a phone number without template requirements
- * This is primarily for testing purposes
- */
-export async function sendDirectTextMessage(phoneNumber: string, messageText: string): Promise<any> {
-  console.log('DEBUG - Sending direct text message to:', phoneNumber);
-  
-  try {
-    if (!validateConfig()) {
-      throw new Error('Invalid WhatsApp configuration');
-    }
-    
-    // Ensure phone number is properly formatted
-    let formattedPhone = phoneNumber;
-    
-    // Strip any non-numeric characters
-    formattedPhone = formattedPhone.replace(/\D/g, '');
-    
-    // Ensure it has country code (91 for India)
-    if (!formattedPhone.startsWith('91') && formattedPhone.length >= 10) {
-      formattedPhone = `91${formattedPhone}`;
-    }
-    
-    console.log('DEBUG - Using phone number for WhatsApp API:', formattedPhone);
-    
-    // Ensure token is available
-    const token = WHATSAPP_CONFIG.token;
-    const phoneNumberId = WHATSAPP_CONFIG.phoneNumberId;
-    
-    if (!token || !phoneNumberId) {
-      throw new Error(`Missing required WhatsApp config: token=${!!token}, phoneNumberId=${phoneNumberId}`);
-    }
-    
-    // Build the request body
-    const requestBody = JSON.stringify({
-      messaging_product: 'whatsapp',
-      recipient_type: 'individual',
-      to: formattedPhone,
-      type: 'text',
-      text: {
-        preview_url: false,
-        body: messageText
-      }
-    });
-    
-    console.log('DEBUG - WhatsApp API request body:', requestBody);
-    console.log('DEBUG - WhatsApp API endpoint:', `https://graph.facebook.com/v17.0/${phoneNumberId}/messages`);
-    console.log('DEBUG - WhatsApp token (first 10 chars):', token.substring(0, 10) + '...');
-    
-    // Make API request
-    const response = await fetch(
-      `https://graph.facebook.com/v17.0/${phoneNumberId}/messages`,
-      {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: requestBody,
-      }
-    );
-    
-    console.log('DEBUG - Direct message response status:', response.status, response.statusText);
-    
-    // Get response data
-    const responseData = await response.json();
-    console.log('DEBUG - Direct message response data:', JSON.stringify(responseData));
-    
-    // Check for error response
-    if (!response.ok) {
-      console.error('WhatsApp API error:', {
-        status: response.status,
-        statusText: response.statusText,
-        error: responseData
-      });
-      
-      throw new Error(`WhatsApp API error (${response.status}): ${JSON.stringify(responseData)}`);
-    }
-    
-    console.log('✅ Direct message sent successfully');
-    return responseData;
-  } catch (error) {
-    console.error('ERROR: Failed to send WhatsApp message:', error);
-    throw error;
-  }
-} 
+// This function was for direct Facebook API text messages. Can be removed.
+// export async function sendDirectTextMessage(...) { ... } 

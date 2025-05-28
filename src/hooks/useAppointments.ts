@@ -3,9 +3,10 @@ import { toast } from 'react-toastify'
 import { StylistBreak } from './useStylists'
 import { supabase } from '../utils/supabase/supabaseClient'
 import { 
+  // sendDirectTextMessage,
   sendAppointmentNotification,
-  AppointmentNotificationData,
-  sendDirectTextMessage
+  testWhatsAppIntegration,
+  AppointmentNotificationData
 } from '../utils/whatsapp'
 
 // Import from useClients
@@ -607,7 +608,7 @@ export function useAppointments() {
               
               // Send as direct message
               console.log('DEBUG - Attempting direct message fallback');
-              const directResult = await sendDirectTextMessage(notificationData.clientPhone, directMessageText);
+              const directResult = await testWhatsAppIntegration(notificationData.clientPhone, directMessageText);
               console.log('DEBUG - Direct message response:', JSON.stringify(directResult));
               
               toast.success('✅ Appointment created and confirmation sent through direct message!');

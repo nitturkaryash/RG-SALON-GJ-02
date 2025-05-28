@@ -312,14 +312,16 @@ export default function Orders() {
   const handleExportCSV = () => {
     if (!orders || orders.length === 0) return;
     
-    const formattedOrders = formatOrdersForExport(filteredOrders);
+    // Pass `orders` as the second argument for context
+    const formattedOrders = formatOrdersForExport(filteredOrders, orders);
     exportToCSV(formattedOrders, 'salon-orders-export', orderExportHeaders);
   }
 
   const handleExportPDF = () => {
     if (!orders || orders.length === 0) return;
     
-    const formattedOrders = formatOrdersForExport(filteredOrders);
+    // Pass `orders` as the second argument for context
+    const formattedOrders = formatOrdersForExport(filteredOrders, orders);
     exportToPDF(
       formattedOrders, 
       'salon-orders-export', 

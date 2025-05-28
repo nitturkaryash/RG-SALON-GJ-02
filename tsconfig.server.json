@@ -1,0 +1,33 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "outDir": "./dist",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "allowImportingTsExtensions": false,
+    "customConditions": ["node"],
+    "jsx": "react-jsx"
+  },
+  "include": [
+    "src/whatsapp/business-api/services/whatsappService.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "src/**/*.test.ts",
+    "src/**/*.spec.ts",
+    "src/components",
+    "src/pages",
+    "src/hooks",
+    "src/contexts",
+    "src/assets",
+    "src/styles",
+    "src/utils",
+    "src/app",
+    "src/main.tsx",
+    "src/App.tsx",
+    "src/index.tsx",
+    "src/vite-env.d.ts"
+  ]
+} 
