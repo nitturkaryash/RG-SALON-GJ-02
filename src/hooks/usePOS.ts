@@ -538,7 +538,7 @@ export async function createWalkInOrder(
         id: uuidv4(),
         amount: subtotal + tax,
         payment_method: paymentMethod,
-        payment_date: new Date().toISOString()
+        payment_date: orderDate || new Date().toISOString()
       }]
     };
     
@@ -561,7 +561,7 @@ export async function createWalkInOrder(
       payments: orderData.payments,
       pending_amount: orderData.pending_amount,
       is_split_payment: false,
-      created_at: new Date().toISOString(),
+      created_at: orderDate || new Date().toISOString(),
       is_salon_consumption: orderData.is_salon_consumption,
       consumption_purpose: orderData.consumption_purpose,
       type: isSalonConsumption ? 'salon_consumption' : 'sale'
@@ -926,7 +926,7 @@ export function usePOS() {
 
         const newOrder: PosOrder = {
           id: uuidv4(),
-          created_at: new Date().toISOString(),
+          created_at: data.order_date || new Date().toISOString(),
           client_name: appointment.clients?.full_name || appointment.clients?.client_name || 'Unknown Client',
           stylist_id: appointment.stylist_id,
           stylist_name: appointment.stylists?.name || 'Unknown Stylist',
@@ -949,7 +949,7 @@ export function usePOS() {
             id: uuidv4(),
             amount: total - pendingAmount,
             payment_method: data.payment_method,
-            payment_date: new Date().toISOString()
+            payment_date: data.order_date || new Date().toISOString()
           }],
           pending_amount: pendingAmount,
           is_split_payment: isSplitPayment
@@ -1063,7 +1063,7 @@ export function usePOS() {
 
       const order: PosOrder = {
         id: uuidv4(),
-        created_at: new Date().toISOString(),
+        created_at: data.order_date || new Date().toISOString(),
         client_name: data.client_name,
         customer_name: data.client_name, // Add customer_name for consistency
         stylist_id: data.stylist_id,

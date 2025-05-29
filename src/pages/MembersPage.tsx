@@ -186,13 +186,6 @@ const MembersPage = () => {
   return (
     <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
       <Paper elevation={3} sx={{ p: 3, borderRadius: 2 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
-          <CardMembership sx={{ fontSize: '2rem', color: 'primary.main', mr: 2 }} />
-          <Typography variant="h4" component="h1" gutterBottom fontWeight="500">
-            Salon Members
-          </Typography>
-        </Box>
-        
         <Divider sx={{ mb: 3 }} />
         
         <TextField

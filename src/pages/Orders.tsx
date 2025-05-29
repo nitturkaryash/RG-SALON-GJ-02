@@ -312,18 +312,26 @@ export default function Orders() {
   const handleExportCSV = () => {
     if (!orders || orders.length === 0) return;
     
-    // Pass `orders` as the second argument for context
-    const formattedOrders = formatOrdersForExport(filteredOrders, orders);
+    // Pass `orders` as the second argument for context and override ID to match display
+    let formattedOrders = formatOrdersForExport(filteredOrders, orders);
+    formattedOrders = formattedOrders.map((item, index) => ({
+      ...item,
+      id: formatOrderId(filteredOrders[index])
+    }));
     exportToCSV(formattedOrders, 'salon-orders-export', orderExportHeaders);
   }
 
   const handleExportPDF = () => {
     if (!orders || orders.length === 0) return;
     
-    // Pass `orders` as the second argument for context
-    const formattedOrders = formatOrdersForExport(filteredOrders, orders);
+    // Pass `orders` as the second argument for context and override ID to match display
+    let formattedOrdersPDF = formatOrdersForExport(filteredOrders, orders);
+    formattedOrdersPDF = formattedOrdersPDF.map((item, index) => ({
+      ...item,
+      id: formatOrderId(filteredOrders[index])
+    }));
     exportToPDF(
-      formattedOrders, 
+      formattedOrdersPDF, 
       'salon-orders-export', 
       orderExportHeaders, 
       'Salon Orders Report'

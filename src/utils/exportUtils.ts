@@ -2,6 +2,14 @@ import jsPDF from 'jspdf';
 import 'jspdf-autotable';
 import { formatCurrency } from './format';
 
+/**
+ * Export Utilities for Orders
+ * 
+ * All numeric values in exports are automatically rounded to integers
+ * to eliminate decimal places and provide cleaner output for reports.
+ * This includes currency amounts, tax calculations, and any other numeric data.
+ */
+
 // Type for the jspdf-autotable plugin
 declare module 'jspdf' {
   interface jsPDF {
@@ -25,31 +33,22 @@ export const exportToCSV = <T extends Record<string, any>>(
     return;
   }
 
+  // Round ALL numeric values in the data to integers
   const roundedData = data.map(item => {
-    const newItem: Record<string, any> = { ...item }; // Use a more flexible type here
+    const newItem: Record<string, any> = { ...item };
     Object.keys(newItem).forEach(key => {
       if (typeof newItem[key] === 'number') {
-        const keyLower = key.toLowerCase();
-        if (keyLower.includes('price') || 
-            keyLower.includes('total') || 
-            keyLower.includes('tax') || 
-            keyLower.includes('subtotal') || 
-            keyLower.includes('discount') || 
-            keyLower.includes('cost') || 
-            keyLower.includes('cgst') || 
-            keyLower.includes('sgst') || 
-            keyLower.includes('amount') || 
-            keyLower.includes('payment')) {
-          newItem[key] = Math.round(newItem[key]);
+        // Round ALL numbers to integers, not just monetary ones
+        newItem[key] = Math.round(newItem[key]);
+      } else if (typeof newItem[key] === 'string' && !isNaN(parseFloat(newItem[key]))) {
+        // Round string numbers as well
+        const numValue = parseFloat(newItem[key]);
+        if (!isNaN(numValue)) {
+          newItem[key] = Math.round(numValue).toString();
         }
-      } else if (typeof newItem[key] === 'string' && !isNaN(parseFloat(newItem[key])) && 
-                 (key.toLowerCase().includes('total') || 
-                  key.toLowerCase().includes('amount') || 
-                  key.toLowerCase().includes('price'))) {
-        newItem[key] = Math.round(parseFloat(newItem[key])).toString();
       }
     });
-    return newItem as T; // Cast back to T if necessary, or adjust downstream usage
+    return newItem as T;
   });
 
   const headerRow = Object.values(headers).join(',');
@@ -58,13 +57,7 @@ export const exportToCSV = <T extends Record<string, any>>(
       .map(key => {
         const value = item[key as keyof T];
         if (typeof value === 'number') {
-          const keyStr = key.toString().toLowerCase();
-          // const headerStr = headers[key as keyof T].toLowerCase(); // headerStr not used in current logic
-          if (keyStr.includes('price') || keyStr.includes('total') || keyStr.includes('tax') || 
-              keyStr.includes('subtotal') || keyStr.includes('discount') || keyStr.includes('cost') ||
-              keyStr.includes('cgst') || keyStr.includes('sgst') || keyStr.includes('amount')) {
-            return Math.round(value).toString();
-          }
+          // Ensure all numbers are rounded to integers
           return Math.round(value).toString();
         }
         if (value === null || value === undefined) {
@@ -73,7 +66,7 @@ export const exportToCSV = <T extends Record<string, any>>(
         if (typeof value === 'string' && value.includes(',')) {
           return `"${value}"`;
         }
-        return String(value); // Use String() for broader compatibility
+        return String(value);
       })
       .join(',');
   });
@@ -133,21 +126,17 @@ export const exportToPDF = <T extends Record<string, any>>(
   // Prepare header and data for table
   const tableHeaders = Object.values(headers);
   const tableData = data.map(item => {
-    const roundedItem: Record<string, any> = { ...item }; // Use a more flexible type here
+    // Round ALL numeric values to integers
+    const roundedItem: Record<string, any> = { ...item };
     Object.keys(roundedItem).forEach(key => {
       if (typeof roundedItem[key] === 'number') {
-        const keyLower = key.toLowerCase();
-        if (keyLower.includes('price') || 
-            keyLower.includes('total') || 
-            keyLower.includes('tax') || 
-            keyLower.includes('subtotal') || 
-            keyLower.includes('discount') || 
-            keyLower.includes('cost') || 
-            keyLower.includes('cgst') || 
-            keyLower.includes('sgst') || 
-            keyLower.includes('amount') || 
-            keyLower.includes('payment')) {
-          roundedItem[key] = Math.round(roundedItem[key]);
+        // Round ALL numbers to integers, not just monetary ones
+        roundedItem[key] = Math.round(roundedItem[key]);
+      } else if (typeof roundedItem[key] === 'string' && !isNaN(parseFloat(roundedItem[key]))) {
+        // Round string numbers as well
+        const numValue = parseFloat(roundedItem[key]);
+        if (!isNaN(numValue)) {
+          roundedItem[key] = Math.round(numValue);
         }
       }
     });
@@ -162,10 +151,11 @@ export const exportToPDF = <T extends Record<string, any>>(
         if (keyStr.includes('price') || keyStr.includes('total') || keyStr.includes('tax') || 
             keyStr.includes('subtotal') || keyStr.includes('discount') || keyStr.includes('cost') ||
             keyStr.includes('cgst') || keyStr.includes('sgst') || keyStr.includes('amount')) {
-          // Round currency values to nearest whole number and format
-          return `₹${Math.round(value)}`;
+          // Format currency values with rupee symbol (already rounded)
+          return `₹${value}`;
         }
-        return Math.round(value).toString(); // Round all numbers to be safe
+        // All other numbers are just returned as rounded integers
+        return value.toString();
       }
       
       if (value === null || value === undefined) {
@@ -176,7 +166,7 @@ export const exportToPDF = <T extends Record<string, any>>(
         return value.toLocaleDateString();
       }
       
-      return String(value); // Use String() for broader compatibility
+      return String(value);
     });
   });
 
@@ -258,52 +248,56 @@ const generateDisplayOrderId = (
     return 'Unknown';
   }
   
-  const normalizedOrder = normalizeOrderInternal(orderToFormat);
+  const normalizedOrderToFormat = normalizeOrderInternal(orderToFormat); // Renamed for clarity
   
   // Check if this is a salon consumption order
-  const isSalonOrder = isSalonConsumptionOrderInternal(normalizedOrder);
-  console.log('🏪 Is salon order?', isSalonOrder);
+  const isSalonOrder = isSalonConsumptionOrderInternal(normalizedOrderToFormat);
+  console.log('🏪 Is salon order for', normalizedOrderToFormat.id?.substring(0,8), ':', isSalonOrder);
   
   if (!allOrdersForContext || allOrdersForContext.length === 0) {
-    console.log('❌ No context orders, returning raw ID');
-    return orderToFormat.id;
+    console.log('❌ No context orders, returning raw ID for', normalizedOrderToFormat.id?.substring(0,8));
+    return orderToFormat.id; // Return original raw ID if no context
   }
   
-  console.log('📊 Total orders in context:', allOrdersForContext.length);
+  console.log('📊 Total orders in context for', normalizedOrderToFormat.id?.substring(0,8), ':', allOrdersForContext.length);
   
+  // Normalize all orders in the context ONCE
+  const normalizedContextOrders = allOrdersForContext.map(normalizeOrderInternal);
+
   // Sort orders by creation date to maintain consistent numbering
-  const sortedOrders = [...allOrdersForContext].sort((a, b) => {
+  const sortedOrders = [...normalizedContextOrders].sort((a, b) => { // Use normalizedContextOrders
     const dateA = new Date(a.created_at || '').getTime();
     const dateB = new Date(b.created_at || '').getTime();
     return dateA - dateB;
   });
 
   // Find the index of the current order in the sorted list
-  const orderIndex = sortedOrders.findIndex(o => o.id === orderToFormat.id);
-  console.log('📍 Order index in sorted list:', orderIndex);
+  const orderIndex = sortedOrders.findIndex(o => o.id === normalizedOrderToFormat.id);
+  console.log('📍 Order index in sorted list for', normalizedOrderToFormat.id?.substring(0,8), ':', orderIndex);
   
   if (orderIndex === -1) {
     // Fallback if order not found
-    console.log('❌ Order not found in context, returning substring');
-    return orderToFormat.id.substring(0, 8);
+    console.log('❌ Order', normalizedOrderToFormat.id?.substring(0,8), 'not found in context, returning substring ID');
+    return orderToFormat.id.substring(0, 8); // Return a shortened original ID
   }
   
   // Get all orders of the same type (salon or sales) that come before this one
   const sameTypeOrders = sortedOrders
     .slice(0, orderIndex + 1)
-    .filter(o => isSalonConsumptionOrderInternal(normalizeOrderInternal(o)) === isSalonOrder);
+    // Filter now uses the already normalized 'o' from sortedOrders (which came from normalizedContextOrders)
+    .filter(o => isSalonConsumptionOrderInternal(o) === isSalonOrder); 
   
   // Get the position of this order among orders of the same type
   const orderNumber = sameTypeOrders.length;
-  console.log('🔢 Order number for this type:', orderNumber);
+  console.log('🔢 Order number for this type for', normalizedOrderToFormat.id?.substring(0,8), ':', orderNumber);
   
   // Format with leading zeros to ensure 4 digits
   const formattedNumber = String(orderNumber).padStart(4, '0');
-  console.log('📋 Formatted number:', formattedNumber);
+  console.log('📋 Formatted number for', normalizedOrderToFormat.id?.substring(0,8), ':', formattedNumber);
   
   // Return the formatted ID based on order type
   const finalId = isSalonOrder ? `salon-${formattedNumber}` : `sales-${formattedNumber}`;
-  console.log('🎯 Final generated ID:', finalId);
+  console.log('🎯 Final generated ID for', normalizedOrderToFormat.id?.substring(0,8), ':', finalId);
   return finalId;
 };
 
@@ -322,11 +316,11 @@ export const formatOrdersForExport = (ordersToExport: any[], allOrdersForContext
 
   const safeGetNumber = (value: any): number => {
     if (typeof value === 'number') {
-      return isNaN(value) ? 0 : value;
+      return isNaN(value) ? 0 : Math.round(value);
     }
     if (typeof value === 'string') {
       const parsed = parseFloat(value);
-      return isNaN(parsed) ? 0 : parsed;
+      return isNaN(parsed) ? 0 : Math.round(parsed);
     }
     return 0;
   };
@@ -337,7 +331,7 @@ export const formatOrdersForExport = (ordersToExport: any[], allOrdersForContext
     console.log(`🔍 Order ${index + 1}: Raw ID ${originalOrder.id?.substring(0, 8)} -> Display ID: ${displayId}`);
 
     const taxVal = safeGetNumber(originalOrder.tax);
-    const totalTax = Math.round(taxVal);
+    const totalTax = taxVal;
     const cgst = Math.round(totalTax / 2);
     const sgst = Math.round(totalTax / 2);
 
@@ -345,20 +339,20 @@ export const formatOrdersForExport = (ordersToExport: any[], allOrdersForContext
     if (originalOrder.payments && originalOrder.payments.length > 0) {
       paymentInfo = originalOrder.payments.map((payment: any) => {
         const method = payment.payment_method?.replace('_', ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()) || 'Unknown';
-        const amount = Math.round(safeGetNumber(payment.amount));
+        const amount = safeGetNumber(payment.amount);
         return `${method}: ₹${amount}`;
       }).join(', ');
       const pendingAmountVal = safeGetNumber(originalOrder.pending_amount);
       if (pendingAmountVal > 0) {
-        paymentInfo += `, Pending: ₹${Math.round(pendingAmountVal)}`;
+        paymentInfo += `, Pending: ₹${pendingAmountVal}`;
       }
     } else {
       const method = originalOrder.payment_method?.replace('_', ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()) || 'Unknown';
-      const totalAmount = Math.round(safeGetNumber(originalOrder.total || originalOrder.total_amount));
+      const totalAmount = safeGetNumber(originalOrder.total || originalOrder.total_amount);
       paymentInfo = `${method}: ₹${totalAmount}`;
       const pendingAmountVal = safeGetNumber(originalOrder.pending_amount);
       if (pendingAmountVal > 0) {
-        paymentInfo += `, Pending: ₹${Math.round(pendingAmountVal)}`;
+        paymentInfo += `, Pending: ₹${pendingAmountVal}`;
       }
     }
 
@@ -367,11 +361,11 @@ export const formatOrdersForExport = (ordersToExport: any[], allOrdersForContext
       created_at: new Date(originalOrder.created_at).toLocaleString(),
       client_name: originalOrder.client_name || originalOrder.customer_name,
       stylist_name: originalOrder.stylist_name,
-      subtotal: Math.round(safeGetNumber(originalOrder.subtotal)),
+      subtotal: safeGetNumber(originalOrder.subtotal),
       cgst: cgst,
       sgst: sgst,
-      discount: Math.round(safeGetNumber(originalOrder.discount)),
-      total: Math.round(safeGetNumber(originalOrder.total || originalOrder.total_amount)),
+      discount: safeGetNumber(originalOrder.discount),
+      total: safeGetNumber(originalOrder.total || originalOrder.total_amount),
       payment_details: paymentInfo,
       status: originalOrder.status,
       is_walk_in: originalOrder.is_walk_in ? 'Walk-in' : 'Appointment',

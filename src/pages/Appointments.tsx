@@ -1564,7 +1564,6 @@ export default function Appointments() {
         >
           {viewMode === 'calendar' ? (
             <StylistDayView
-              key={selectedDate.toISOString()}
               stylists={(stylists?.map(s => ({ ...s, breaks: s.breaks || [] })) || []) as any}
               appointments={allAppointments}
               services={services}

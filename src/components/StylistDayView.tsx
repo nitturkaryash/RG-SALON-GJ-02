@@ -696,9 +696,10 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
         top: gridElement.scrollTop,
         left: gridElement.scrollLeft
       };
-      setScrollTop(gridElement.scrollTop);
-      setScrollLeft(gridElement.scrollLeft);
-      setGridRect(gridElement.getBoundingClientRect());
+      // REDUCED: Only update these state variables if they've changed significantly to prevent excessive re-renders
+      // setScrollTop(gridElement.scrollTop);
+      // setScrollLeft(gridElement.scrollLeft);
+      // setGridRect(gridElement.getBoundingClientRect());
     }
   }, []);
 
@@ -944,14 +945,14 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
   };
   
   const handleEditDialogClose = () => {
-    // Store current scroll before closing
-    const gridElement = gridRef.current;
-    if (gridElement) {
-      scrollPositionRef.current = {
-        top: gridElement.scrollTop,
-        left: gridElement.scrollLeft
-      };
-    }
+    // DISABLED: Store current scroll before closing - this was causing scroll interference
+    // const gridElement = gridRef.current;
+    // if (gridElement) {
+    //   scrollPositionRef.current = {
+    //     top: gridElement.scrollTop,
+    //     left: gridElement.scrollLeft
+    //   };
+    // }
     
     setEditDialogOpen(false);
     setSelectedAppointment(null);
@@ -1587,14 +1588,14 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
   };
 
   const handleBreakDialogOpen = (stylistId: string) => {
-    // Store scroll position before opening break dialog
-    const gridElement = gridRef.current;
-    if (gridElement) {
-      scrollPositionRef.current = {
-        top: gridElement.scrollTop,
-        left: gridElement.scrollLeft
-      };
-    }
+    // DISABLED: Store scroll position before opening break dialog - this was causing scroll interference
+    // const gridElement = gridRef.current;
+    // if (gridElement) {
+    //   scrollPositionRef.current = {
+    //     top: gridElement.scrollTop,
+    //     left: gridElement.scrollLeft
+    //   };
+    // }
     
     const foundStylist = stylists.find(s => s.id === stylistId);
     if (foundStylist) {
@@ -1609,14 +1610,14 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
   };
 
   const handleBreakDialogClose = () => {
-    // Store current scroll before closing
-    const gridElement = gridRef.current;
-    if (gridElement) {
-      scrollPositionRef.current = {
-        top: gridElement.scrollTop,
-        left: gridElement.scrollLeft
-      };
-    }
+    // DISABLED: Store current scroll before closing - this was causing scroll interference
+    // const gridElement = gridRef.current;
+    // if (gridElement) {
+    //   scrollPositionRef.current = {
+    //     top: gridElement.scrollTop,
+    //     left: gridElement.scrollLeft
+    //   };
+    // }
     
     setBreakDialogOpen(false);
     setSelectedStylist(null);
@@ -1786,14 +1787,14 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
   };
 
   const handleEditBreakDialogOpen = (breakItem: Break) => {
-    // Store scroll position before opening edit break dialog
-    const gridElement = gridRef.current;
-    if (gridElement) {
-      scrollPositionRef.current = {
-        top: gridElement.scrollTop,
-        left: gridElement.scrollLeft
-      };
-    }
+    // DISABLED: Store scroll position before opening edit break dialog - this was causing scroll interference
+    // const gridElement = gridRef.current;
+    // if (gridElement) {
+    //   scrollPositionRef.current = {
+    //     top: gridElement.scrollTop,
+    //     left: gridElement.scrollLeft
+    //   };
+    // }
     
     setEditingBreak(breakItem);
     
@@ -1816,14 +1817,14 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
   };
   
   const handleEditBreakDialogClose = () => {
-    // Store current scroll before closing
-    const gridElement = gridRef.current;
-    if (gridElement) {
-      scrollPositionRef.current = {
-        top: gridElement.scrollTop,
-        left: gridElement.scrollLeft
-      };
-    }
+    // DISABLED: Store current scroll before closing - this was causing scroll interference
+    // const gridElement = gridRef.current;
+    // if (gridElement) {
+    //   scrollPositionRef.current = {
+    //     top: gridElement.scrollTop,
+    //     left: gridElement.scrollLeft
+    //   };
+    // }
     
     setEditBreakDialogOpen(false);
     setEditingBreak(null);
@@ -2218,67 +2219,73 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
 
   // Restore scroll position when dialogs close or context menu closes
   useEffect(() => {
-    const gridElement = gridRef.current;
-    if (gridElement && 
-        !editDialogOpen && 
-        !contextMenuPosition && 
-        !breakDialogOpen && 
-        !editBreakDialogOpen && 
-        scrollPositionRef.current) {
-      // Only restore if we have a stored position and no dialogs/menus are open
-      const currentTop = gridElement.scrollTop;
-      const currentLeft = gridElement.scrollLeft;
-      const storedTop = scrollPositionRef.current.top;
-      const storedLeft = scrollPositionRef.current.left;
-      
-      // Only restore if position has changed
-      if (currentTop !== storedTop || currentLeft !== storedLeft) {
-        isScrollRestoringRef.current = true;
-        gridElement.scrollTo({
-          top: storedTop,
-          left: storedLeft,
-          behavior: 'auto' // 'auto' is important for immediate restoration
-        });
-        setTimeout(() => {
-          isScrollRestoringRef.current = false;
-        }, 100); // Increased delay to 100ms for safety
-      }
-    }
+    // DISABLED: This was causing scroll reset issues when clicking on calendar
+    // The auto-scroll restoration was interfering with user's manual scrolling
+    
+    // const gridElement = gridRef.current;
+    // if (gridElement && 
+    //     !editDialogOpen && 
+    //     !contextMenuPosition && 
+    //     !breakDialogOpen && 
+    //     !editBreakDialogOpen && 
+    //     scrollPositionRef.current) {
+    //   // Only restore if we have a stored position and no dialogs/menus are open
+    //   const currentTop = gridElement.scrollTop;
+    //   const currentLeft = gridElement.scrollLeft;
+    //   const storedTop = scrollPositionRef.current.top;
+    //   const storedLeft = scrollPositionRef.current.left;
+    //   
+    //   // Only restore if position has changed
+    //   if (currentTop !== storedTop || currentLeft !== storedLeft) {
+    //     isScrollRestoringRef.current = true;
+    //     gridElement.scrollTo({
+    //       top: storedTop,
+    //       left: storedLeft,
+    //       behavior: 'auto' // 'auto' is important for immediate restoration
+    //     });
+    //     setTimeout(() => {
+    //       isScrollRestoringRef.current = false;
+    //     }, 100); // Increased delay to 100ms for safety
+    //   }
+    // }
   }, [editDialogOpen, contextMenuPosition, breakDialogOpen, editBreakDialogOpen]);
 
   // Auto-scroll to last booked appointment time
   useEffect(() => {
-    const gridElement = gridRef.current;
+    // DISABLED: This was causing scroll reset issues when clicking on calendar
+    // The auto-scroll was triggering unexpectedly and interfering with manual scrolling
     
-    // Only auto-scroll if we have a last booked appointment time and the grid is ready
-    if (gridElement && lastBookedAppointmentTime && !editDialogOpen && !contextMenuPosition) {
-      try {
-        // Calculate the scroll position for the last booked appointment
-        const scrollToPosition = getAppointmentPosition(lastBookedAppointmentTime);
-        
-        // Add some buffer to show a bit before the appointment (about 2 time slots = 30 minutes)
-        const bufferPosition = Math.max(0, scrollToPosition - (TIME_SLOT_HEIGHT * 2));
-        
-        // Store this as our target position
-        scrollPositionRef.current = {
-          top: bufferPosition,
-          left: 0
-        };
-        
-        // Scroll to the calculated position with smooth behavior
-        setTimeout(() => {
-          gridElement.scrollTo({
-            top: bufferPosition,
-            left: 0,
-            behavior: 'smooth'
-          });
-        }, 100); // Small delay to ensure the grid is fully rendered
-        
-        console.log(`Auto-scrolling to last booked appointment at ${lastBookedAppointmentTime}, position: ${scrollToPosition}px`);
-      } catch (error) {
-        console.error('Error auto-scrolling to last booked appointment:', error);
-      }
-    }
+    // const gridElement = gridRef.current;
+    // 
+    // // Only auto-scroll if we have a last booked appointment time and the grid is ready
+    // if (gridElement && lastBookedAppointmentTime && !editDialogOpen && !contextMenuPosition) {
+    //   try {
+    //     // Calculate the scroll position for the last booked appointment
+    //     const scrollToPosition = getAppointmentPosition(lastBookedAppointmentTime);
+    //     
+    //     // Add some buffer to show a bit before the appointment (about 2 time slots = 30 minutes)
+    //     const bufferPosition = Math.max(0, scrollToPosition - (TIME_SLOT_HEIGHT * 2));
+    //     
+    //     // Store this as our target position
+    //     scrollPositionRef.current = {
+    //       top: bufferPosition,
+    //       left: 0
+    //     };
+    //     
+    //     // Scroll to the calculated position with smooth behavior
+    //     setTimeout(() => {
+    //       gridElement.scrollTo({
+    //         top: bufferPosition,
+    //         left: 0,
+    //         behavior: 'smooth'
+    //       });
+    //     }, 100); // Small delay to ensure the grid is fully rendered
+    //     
+    //     console.log(`Auto-scrolling to last booked appointment at ${lastBookedAppointmentTime}, position: ${scrollToPosition}px`);
+    //   } catch (error) {
+    //     console.error('Error auto-scrolling to last booked appointment:', error);
+    //   }
+    // }
   }, [lastBookedAppointmentTime, editDialogOpen, contextMenuPosition]);
 
   // Add a function to handle service search and selection

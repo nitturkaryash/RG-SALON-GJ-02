@@ -359,7 +359,6 @@ export default function Layout({ children }: LayoutProps) {
       >
         <FramerMotion.AnimatePresence initial={false} mode="sync">
           <FramerMotion.motion.div
-            key={location.pathname}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}

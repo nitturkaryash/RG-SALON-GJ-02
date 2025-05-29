@@ -106,7 +106,7 @@ interface PersistedPOSState {
   salonProducts: OrderItem[];
   consumptionPurpose: string;
   consumptionNotes: string;
-  salonConsumptionDate: string; // Add this line
+  orderDate: Date; // Updated to use orderDate instead of salonConsumptionDate
 }
 
 // Helper function to generate time slots
@@ -502,14 +502,14 @@ export default function POS() {
 	// Add state for new client details
 	const [newClientPhone, setNewClientPhone] = useState("");
 	const [newClientEmail, setNewClientEmail] = useState("");
-	// Add state for salon consumption date
-	const [salonConsumptionDate, setSalonConsumptionDate] = useState<Date | null>(new Date());
 	// Add state for client membership tier
 	const [clientMembershipTier, setClientMembershipTier] = useState<string | null>(null);
 	// Add state to toggle paying via membership
 	const [useMembershipPayment, setUseMembershipPayment] = useState(false);
 	// Active membership fetched for selected client
 	const [activeClientMembership, setActiveClientMembership] = useState<ActiveMembershipDetails | null>(null);
+	// Add state for order date (used for all orders)
+	const [orderDate, setOrderDate] = useState<Date | null>(new Date());
 
 	// When membership payment toggled, clear discounts
 	useEffect(() => {
@@ -1695,7 +1695,7 @@ export default function POS() {
 				total: totalAmount, // Always show the actual order amount
 				total_amount: totalAmount, // Always show the actual order amount
 				status: 'completed',
-				order_date: salonConsumptionDate ? salonConsumptionDate.toISOString() : new Date().toISOString(),
+				order_date: orderDate ? orderDate.toISOString() : new Date().toISOString(),
 				is_walk_in: true,
 				is_salon_consumption: false,
 				pending_amount: Math.max(0, totalAmount - amountPaid),
@@ -1703,7 +1703,7 @@ export default function POS() {
 					id: uuidv4(),
 					amount: totalAmount, // Always store the full order amount
 					payment_method: useMembershipPayment ? 'membership' : walkInPaymentMethod,
-					payment_date: salonConsumptionDate ? salonConsumptionDate.toISOString() : new Date().toISOString()
+					payment_date: orderDate ? orderDate.toISOString() : new Date().toISOString()
 				}]
 			});
 			
@@ -1877,8 +1877,8 @@ export default function POS() {
 		// This will be handled by the total recalculation and paymentAmounts useEffects
 		// For explicit reset:
 		setPaymentAmounts({ cash: 0, credit_card: 0, debit_card: 0, upi: 0, bnpl: 0, membership: 0 });
-		// Reset salon consumption date
-		setSalonConsumptionDate(new Date());
+		// Reset order date
+		setOrderDate(new Date());
 
 		// Clear persisted state from localStorage
 		try {
@@ -1949,7 +1949,7 @@ export default function POS() {
 		try {
 			setProcessing(true);
 			const currentDate = new Date().toISOString();
-			const consumptionDateToUse = salonConsumptionDate ? salonConsumptionDate.toISOString() : currentDate;
+			const consumptionDateToUse = orderDate ? orderDate.toISOString() : currentDate;
 
 			// Record results for each product
 			const updateResults = [];
@@ -2105,7 +2105,7 @@ export default function POS() {
 			try {
 				// Create order ID
 				const orderId = uuidv4();
-				const orderDateToUse = salonConsumptionDate ? salonConsumptionDate.toISOString() : new Date().toISOString();
+				const orderDateToUse = orderDate ? orderDate.toISOString() : new Date().toISOString();
 
 				// Format the products for order items - ENSURE CORRECT QUANTITIES
 				const orderItems = salonProducts.map((product, idx) => ({
@@ -2274,7 +2274,7 @@ export default function POS() {
 		} finally {
 			setProcessing(false);
 		}
-	}, [currentAppointmentId, updateAppointment, orderItems, isOrderValid, calculateProductSubtotal, calculateServiceSubtotal, calculateProductGstAmount, calculateServiceGstAmount, walkInDiscount, getAmountPaid, selectedClient, selectedStylist, customerName, createWalkInOrderMutation, createOrder, isSplitPayment, splitPayments, productGstRate, serviceGstRate, salonProducts, consumptionPurpose, consumptionNotes, requisitionVoucherNo, fetchBalanceStockData, resetFormState, navigate, queryClient, directUpdateStockQuantity, createClientAsync, newClientPhone, newClientEmail, salonConsumptionDate]); // Changed createClient to createClientAsync here as well
+	}, [currentAppointmentId, updateAppointment, orderItems, isOrderValid, calculateProductSubtotal, calculateServiceSubtotal, calculateProductGstAmount, calculateServiceGstAmount, walkInDiscount, getAmountPaid, selectedClient, selectedStylist, customerName, createWalkInOrderMutation, createOrder, isSplitPayment, splitPayments, productGstRate, serviceGstRate, salonProducts, consumptionPurpose, consumptionNotes, requisitionVoucherNo, fetchBalanceStockData, resetFormState, navigate, queryClient, directUpdateStockQuantity, createClientAsync, newClientPhone, newClientEmail, orderDate]); // Changed createClient to createClientAsync here as well
 
 	const handleRemoveFromOrder = useCallback((itemId: string) => {
 		setOrderItems((prevItems) => prevItems.filter((item) => item.id !== itemId));
@@ -2340,7 +2340,7 @@ export default function POS() {
 					gst_amount: gstAmount, 
 					total_amount: totalAmount,
 					status: 'completed', 
-					order_date: new Date().toISOString(),
+					order_date: orderDate ? orderDate.toISOString() : new Date().toISOString(),
 					is_walk_in: false,
 				};
 
@@ -2349,7 +2349,7 @@ export default function POS() {
 					order_id: baseOrderData.order_id,
 					client_id: baseOrderData.client_id,
 					client_name: baseOrderData.client_name, 
-					order_date: salonConsumptionDate ? salonConsumptionDate.toISOString() : baseOrderData.order_date,
+					order_date: orderDate ? orderDate.toISOString() : baseOrderData.order_date,
 					items: baseOrderData.items,
 					services: baseOrderData.services,
 					subtotal: baseOrderData.subtotal,
@@ -2390,11 +2390,12 @@ export default function POS() {
 					gst_amount: gstAmount, 
 					total_amount: totalAmount,
 					status: 'completed', 
-					order_date: new Date().toISOString(),
+					order_date: orderDate ? orderDate.toISOString() : new Date().toISOString(),
 					is_walk_in: false,
 				};
 				await createWalkInOrderMutation.mutateAsync(walkInOrderData); // Call with CreateOrderData
 			}
+			
 			toast.success("Order created successfully for appointment.");
 			
 			// Reset form state
@@ -2403,7 +2404,7 @@ export default function POS() {
 			console.error("Failed to create order:", error);
 			toast.error(`Failed to create order: ${error?.message || 'Unknown error'}`);
 		}
-	}, [appointments, selectedClient, selectedStylist, orderItems, productGstRate, serviceGstRate, calculateProductGstAmount, calculateServiceGstAmount, calculateTotalAmount, calculateProductSubtotal, calculateServiceSubtotal, walkInDiscount, isSplitPayment, splitPayments, walkInPaymentMethod, createOrder, createWalkInOrderMutation, resetFormState]);
+	}, [appointments, selectedClient, selectedStylist, orderItems, productGstRate, serviceGstRate, calculateProductGstAmount, calculateServiceGstAmount, calculateTotalAmount, calculateProductSubtotal, calculateServiceSubtotal, walkInDiscount, isSplitPayment, splitPayments, walkInPaymentMethod, createOrder, createWalkInOrderMutation, resetFormState, orderDate]);
 
 	// Add this helper function to group services by category
 	const groupByCategory = (items: POSService[] | Service[]): Record<string, (POSService | Service)[]> => {
@@ -2530,8 +2531,8 @@ export default function POS() {
 						<LocalizationProvider dateAdapter={AdapterDateFns}>
 							<DatePicker
 								label="Consumption Date"
-								value={salonConsumptionDate}
-								onChange={(newDate) => setSalonConsumptionDate(newDate)}
+								value={orderDate}
+								onChange={(newDate) => setOrderDate(newDate)}
 								slotProps={{
 									textField: {
 										fullWidth: true,
@@ -2842,8 +2843,8 @@ export default function POS() {
 					<Typography variant="body2" fontWeight="500" gutterBottom>Order Date:</Typography>
 					<LocalizationProvider dateAdapter={AdapterDateFns}>
 						<DatePicker
-							value={salonConsumptionDate} // This was used for salon consumption, ensure it's correct here for walk-in order date
-							onChange={(newDate) => setSalonConsumptionDate(newDate)} // Make sure this state is appropriate for walk-in order date setting
+							value={orderDate}
+							onChange={(newDate) => setOrderDate(newDate)}
 							slotProps={{
 								textField: {
 									fullWidth: true,
