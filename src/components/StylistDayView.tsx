@@ -505,6 +505,26 @@ const MemoizedAppointmentCard = memo(({
 
 MemoizedAppointmentCard.displayName = 'MemoizedAppointmentCard';
 
+// Add at the top of the StylistDayView component
+const MemoizedScheduleGrid = React.memo(
+  ({ children, gridRef, ...rest }: { 
+    children: React.ReactNode; 
+    gridRef: React.RefObject<HTMLDivElement>;
+    [key: string]: any;
+  }) => {
+    console.log("ScheduleGrid rendering");
+    return (
+      <ScheduleGrid 
+        ref={gridRef} 
+        {...rest}
+      >
+        {children}
+      </ScheduleGrid>
+    );
+  }, 
+  () => true // Always return true to prevent re-renders
+);
+
 const StylistDayView: React.FC<StylistDayViewProps> = ({
   stylists: initialStylists,
   appointments,
@@ -647,14 +667,14 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
     event.preventDefault();
     event.stopPropagation();
     
-    // Store current scroll position before any state changes
-    const gridElement = gridRef.current;
-    if (gridElement) {
-      scrollPositionRef.current = {
-        top: gridElement.scrollTop,
-        left: gridElement.scrollLeft
-      };
-    }
+    // Comment out the scroll position storing code as it's causing reset issues
+    // const gridElement = gridRef.current;
+    // if (gridElement) {
+    //   scrollPositionRef.current = {
+    //     top: gridElement.scrollTop,
+    //     left: gridElement.scrollLeft
+    //   };
+    // }
     
     // Mark context menu as open
     isContextMenuOpen.current = true;
@@ -783,7 +803,21 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
     return false;
   }
 
-  const handleSlotClick = (stylistId: string, hour: number, minute: number) => {
+  const handleSlotClick = (event: React.MouseEvent, stylistId: string, hour: number, minute: number) => {
+    // Prevent default browser behavior and event bubbling
+    event.preventDefault();
+    event.stopPropagation();
+    
+    // Comment out the scroll position storing code as it's causing reset issues
+    // const gridElement = gridRef.current;
+    // if (gridElement) {
+    //   scrollPositionRef.current = {
+    //     top: gridElement.scrollTop,
+    //     left: gridElement.scrollLeft
+    //   };
+    //   console.log('Stored scroll position before slot click:', scrollPositionRef.current);
+    // }
+    
     // Find the stylist
     const stylist = stylists.find(s => s.id === stylistId);
     if (!stylist) {
@@ -839,19 +873,35 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
     
     console.log('Slot clicked:', { stylistId, hour, minute, slotTime });
     onSelectTimeSlot(stylistId, slotTime);
+    
+    // Comment out scroll position restoration as it's causing reset issues
+    // setTimeout(() => {
+    //   if (gridElement && scrollPositionRef.current) {
+    //     console.log('Restoring scroll position after slot click:', scrollPositionRef.current);
+    //     gridElement.scrollTo({
+    //       top: scrollPositionRef.current.top,
+    //       left: scrollPositionRef.current.left,
+    //       behavior: 'auto' // Use 'auto' for immediate restoration without animation
+    //     });
+    //   }
+    // }, 100);
   };
 
-  const handleAppointmentClick = (appointment: any) => {
+  const handleAppointmentClick = (event: React.MouseEvent, appointment: any) => {
+    // Prevent default browser behavior and event bubbling
+    event.preventDefault();
+    event.stopPropagation();
+    
     console.log("Internal StylistDayView handleAppointmentClick called", appointment); // Debug log
     
-    // Store scroll position before opening drawer
-    const gridElement = gridRef.current;
-    if (gridElement) {
-      scrollPositionRef.current = {
-        top: gridElement.scrollTop,
-        left: gridElement.scrollLeft
-      };
-    }
+    // Comment out the scroll position storing code as it's causing reset issues
+    // const gridElement = gridRef.current;
+    // if (gridElement) {
+    //   scrollPositionRef.current = {
+    //     top: gridElement.scrollTop,
+    //     left: gridElement.scrollLeft
+    //   };
+    // }
     
     // Ensure the prop function is called if it exists
     if (onAppointmentClick) {
@@ -2183,7 +2233,7 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
             isPaid={isPaid}
             status={status}
             onDragStart={(e: React.DragEvent) => handleDragStart(e, appointment)}
-            onClick={() => handleAppointmentClick(appointment)}
+            onClick={(e: React.MouseEvent) => handleAppointmentClick(e, appointment)}
             onContextMenu={(e: React.MouseEvent) => memoizedHandleContextMenu(e, appointment)}
             style={{
               top: `${getAppointmentPosition(appointment.start_time)}px`,
@@ -2218,37 +2268,39 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
   }, [fetchedServiceCollections]);
 
   // Restore scroll position when dialogs close or context menu closes
-  useEffect(() => {
-    // DISABLED: This was causing scroll reset issues when clicking on calendar
-    // The auto-scroll restoration was interfering with user's manual scrolling
+  // useEffect(() => {
+  //   // We want to restore horizontal scroll position when the drawer opens,
+  //   // but only for the specific case of clicking on a slot or appointment
     
-    // const gridElement = gridRef.current;
-    // if (gridElement && 
-    //     !editDialogOpen && 
-    //     !contextMenuPosition && 
-    //     !breakDialogOpen && 
-    //     !editBreakDialogOpen && 
-    //     scrollPositionRef.current) {
-    //   // Only restore if we have a stored position and no dialogs/menus are open
-    //   const currentTop = gridElement.scrollTop;
-    //   const currentLeft = gridElement.scrollLeft;
-    //   const storedTop = scrollPositionRef.current.top;
-    //   const storedLeft = scrollPositionRef.current.left;
-    //   
-    //   // Only restore if position has changed
-    //   if (currentTop !== storedTop || currentLeft !== storedLeft) {
-    //     isScrollRestoringRef.current = true;
-    //     gridElement.scrollTo({
-    //       top: storedTop,
-    //       left: storedLeft,
-    //       behavior: 'auto' // 'auto' is important for immediate restoration
-    //     });
-    //     setTimeout(() => {
-    //       isScrollRestoringRef.current = false;
-    //     }, 100); // Increased delay to 100ms for safety
-    //   }
-    // }
-  }, [editDialogOpen, contextMenuPosition, breakDialogOpen, editBreakDialogOpen]);
+  //   const gridElement = gridRef.current;
+    
+  //   // Only attempt restoration if we have a grid element and stored scroll position
+  //   if (gridElement && scrollPositionRef.current) {
+  //     console.log('Attempting to restore scroll position:', {
+  //       top: scrollPositionRef.current.top,
+  //       left: scrollPositionRef.current.left,
+  //       editDialogOpen,
+  //       contextMenuPosition
+  //     });
+      
+  //     // Small delay to allow drawer to render
+  //     setTimeout(() => {
+  //       // Check again if grid element still exists
+  //       if (gridElement) {
+  //         // Restore horizontal scroll position - this is what keeps us on the same stylists
+  //         gridElement.scrollTo({
+  //           top: gridElement.scrollTop, // Keep current vertical scroll
+  //           left: scrollPositionRef.current.left, // Restore horizontal scroll only
+  //           behavior: 'auto' // Use 'auto' for immediate restoration
+  //         });
+          
+  //         console.log('Scroll position restored to:', {
+  //           left: scrollPositionRef.current.left
+  //         });
+  //       }
+  //     }, 50); // Small delay
+  //   }
+  // }, [editDialogOpen, contextMenuPosition]);
 
   // Auto-scroll to last booked appointment time
   useEffect(() => {
@@ -2378,6 +2430,9 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
     );
   }
 
+  // Add at the beginning of the component, with the other state declarations
+  const somethingThatChanges = null; // This ensures a constant value to prevent remounting
+
   return (
     <DayViewContainer>
       <DayViewHeader sx={{ 
@@ -2481,9 +2536,9 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
       }} />
       
       <GridWrapper sx={{ mt: 0 }}>
-        <ScheduleGrid 
+        <MemoizedScheduleGrid 
           className="schedule-grid" 
-          ref={gridRef}
+          gridRef={gridRef}
           sx={{ borderTop: 'none', mt: 0 }}
         >
           {/* Use the renderTimeColumn function to create the time column */}
@@ -2531,7 +2586,7 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
               {timeSlots.map(slot => (
                 <AppointmentSlot
                   key={`slot-${stylist.id}-${slot.hour}-${slot.minute}`}
-                  onClick={() => handleSlotClick(stylist.id, slot.hour, slot.minute)}
+                  onClick={(e: React.MouseEvent) => handleSlotClick(e, stylist.id, slot.hour, slot.minute)}
                   onDragOver={(e) => handleDragOver(e, stylist.id, slot.hour, slot.minute)}
                   onDrop={(e) => handleDrop(e, stylist.id, slot.hour, slot.minute)}
                   sx={{
@@ -2651,7 +2706,7 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
               })}
             </StylistColumn>
           ))}
-        </ScheduleGrid>
+        </MemoizedScheduleGrid>
       </GridWrapper>
       
       {/* Edit Appointment Drawer */}

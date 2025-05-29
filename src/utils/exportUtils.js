@@ -8,6 +8,7 @@ import { formatCurrency } from './format';
  * All numeric values in exports are automatically rounded to integers
  * to eliminate decimal places and provide cleaner output for reports.
  * This includes currency amounts, tax calculations, and any other numeric data.
+ * Date and time fields are preserved in their original format.
  */
 
 /**
@@ -22,18 +23,50 @@ export const exportToCSV = (data, fileName, headers) => {
         return;
     }
 
-    // Round ALL numeric values in the data to integers
+    // Define fields that should NOT be rounded (date/time fields)
+    const dateTimeFields = ['created_at', 'date', 'time', 'datetime', 'timestamp'];
+    
+    // Function to check if a field should be excluded from rounding
+    const shouldExcludeFromRounding = (key) => {
+        return dateTimeFields.some(field => 
+            key.toLowerCase().includes(field) || 
+            key.toLowerCase().includes('date') || 
+            key.toLowerCase().includes('time')
+        );
+    };
+
+    // Round numeric values in the data to integers, excluding date/time fields
     const roundedData = data.map(item => {
         const newItem = { ...item };
         Object.keys(newItem).forEach(key => {
+            // Skip date/time fields
+            if (shouldExcludeFromRounding(key)) {
+                return;
+            }
+            
             if (typeof newItem[key] === 'number') {
-                // Round ALL numbers to integers
+                // Round numeric values to integers
                 newItem[key] = Math.round(newItem[key]);
             } else if (typeof newItem[key] === 'string' && !isNaN(parseFloat(newItem[key]))) {
-                // Round string numbers as well
-                const numValue = parseFloat(newItem[key]);
-                if (!isNaN(numValue)) {
-                    newItem[key] = Math.round(numValue).toString();
+                // Only round string numbers if they don't contain date/time patterns
+                const value = newItem[key];
+                // Check if the string contains common date/time patterns
+                const dateTimePatterns = [
+                    /\d{1,2}\/\d{1,2}\/\d{4}/, // MM/DD/YYYY or DD/MM/YYYY
+                    /\d{4}-\d{1,2}-\d{1,2}/, // YYYY-MM-DD
+                    /\d{1,2}:\d{1,2}/, // HH:MM
+                    /AM|PM|am|pm/, // AM/PM indicators
+                    /Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec/i, // Month names
+                    /Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday/i // Day names
+                ];
+                
+                const isDateTime = dateTimePatterns.some(pattern => pattern.test(value));
+                
+                if (!isDateTime) {
+                    const numValue = parseFloat(newItem[key]);
+                    if (!isNaN(numValue)) {
+                        newItem[key] = Math.round(numValue).toString();
+                    }
                 }
             }
         });
@@ -48,8 +81,8 @@ export const exportToCSV = (data, fileName, headers) => {
             .map(key => {
             const value = item[key];
             // Handle special formatting
-            if (typeof value === 'number') {
-                // Ensure all numbers are rounded to integers
+            if (typeof value === 'number' && !shouldExcludeFromRounding(key)) {
+                // Ensure all numbers are rounded to integers (excluding date/time fields)
                 return Math.round(value).toString();
             }
             if (value === null || value === undefined) {
@@ -90,6 +123,19 @@ export const exportToPDF = (data, fileName, headers, title) => {
         console.error('No data to export');
         return;
     }
+    
+    // Define fields that should NOT be rounded (date/time fields)
+    const dateTimeFields = ['created_at', 'date', 'time', 'datetime', 'timestamp'];
+    
+    // Function to check if a field should be excluded from rounding
+    const shouldExcludeFromRounding = (key) => {
+        return dateTimeFields.some(field => 
+            key.toLowerCase().includes(field) || 
+            key.toLowerCase().includes('date') || 
+            key.toLowerCase().includes('time')
+        );
+    };
+    
     // Create new PDF document
     const doc = new jsPDF({
         orientation: 'portrait',
@@ -106,17 +152,37 @@ export const exportToPDF = (data, fileName, headers, title) => {
     // Prepare header and data for table
     const tableHeaders = Object.values(headers);
     const tableData = data.map(item => {
-        // Round ALL numeric values to integers
+        // Round numeric values to integers, excluding date/time fields
         const roundedItem = { ...item };
         Object.keys(roundedItem).forEach(key => {
+            // Skip date/time fields
+            if (shouldExcludeFromRounding(key)) {
+                return;
+            }
+            
             if (typeof roundedItem[key] === 'number') {
-                // Round ALL numbers to integers
+                // Round numeric values to integers
                 roundedItem[key] = Math.round(roundedItem[key]);
             } else if (typeof roundedItem[key] === 'string' && !isNaN(parseFloat(roundedItem[key]))) {
-                // Round string numbers as well
-                const numValue = parseFloat(roundedItem[key]);
-                if (!isNaN(numValue)) {
-                    roundedItem[key] = Math.round(numValue);
+                // Only round string numbers if they don't contain date/time patterns
+                const value = roundedItem[key];
+                // Check if the string contains common date/time patterns
+                const dateTimePatterns = [
+                    /\d{1,2}\/\d{1,2}\/\d{4}/, // MM/DD/YYYY or DD/MM/YYYY
+                    /\d{4}-\d{1,2}-\d{1,2}/, // YYYY-MM-DD
+                    /\d{1,2}:\d{1,2}/, // HH:MM
+                    /AM|PM|am|pm/, // AM/PM indicators
+                    /Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec/i, // Month names
+                    /Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday/i // Day names
+                ];
+                
+                const isDateTime = dateTimePatterns.some(pattern => pattern.test(value));
+                
+                if (!isDateTime) {
+                    const numValue = parseFloat(roundedItem[key]);
+                    if (!isNaN(numValue)) {
+                        roundedItem[key] = Math.round(numValue);
+                    }
                 }
             }
         });
@@ -124,7 +190,7 @@ export const exportToPDF = (data, fileName, headers, title) => {
         return Object.keys(headers).map(key => {
             const value = roundedItem[key];
             // Format based on data type
-            if (typeof value === 'number') {
+            if (typeof value === 'number' && !shouldExcludeFromRounding(key)) {
                 // Check if it might be a currency value by key name
                 if (key.includes('price') || key.includes('total') || key.includes('tax') ||
                     key.includes('subtotal') || key.includes('discount') || key.includes('cost') ||

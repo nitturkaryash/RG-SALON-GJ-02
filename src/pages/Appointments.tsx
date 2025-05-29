@@ -588,7 +588,18 @@ export default function Appointments() {
   };
 
   const handleDayViewSelect = (stylistId: string, time: Date) => {
+    console.log('handleDayViewSelect called:', { 
+      stylistId, 
+      time: time.toISOString(), 
+      currentSelectedStylistId: selectedStylistId,
+      isSameStylist: selectedStylistId === stylistId 
+    });
+    
     const defaultEndTime = new Date(time.getTime() + 60 * 60 * 1000);
+    
+    // Check if we're selecting a slot for the same stylist to preserve some state
+    const isSameStylist = selectedStylistId === stylistId;
+    
     setSelectedSlot({
       start: time,
       end: defaultEndTime,
@@ -598,21 +609,46 @@ export default function Appointments() {
       jsEvent: new MouseEvent('click'),
       view: {} as any
     });
-    setSelectedStylistId(stylistId);
+    
+    // Only update selectedStylistId if it's different to avoid unnecessary renders
+    // This prevents the view from jumping to first stylist when clicking on the same stylist
+    if (!isSameStylist) {
+      console.log('Updating selectedStylistId from', selectedStylistId, 'to', stylistId);
+      setSelectedStylistId(stylistId);
+    } else {
+      console.log('Keeping selectedStylistId unchanged:', selectedStylistId);
+    }
+    
     setEditingAppointment(null);
     setAppointmentTime({
       startTime: `${time.getHours()}:${String(time.getMinutes()).padStart(2, '0')}`,
       endTime: `${defaultEndTime.getHours()}:${String(defaultEndTime.getMinutes()).padStart(2, '0')}`
     });
+    
     const preSelectedStylist = (stylists || []).find(s => s.id === stylistId);
-    setClientEntries([{ 
-      id: uuidv4(), 
-      client: null, 
-      services: [], 
-      stylists: preSelectedStylist ? [{ id: preSelectedStylist.id, name: preSelectedStylist.name }] : [],
-      isForSomeoneElse: false
-    }]);
-    setAppointmentNotes('');
+    
+    // If selecting the same stylist and we have existing entries with services, preserve them
+    // Otherwise, reset to a clean state
+    if (isSameStylist && clientEntries.length > 0 && clientEntries.some(entry => entry.services.length > 0)) {
+      console.log('Preserving existing client entries for same stylist');
+      // Keep existing client entries but update their stylist assignment if needed
+      const updatedEntries = clientEntries.map(entry => ({
+        ...entry,
+        stylists: preSelectedStylist ? [{ id: preSelectedStylist.id, name: preSelectedStylist.name }] : entry.stylists
+      }));
+      setClientEntries(updatedEntries);
+    } else {
+      console.log('Creating new client entry for', isSameStylist ? 'same stylist (no existing services)' : 'different stylist');
+      // Reset to clean state for new stylist or empty entries
+      setClientEntries([{ 
+        id: uuidv4(), 
+        client: null, 
+        services: [], 
+        stylists: preSelectedStylist ? [{ id: preSelectedStylist.id, name: preSelectedStylist.name }] : [],
+        isForSomeoneElse: false
+      }]);
+      setAppointmentNotes('');
+    }
   };
 
   const handleTimeChange = (event: SelectChangeEvent, field: 'startTime' | 'endTime') => {
