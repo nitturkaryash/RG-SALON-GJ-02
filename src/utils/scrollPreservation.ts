@@ -1,7 +1,10 @@
 /**
  * Scroll Preservation Utilities
  * Helps prevent scroll reset when right-clicking on appointments or during state updates
+ * Now includes localStorage persistence for scroll positions
  */
+
+import React from 'react';
 
 interface ScrollPosition {
   top: number;
@@ -12,24 +15,65 @@ class ScrollPreservationManager {
   private positions = new Map<string, ScrollPosition>();
   private isRestoring = false;
   private restorationTimeouts = new Map<string, NodeJS.Timeout>();
+  private localStoragePrefix = 'scroll_position_';
 
   /**
-   * Store the current scroll position for a given element
+   * Store the current scroll position for a given element and persist to localStorage
    */
-  saveScrollPosition(elementId: string, element: HTMLElement): void {
+  saveScrollPosition(elementId: string, element: HTMLElement, persistToStorage = true): void {
     if (!element || this.isRestoring) return;
     
-    this.positions.set(elementId, {
+    const position = {
       top: element.scrollTop,
       left: element.scrollLeft
-    });
+    };
+    
+    this.positions.set(elementId, position);
+    
+    // Persist to localStorage if requested
+    if (persistToStorage && typeof window !== 'undefined') {
+      try {
+        localStorage.setItem(
+          `${this.localStoragePrefix}${elementId}`, 
+          JSON.stringify(position)
+        );
+      } catch (error) {
+        console.warn('Failed to save scroll position to localStorage:', error);
+      }
+    }
+  }
+
+  /**
+   * Load scroll position from localStorage
+   */
+  loadScrollPositionFromStorage(elementId: string): ScrollPosition | null {
+    if (typeof window === 'undefined') return null;
+    
+    try {
+      const stored = localStorage.getItem(`${this.localStoragePrefix}${elementId}`);
+      if (stored) {
+        const position = JSON.parse(stored) as ScrollPosition;
+        this.positions.set(elementId, position);
+        return position;
+      }
+    } catch (error) {
+      console.warn('Failed to load scroll position from localStorage:', error);
+    }
+    
+    return null;
   }
 
   /**
    * Restore the saved scroll position for a given element
    */
   restoreScrollPosition(elementId: string, element: HTMLElement, immediate = false): void {
-    const position = this.positions.get(elementId);
+    let position = this.positions.get(elementId);
+    
+    // If no position in memory, try to load from localStorage
+    if (!position) {
+      position = this.loadScrollPositionFromStorage(elementId);
+    }
+    
     if (!position || !element) return;
 
     // Clear any pending restoration
@@ -65,18 +109,34 @@ class ScrollPreservationManager {
    * Get the saved scroll position without restoring
    */
   getScrollPosition(elementId: string): ScrollPosition | null {
-    return this.positions.get(elementId) || null;
+    let position = this.positions.get(elementId);
+    
+    // If no position in memory, try to load from localStorage
+    if (!position) {
+      position = this.loadScrollPositionFromStorage(elementId);
+    }
+    
+    return position || null;
   }
 
   /**
    * Clear stored position for an element
    */
-  clearScrollPosition(elementId: string): void {
+  clearScrollPosition(elementId: string, clearFromStorage = true): void {
     this.positions.delete(elementId);
     const timeout = this.restorationTimeouts.get(elementId);
     if (timeout) {
       clearTimeout(timeout);
       this.restorationTimeouts.delete(elementId);
+    }
+    
+    // Clear from localStorage if requested
+    if (clearFromStorage && typeof window !== 'undefined') {
+      try {
+        localStorage.removeItem(`${this.localStoragePrefix}${elementId}`);
+      } catch (error) {
+        console.warn('Failed to clear scroll position from localStorage:', error);
+      }
     }
   }
 
@@ -123,18 +183,37 @@ class ScrollPreservationManager {
       }, 0);
     };
   }
+
+  /**
+   * Create a debounced scroll saver for continuous scroll events
+   */
+  createDebouncedScrollSaver(
+    elementId: string,
+    element: HTMLElement,
+    delay = 200,
+    persistToStorage = true
+  ): () => void {
+    let timeout: NodeJS.Timeout;
+    
+    return () => {
+      clearTimeout(timeout);
+      timeout = setTimeout(() => {
+        this.saveScrollPosition(elementId, element, persistToStorage);
+      }, delay);
+    };
+  }
 }
 
 // Global instance
 export const scrollManager = new ScrollPreservationManager();
 
 /**
- * React hook for scroll preservation
+ * React hook for scroll preservation with localStorage support
  */
 export function useScrollPreservation(elementRef: React.RefObject<HTMLElement>, elementId: string) {
-  const savePosition = React.useCallback(() => {
+  const savePosition = React.useCallback((persistToStorage = true) => {
     if (elementRef.current) {
-      scrollManager.saveScrollPosition(elementId, elementRef.current);
+      scrollManager.saveScrollPosition(elementId, elementRef.current, persistToStorage);
     }
   }, [elementRef, elementId]);
 
@@ -142,6 +221,17 @@ export function useScrollPreservation(elementRef: React.RefObject<HTMLElement>, 
     if (elementRef.current) {
       scrollManager.restoreScrollPosition(elementId, elementRef.current, immediate);
     }
+  }, [elementRef, elementId]);
+
+  const loadFromStorage = React.useCallback(() => {
+    if (elementRef.current) {
+      const position = scrollManager.loadScrollPositionFromStorage(elementId);
+      if (position) {
+        scrollManager.restoreScrollPosition(elementId, elementRef.current, true);
+      }
+      return position;
+    }
+    return null;
   }, [elementRef, elementId]);
 
   const withPreservation = React.useCallback(<T,>(operation: () => T): T => {
@@ -160,11 +250,20 @@ export function useScrollPreservation(elementRef: React.RefObject<HTMLElement>, 
     return handler;
   }, [elementRef, elementId]);
 
+  const createDebouncedSaver = React.useCallback((delay = 200, persistToStorage = true) => {
+    if (elementRef.current) {
+      return scrollManager.createDebouncedScrollSaver(elementId, elementRef.current, delay, persistToStorage);
+    }
+    return () => {};
+  }, [elementRef, elementId]);
+
   return {
     savePosition,
     restorePosition,
+    loadFromStorage,
     withPreservation,
-    createPreservingHandler
+    createPreservingHandler,
+    createDebouncedSaver
   };
 }
 
@@ -190,7 +289,7 @@ export function preventScrollReset(element: HTMLElement): () => void {
 }
 
 /**
- * Debounced scroll position saver
+ * Debounced scroll position saver (deprecated - use scrollManager.createDebouncedScrollSaver instead)
  */
 export function createDebouncedScrollSaver(
   element: HTMLElement, 

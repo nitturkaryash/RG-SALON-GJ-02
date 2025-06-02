@@ -45,7 +45,8 @@ import {
   FilterAlt as FilterIcon,
   FilterAltOff as FilterOffIcon,
   Speed as SpeedIcon,
-  LocalShipping as LocalShippingIcon
+  LocalShipping as LocalShippingIcon,
+  Check as CheckIcon
 } from '@mui/icons-material';
 import { styled } from '@mui/material/styles';
 import { useProducts, Product } from '../hooks/useProducts';
@@ -295,6 +296,22 @@ export default function InventoryManager() {
     endDate: new Date().toISOString().split('T')[0], // Today
     isActive: false
   });
+
+  // Add this after the existing state declarations around line 240
+  // State for managing multiple product additions in current session
+  const [addedProductsSummary, setAddedProductsSummary] = useState<ExtendedProductFormData[]>([]);
+  const [currentSessionTotal, setCurrentSessionTotal] = useState<{
+    totalProducts: number;
+    totalQuantity: number;
+    totalValue: number;
+  }>({
+    totalProducts: 0,
+    totalQuantity: 0,
+    totalValue: 0
+  });
+  
+  // Add state for tracking summary item being edited
+  const [editingSummaryIndex, setEditingSummaryIndex] = useState<number | null>(null);
 
   // Function to initialize database tables
   const initializeDatabaseTables = useCallback(async () => {
@@ -1259,42 +1276,67 @@ export default function InventoryManager() {
   };
 
   const handleOpen = () => {
-    setPurchaseFormData(extendedInitialFormData);
-    setEditingId(null);
     setOpen(true);
+    setPurchaseFormData(extendedInitialFormData);
+    // Reset summary when opening for new addition
+    setAddedProductsSummary([]);
+    setCurrentSessionTotal({
+        totalProducts: 0,
+        totalQuantity: 0,
+        totalValue: 0
+    });
+    // Reset summary editing state
+    setEditingSummaryIndex(null);
   };
 
   const handleClose = () => {
     setOpen(false);
-    setPurchaseFormData(extendedInitialFormData);
     setEditingId(null);
+    setPurchaseFormData(extendedInitialFormData);
+    // Reset summary when closing dialog
+    setAddedProductsSummary([]);
+    setCurrentSessionTotal({
+        totalProducts: 0,
+        totalQuantity: 0,
+        totalValue: 0
+    });
+    // Reset summary editing state
+    setEditingSummaryIndex(null);
   };
 
   const handleEdit = (purchase: PurchaseTransaction) => {
+    setEditingId(purchase.purchase_id);
     setPurchaseFormData({
       ...extendedInitialFormData,
-      id: purchase.purchase_id,
+      product_id: purchase.product_id,
+      date: purchase.date,
       product_name: purchase.product_name,
       hsn_code: purchase.hsn_code || '',
       unit_type: purchase.units || '',
       purchase_invoice_number: purchase.purchase_invoice_number || '',
-      date: purchase.date ? new Date(purchase.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
-      purchase_qty: purchase.purchase_qty || 0,
+      purchase_qty: purchase.purchase_qty,
       mrp_incl_gst: purchase.mrp_incl_gst || 0,
-      gst_percentage: purchase.gst_percentage || 18,
+      mrp_excl_gst: purchase.mrp_excl_gst || 0,
       discount_on_purchase_percentage: purchase.discount_on_purchase_percentage || 0,
-      purchase_excl_gst: (purchase.purchase_taxable_value && purchase.purchase_qty)
-        ? purchase.purchase_taxable_value / purchase.purchase_qty
-        : 0,
+      gst_percentage: purchase.gst_percentage || 18,
       purchase_cost_taxable_value: purchase.purchase_taxable_value || 0,
       purchase_igst: purchase.purchase_igst || 0,
       purchase_cgst: purchase.purchase_cgst || 0,
       purchase_sgst: purchase.purchase_sgst || 0,
       purchase_invoice_value: purchase.purchase_invoice_value_rs || 0,
-      vendor: (purchase as any).supplier || 'Direct Entry',
-      is_interstate: (purchase.purchase_igst || 0) > 0
+      vendor: purchase.supplier || '',
+      purchase_excl_gst: purchase.purchase_cost_per_unit_ex_gst || 0,
+      mrp_per_unit_excl_gst: purchase.mrp_excl_gst || 0
     });
-    setEditingId(purchase.purchase_id);
+    // Reset summary when editing (editing doesn't use multi-add functionality)
+    setAddedProductsSummary([]);
+    setCurrentSessionTotal({
+        totalProducts: 0,
+        totalQuantity: 0,
+        totalValue: 0
+    });
+    // Reset summary editing state
+    setEditingSummaryIndex(null);
     setOpen(true);
   };
 
@@ -1303,7 +1345,7 @@ export default function InventoryManager() {
 
     try {
         if (editingId) {
-            // Handle editing existing purchase
+            // Handle editing existing purchase from database
             const updateData = {
                 date: purchaseFormData.date,
                 Vendor: purchaseFormData.vendor,
@@ -1333,13 +1375,41 @@ export default function InventoryManager() {
             } else {
                 toast.error('Failed to update purchase transaction');
             }
+        } else if (editingSummaryIndex !== null) {
+            // Handle updating summary item (not saving to database yet)
+            saveSummaryItemChanges();
         } else {
             // Handle adding new purchase
             const result = await addPurchaseTransaction(purchaseFormData);
 
             if (result.success) {
-                toast.success('Purchase transaction added successfully');
-                handleClose();
+                // Add to summary instead of closing dialog
+                const currentProduct = { ...purchaseFormData };
+                setAddedProductsSummary(prev => [...prev, currentProduct]);
+                
+                // Update session totals
+                const newTotalProducts = addedProductsSummary.length + 1;
+                const newTotalQuantity = addedProductsSummary.reduce((acc, prod) => acc + prod.purchase_qty, 0) + purchaseFormData.purchase_qty;
+                const newTotalValue = addedProductsSummary.reduce((acc, prod) => acc + prod.purchase_invoice_value, 0) + purchaseFormData.purchase_invoice_value;
+                
+                setCurrentSessionTotal({
+                    totalProducts: newTotalProducts,
+                    totalQuantity: newTotalQuantity,
+                    totalValue: newTotalValue
+                });
+
+                toast.success('Product added to purchase! Add another product or close to finish.');
+                
+                // Reset form for next product but keep vendor, date and invoice number
+                const resetFormData = {
+                    ...extendedInitialFormData,
+                    date: purchaseFormData.date,
+                    vendor: purchaseFormData.vendor,
+                    purchase_invoice_number: purchaseFormData.purchase_invoice_number,
+                    is_interstate: purchaseFormData.is_interstate
+                };
+                setPurchaseFormData(resetFormData);
+                
                 await fetchPurchasesData();
                 await fetchProducts();
             } else {
@@ -1961,6 +2031,101 @@ export default function InventoryManager() {
       return (item as any).serial_no;
     }
     return `SALON-${salonConsumption.length - index}`;
+  };
+
+  const removeFromSummary = (index: number) => {
+    const newSummary = addedProductsSummary.filter((_, i) => i !== index);
+    setAddedProductsSummary(newSummary);
+    
+    // Recalculate totals
+    const newTotalProducts = newSummary.length;
+    const newTotalQuantity = newSummary.reduce((acc, prod) => acc + prod.purchase_qty, 0);
+    const newTotalValue = newSummary.reduce((acc, prod) => acc + prod.purchase_invoice_value, 0);
+    
+    setCurrentSessionTotal({
+        totalProducts: newTotalProducts,
+        totalQuantity: newTotalQuantity,
+        totalValue: newTotalValue
+    });
+  };
+
+  // Add function to edit summary item
+  const editSummaryItem = (index: number) => {
+    const productToEdit = addedProductsSummary[index];
+    setEditingSummaryIndex(index);
+    
+    // Load the product data back into the form
+    setPurchaseFormData({
+      ...productToEdit,
+      // Ensure all required fields are properly set
+      product_id: productToEdit.product_id,
+      date: productToEdit.date,
+      product_name: productToEdit.product_name,
+      hsn_code: productToEdit.hsn_code,
+      unit_type: productToEdit.unit_type,
+      purchase_invoice_number: productToEdit.purchase_invoice_number,
+      purchase_qty: productToEdit.purchase_qty,
+      mrp_incl_gst: productToEdit.mrp_incl_gst,
+      mrp_excl_gst: productToEdit.mrp_excl_gst,
+      discount_on_purchase_percentage: productToEdit.discount_on_purchase_percentage,
+      gst_percentage: productToEdit.gst_percentage,
+      purchase_cost_taxable_value: productToEdit.purchase_cost_taxable_value,
+      purchase_igst: productToEdit.purchase_igst,
+      purchase_cgst: productToEdit.purchase_cgst,
+      purchase_sgst: productToEdit.purchase_sgst,
+      purchase_invoice_value: productToEdit.purchase_invoice_value,
+      vendor: productToEdit.vendor,
+      purchase_excl_gst: productToEdit.purchase_excl_gst,
+      mrp_per_unit_excl_gst: productToEdit.mrp_per_unit_excl_gst,
+      is_interstate: productToEdit.is_interstate
+    });
+  };
+
+  // Add function to save summary item changes
+  const saveSummaryItemChanges = () => {
+    if (editingSummaryIndex === null) return;
+    
+    const updatedSummary = [...addedProductsSummary];
+    updatedSummary[editingSummaryIndex] = { ...purchaseFormData };
+    setAddedProductsSummary(updatedSummary);
+    
+    // Recalculate totals
+    const newTotalProducts = updatedSummary.length;
+    const newTotalQuantity = updatedSummary.reduce((acc, prod) => acc + prod.purchase_qty, 0);
+    const newTotalValue = updatedSummary.reduce((acc, prod) => acc + prod.purchase_invoice_value, 0);
+    
+    setCurrentSessionTotal({
+        totalProducts: newTotalProducts,
+        totalQuantity: newTotalQuantity,
+        totalValue: newTotalValue
+    });
+    
+    // Reset form and editing state
+    setEditingSummaryIndex(null);
+    const resetFormData = {
+      ...extendedInitialFormData,
+      date: purchaseFormData.date,
+      vendor: purchaseFormData.vendor,
+      purchase_invoice_number: purchaseFormData.purchase_invoice_number,
+      is_interstate: purchaseFormData.is_interstate
+    };
+    setPurchaseFormData(resetFormData);
+    
+    toast.success('Product updated in session!');
+  };
+
+  // Add function to cancel summary item editing
+  const cancelSummaryItemEdit = () => {
+    setEditingSummaryIndex(null);
+    // Reset form to initial state but keep common fields
+    const resetFormData = {
+      ...extendedInitialFormData,
+      date: addedProductsSummary.length > 0 ? addedProductsSummary[0].date : extendedInitialFormData.date,
+      vendor: addedProductsSummary.length > 0 ? addedProductsSummary[0].vendor : extendedInitialFormData.vendor,
+      purchase_invoice_number: addedProductsSummary.length > 0 ? addedProductsSummary[0].purchase_invoice_number : extendedInitialFormData.purchase_invoice_number,
+      is_interstate: addedProductsSummary.length > 0 ? addedProductsSummary[0].is_interstate : extendedInitialFormData.is_interstate
+    };
+    setPurchaseFormData(resetFormData);
   };
 
   return (
@@ -3272,6 +3437,134 @@ export default function InventoryManager() {
                />
              </Grid>
 
+            {/* Product Summary Section */}
+            {addedProductsSummary.length > 0 && (
+              <Grid item xs={12}>
+                <Paper elevation={2} sx={{ p: 2, mb: 2, backgroundColor: '#f8f9fa', border: '1px solid #e9ecef' }}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                    <Typography variant="h6" sx={{ color: '#495057', fontWeight: 600 }}>
+                      Products Added in This Session
+                    </Typography>
+                    <Chip 
+                      label={`${currentSessionTotal.totalProducts} Products`} 
+                      color="primary" 
+                      variant="outlined" 
+                      size="small"
+                    />
+                  </Box>
+                  
+                  {editingSummaryIndex !== null && (
+                    <Alert severity="info" sx={{ mb: 2 }}>
+                      <Typography variant="body2">
+                        You are currently editing product #{editingSummaryIndex + 1} from the session. 
+                        Make your changes below and click "Save Changes" or "Cancel Edit".
+                      </Typography>
+                    </Alert>
+                  )}
+                  
+                  <Box sx={{ maxHeight: '200px', overflowY: 'auto', mb: 2 }}>
+                    {addedProductsSummary.map((product, index) => (
+                      <Paper 
+                        key={index} 
+                        elevation={editingSummaryIndex === index ? 3 : 1} 
+                        sx={{ 
+                          p: 2, 
+                          mb: 1, 
+                          backgroundColor: editingSummaryIndex === index ? '#fff3cd' : 'white',
+                          border: editingSummaryIndex === index ? '2px solid #ffc107' : '1px solid #e0e0e0'
+                        }}
+                      >
+                        <Grid container spacing={2} alignItems="center">
+                          <Grid item xs={3}>
+                            <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                              {product.product_name}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary">
+                              HSN: {product.hsn_code}
+                            </Typography>
+                          </Grid>
+                          <Grid item xs={2}>
+                            <Typography variant="body2">
+                              Qty: {product.purchase_qty} {product.unit_type}
+                            </Typography>
+                          </Grid>
+                          <Grid item xs={2}>
+                            <Typography variant="body2">
+                              ₹{product.mrp_incl_gst?.toFixed(2) || '0.00'}
+                            </Typography>
+                          </Grid>
+                          <Grid item xs={2}>
+                            <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                              ₹{product.purchase_invoice_value?.toFixed(2) || '0.00'}
+                            </Typography>
+                          </Grid>
+                          <Grid item xs={3}>
+                            <Box sx={{ display: 'flex', gap: 0.5, justifyContent: 'flex-end' }}>
+                              {editingSummaryIndex === index ? (
+                                <Chip 
+                                  label="Editing..." 
+                                  color="warning" 
+                                  size="small"
+                                  sx={{ fontWeight: 'bold' }}
+                                />
+                              ) : (
+                                <>
+                                  <IconButton 
+                                    size="small" 
+                                    color="primary" 
+                                    onClick={() => editSummaryItem(index)}
+                                    sx={{ padding: '4px' }}
+                                    title="Edit this product"
+                                    disabled={editingSummaryIndex !== null}
+                                  >
+                                    <EditIcon fontSize="small" />
+                                  </IconButton>
+                                  <IconButton 
+                                    size="small" 
+                                    color="error" 
+                                    onClick={() => removeFromSummary(index)}
+                                    sx={{ padding: '4px' }}
+                                    title="Remove this product"
+                                    disabled={editingSummaryIndex !== null}
+                                  >
+                                    <DeleteIcon fontSize="small" />
+                                  </IconButton>
+                                </>
+                              )}
+                            </Box>
+                          </Grid>
+                        </Grid>
+                      </Paper>
+                    ))}
+                  </Box>
+                  
+                  <Divider sx={{ my: 1 }} />
+                  <Grid container spacing={2}>
+                    <Grid item xs={4}>
+                      <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+                        Session Summary:
+                      </Typography>
+                    </Grid>
+                    <Grid item xs={2}>
+                      <Typography variant="body2">
+                        Total Qty: {currentSessionTotal.totalQuantity}
+                      </Typography>
+                    </Grid>
+                    <Grid item xs={3}>
+                      <Typography variant="body2">
+                        Products: {currentSessionTotal.totalProducts}
+                      </Typography>
+                    </Grid>
+                    <Grid item xs={3}>
+                      <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+                        Total: ₹{currentSessionTotal.totalValue.toFixed(2)}
+                      </Typography>
+                    </Grid>
+                  </Grid>
+                </Paper>
+              </Grid>
+            )}
+
             <Grid item xs={12} sm={6} md={4}>
               <TextField
                 label="Date *"
@@ -3546,11 +3839,59 @@ export default function InventoryManager() {
             </Grid>
           </Grid>
         </DialogContent>
-        <DialogActions>
-          <Button onClick={handleClose}>Cancel</Button>
-          <Button variant="contained" onClick={handleSubmit}>
-            {editingId ? 'Update Purchase' : 'Save Purchase'}
-          </Button>
+        <DialogActions sx={{ justifyContent: 'space-between', px: 3, py: 2 }}>
+          <Box>
+            <Button onClick={handleClose} color="secondary">
+              Cancel
+            </Button>
+          </Box>
+          <Box sx={{ display: 'flex', gap: 1 }}>
+            {editingSummaryIndex !== null && (
+              <>
+                <Button 
+                  variant="outlined" 
+                  color="secondary" 
+                  onClick={cancelSummaryItemEdit}
+                >
+                  Cancel Edit
+                </Button>
+                <Button 
+                  variant="contained" 
+                  color="warning"
+                  onClick={handleSubmit}
+                  disabled={!purchaseFormData.product_name || !purchaseFormData.vendor || !purchaseFormData.purchase_invoice_number}
+                >
+                  Save Changes
+                </Button>
+              </>
+            )}
+            {editingSummaryIndex === null && (
+              <>
+                {addedProductsSummary.length > 0 && !editingId && (
+                  <Button 
+                    variant="outlined" 
+                    color="success" 
+                    onClick={handleClose}
+                    startIcon={<CheckIcon />}
+                  >
+                    Finish & Close ({addedProductsSummary.length} products added)
+                  </Button>
+                )}
+                <Button 
+                  variant="contained" 
+                  onClick={handleSubmit}
+                  disabled={!purchaseFormData.product_name || !purchaseFormData.vendor || !purchaseFormData.purchase_invoice_number}
+                >
+                  {editingId 
+                    ? 'Update Purchase' 
+                    : addedProductsSummary.length > 0 
+                      ? 'Add Another Product' 
+                      : 'Save Purchase'
+                  }
+                </Button>
+              </>
+            )}
+          </Box>
         </DialogActions>
       </Dialog>
     </Box>
