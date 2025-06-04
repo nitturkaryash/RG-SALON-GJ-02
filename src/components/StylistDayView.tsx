@@ -579,6 +579,27 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
   const [contextMenuPosition, setContextMenuPosition] = useState<{ mouseX: number; mouseY: number } | null>(null);
   const [contextMenuAppointment, setContextMenuAppointment] = useState<any | null>(null);
   
+  // Add confirmation dialog states for check-in/check-out
+  const [checkInConfirmDialog, setCheckInConfirmDialog] = useState<{
+    open: boolean;
+    appointments: any[];
+    singleAppointment: any;
+  }>({
+    open: false,
+    appointments: [],
+    singleAppointment: null
+  });
+  
+  const [checkOutConfirmDialog, setCheckOutConfirmDialog] = useState<{
+    open: boolean;
+    appointments: any[];
+    singleAppointment: any;
+  }>({
+    open: false,
+    appointments: [],
+    singleAppointment: null
+  });
+  
   // State variables for scroll position tracking
   const [scrollTop, setScrollTop] = useState(0);
   const [scrollLeft, setScrollLeft] = useState(0);
@@ -743,23 +764,77 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
 
   const memoizedHandleCheckIn = useCallback(() => {
     if (contextMenuAppointment) {
-      setCheckedInIds(prev => new Set(prev).add(contextMenuAppointment.id));
-      // TODO: optionally call onUpdateAppointment to persist check-in status
+      // Find all appointments for the same client on the same day
+      const appointmentDate = format(new Date(contextMenuAppointment.start_time), 'yyyy-MM-dd');
+      const currentDate_formatted = format(currentDate, 'yyyy-MM-dd');
+      
+      if (appointmentDate === currentDate_formatted) {
+        const sameClientAppointments = appointments.filter(appointment => 
+          appointment.client_id === contextMenuAppointment.client_id &&
+          format(new Date(appointment.start_time), 'yyyy-MM-dd') === appointmentDate
+        );
+
+        if (sameClientAppointments.length > 1) {
+          // Multiple appointments for the same client - show confirmation dialog
+          setCheckInConfirmDialog({
+            open: true,
+            appointments: sameClientAppointments,
+            singleAppointment: contextMenuAppointment
+          });
+        } else {
+          // Single appointment - check in directly
+          setCheckedInIds(prev => new Set(prev).add(contextMenuAppointment.id));
+          // TODO: optionally call onUpdateAppointment to persist check-in status
+        }
+      } else {
+        // Different date - check in single appointment
+        setCheckedInIds(prev => new Set(prev).add(contextMenuAppointment.id));
+        // TODO: optionally call onUpdateAppointment to persist check-in status
+      }
     }
     memoizedHandleCloseContextMenu();
-  }, [contextMenuAppointment, memoizedHandleCloseContextMenu]);
+  }, [contextMenuAppointment, memoizedHandleCloseContextMenu, appointments, currentDate]);
 
   const memoizedHandleCheckOut = useCallback(() => {
     if (contextMenuAppointment) {
-      setCheckedInIds(prev => {
-        const newSet = new Set(prev);
-        newSet.delete(contextMenuAppointment.id);
-        return newSet;
-      });
-      // TODO: optionally call onUpdateAppointment to persist check-out status
+      // Find all appointments for the same client on the same day
+      const appointmentDate = format(new Date(contextMenuAppointment.start_time), 'yyyy-MM-dd');
+      const currentDate_formatted = format(currentDate, 'yyyy-MM-dd');
+      
+      if (appointmentDate === currentDate_formatted) {
+        const sameClientAppointments = appointments.filter(appointment => 
+          appointment.client_id === contextMenuAppointment.client_id &&
+          format(new Date(appointment.start_time), 'yyyy-MM-dd') === appointmentDate
+        );
+
+        if (sameClientAppointments.length > 1) {
+          // Multiple appointments for the same client - show confirmation dialog
+          setCheckOutConfirmDialog({
+            open: true,
+            appointments: sameClientAppointments,
+            singleAppointment: contextMenuAppointment
+          });
+        } else {
+          // Single appointment - check out directly
+          setCheckedInIds(prev => {
+            const newSet = new Set(prev);
+            newSet.delete(contextMenuAppointment.id);
+            return newSet;
+          });
+          // TODO: optionally call onUpdateAppointment to persist check-out status
+        }
+      } else {
+        // Different date - check out single appointment
+        setCheckedInIds(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(contextMenuAppointment.id);
+          return newSet;
+        });
+        // TODO: optionally call onUpdateAppointment to persist check-out status
+      }
     }
     memoizedHandleCloseContextMenu();
-  }, [contextMenuAppointment, memoizedHandleCloseContextMenu]);
+  }, [contextMenuAppointment, memoizedHandleCloseContextMenu, appointments, currentDate]);
 
   // Enhanced scroll handler that respects context menu state and scroll restoration
   const enhancedHandleScroll = useCallback(() => {
@@ -2413,6 +2488,61 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
   // Add at the beginning of the component, with the other state declarations
   const somethingThatChanges = null; // This ensures a constant value to prevent remounting
 
+  // Confirmation dialog handlers for check-in/check-out
+  const handleConfirmCheckInAll = useCallback(() => {
+    if (checkInConfirmDialog.appointments.length > 0) {
+      const appointmentIds = checkInConfirmDialog.appointments.map(app => app.id);
+      setCheckedInIds(prev => {
+        const newSet = new Set(prev);
+        appointmentIds.forEach(id => newSet.add(id));
+        return newSet;
+      });
+      // TODO: optionally call onUpdateAppointment for each appointment to persist check-in status
+    }
+    setCheckInConfirmDialog({ open: false, appointments: [], singleAppointment: null });
+  }, [checkInConfirmDialog.appointments]);
+
+  const handleConfirmCheckInSingle = useCallback(() => {
+    if (checkInConfirmDialog.singleAppointment) {
+      setCheckedInIds(prev => new Set(prev).add(checkInConfirmDialog.singleAppointment.id));
+      // TODO: optionally call onUpdateAppointment to persist check-in status
+    }
+    setCheckInConfirmDialog({ open: false, appointments: [], singleAppointment: null });
+  }, [checkInConfirmDialog.singleAppointment]);
+
+  const handleConfirmCheckOutAll = useCallback(() => {
+    if (checkOutConfirmDialog.appointments.length > 0) {
+      const appointmentIds = checkOutConfirmDialog.appointments.map(app => app.id);
+      setCheckedInIds(prev => {
+        const newSet = new Set(prev);
+        appointmentIds.forEach(id => newSet.delete(id));
+        return newSet;
+      });
+      // TODO: optionally call onUpdateAppointment for each appointment to persist check-out status
+    }
+    setCheckOutConfirmDialog({ open: false, appointments: [], singleAppointment: null });
+  }, [checkOutConfirmDialog.appointments]);
+
+  const handleConfirmCheckOutSingle = useCallback(() => {
+    if (checkOutConfirmDialog.singleAppointment) {
+      setCheckedInIds(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(checkOutConfirmDialog.singleAppointment.id);
+        return newSet;
+      });
+      // TODO: optionally call onUpdateAppointment to persist check-out status
+    }
+    setCheckOutConfirmDialog({ open: false, appointments: [], singleAppointment: null });
+  }, [checkOutConfirmDialog.singleAppointment]);
+
+  const handleCancelCheckInDialog = useCallback(() => {
+    setCheckInConfirmDialog({ open: false, appointments: [], singleAppointment: null });
+  }, []);
+
+  const handleCancelCheckOutDialog = useCallback(() => {
+    setCheckOutConfirmDialog({ open: false, appointments: [], singleAppointment: null });
+  }, []);
+
   return (
     <DayViewContainer>
       <DayViewHeader sx={{ 
@@ -3347,6 +3477,100 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
           onContextMenu={handleCloseContextMenu}
         />
       )}
+
+      {/* Check-in Confirmation Dialog */}
+      <Dialog
+        open={checkInConfirmDialog.open}
+        onClose={handleCancelCheckInDialog}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle sx={{ color: 'primary.main' }}>
+          Check In Appointments
+        </DialogTitle>
+        <DialogContent dividers>
+          <Typography variant="body1" sx={{ mb: 2 }}>
+            You have multiple appointments for this client today. Would you like to:
+          </Typography>
+          <Box sx={{ pl: 2 }}>
+            <Typography variant="body2" sx={{ mb: 1 }}>
+              • Check in all {checkInConfirmDialog.appointments.length} appointments for {
+                checkInConfirmDialog.singleAppointment && 
+                allClients.find(c => c.id === checkInConfirmDialog.singleAppointment.client_id)?.full_name || 'this client'
+              }
+            </Typography>
+            <Typography variant="body2">
+              • Or check in only this specific appointment
+            </Typography>
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCancelCheckInDialog}>
+            Cancel
+          </Button>
+          <Button 
+            onClick={handleConfirmCheckInSingle}
+            variant="outlined"
+            color="primary"
+          >
+            Check In This Only
+          </Button>
+          <Button
+            onClick={handleConfirmCheckInAll}
+            variant="contained"
+            color="primary"
+          >
+            Check In All {checkInConfirmDialog.appointments.length}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Check-out Confirmation Dialog */}
+      <Dialog
+        open={checkOutConfirmDialog.open}
+        onClose={handleCancelCheckOutDialog}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle sx={{ color: 'primary.main' }}>
+          Check Out Appointments
+        </DialogTitle>
+        <DialogContent dividers>
+          <Typography variant="body1" sx={{ mb: 2 }}>
+            You have multiple appointments for this client today. Would you like to:
+          </Typography>
+          <Box sx={{ pl: 2 }}>
+            <Typography variant="body2" sx={{ mb: 1 }}>
+              • Check out all {checkOutConfirmDialog.appointments.length} appointments for {
+                checkOutConfirmDialog.singleAppointment && 
+                allClients.find(c => c.id === checkOutConfirmDialog.singleAppointment.client_id)?.full_name || 'this client'
+              }
+            </Typography>
+            <Typography variant="body2">
+              • Or check out only this specific appointment
+            </Typography>
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCancelCheckOutDialog}>
+            Cancel
+          </Button>
+          <Button 
+            onClick={handleConfirmCheckOutSingle}
+            variant="outlined"
+            color="primary"
+          >
+            Check Out This Only
+          </Button>
+          <Button
+            onClick={handleConfirmCheckOutAll}
+            variant="contained"
+            color="primary"
+          >
+            Check Out All {checkOutConfirmDialog.appointments.length}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </DayViewContainer>
   );
 }
