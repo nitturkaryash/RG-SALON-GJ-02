@@ -1,33 +1,4 @@
-/**
- * StylistDayView Component
- * 
- * SCROLL POSITION PRESERVATION:
- * This component implements a comprehensive scroll preservation system to prevent
- * unwanted scroll resets during user interactions:
- * 
- * FIXED ISSUES:
- * 1. ❌ Right-click context menu operations causing scroll reset
- * 2. ❌ Check-in/Check-out actions resetting scroll position  
- * 3. ❌ Opening appointment drawer resetting scroll position
- * 4. ❌ Opening break management dialogs resetting scroll position
- * 5. ❌ State changes triggering automatic scroll restoration
- * 
- * SOLUTION IMPLEMENTED:
- * - Enhanced scroll preservation with localStorage persistence
- * - Store scroll position before any dialog/context menu operations
- * - Restore scroll position only when all dialogs/menus are closed
- * - Use immediate scroll restoration (behavior: 'auto') to prevent animation conflicts
- * - Debounced scroll saving to prevent excessive localStorage writes
- * 
- * SCROLL MANAGEMENT STRATEGY:
- * - useScrollPreservation hook with localStorage support
- * - Automatic scroll position persistence across sessions
- * - Enhanced scroll handler with debounced saving
- * - Dialog handlers: Store position on open, restore on close
- * - Context menu: Preserves position during right-click operations
- */
-
-import React, { useState, useEffect, useMemo, useCallback, useRef, memo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { 
   Box, 
   Paper, 
@@ -63,10 +34,13 @@ import {
   Drawer,
   Stack,
   Chip,
+  List,
+  ListItem,
+  ListItemText,
   Menu
 } from '@mui/material';
 import { styled } from '@mui/material/styles';
-import { ChevronLeft, ChevronRight, Today, Receipt, CalendarMonth, Delete as DeleteIcon, Close as CloseIcon, Add as AddIcon, Edit as EditIcon, Save as SaveIcon, Refresh as RefreshIcon } from '@mui/icons-material';
+import { ChevronLeft, ChevronRight, Today, Receipt, CalendarMonth, Delete as DeleteIcon, Close as CloseIcon, Add as AddIcon, Edit as EditIcon, Save as SaveIcon } from '@mui/icons-material';
 import { format, addDays, isSameDay } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
 import { useClients, Client } from '../hooks/useClients';
@@ -82,7 +56,8 @@ import ErrorBoundary from './ErrorBoundary';
 import { toast } from 'react-hot-toast';
 import { createFilterOptions } from '@mui/material/Autocomplete';
 import { sendAppointmentNotification } from '../utils/whatsapp';
-import { StylistHoliday } from '../hooks/useStylistHolidays';
+import { MergedAppointment } from '../hooks/useAppointments';
+import { StylistHoliday, useStylistHolidays } from '../hooks/useStylistHolidays';
 import { useScrollPreservation } from '../utils/scrollPreservation';
 import { useLocalStorage } from '../utils/useLocalStorage';
 
@@ -111,16 +86,14 @@ const STYLIST_HEADER_HEIGHT = 56;
 
 // Styled components
 const DayViewContainer = styled(Paper)(({ theme }) => ({
-  height: '100vh', // Changed from 100% to 100vh to ensure full viewport height
-  minHeight: 0,
+  height: '100%',
   width: '100%',
   display: 'flex',
   flexDirection: 'column',
-  overflow: 'visible', // Allow vertical scrollbars
+  overflow: 'hidden',
   backgroundColor: theme.palette.background.default,
-  border: 'none',
-  borderRadius: 0,
-  boxShadow: 'none',
+  border: 'none', // Remove border as the parent container will handle this
+  borderRadius: 0, // Remove border radius for full bleed
 }));
 
 const DayViewHeader = styled(Box)(({ theme }) => ({
@@ -128,7 +101,9 @@ const DayViewHeader = styled(Box)(({ theme }) => ({
   justifyContent: 'space-between',
   alignItems: 'center',
   padding: theme.spacing(2),
+  borderBottom: `1px solid ${theme.palette.divider}`,
   backgroundColor: theme.palette.background.paper, // White background
+  boxShadow: '0px 1px 4px rgba(0, 0, 0, 0.05)',
   borderTopLeftRadius: 28, // Match container
   borderTopRightRadius: 28, // Match container
 }));
@@ -136,13 +111,13 @@ const DayViewHeader = styled(Box)(({ theme }) => ({
 const ScheduleGrid = styled(Box)(({ theme }) => ({
   display: 'flex',
   flex: 1,
-  minHeight: `${((BUSINESS_HOURS.end - BUSINESS_HOURS.start + 1) * 4) * TIME_SLOT_HEIGHT + STYLIST_HEADER_HEIGHT}px`, // Ensure all slots are visible
-  overflowY: 'visible',   // allow page to scroll vertically so headers stick to viewport
-  overflowX: 'visible',   // defer horizontal scroll to outer wrapper for reliable sticky behavior
+  overflow: 'auto',
   position: 'relative',
-  width: 'max-content', // expand to fit all columns so TimeColumn sticks across full scroll
-  border: 'none',
-  borderTop: 'none'
+  width: '100%', // Ensure it takes full width
+  '& > *': {  // This affects all direct children
+    height: 'fit-content',  // Allow elements to grow beyond viewport
+    minHeight: '100%'       // But at minimum be full height
+  }
 }));
 
 const TimeColumn = styled(Box)(({ theme }) => ({
@@ -152,70 +127,45 @@ const TimeColumn = styled(Box)(({ theme }) => ({
   position: 'sticky',
   left: 0,
   backgroundColor: theme.palette.background.paper,
-  zIndex: 12, // Higher than StylistHeader to ensure it stays above
-  paddingTop: 0,
-  marginTop: 0,
-  borderTop: 'none'
+  zIndex: 2,
+  paddingTop: 0, // Remove padding to ensure alignment
+  marginTop: 0 // Remove margin to ensure alignment
 }));
 
-// Update HeaderWrapper for better transition
-const HeaderWrapper = styled(Box)(({ theme }) => ({
-  position: 'fixed',
-  top: 0,
-  left: 0,
-  right: 0,
-  zIndex: 1000, // Very high z-index to ensure it's on top
-  pointerEvents: 'none', // Let clicks pass through the wrapper
-  transition: 'all 0.2s ease-in-out',
-}));
-
-// Update FixedStylistHeader with better contrast
-const FixedStylistHeader = styled(Box)(({ theme }) => ({
-  padding: theme.spacing(1.5),
-  textAlign: 'center',
-  borderBottom: `1px solid ${theme.palette.divider}`,
-  borderRight: `1px solid ${theme.palette.divider}`,
-  backgroundColor: theme.palette.primary.main, // Use primary color for better visibility
-  height: STYLIST_HEADER_HEIGHT,
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  pointerEvents: 'auto', // Re-enable pointer events for the header itself
-  color: 'white',
-  fontWeight: 'bold',
-}));
-
-const StylistColumn = styled(Box)(({ theme }) => ({
+const StylistColumn = styled(Box, { shouldForwardProp: (prop) => prop !== 'isOnHoliday' })<{ isOnHoliday?: boolean }>(({ theme, isOnHoliday }) => ({
   flex: 1,
-  minWidth: 200,
+  minWidth: 200, // Increased from 180px to 200px for better spacing
   [theme.breakpoints.down('sm')]: {
     minWidth: 120,
   },
   position: 'relative',
   backgroundColor: theme.palette.salon.offWhite,
   height: '100%',
-  overflow: 'visible',
-  display: 'flex',
-  flexDirection: 'column',
-  borderTop: 'none',
-  // Removed CSS containment to ensure sticky headers can function
+  paddingBottom: '50vh', // Add extra space at the bottom for scrolling
 }));
 
-// Update StylistHeader - replace 'left: 0' with overflow control
-const StylistHeader = styled(Box)(({ theme }) => ({
+const StylistHeader = styled(Box, { shouldForwardProp: (prop) => prop !== 'isOnHoliday' && prop !== 'stylistColor' })<{ isOnHoliday?: boolean; stylistColor?: string }>(({ theme, isOnHoliday, stylistColor }) => ({
   padding: theme.spacing(1.5),
   textAlign: 'center',
   borderBottom: `1px solid ${theme.palette.divider}`,
   borderRight: `1px solid ${theme.palette.divider}`,
-  borderTop: 'none',
-  backgroundColor: theme.palette.salon.oliveLight,
+  backgroundColor: isOnHoliday ? theme.palette.grey[400] : (stylistColor || theme.palette.salon.oliveLight),
+  color: theme.palette.common.white,
   position: 'sticky',
   top: 0,
-  zIndex: 100,
-  height: STYLIST_HEADER_HEIGHT,
+  zIndex: 3,
+  height: 56,
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
+  opacity: isOnHoliday ? 0.8 : 1,
+  '&::after': isOnHoliday ? {
+    content: '"On Holiday"',
+    position: 'absolute',
+    bottom: 4,
+    fontSize: '0.7rem',
+    opacity: 0.9
+  } : {}
 }));
 
 const TimeSlot = styled(Box)(({ theme }) => ({
@@ -224,7 +174,6 @@ const TimeSlot = styled(Box)(({ theme }) => ({
     height: Math.floor(TIME_SLOT_HEIGHT * 0.7),
   },
   borderBottom: `1px solid ${theme.palette.divider}`,
-  borderTop: 'none',
   display: 'flex',
   alignItems: 'center',
   padding: theme.spacing(0.75),
@@ -232,9 +181,6 @@ const TimeSlot = styled(Box)(({ theme }) => ({
   position: 'relative',
   '&:last-child': {
     borderBottom: 'none',
-  },
-  '&:first-of-type': {
-    borderTop: 'none',
   },
 }));
 
@@ -248,9 +194,11 @@ const TimeLabel = styled(Typography)(({ theme }) => ({
 // Update the AppointmentSlot component
 const AppointmentSlot = styled(Box)(({ theme }) => ({
   height: TIME_SLOT_HEIGHT,
+  [theme.breakpoints.down('sm')]: {
+    height: Math.floor(TIME_SLOT_HEIGHT * 0.7),
+  },
   borderBottom: `1px solid ${theme.palette.divider}`,
-  borderRight: `1px solid ${theme.palette.divider}`, // Add right border to every slot
-  borderTop: 'none',
+  borderRight: `1px solid ${theme.palette.divider}`,
   cursor: 'pointer',
   transition: 'background-color 0.2s',
   '&:hover': {
@@ -263,45 +211,39 @@ const AppointmentSlot = styled(Box)(({ theme }) => ({
       backgroundColor: 'rgba(211, 47, 47, 0.2)',
     },
   },
-  '&:first-of-type': {
-    borderTop: 'none',
-  },
+  '&.holiday': {
+    backgroundColor: 'rgba(158, 158, 158, 0.15)',
+    cursor: 'not-allowed',
+    '&:hover': {
+      backgroundColor: 'rgba(158, 158, 158, 0.2)',
+    },
+  }
 }));
 
 // Update the AppointmentCard component
 const AppointmentCard = styled(Box, {
   shouldForwardProp: (prop) => prop !== 'isPaid' && prop !== 'duration' && prop !== 'status' && prop !== 'isCheckedIn',
-})<{ duration: number; isPaid: boolean; status: 'scheduled' | 'completed' | 'cancelled'; isCheckedIn?: boolean }>(
-  ({ theme, duration, isPaid, status, isCheckedIn }) => ({
+})<{ duration: number; isPaid: boolean; status: 'scheduled' | 'completed' | 'cancelled'; isCheckedIn: boolean }>(({ theme, duration, isPaid, status, isCheckedIn }) => ({
   position: 'absolute',
   left: theme.spacing(0.75),
   right: theme.spacing(0.75),
-  height: `${Math.max(duration, TIME_SLOT_HEIGHT / 2)}px`, // Ensure minimum height
-  // backgroundColor is effectively overridden by inline style for checked-in state,
-  // this is the fallback.
-  backgroundColor:
+  height: `${Math.max(duration, TIME_SLOT_HEIGHT / 2)}px`,
+  backgroundColor: 
+    status === 'completed' 
+      ? theme.palette.grey[400]
+      : isPaid 
+        ? theme.palette.success.light
+        : theme.palette.primary.main,
+  color: 
     status === 'completed'
-      ? theme.palette.grey[400] // Grey background for completed appointments
+      ? theme.palette.getContrastText(theme.palette.grey[400])
       : isPaid
-        ? theme.palette.success.light // Green if paid (and not completed)
-        : theme.palette.primary.main, // Default olive if scheduled/cancelled and not paid
-  color:
-    isCheckedIn // Precedence for checked-in state
-      ? theme.palette.getContrastText('#D2B48C') // Contrast text for Tan
-      : status === 'completed'
-      ? theme.palette.getContrastText(theme.palette.grey[400]) // Contrast text for grey
-      : isPaid
-        ? theme.palette.success.contrastText // Contrast text for success
-        : theme.palette.primary.contrastText, // Contrast text for primary
+        ? theme.palette.success.contrastText
+        : theme.palette.primary.contrastText,
   borderRadius: 8,
   padding: theme.spacing(1, 1.5),
   overflow: 'hidden',
-  boxShadow:
-    status === 'completed'
-      ? '0px 2px 6px rgba(0, 0, 0, 0.15)' // Grey shadow for completed
-      : isCheckedIn
-      ? '0px 4px 12px rgba(177, 137, 99, 0.3)' // Tan-complementary shadow for checked-in
-      : '0px 4px 12px rgba(107, 142, 35, 0.25)', // Default green shadow
+  boxShadow: status === 'completed' ? '0px 2px 6px rgba(0, 0, 0, 0.15)' : '0px 4px 12px rgba(107, 142, 35, 0.25)',
   zIndex: 1,
   fontSize: '0.9rem',
   display: 'flex',
@@ -309,14 +251,14 @@ const AppointmentCard = styled(Box, {
   justifyContent: 'space-between',
   transition: 'all 0.2s ease-in-out',
   cursor: 'move',
-  border: status === 'completed' ? `1px solid ${theme.palette.grey[500]}` : '1px solid rgba(255, 255, 255, 0.25)', // Different border
-  opacity: status === 'completed' ? 0.8 : 1, // Slightly faded if completed
+  border: status === 'completed' ? `1px solid ${theme.palette.grey[500]}` : '1px solid rgba(255, 255, 255, 0.25)',
+  opacity: status === 'completed' ? 0.8 : 1,
   '&:hover': {
     boxShadow: status === 'completed' ? '0px 3px 8px rgba(0, 0, 0, 0.2)' : '0px 6px 16px rgba(107, 142, 35, 0.4)',
-    transform: status === 'completed' ? 'none' : 'translateY(-2px)', // No lift on hover if completed
-    zIndex: status === 'completed' ? 1 : 2, // Ensure non-completed are slightly above on hover
+    transform: status === 'completed' ? 'none' : 'translateY(-2px)',
+    zIndex: status === 'completed' ? 1 : 2,
   },
-  '&:after': { // Debug outline
+  '&:after': {
     content: '""',
     position: 'absolute',
     top: 0,
@@ -326,7 +268,19 @@ const AppointmentCard = styled(Box, {
     border: '1px dashed rgba(0,0,0,0.2)',
     borderRadius: 8,
     pointerEvents: 'none',
-  }
+  },
+  ...(isCheckedIn && {
+    borderLeft: '4px solid #4caf50',
+    '&::before': {
+      content: '"✓"',
+      position: 'absolute',
+      top: 4,
+      right: 4,
+      color: '#4caf50',
+      fontWeight: 'bold',
+      fontSize: '1rem',
+    }
+  })
 }));
 
 // Update the BreakCard component to ensure it doesn't capture mouse events
@@ -437,13 +391,20 @@ export interface Break {
   reason?: string;
 }
 
+// Reintroduce the local Stylist interface definition with necessary properties, including color:
 interface Stylist {
-  id: string;
+  id: string; // Assuming string based on typical usage with UUIDs
   name: string;
   breaks: Break[];
-  available?: boolean;
-  holidays?: StylistHoliday[]; // Add holidays array to stylist
-  // ... other stylist properties ...
+  available?: boolean; // Add available property
+  color?: string; // Add color property
+  // Include other properties used by this component, potentially from initial data
+  email?: string;
+  phone?: string;
+  specialties?: string[];
+  gender?: 'male' | 'female' | 'other';
+  imageUrl?: string;
+  isOnHoliday?: boolean; // Add this property
 }
 
 // Add ClientEntry interface before the component definition
@@ -465,69 +426,16 @@ interface StylistDayViewProps {
   onDeleteAppointment?: (appointmentId: string) => Promise<void>;
   onAddBreak: (stylistId: string, breakData: Break) => Promise<void>;
   onDeleteBreak?: (stylistId: string, breakId: string) => Promise<void>;
-  onUpdateBreak?: (stylistId: string, breakId: string, breakData: Omit<Break, 'id'>) => Promise<void>; // Add this prop
+  onUpdateBreak?: (stylistId: string, breakId: string, breakData: Omit<Break, 'id'>) => Promise<void>;
   onDateChange?: (date: Date) => void;
   onStylistsChange?: (updatedStylists: Stylist[]) => void;
   onAppointmentClick?: (appointment: any) => void;
-  lastBookedAppointmentTime?: string; // New prop to track last booked appointment time
-  holidays?: StylistHoliday[]; // Add holidays prop
+  lastBookedAppointmentTime?: string; // Add this line
+  holidays: StylistHoliday[]; // Assuming holidays is already there or needed
 }
 
 // Define filter for freeSolo client options
 const filterClients = createFilterOptions<{ id: string; full_name: string; phone?: string; inputValue?: string }>();
-
-// Memoized AppointmentCard component to prevent unnecessary re-renders
-const MemoizedAppointmentCard = memo(({ 
-  appointment, 
-  isCheckedIn, 
-  bgColor, 
-  duration, 
-  isPaid, 
-  status, 
-  onDragStart, 
-  onClick, 
-  onContextMenu, 
-  style, 
-  children 
-}: any) => (
-  <AppointmentCard
-    draggable
-    onDragStart={onDragStart}
-    onClick={onClick}
-    onContextMenu={onContextMenu}
-    style={style}
-    duration={duration}
-    isPaid={isPaid}
-    status={status}
-    isCheckedIn={isCheckedIn}
-  >
-    {children}
-  </AppointmentCard>
-));
-
-MemoizedAppointmentCard.displayName = 'MemoizedAppointmentCard';
-
-// Add at the top of the StylistDayView component
-const MemoizedScheduleGrid = React.memo(
-  ({ children, scheduleGridRef, onScroll, ...rest }: { 
-    children: React.ReactNode; 
-    scheduleGridRef: React.RefObject<HTMLDivElement>;
-    onScroll?: () => void;
-    [key: string]: any;
-  }) => {
-    console.log("ScheduleGrid rendering");
-    return (
-      <ScheduleGrid 
-        ref={scheduleGridRef} 
-        onScroll={onScroll}
-        {...rest}
-      >
-        {children}
-      </ScheduleGrid>
-    );
-  }, 
-  () => true // Always return true to prevent re-renders
-);
 
 const StylistDayView: React.FC<StylistDayViewProps> = ({
   stylists: initialStylists,
@@ -547,84 +455,26 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
   holidays,
 }) => {
   const theme = useTheme();
-  const { clients: allClients = [], isLoading: isLoadingClients } = useClients(); // Add default empty array
-  const navigate = useNavigate();
-
-  // Basic component state
+  const { clients: allClients, isLoading: isLoadingClients } = useClients();
+  
+  // State declarations
+  const [currentDate, setCurrentDate] = useState<Date>(selectedDate || new Date());
   const [stylists, setStylists] = useState<Stylist[]>(initialStylists);
   const [selectedStylist, setSelectedStylist] = useState<Stylist | null>(null);
-  const [currentDate, setCurrentDate] = useState<Date>(selectedDate || new Date());
-  const [selectedAppointment, setSelectedAppointment] = useState<any | null>(null);
+  const [selectedAppointment, setSelectedAppointment] = useState<MergedAppointment | null>(null);
   const [editDialogOpen, setEditDialogOpen] = useState<boolean>(false);
-  
-  // Break state
   const [breakDialogOpen, setBreakDialogOpen] = useState<boolean>(false);
+  const [snackbarOpen, setSnackbarOpen] = useState<boolean>(false);
+  const [snackbarMessage, setSnackbarMessage] = useState<string>('');
+  const [snackbarSeverity, setSnackbarSeverity] = useState<'success' | 'error' | 'info' | 'warning'>('info');
+  const [datePickerAnchorEl, setDatePickerAnchorEl] = useState<null | HTMLElement>(null);
+  const [isBilling, setIsBilling] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [breakFormData, setBreakFormData] = useState({
     startTime: '',
     endTime: '',
     reason: ''
   });
-  
-  // Edit break state
-  const [editingBreak, setEditingBreak] = useState<Break | null>(null);
-  const [editBreakDialogOpen, setEditBreakDialogOpen] = useState(false);
-  const [editBreakFormData, setEditBreakFormData] = useState({
-    startTime: '',
-    endTime: '',
-    reason: ''
-  });
-
-  // Track checked-in appointments and context menu state
-  const [checkedInIds, setCheckedInIds] = useState<Set<string>>(new Set());
-  const [contextMenuPosition, setContextMenuPosition] = useState<{ mouseX: number; mouseY: number } | null>(null);
-  const [contextMenuAppointment, setContextMenuAppointment] = useState<any | null>(null);
-  
-  // Add confirmation dialog states for check-in/check-out
-  const [checkInConfirmDialog, setCheckInConfirmDialog] = useState<{
-    open: boolean;
-    appointments: any[];
-    singleAppointment: any;
-  }>({
-    open: false,
-    appointments: [],
-    singleAppointment: null
-  });
-  
-  const [checkOutConfirmDialog, setCheckOutConfirmDialog] = useState<{
-    open: boolean;
-    appointments: any[];
-    singleAppointment: any;
-  }>({
-    open: false,
-    appointments: [],
-    singleAppointment: null
-  });
-  
-  // State variables for scroll position tracking
-  const [scrollTop, setScrollTop] = useState(0);
-  const [scrollLeft, setScrollLeft] = useState(0);
-  const [gridRect, setGridRect] = useState<DOMRect | null>(null);
-  const isContextMenuOpen = useRef<boolean>(false);
-  
-  // Enhanced scroll position preservation
-  const scrollPositionRef = useRef({ top: 0, left: 0 });
-  const isScrollRestoringRef = useRef(false);
-  
-  // Add state to track stylist holidays
-  const [stylistHolidays, setStylistHolidays] = useState<Record<string, StylistHoliday[]>>({});
-
-  // Update stylistHolidays when holidays prop changes
-  useEffect(() => {
-    if (holidays && stylists?.length) {
-      const holidaysMap: Record<string, StylistHoliday[]> = {};
-      stylists.forEach(stylist => {
-        holidaysMap[stylist.id] = holidays.filter(h => h.stylist_id === stylist.id);
-      });
-      setStylistHolidays(holidaysMap);
-    }
-  }, [holidays, stylists]);
-  
-  // Update the editFormData state type
   const [editFormData, setEditFormData] = useState<{
     clientName: string;
     clientId: string;
@@ -650,227 +500,47 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
     isNewClient: false,
     clientEntries: []
   });
-  
-  // State for drag and drop
-  const [draggedAppointment, setDraggedAppointment] = useState<any | null>(null);
-  
-  // Add state for date picker popover
-  const [datePickerAnchorEl, setDatePickerAnchorEl] = useState<HTMLButtonElement | null>(null);
-  const datePickerOpen = Boolean(datePickerAnchorEl);
-  
-  // Add state for service collections and search
-  const [serviceCollections, setServiceCollections] = useState<any[]>([]);
-  const [selectedServiceCollection, setSelectedServiceCollection] = useState<any>(null);
-  const [serviceSearchQuery, setServiceSearchQuery] = useState<string>('');
-  const [isLoadingCollectionServices, setIsLoadingCollectionServices] = useState(false);
-  const [loadingStylists, setLoadingStylists] = useState(false);
-  
-  // Add state for snackbar
-  const [snackbarOpen, setSnackbarOpen] = useState(false);
-  const [snackbarMessage, setSnackbarMessage] = useState('');
-  const [snackbarSeverity, setSnackbarSeverity] = useState<'success' | 'warning' | 'error'>('success');
-  
+
+  const { 
+    holidays: allHolidays, 
+    isLoading: isLoadingHolidays,
+    getStylistHolidays,
+    addHoliday,
+  } = useStylistHolidays();
+
+  // 1. Define this helper function first
+  const getStylistHolidayForDate = (stylist: Stylist, date: Date): StylistHoliday | undefined => {
+    // Ensure allHolidays is available before proceeding
+    if (!stylist || !allHolidays || !date) return undefined;
+
+    const formattedDate = format(date, 'yyyy-MM-dd');
+    // Use allHolidays instead of stylistHolidays
+    return allHolidays.find(holiday => 
+      holiday.stylist_id === stylist.id && 
+      holiday.holiday_date === formattedDate
+    );
+  };
+
+  // 2. Then use it in your useMemo
+  const availableStylists = useMemo(() => {
+    if (isLoadingHolidays || !allHolidays) {
+      return initialStylists;
+    }
+    // Always return all stylists, just mark those on holiday, and sort by name
+    return initialStylists
+      .map(stylist => {
+        const holiday = getStylistHolidayForDate(stylist, currentDate);
+        return {
+          ...stylist,
+          isOnHoliday: !!holiday
+        };
+      })
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [initialStylists, currentDate, allHolidays, isLoadingHolidays]);
+
   const timeSlots = generateTimeSlots();
   const timeOptions = generateTimeOptions();
-  
-  // Enhanced scroll preservation with localStorage support
-  const scheduleGridRef = useRef<HTMLDivElement>(null);
-  const scrollElementId = `stylist-day-view-${format(currentDate, 'yyyy-MM-dd')}`;
-  
-  const {
-    savePosition,
-    restorePosition,
-    loadFromStorage,
-    createDebouncedSaver,
-    withPreservation
-  } = useScrollPreservation(scheduleGridRef, scrollElementId);
-  
-  // Create debounced scroll saver for continuous scroll events
-  const debouncedScrollSaver = useMemo(() => {
-    if (scheduleGridRef.current) {
-      return createDebouncedSaver(300, true); // 300ms delay, persist to storage
-    }
-    return () => {};
-  }, [createDebouncedSaver]);
-  
-  // Load scroll position from localStorage on component mount and date changes
-  useEffect(() => {
-    // Small delay to ensure the grid is rendered
-    const timer = setTimeout(() => {
-      loadFromStorage();
-    }, 100);
-    
-    return () => clearTimeout(timer);
-  }, [loadFromStorage, currentDate]);
-  
-  // Enhanced scroll handler that saves position to localStorage
-  const handleScrollWithPreservation = useCallback(() => {
-    if (!isContextMenuOpen.current && !isScrollRestoringRef.current) {
-      debouncedScrollSaver();
-    }
-  }, [debouncedScrollSaver]);
-  
-  // Enhanced handlers that preserve scroll position
-  const handleDialogOpen = useCallback((dialogType: string) => {
-    console.log(`Opening ${dialogType} dialog, saving scroll position`);
-    savePosition(true); // Save to localStorage
-  }, [savePosition]);
-  
-  const handleDialogClose = useCallback((dialogType: string) => {
-    console.log(`Closing ${dialogType} dialog, restoring scroll position`);
-    // Restore position after a small delay to allow dialog to close
-    setTimeout(() => {
-      restorePosition(true); // Immediate restoration
-    }, 100);
-  }, [restorePosition]);
-  
-  // Memoized handlers to prevent unnecessary re-renders
-  const memoizedHandleCloseContextMenu = useCallback(() => {
-    // Mark context menu as closed
-    isContextMenuOpen.current = false;
-    
-    // Update state to close the context menu
-    // This will trigger the useEffect hook that handles scroll restoration
-    setContextMenuAppointment(null);
-    setContextMenuPosition(null);
-    
-    // The scroll restoration is now handled by the useEffect hook
-    // that listens to changes in contextMenuPosition.
-  }, []);
 
-  const memoizedHandleContextMenu = useCallback((event: React.MouseEvent, appointment: any) => {
-    event.preventDefault();
-    event.stopPropagation();
-    
-    // Comment out the scroll position storing code as it's causing reset issues
-    // const gridElement = gridRef.current;
-    // if (gridElement) {
-    //   scrollPositionRef.current = {
-    //     top: gridElement.scrollTop,
-    //     left: gridElement.scrollLeft
-    //   };
-    // }
-    
-    // Mark context menu as open
-    isContextMenuOpen.current = true;
-    
-    // Set context menu state with viewport-relative coordinates for fixed positioning
-    setContextMenuAppointment(appointment);
-    setContextMenuPosition({ 
-      mouseX: event.clientX, 
-      mouseY: event.clientY 
-    });
-  }, []);
-
-  const memoizedHandleCheckIn = useCallback(() => {
-    if (contextMenuAppointment) {
-      // Find all appointments for the same client on the same day
-      const appointmentDate = format(new Date(contextMenuAppointment.start_time), 'yyyy-MM-dd');
-      const currentDate_formatted = format(currentDate, 'yyyy-MM-dd');
-      
-      if (appointmentDate === currentDate_formatted) {
-        const sameClientAppointments = appointments.filter(appointment => 
-          appointment.client_id === contextMenuAppointment.client_id &&
-          format(new Date(appointment.start_time), 'yyyy-MM-dd') === appointmentDate
-        );
-
-        if (sameClientAppointments.length > 1) {
-          // Multiple appointments for the same client - show confirmation dialog
-          setCheckInConfirmDialog({
-            open: true,
-            appointments: sameClientAppointments,
-            singleAppointment: contextMenuAppointment
-          });
-        } else {
-          // Single appointment - check in directly
-          setCheckedInIds(prev => new Set(prev).add(contextMenuAppointment.id));
-          // TODO: optionally call onUpdateAppointment to persist check-in status
-        }
-      } else {
-        // Different date - check in single appointment
-        setCheckedInIds(prev => new Set(prev).add(contextMenuAppointment.id));
-        // TODO: optionally call onUpdateAppointment to persist check-in status
-      }
-    }
-    memoizedHandleCloseContextMenu();
-  }, [contextMenuAppointment, memoizedHandleCloseContextMenu, appointments, currentDate]);
-
-  const memoizedHandleCheckOut = useCallback(() => {
-    if (contextMenuAppointment) {
-      // Find all appointments for the same client on the same day
-      const appointmentDate = format(new Date(contextMenuAppointment.start_time), 'yyyy-MM-dd');
-      const currentDate_formatted = format(currentDate, 'yyyy-MM-dd');
-      
-      if (appointmentDate === currentDate_formatted) {
-        const sameClientAppointments = appointments.filter(appointment => 
-          appointment.client_id === contextMenuAppointment.client_id &&
-          format(new Date(appointment.start_time), 'yyyy-MM-dd') === appointmentDate
-        );
-
-        if (sameClientAppointments.length > 1) {
-          // Multiple appointments for the same client - show confirmation dialog
-          setCheckOutConfirmDialog({
-            open: true,
-            appointments: sameClientAppointments,
-            singleAppointment: contextMenuAppointment
-          });
-        } else {
-          // Single appointment - check out directly
-          setCheckedInIds(prev => {
-            const newSet = new Set(prev);
-            newSet.delete(contextMenuAppointment.id);
-            return newSet;
-          });
-          // TODO: optionally call onUpdateAppointment to persist check-out status
-        }
-      } else {
-        // Different date - check out single appointment
-        setCheckedInIds(prev => {
-          const newSet = new Set(prev);
-          newSet.delete(contextMenuAppointment.id);
-          return newSet;
-        });
-        // TODO: optionally call onUpdateAppointment to persist check-out status
-      }
-    }
-    memoizedHandleCloseContextMenu();
-  }, [contextMenuAppointment, memoizedHandleCloseContextMenu, appointments, currentDate]);
-
-  // Enhanced scroll handler that respects context menu state and scroll restoration
-  const enhancedHandleScroll = useCallback(() => {
-    const gridElement = scheduleGridRef.current;
-    if (gridElement && !isContextMenuOpen.current && !isScrollRestoringRef.current) {
-      // Only update stored scroll positions when not in context menu mode or restoring
-      scrollPositionRef.current = {
-        top: gridElement.scrollTop,
-        left: gridElement.scrollLeft
-      };
-      // REDUCED: Only update these state variables if they've changed significantly to prevent excessive re-renders
-      // setScrollTop(gridElement.scrollTop);
-      // setScrollLeft(gridElement.scrollLeft);
-      // setGridRect(gridElement.getBoundingClientRect());
-    }
-  }, []);
-
-  // Update the original handleScroll to use enhanced version
-  const handleScroll = enhancedHandleScroll;
-  
-  // Set up scroll listener
-  useEffect(() => {
-    const gridElement = scheduleGridRef.current;
-    if (!gridElement) return;
-    // Initialize positions
-    handleScroll();
-    // Listen for scroll
-    gridElement.addEventListener('scroll', handleScroll);
-    // Listen for resize to adjust bounds
-    window.addEventListener('resize', handleScroll);
-    return () => {
-      gridElement.removeEventListener('scroll', handleScroll);
-      window.removeEventListener('resize', handleScroll);
-    };
-  }, [handleScroll]);
-  
   const handlePrevDay = () => {
     const newDate = addDays(currentDate, -1);
     setCurrentDate(newDate);
@@ -898,81 +568,33 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
     }
   };
   
-  // Function to check if a stylist is on holiday for a specific date
-  function isStylistOnHolidayForDate(stylist: Stylist, date: Date): boolean {
-    // First check if stylist is manually set as unavailable
-    if (stylist.available === false) {
-      return true; 
-    }
-    
-    // Then check holidays from stylistHolidays map
-    if (stylist?.id && stylistHolidays[stylist.id]?.length > 0) {
-      const formattedDate = format(date, 'yyyy-MM-dd');
-      return stylistHolidays[stylist.id].some(holiday => 
-        holiday.holiday_date === formattedDate
-      );
-    }
-    
-    // Finally, check holidays directly on stylist object
-    if (stylist?.holidays && stylist.holidays.length > 0) {
-      const formattedDate = format(date, 'yyyy-MM-dd');
-      return stylist.holidays.some(holiday => {
-        // Need to handle both possible formats
-        if (typeof holiday === 'object') {
-          return (
-            (holiday.holiday_date && holiday.holiday_date === formattedDate) ||
-            // Support legacy holiday format if it exists
-            ((holiday as any).date && (holiday as any).date === formattedDate)
-          );
-        }
-        return false;
-      });
-    }
-    
-    return false;
-  }
-
-  const handleSlotClick = (event: React.MouseEvent, stylistId: string, hour: number, minute: number) => {
-    // Prevent default browser behavior and event bubbling
-    event.preventDefault();
-    event.stopPropagation();
-    
-    // Comment out the scroll position storing code as it's causing reset issues
-    // const gridElement = gridRef.current;
-    // if (gridElement) {
-    //   scrollPositionRef.current = {
-    //     top: gridElement.scrollTop,
-    //     left: gridElement.scrollLeft
-    //   };
-    //   console.log('Stored scroll position before slot click:', scrollPositionRef.current);
-    // }
-    
+  // Update the handleSlotClick function to not open the edit dialog
+  const handleSlotClick = (stylistId: string, hour: number, minute: number) => {
     // Find the stylist
-    const stylist = stylists.find(s => s.id === stylistId);
+    const stylist = availableStylists.find(s => s.id === stylistId);
     if (!stylist) {
-      setSnackbarMessage('Stylist not found');
-      setSnackbarSeverity('error');
-      setSnackbarOpen(true);
+      console.error('Stylist not found:', stylistId);
       return;
     }
-    
-    // Check if the stylist is on holiday for the current date
-    if (isStylistOnHolidayForDate(stylist, currentDate)) {
-      setSnackbarMessage(`Cannot book appointment: ${stylist.name} is on holiday`);
-      setSnackbarSeverity('error');
+
+    // Check if the stylist is on holiday
+    if (stylist.isOnHoliday) {
+      setSnackbarMessage('Cannot book during a holiday');
       setSnackbarOpen(true);
+      setSnackbarSeverity('warning');
       return;
     }
     
     // Check if this time slot is during a break
     if (isBreakTime(stylistId, hour, minute)) {
-      setSnackbarMessage('Cannot book appointment during break time');
-      setSnackbarSeverity('error');
+      setSnackbarMessage('Cannot move appointment to a break time');
       setSnackbarOpen(true);
+      setSnackbarSeverity('warning');
       return;
     }
-
-    const slotTime = new Date(
+    
+    // Create a new date object for the selected time with exact minutes
+    const selectedTime = new Date(
       currentDate.getFullYear(),
       currentDate.getMonth(),
       currentDate.getDate(),
@@ -982,63 +604,21 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
       0
     );
     
-    // Check if there's already an appointment at this exact time slot
-    const existingAppointment = appointments.find(appointment => {
-      if (appointment.stylist_id !== stylistId) return false;
-      
-      const appointmentStart = new Date(appointment.start_time);
-      const appointmentEnd = new Date(appointment.end_time);
-      
-      // Check if the slot time falls within an existing appointment
-      return slotTime >= appointmentStart && slotTime < appointmentEnd;
-    });
-    
-    if (existingAppointment) {
-      setSnackbarMessage('Time slot is already booked');
-      setSnackbarSeverity('warning');
-      setSnackbarOpen(true);
-      return;
-    }
-    
-    console.log('Slot clicked:', { stylistId, hour, minute, slotTime });
-    onSelectTimeSlot(stylistId, slotTime);
-    
-    // Comment out scroll position restoration as it's causing reset issues
-    // setTimeout(() => {
-    //   if (gridElement && scrollPositionRef.current) {
-    //     console.log('Restoring scroll position after slot click:', scrollPositionRef.current);
-    //     gridElement.scrollTo({
-    //       top: scrollPositionRef.current.top,
-    //       left: scrollPositionRef.current.left,
-    //       behavior: 'auto' // Use 'auto' for immediate restoration without animation
-    //     });
-    //   }
-    // }, 100);
+    // Call the onSelectTimeSlot callback with the stylist ID and formatted time
+    onSelectTimeSlot(stylistId, selectedTime);
   };
 
-  const handleAppointmentClick = (event: React.MouseEvent, appointment: any) => {
-    // Prevent default browser behavior and event bubbling
+  const handleAppointmentClick = (appointment: any, event: React.MouseEvent<HTMLElement>) => {
     event.preventDefault();
-    event.stopPropagation();
-    
-    console.log("Internal StylistDayView handleAppointmentClick called", appointment); // Debug log
-    
-    // Use scroll preservation when opening appointment
-    handleDialogOpen('appointment');
-    
-    // Ensure the prop function is called if it exists
-    if (onAppointmentClick) {
-      console.log("Calling onAppointmentClick prop..."); // Debug log
-      onAppointmentClick(appointment);
-    } else {
-      console.warn("onAppointmentClick prop is missing in StylistDayView"); // Warning if prop not passed
-    }
+    setSelectedAppointment(appointment);
+    setContextMenuAppointment(appointment);
+    setContextMenuAnchorEl(event.currentTarget as HTMLElement);
   };
   
   // Drag and drop handlers
   const handleDragStart = (e: React.DragEvent, appointment: any) => {
     // Store the appointment being dragged
-    setDraggedAppointment(appointment);
+    setSelectedAppointment(appointment);
     // Set the drag image and data
     e.dataTransfer.setData('text/plain', appointment.id);
     e.dataTransfer.effectAllowed = 'move';
@@ -1056,10 +636,11 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
     if (isBreakTime(stylistId, hour, minute)) {
       setSnackbarMessage('Cannot move appointment to a break time');
       setSnackbarOpen(true);
-      return;
+      setSnackbarSeverity('warning'); // Ensure severity is set
+      return; // Don't allow booking during breaks
     }
     
-    if (draggedAppointment && onUpdateAppointment) {
+    if (selectedAppointment && onUpdateAppointment) {
       console.log('Handling appointment drag and drop');
       
       // Create a new date object for the drop target time with exact minutes
@@ -1074,8 +655,8 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
       );
       
       // Calculate the original duration in minutes
-      const originalStart = new Date(draggedAppointment.start_time);
-      const originalEnd = new Date(draggedAppointment.end_time);
+      const originalStart = new Date(selectedAppointment.start_time);
+      const originalEnd = new Date(selectedAppointment.end_time);
       const durationMinutes = (originalEnd.getTime() - originalStart.getTime()) / (1000 * 60);
       
       // Calculate the new end time by adding the same duration
@@ -1088,24 +669,24 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
       try {
         // Create an update object with only the fields that should be updated
         const appointmentUpdates = {
-          id: draggedAppointment.id,
+          id: selectedAppointment.id,
           stylist_id: stylistId,
           start_time: formattedStartTime,
           end_time: formattedEndTime,
           // Preserve other important fields
-          service_id: draggedAppointment.service_id,
-          client_id: draggedAppointment.client_id,
-          status: draggedAppointment.status,
-          paid: draggedAppointment.paid,
-          notes: draggedAppointment.notes || ''
+          service_id: selectedAppointment.service_id,
+          client_id: selectedAppointment.client_id,
+          status: selectedAppointment.status,
+          paid: selectedAppointment.paid,
+          notes: selectedAppointment.notes || ''
         };
         
         console.log('Updating dragged appointment with:', appointmentUpdates);
         
-        await onUpdateAppointment(draggedAppointment.id, appointmentUpdates);
+        await onUpdateAppointment(selectedAppointment.id, appointmentUpdates);
         
         // Clear the dragged appointment reference
-        setDraggedAppointment(null);
+        setSelectedAppointment(null);
       } catch (error) {
         console.error('Error updating appointment:', error);
         setSnackbarMessage('Failed to move appointment');
@@ -1115,9 +696,6 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
   };
   
   const handleEditDialogClose = () => {
-    // Use scroll preservation when closing dialog
-    handleDialogClose('edit');
-    
     setEditDialogOpen(false);
     setSelectedAppointment(null);
     
@@ -1179,45 +757,9 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
     
     if (!isValid) {
       setSnackbarMessage('Please fill in all required fields');
-      setSnackbarSeverity('error');
       setSnackbarOpen(true);
       return;
     }
-
-    // --- Break Conflict Validation ---
-    // Format times for validation
-    const selectedDay = new Date(currentDate);
-    const [startHour, startMinute] = editFormData.startTime.split(':').map(Number);
-    const [endHour, endMinute] = editFormData.endTime.split(':').map(Number);
-    
-    const start = new Date(selectedDay);
-    start.setHours(startHour, startMinute, 0, 0);
-    
-    const end = new Date(selectedDay);
-    end.setHours(endHour, endMinute, 0, 0);
-    
-    // Handle overnight bookings
-    if (end <= start) {
-      end.setDate(end.getDate() + 1);
-    }
-
-    // Check for break conflicts with all assigned stylists
-    for (const entry of editFormData.clientEntries) {
-      if (entry.stylistList) {
-        for (const stylist of entry.stylistList) {
-          const hasBreakConflict = checkBreakConflict(stylist.id, start.toISOString(), end.toISOString());
-          if (hasBreakConflict) {
-            const stylistName = stylists.find(s => s.id === stylist.id)?.name || 'Unknown';
-            setSnackbarMessage(`Cannot update appointment: Conflicts with break time for ${stylistName}`);
-            setSnackbarSeverity('error');
-            setSnackbarOpen(true);
-            return;
-          }
-        }
-      }
-    }
-    // --- End Break Conflict Validation ---
-    
     // --- End Validation ---
     
     try {
@@ -1259,6 +801,22 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
         })
       );
       
+      // Format times for ISO string conversion
+      const selectedDay = new Date(currentDate);
+      const [startHour, startMinute] = editFormData.startTime.split(':').map(Number);
+      const [endHour, endMinute] = editFormData.endTime.split(':').map(Number);
+      
+      const start = new Date(selectedDay);
+      start.setHours(startHour, startMinute, 0, 0);
+      
+      const end = new Date(selectedDay);
+      end.setHours(endHour, endMinute, 0, 0);
+      
+      // Handle overnight bookings
+      if (end <= start) {
+        end.setDate(end.getDate() + 1);
+      }
+      
       // Format the start and end times as ISO strings for the database
       const formattedStartTime = start.toISOString();
       const formattedEndTime = end.toISOString();
@@ -1294,33 +852,6 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
       // Update the appointment with the new data
       if (onUpdateAppointment) {
         await onUpdateAppointment(selectedAppointment.id, appointmentUpdates);
-
-        // Send WhatsApp notification for the update
-        try {
-          // Prepare notification data
-          const notificationData = {
-            clientName: primaryClient.full_name,
-            clientPhone: primaryClient.phone || '',
-            services: editFormData.clientEntries[0].services.map(s => s.name),
-            stylists: editFormData.clientEntries[0].stylistList?.map(s => s.name) || [],
-            startTime: formattedStartTime,
-            endTime: formattedEndTime,
-            status: selectedAppointment.status,
-            notes: editFormData.notes || ''
-          };
-
-          if (notificationData.clientPhone) {
-            await sendAppointmentNotification('updated', notificationData);
-            console.log('Appointment update notification sent successfully');
-            toast.success('Appointment updated and notification sent');
-          } else {
-            console.warn('Could not send appointment update notification: Missing client phone number');
-            toast.error('Appointment updated but notification could not be sent: Missing client contact information');
-          }
-        } catch (whatsappError) {
-          console.error('Failed to send appointment update notification:', whatsappError);
-          toast.error('Appointment updated but notification could not be sent. Please contact the client directly.');
-        }
       }
       
       // Close the dialog and reset state
@@ -1371,39 +902,7 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
     
     if (window.confirm('Are you sure you want to delete this appointment?')) {
       try {
-        // Get client details before deleting the appointment
-        const clientDetails = selectedAppointment.clientDetails?.[0] || allClients.find(c => c.id === selectedAppointment.client_id);
-        const stylistDetails = stylists.find(s => s.id === selectedAppointment.stylist_id);
-        const serviceDetails = services.find(s => s.id === selectedAppointment.service_id);
-
         await onDeleteAppointment(selectedAppointment.id);
-
-        // Send WhatsApp notification for the cancellation
-        if (clientDetails?.phone) {
-          try {
-            const notificationData = {
-              clientName: clientDetails.full_name,
-              clientPhone: clientDetails.phone,
-              services: [serviceDetails?.name || 'Unknown Service'],
-              stylists: [stylistDetails?.name || 'Unknown Stylist'],
-              startTime: selectedAppointment.start_time,
-              endTime: selectedAppointment.end_time,
-              status: 'cancelled',
-              notes: selectedAppointment.notes || ''
-            };
-
-            await sendAppointmentNotification('cancelled', notificationData);
-            console.log('Appointment cancellation notification sent successfully');
-            toast.success('Appointment cancelled and notification sent');
-          } catch (whatsappError) {
-            console.error('Failed to send appointment cancellation notification:', whatsappError);
-            toast.error('Appointment cancelled but notification could not be sent. Please contact the client directly.');
-          }
-        } else {
-          console.warn('Could not send appointment cancellation notification: Missing client phone number');
-          toast.error('Appointment cancelled but notification could not be sent: Missing client contact information');
-        }
-
         handleEditDialogClose();
       } catch (error) {
         console.error('Failed to delete appointment:', error);
@@ -1588,58 +1087,26 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
     }
   };
 
+  const navigate = useNavigate();
+
   // Handle navigation to POS with appointment data
   const handleCreateBill = () => {
     if (!selectedAppointment) return;
     
-    // Get all services for this appointment
-    const appointmentServices = selectedAppointment.services || [];
-    const servicesForPOS = appointmentServices.map((service: { 
-      id: string; 
-      name: string; 
-      price: number;
-      hsn_code?: string;
-      gst_percentage?: number;
-      category?: string;
-    }) => ({
-      id: service.id,
-      name: service.name,
-      price: service.price,
-      type: 'service' as const,
-      quantity: 1,
-      hsn_code: service.hsn_code,
-      gst_percentage: service.gst_percentage,
-      category: service.category
-    }));
+    const service = services.find(s => s.id === selectedAppointment.service_id);
     
-    // If no services found, try to find from services array using service_id
-    if (servicesForPOS.length === 0 && selectedAppointment.service_id) {
-      const service = services.find(s => s.id === selectedAppointment.service_id);
-      if (service) {
-        servicesForPOS.push({
-          id: service.id,
-          name: service.name,
-          price: service.price,
-          type: 'service' as const,
-          quantity: 1,
-          hsn_code: service.hsn_code,
-          gst_percentage: service.gst_percentage,
-          category: service.category
-        });
-      }
-    }
-    
-    // Navigate to POS with complete appointment data
+    // Navigate to POS with appointment data
     navigate('/pos', {
       state: {
         appointmentData: {
           id: selectedAppointment.id,
-          clientName: selectedAppointment.clients?.full_name || '',
+          clientName: selectedAppointment.clientDetails?.[0]?.full_name || '',
           stylistId: selectedAppointment.stylist_id,
-          services: servicesForPOS,
-          type: 'service_collection',
+          serviceId: selectedAppointment.service_id,
+          serviceName: service?.name || '',
+          servicePrice: service?.price || 0,
           appointmentTime: selectedAppointment.start_time,
-          notes: selectedAppointment.notes || ''
+          type: 'service' // Explicitly set type as service
         }
       }
     });
@@ -1648,7 +1115,52 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
     handleEditDialogClose();
   };
 
-  // Get stylist breaks for the current day
+  // Fix the isBreakTime function to ensure consistent Date objects for comparison
+  const isBreakTime = (stylistId: string, hour: number, minute: number) => {
+    const stylist = stylists.find(s => s.id === stylistId);
+    if (!stylist || !stylist.breaks || stylist.breaks.length === 0) {
+      return false;
+    }
+    
+    try {
+      // Create a date object for the slot time using the current date
+      const slotTime = new Date(currentDate);
+      slotTime.setHours(hour, minute, 0, 0);
+      const slotTimeValue = slotTime.getTime();
+      
+      // Create a date object for the end of the slot using the current date
+      const slotEndTime = new Date(currentDate);
+      slotEndTime.setHours(hour, minute + 15, 0, 0);
+      const slotEndTimeValue = slotEndTime.getTime();
+      
+      // Get only breaks for the current day to improve performance
+      const todayBreaks = getStylistBreaks(stylistId);
+      
+      // Check if the slot time overlaps with any break period
+      return todayBreaks.some((breakItem: StylistBreak) => {
+        try {
+          // Ensure Date objects are created from ISO strings for comparison
+          const breakStart = new Date(breakItem.startTime).getTime();
+          const breakEnd = new Date(breakItem.endTime).getTime();
+          
+          // Check for any overlap between the slot and the break
+          return (
+            (slotTimeValue >= breakStart && slotTimeValue < breakEnd) ||
+            (slotEndTimeValue > breakStart && slotEndTimeValue <= breakEnd) ||
+            (slotTimeValue <= breakStart && slotEndTimeValue >= breakEnd)
+          );
+        } catch (error) {
+          console.error('Error checking break time element:', error, breakItem);
+          return false;
+        }
+      });
+    } catch (error) {
+      console.error('Error in isBreakTime function:', error);
+      return false;
+    }
+  };
+
+  // Fix the getStylistBreaks function to ensure consistent Date objects for comparison
   const getStylistBreaks = (stylistId: string) => {
     const stylist = stylists.find(s => s.id === stylistId);
     if (!stylist || !stylist.breaks || stylist.breaks.length === 0) {
@@ -1658,103 +1170,27 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
     // Filter breaks for the current day
     return stylist.breaks.filter((breakItem: StylistBreak) => {
       try {
+        // Ensure Date objects are created from ISO strings for comparison
         const breakDate = new Date(breakItem.startTime);
-        
-        // Debug log to help identify issues
-        if (process.env.NODE_ENV === 'development') {
-          console.log('Break date comparison:', {
-            breakId: breakItem.id,
-            breakStartTime: breakItem.startTime,
-            breakDate: breakDate.toISOString(),
-            currentDate: currentDate.toISOString(),
-            isSameDay: isSameDay(breakDate, currentDate)
-          });
-        }
         
         // Use date-fns isSameDay for reliable date comparison
         return isSameDay(breakDate, currentDate);
       } catch (error) {
-        console.error('Error processing break date:', error, breakItem);
+        console.error('Error processing break date comparison:', error, breakItem);
         return false;
       }
     });
   };
+
+  // Add state for snackbar
+  const [editingAppointment, setEditingAppointment] = useState<MergedAppointment | null>(null);
 
   // Add handleSnackbarClose function
   const handleSnackbarClose = () => {
     setSnackbarOpen(false);
   };
 
-  // Fix the isBreakTime function to correctly detect breaks with 15-minute precision
-  const isBreakTime = (stylistId: string, hour: number, minute: number) => {
-    const stylist = stylists.find(s => s.id === stylistId);
-    if (!stylist || !stylist.breaks || stylist.breaks.length === 0) {
-      return false;
-    }
-    
-    try {
-      // Create a date object for the slot time
-      const slotTime = new Date(currentDate);
-      slotTime.setHours(hour, minute, 0, 0);
-      const slotTimeValue = slotTime.getTime();
-      
-      // Create a date object for the end of the slot (add 15 minutes for a 15-minute slot)
-      const slotEndTime = new Date(currentDate);
-      slotEndTime.setHours(hour, minute + 15, 0, 0);
-      const slotEndTimeValue = slotEndTime.getTime();
-      
-      // Get only breaks for the current day to improve performance
-      const todayBreaks = getStylistBreaks(stylistId);
-      
-      // Debug log for specific slots to track issues
-      if (hour === 11 && minute === 0) {
-        console.log('Checking break at 11:00:', {
-          stylistId,
-          hour,
-          minute,
-          slotTime: slotTime.toLocaleTimeString(),
-          slotEndTime: slotEndTime.toLocaleTimeString(),
-          breaks: todayBreaks.map((b: StylistBreak) => ({
-            id: b.id,
-            startTime: new Date(b.startTime).toLocaleTimeString(),
-            endTime: new Date(b.endTime).toLocaleTimeString(),
-            normalizedStart: normalizeDateTime(b.startTime).toLocaleTimeString(),
-            normalizedEnd: normalizeDateTime(b.endTime).toLocaleTimeString()
-          }))
-        });
-      }
-      
-      // Check if the slot time overlaps with any break period
-      return todayBreaks.some((breakItem: StylistBreak) => {
-        try {
-          // Use normalized times for consistent handling
-          const breakStart = normalizeDateTime(breakItem.startTime).getTime();
-          const breakEnd = normalizeDateTime(breakItem.endTime).getTime();
-          
-          // Check for any overlap between the slot and the break
-          return (
-            // Check if the slot starts during a break
-            (slotTimeValue >= breakStart && slotTimeValue < breakEnd) ||
-            // Check if the slot ends during a break
-            (slotEndTimeValue > breakStart && slotEndTimeValue <= breakEnd) ||
-            // Check if the slot completely contains a break
-            (slotTimeValue <= breakStart && slotEndTimeValue >= breakEnd)
-          );
-        } catch (error) {
-          console.error('Error checking break time:', error, breakItem);
-          return false;
-        }
-      });
-    } catch (error) {
-      console.error('Error in isBreakTime:', error);
-      return false;
-    }
-  };
-
   const handleBreakDialogOpen = (stylistId: string) => {
-    // Use scroll preservation when opening dialog
-    handleDialogOpen('break');
-    
     const foundStylist = stylists.find(s => s.id === stylistId);
     if (foundStylist) {
       setSelectedStylist(foundStylist);
@@ -1768,9 +1204,6 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
   };
 
   const handleBreakDialogClose = () => {
-    // Use scroll preservation when closing dialog
-    handleDialogClose('break');
-    
     setBreakDialogOpen(false);
     setSelectedStylist(null);
     setBreakFormData({
@@ -1867,7 +1300,21 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
         reason: ''
       });
 
-      // Remove local state updates since they will be handled by the parent component
+      // Update local state
+      const newBreak: Break = {
+        ...breakData,
+        id: `break-${Date.now()}` // Generate a temporary ID
+      };
+
+      const updatedStylists = stylists.map(stylist => 
+        stylist.id === selectedStylist.id 
+          ? { ...stylist, breaks: [...stylist.breaks, newBreak] }
+          : stylist
+      );
+      
+      setStylists(updatedStylists);
+      setSelectedStylist({ ...selectedStylist, breaks: [...selectedStylist.breaks, newBreak] });
+      
       setSnackbarMessage('Break added successfully');
       setSnackbarOpen(true);
     } catch (error) {
@@ -1881,8 +1328,8 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
   const handleDeleteBreak = async (breakId: string) => {
     try {
       // Find the stylist that has this break
-      const stylistWithBreak = stylists.find(s => 
-        s.breaks.some(b => b.id === breakId)
+      const stylistWithBreak = stylists.find((s: Stylist) => 
+        s.breaks.some((b: StylistBreak) => b.id === breakId)
       );
       
       if (!stylistWithBreak) {
@@ -1906,24 +1353,13 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
         // After successful server update, update the local state
         const updatedBreaks = stylistWithBreak.breaks.filter(b => b.id !== breakId);
         
-        // Update both the stylists array and the selected stylist
         const updatedStylists = stylists.map(stylist => 
           stylist.id === stylistWithBreak.id 
             ? { ...stylist, breaks: updatedBreaks }
             : stylist
         );
         
-        // Update local state
         setStylists(updatedStylists);
-        if (selectedStylist && selectedStylist.id === stylistWithBreak.id) {
-          setSelectedStylist({ ...selectedStylist, breaks: updatedBreaks });
-        }
-
-        // Update the parent component's state if callback exists
-        if (onStylistsChange) {
-          onStylistsChange(updatedStylists);
-        }
-        
         setSnackbarMessage('Break time removed successfully');
         setSnackbarOpen(true);
       } else {
@@ -1938,10 +1374,7 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
     }
   };
 
-  const handleEditBreakDialogOpen = (breakItem: Break) => {
-    // Use scroll preservation when opening dialog
-    handleDialogOpen('edit-break');
-    
+  const handleEditBreakDialogOpen = (breakItem: StylistBreak) => {
     setEditingBreak(breakItem);
     
     // Convert ISO times to HH:MM format for the form
@@ -1963,9 +1396,6 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
   };
   
   const handleEditBreakDialogClose = () => {
-    // Use scroll preservation when closing dialog
-    handleDialogClose('edit-break');
-    
     setEditBreakDialogOpen(false);
     setEditingBreak(null);
   };
@@ -2020,7 +1450,7 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
       }
       
       // Check for conflicts with existing breaks (excluding the current break being edited)
-      const hasBreakConflict = selectedStylist.breaks.some(breakItem => {
+      const hasBreakConflict = selectedStylist.breaks.some((breakItem: StylistBreak) => {
         // Skip the current break being edited
         if (breakItem.id === editingBreak.id) {
           return false;
@@ -2121,8 +1551,6 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
       setCurrentDate(selectedDate);
     }
   }, [selectedDate]);
-
-
 
   // Add date picker handlers
   const handleDatePickerClick = (event: React.MouseEvent<HTMLButtonElement>) => {
@@ -2245,11 +1673,10 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
         {/* Time header */}
         <Box 
           sx={{ 
-            height: STYLIST_HEADER_HEIGHT,
+            height: '56px',
             backgroundColor: '#f5f5f5',
             borderRight: '1px solid rgba(0, 0, 0, 0.12)',
             borderBottom: '1px solid rgba(0, 0, 0, 0.12)',
-            borderTop: 'none',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -2257,7 +1684,7 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
             color: 'rgba(0, 0, 0, 0.7)',
             position: 'sticky',
             top: 0,
-            zIndex: 12
+            zIndex: 10
           }}
         >
           Time
@@ -2288,7 +1715,6 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
     return todayAppointments
       .filter(appointment => appointment.stylist_id === stylistId)
       .map(appointment => {
-        const isCheckedIn = checkedInIds.has(appointment.id);
         // Find the service details
         const serviceName = appointment.serviceDetails?.name || 
                            (services.find(s => s.id === appointment.service_id)?.name) || 
@@ -2300,52 +1726,70 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
         // Determine appointment status
         const status = appointment.status || 'scheduled';
         
+        // Check if appointment is checked in
+        const isCheckedIn = checkedInIds.has(appointment.id);
+        
         // Format times properly
         const startTime = formatTime(appointment.start_time);
         const endTime = formatTime(appointment.end_time);
         
-        // Compute background color, warm tan if checked in
-        const bgColor = isCheckedIn
-          ? '#D2B48C' // Warm Tan color that complements the default olive green
-          : status === 'completed'
-            ? theme.palette.grey[400]
-            : isPaid
-              ? theme.palette.success.light
-              : theme.palette.primary.main;
-        
         return (
-          <MemoizedAppointmentCard
+          <Tooltip
             key={appointment.id}
-            appointment={appointment}
-            isCheckedIn={isCheckedIn}
-            bgColor={bgColor}
-            duration={getAppointmentDuration(appointment.start_time, appointment.end_time)}
-            isPaid={isPaid}
-            status={status}
-            onDragStart={(e: React.DragEvent) => handleDragStart(e, appointment)}
-            onClick={(e: React.MouseEvent) => handleAppointmentClick(e, appointment)}
-            onContextMenu={(e: React.MouseEvent) => memoizedHandleContextMenu(e, appointment)}
-            style={{
-              top: `${getAppointmentPosition(appointment.start_time)}px`,
-              height: `${getAppointmentDuration(appointment.start_time, appointment.end_time)}px`,
-              backgroundColor: bgColor, // Ensure the calculated bgColor is applied here
-            }}
+            title={`${appointment.clientDetails?.[0]?.full_name || (allClients?.find(c => c.id === appointment.client_id)?.full_name ?? 'Unknown Client')} - ${serviceName} (${startTime} - ${endTime})${isCheckedIn ? ' - Checked In' : ''}`}
+            arrow
           >
-            <Typography variant="subtitle2" className="appointment-client-name">
-              {appointment.clientDetails?.[0]?.full_name
-                || allClients.find(c => c.id === appointment.client_id)?.full_name
-                || 'Unknown Client'}
-            </Typography>
-            <Typography variant="body2" className="appointment-service">
-              {serviceName}
-            </Typography>
-            <Typography variant="caption" className="appointment-time">
-              {`${startTime} - ${endTime}`}
-            </Typography>
-          </MemoizedAppointmentCard>
+            <AppointmentCard
+              draggable
+              onDragStart={(e) => handleDragStart(e, appointment)}
+              onClick={(e) => handleAppointmentClick(appointment, e)}
+              style={{
+                top: `${getAppointmentPosition(appointment.start_time)}px`,
+                height: `${getAppointmentDuration(appointment.start_time, appointment.end_time)}px`,
+                backgroundColor: status === 'completed'
+                  ? theme.palette.grey[400]
+                  : isPaid
+                    ? theme.palette.success.light
+                    : theme.palette.primary.main
+              }}
+              duration={getAppointmentDuration(appointment.start_time, appointment.end_time)}
+              isPaid={isPaid}
+              status={status as 'scheduled' | 'completed' | 'cancelled'}
+              isCheckedIn={isCheckedIn}
+            >
+              <Typography variant="subtitle2" className="appointment-client-name">
+                {appointment.clientDetails?.[0]?.full_name
+                  || (allClients?.find(c => c.id === appointment.client_id)?.full_name ?? 'Unknown Client')}
+              </Typography>
+              <Typography variant="body2" className="appointment-service">
+                {serviceName}
+              </Typography>
+              <Typography variant="caption" className="appointment-time">
+                {`${startTime} - ${endTime}`}
+              </Typography>
+            </AppointmentCard>
+          </Tooltip>
         );
       });
   };
+
+  // Add state for edit break functionality
+  const [editingBreak, setEditingBreak] = useState<Break | null>(null);
+  const [editBreakDialogOpen, setEditBreakDialogOpen] = useState(false);
+  const [editBreakFormData, setEditBreakFormData] = useState({
+    startTime: '',
+    endTime: '',
+    reason: ''
+  });
+
+  // Add state for service collections
+  const [serviceCollections, setServiceCollections] = useState<any[]>([]);
+  const [selectedServiceCollection, setSelectedServiceCollection] = useState('');
+  const [serviceSearchQuery, setServiceSearchQuery] = useState('');
+  const [isLoadingCollectionServices, setIsLoadingCollectionServices] = useState(false);
+  const [loadingStylists, setLoadingStylists] = useState(false);
+  // Add state for stylist holidays map
+  const [stylistHolidays, setStylistHolidays] = useState<Record<string, StylistHoliday[]>>({});
 
   // Use the useServiceCollections hook to get service collections
   const { serviceCollections: fetchedServiceCollections, isLoading: isLoadingServiceCollections } = useServiceCollections();
@@ -2356,44 +1800,6 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
       setServiceCollections(fetchedServiceCollections);
     }
   }, [fetchedServiceCollections]);
-
-  // Auto-scroll to last booked appointment time
-  useEffect(() => {
-    // DISABLED: This was causing scroll reset issues when clicking on calendar
-    // The auto-scroll was triggering unexpectedly and interfering with manual scrolling
-    
-    // const gridElement = gridRef.current;
-    // 
-    // // Only auto-scroll if we have a last booked appointment time and the grid is ready
-    // if (gridElement && lastBookedAppointmentTime && !editDialogOpen && !contextMenuPosition) {
-    //   try {
-    //     // Calculate the scroll position for the last booked appointment
-    //     const scrollToPosition = getAppointmentPosition(lastBookedAppointmentTime);
-    //     
-    //     // Add some buffer to show a bit before the appointment (about 2 time slots = 30 minutes)
-    //     const bufferPosition = Math.max(0, scrollToPosition - (TIME_SLOT_HEIGHT * 2));
-    //     
-    //     // Store this as our target position
-    //     scrollPositionRef.current = {
-    //       top: bufferPosition,
-    //       left: 0
-    //     };
-    //     
-    //     // Scroll to the calculated position with smooth behavior
-    //     setTimeout(() => {
-    //       gridElement.scrollTo({
-    //         top: bufferPosition,
-    //         left: 0,
-    //         behavior: 'smooth'
-    //       });
-    //     }, 100); // Small delay to ensure the grid is fully rendered
-    //     
-    //     console.log(`Auto-scrolling to last booked appointment at ${lastBookedAppointmentTime}, position: ${scrollToPosition}px`);
-    //   } catch (error) {
-    //     console.error('Error auto-scrolling to last booked appointment:', error);
-    //   }
-    // }
-  }, [lastBookedAppointmentTime, editDialogOpen, contextMenuPosition]);
 
   // Add a function to handle service search and selection
   const handleServiceSearch = (event: React.ChangeEvent<HTMLInputElement>, entryId: string) => {
@@ -2443,278 +1849,269 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
     setSnackbarOpen(true);
   };
 
-  // Add a wrapper component to handle horizontal scrolling separately
-  const GridWrapper = styled(Box)(({ theme }) => ({
-  display: 'flex', // Make wrapper a flex container
-  flexDirection: 'column',
-  flex: 1,         // Take remaining vertical space
-  overflowX: 'auto',  // enable horizontal scroll within calendar wrapper for TimeColumn stickiness
-  overflowY: 'visible', // Allow vertical scroll for ScheduleGrid
-  width: '100%',
-  position: 'relative', // Create stacking context
-  border: 'none',
-  borderTop: 'none',
-  boxShadow: 'none',
-  // Removed the ::before pseudo-element that might be causing the border issue
-  // Removed CSS containment so sticky headers can anchor correctly
-}));
-
-  // Context menu handlers for check-in
-  const handleContextMenu = (event: React.MouseEvent, appointment: any) => {
-    memoizedHandleContextMenu(event, appointment);
-  };
-  
-  const handleCloseContextMenu = memoizedHandleCloseContextMenu;
-  
-  const handleCheckIn = memoizedHandleCheckIn;
-  
-  const handleCheckOut = memoizedHandleCheckOut;
-
-  // Count stylists on holiday today
-  const stylistsOnHolidayToday = stylists?.filter(stylist => {
-    // Check if stylist is on holiday today
-    const today = format(new Date(), 'yyyy-MM-dd');
-    return stylistHolidays[stylist.id]?.some(h => h.holiday_date === today) || false;
-  }) || [];
-
-  // Add function to check if a stylist is on holiday on a specific date
-  const getStylistHolidayForDate = (stylist: Stylist, date: Date): StylistHoliday | undefined => {
-    const formattedDate = format(date, 'yyyy-MM-dd');
-    return stylistHolidays[stylist.id]?.find(holiday => 
-      holiday.holiday_date === formattedDate
-    );
-  }
-
-  // Add at the beginning of the component, with the other state declarations
-  const somethingThatChanges = null; // This ensures a constant value to prevent remounting
-
-  // Confirmation dialog handlers for check-in/check-out
-  const handleConfirmCheckInAll = useCallback(() => {
-    if (checkInConfirmDialog.appointments.length > 0) {
-      const appointmentIds = checkInConfirmDialog.appointments.map(app => app.id);
-      setCheckedInIds(prev => {
-        const newSet = new Set(prev);
-        appointmentIds.forEach(id => newSet.add(id));
-        return newSet;
+  // Build stylistHolidays map from the fetched allHolidays list
+  useEffect(() => {
+    if (stylists?.length && allHolidays && !isLoadingHolidays) {
+      const holidaysMap: Record<string, StylistHoliday[]> = {};
+      stylists.forEach(stylist => {
+        holidaysMap[stylist.id] = allHolidays.filter(holiday => 
+          holiday.stylist_id === stylist.id
+        );
       });
-      // TODO: optionally call onUpdateAppointment for each appointment to persist check-in status
+      setStylistHolidays(holidaysMap);
     }
-    setCheckInConfirmDialog({ open: false, appointments: [], singleAppointment: null });
-  }, [checkInConfirmDialog.appointments]);
+  }, [stylists, allHolidays, isLoadingHolidays]);
 
-  const handleConfirmCheckInSingle = useCallback(() => {
-    if (checkInConfirmDialog.singleAppointment) {
-      setCheckedInIds(prev => new Set(prev).add(checkInConfirmDialog.singleAppointment.id));
-      // TODO: optionally call onUpdateAppointment to persist check-in status
-    }
-    setCheckInConfirmDialog({ open: false, appointments: [], singleAppointment: null });
-  }, [checkInConfirmDialog.singleAppointment]);
+  // Add these state declarations after the other state declarations
+  const [contextMenuAppointment, setContextMenuAppointment] = useState<any>(null);
+  const [contextMenuAnchorEl, setContextMenuAnchorEl] = useState<null | HTMLElement>(null);
+  const [checkedInIds, setCheckedInIds] = useState<Set<string>>(new Set());
+  const [checkInConfirmDialog, setCheckInConfirmDialog] = useState<{
+    open: boolean;
+    appointments: any[];
+    singleAppointment: any;
+  }>({
+    open: false,
+    appointments: [],
+    singleAppointment: null
+  });
+  const [checkOutConfirmDialog, setCheckOutConfirmDialog] = useState<{
+    open: boolean;
+    appointments: any[];
+    singleAppointment: any;
+  }>({
+    open: false,
+    appointments: [],
+    singleAppointment: null
+  });
 
-  const handleConfirmCheckOutAll = useCallback(() => {
-    if (checkOutConfirmDialog.appointments.length > 0) {
-      const appointmentIds = checkOutConfirmDialog.appointments.map(app => app.id);
-      setCheckedInIds(prev => {
-        const newSet = new Set(prev);
-        appointmentIds.forEach(id => newSet.delete(id));
-        return newSet;
-      });
-      // TODO: optionally call onUpdateAppointment for each appointment to persist check-out status
-    }
-    setCheckOutConfirmDialog({ open: false, appointments: [], singleAppointment: null });
-  }, [checkOutConfirmDialog.appointments]);
-
-  const handleConfirmCheckOutSingle = useCallback(() => {
-    if (checkOutConfirmDialog.singleAppointment) {
-      setCheckedInIds(prev => {
-        const newSet = new Set(prev);
-        newSet.delete(checkOutConfirmDialog.singleAppointment.id);
-        return newSet;
-      });
-      // TODO: optionally call onUpdateAppointment to persist check-out status
-    }
-    setCheckOutConfirmDialog({ open: false, appointments: [], singleAppointment: null });
-  }, [checkOutConfirmDialog.singleAppointment]);
-
-  const handleCancelCheckInDialog = useCallback(() => {
-    setCheckInConfirmDialog({ open: false, appointments: [], singleAppointment: null });
+  // Add these handlers after the other handler functions
+  const memoizedHandleCloseContextMenu = useCallback(() => {
+    setContextMenuAnchorEl(null);
+    setContextMenuAppointment(null);
   }, []);
 
-  const handleCancelCheckOutDialog = useCallback(() => {
-    setCheckOutConfirmDialog({ open: false, appointments: [], singleAppointment: null });
-  }, []);
+  const memoizedHandleCheckIn = useCallback(() => {
+    if (contextMenuAppointment) {
+      const appointmentDate = format(new Date(contextMenuAppointment.start_time), 'yyyy-MM-dd');
+      const currentDate_formatted = format(currentDate, 'yyyy-MM-dd');
+
+      if (appointmentDate === currentDate_formatted) {
+        const sameClientAppointments = appointments.filter(appointment => 
+          appointment.client_id === contextMenuAppointment.client_id &&
+          format(new Date(appointment.start_time), 'yyyy-MM-dd') === appointmentDate
+        );
+
+        if (sameClientAppointments.length > 1) {
+          setCheckInConfirmDialog({
+            open: true,
+            appointments: sameClientAppointments,
+            singleAppointment: contextMenuAppointment
+          });
+        } else {
+          setCheckedInIds(prev => new Set(prev).add(contextMenuAppointment.id));
+          // Optional: call onUpdateAppointment to persist check-in
+        }
+      } else {
+        setCheckedInIds(prev => new Set(prev).add(contextMenuAppointment.id));
+      }
+    }
+    memoizedHandleCloseContextMenu();
+  }, [contextMenuAppointment, memoizedHandleCloseContextMenu, appointments, currentDate]);
+
+  const memoizedHandleCheckOut = useCallback(() => {
+    if (contextMenuAppointment) {
+      const appointmentDate = format(new Date(contextMenuAppointment.start_time), 'yyyy-MM-dd');
+      const currentDate_formatted = format(currentDate, 'yyyy-MM-dd');
+
+      if (appointmentDate === currentDate_formatted) {
+        const sameClientAppointments = appointments.filter(appointment => 
+          appointment.client_id === contextMenuAppointment.client_id &&
+          format(new Date(appointment.start_time), 'yyyy-MM-dd') === appointmentDate
+        );
+
+        if (sameClientAppointments.length > 1) {
+          setCheckOutConfirmDialog({
+            open: true,
+            appointments: sameClientAppointments,
+            singleAppointment: contextMenuAppointment
+          });
+        } else {
+          setCheckedInIds(prev => {
+            const newSet = new Set(prev);
+            newSet.delete(contextMenuAppointment.id);
+            return newSet;
+          });
+        }
+      } else {
+        setCheckedInIds(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(contextMenuAppointment.id);
+          return newSet;
+        });
+      }
+    }
+    memoizedHandleCloseContextMenu();
+  }, [contextMenuAppointment, memoizedHandleCloseContextMenu, appointments, currentDate]);
 
   return (
-    <DayViewContainer>
-      <DayViewHeader sx={{ 
-        borderBottom: 'none', 
-        mb: 0, 
-        pb: 2 
-      }}>
-        <Box display="flex" alignItems="center">
-          <IconButton onClick={handlePrevDay}>
-            <ChevronLeft />
-          </IconButton>
-          <Typography variant="h6" sx={{ mx: 2 }}>
-            {format(currentDate, 'EEEE, MMMM d, yyyy')}
-          </Typography>
+    <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+      <DayViewHeader>
+        <Box>
+          <Box display="flex" alignItems="center">
+            <IconButton onClick={handlePrevDay}>
+              <ChevronLeft />
+            </IconButton>
+            <Tooltip title="Today">
+              <IconButton 
+                onClick={handleToday} 
+                sx={{ ml: 1 }}
+              >
+                <Today />
+              </IconButton>
+            </Tooltip>
+          </Box>
+        </Box>
+        <Typography variant="h6" fontWeight="bold">
+          {format(currentDate, 'EEE, MMM dd, yyyy')}
+        </Typography>
+        <Box>
           <IconButton onClick={handleNextDay}>
             <ChevronRight />
           </IconButton>
-          <Tooltip title="Today">
-            <IconButton onClick={handleToday} sx={{ ml: 1 }}>
-              <Today />
-            </IconButton>
-          </Tooltip>
           <Tooltip title="Select Date">
-            <IconButton 
-              onClick={handleDatePickerClick} 
-              sx={{ 
-                ml: 1,
-                color: theme.palette.primary.main,
-                '&:hover': {
-                  backgroundColor: theme.palette.action.hover
-                }
-              }}
-            >
+            <IconButton onClick={handleDatePickerClick}>
               <CalendarMonth />
             </IconButton>
           </Tooltip>
-          <Popover
-            open={datePickerOpen}
-            anchorEl={datePickerAnchorEl}
-            onClose={handleDatePickerClose}
-            anchorOrigin={{
-              vertical: 'bottom',
-              horizontal: 'center',
-            }}
-            transformOrigin={{
-              vertical: 'top',
-              horizontal: 'center',
-            }}
-            PaperProps={{
-              sx: {
-                p: 2,
-                boxShadow: 3,
-                borderRadius: 2
-              }
-            }}
-          >
-            <Box sx={{ display: 'flex', flexDirection: 'column', width: 320 }}>
-              <Typography variant="h6" sx={{ mb: 2, textAlign: 'center' }}>
-                Select Date
-              </Typography>
-              <LocalizationProvider dateAdapter={AdapterDateFns}>
-                <ErrorBoundary>
-                  <DatePicker
-                    value={currentDate}
-                    onChange={handleDateChange}
-                    slotProps={{
-                      textField: {
-                        variant: 'outlined',
-                        fullWidth: true,
-                        sx: { mb: 2 }
-                      }
-                    }}
-                  />
-                </ErrorBoundary>
-              </LocalizationProvider>
-              <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 1 }}>
-                <Button onClick={handleDatePickerClose} sx={{ mr: 1 }}>
-                  Cancel
-                </Button>
-                <Button 
-                  variant="contained" 
-                  onClick={() => {
-                    handleDateChange(currentDate);
-                  }}
-                >
-                  Apply
-                </Button>
-              </Box>
-            </Box>
-          </Popover>
+           <Popover
+             open={Boolean(datePickerAnchorEl)}
+             anchorEl={datePickerAnchorEl}
+             onClose={handleDatePickerClose}
+             anchorOrigin={{
+               vertical: 'bottom',
+               horizontal: 'center',
+             }}
+             transformOrigin={{
+               vertical: 'top',
+               horizontal: 'center',
+             }}
+             PaperProps={{
+               sx: {
+                 p: 2,
+                 boxShadow: 3,
+                 borderRadius: 2
+               }
+             }}
+           >
+             <Box sx={{ display: 'flex', flexDirection: 'column', width: 320 }}>
+               <Typography variant="h6" sx={{ mb: 2, textAlign: 'center' }}>
+                 Select Date
+               </Typography>
+               <LocalizationProvider dateAdapter={AdapterDateFns}>
+                 <ErrorBoundary>
+                   <DatePicker
+                     value={currentDate}
+                     onChange={handleDateChange}
+                     slotProps={{
+                       textField: {
+                         variant: 'outlined',
+                         fullWidth: true,
+                         sx: { mb: 2 }
+                       }
+                     }}
+                   />
+                 </ErrorBoundary>
+               </LocalizationProvider>
+               <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 1 }}>
+                 <Button onClick={handleDatePickerClose} sx={{ mr: 1 }}>
+                   Cancel
+                 </Button>
+                 <Button 
+                   variant="contained" 
+                   onClick={() => {
+                     handleDateChange(currentDate);
+                   }}
+                 >
+                   Apply
+                 </Button>
+               </Box>
+             </Box>
+           </Popover>
         </Box>
       </DayViewHeader>
-      
-      <Box sx={{ 
-        height: '1px', 
-        width: '100%', 
-        bgcolor: 'transparent',
-        position: 'relative',
-        zIndex: 15,
-        pointerEvents: 'none'
-      }} />
-      
-      <GridWrapper sx={{ mt: 0 }}>
-        <MemoizedScheduleGrid 
-          className="schedule-grid" 
-          scheduleGridRef={scheduleGridRef}
-          onScroll={handleScrollWithPreservation}
-          sx={{ borderTop: 'none', mt: 0 }}
-        >
-          {/* Use the renderTimeColumn function to create the time column */}
-          {renderTimeColumn()}
-          
-          {stylists
-            .slice() // Create a copy to avoid mutating the original array
-            .sort((a, b) => a.name.localeCompare(b.name)) // Sort alphabetically by name
-            .map((stylist, index, allStylists) => (
-            <StylistColumn
-              key={stylist.id}
-              className="stylist-column"
-              sx={{
-                // Check both general availability and if stylist is on holiday for current date
-                opacity: (stylist.available !== false && !isStylistOnHolidayForDate(stylist, currentDate)) ? 1 : 0.5,
-                pointerEvents: (stylist.available !== false && !isStylistOnHolidayForDate(stylist, currentDate)) ? 'auto' : 'none'
-              }}
+
+      <ScheduleGrid>
+        {/* Time Column */}
+        {renderTimeColumn()}
+
+        {/* Stylist Columns */}
+        {availableStylists.map((stylist) => {
+          const isOnHoliday = stylist.isOnHoliday;
+
+          // If on holiday, disable break dialog and show tooltip
+          const headerContent = (
+            <StylistHeader
+              isOnHoliday={isOnHoliday}
+              stylistColor={stylist.color}
+              sx={{ cursor: isOnHoliday ? 'not-allowed' : 'pointer' }}
             >
-              <StylistHeader
-                className="stylist-header"
-                // Only allow opening break dialog if stylist is available
-                onClick={() => { if (stylist.available !== false) handleBreakDialogOpen(stylist.id) }}
-                sx={{
-                  // Adjust cursor and colors based on availability
-                  cursor: stylist.available !== false ? 'pointer' : 'default',
-                  backgroundColor: stylist.available !== false
-                    ? theme.palette.salon.oliveLight
-                    : theme.palette.action.disabledBackground,
-                  color: stylist.available !== false
-                    ? 'white'
-                    : theme.palette.text.disabled,
-                  '&:hover': stylist.available !== false
-                    ? { backgroundColor: theme.palette.salon.oliveLight, opacity: 0.9 }
-                    : {},
-                  ...(index === allStylists.length - 1 && {
-                    borderRight: 'none'
-                  })
-                }}
-              >
-                <Typography variant="subtitle2">
-                  {stylist.name}
-                </Typography>
-              </StylistHeader>
-              
-              {timeSlots.map(slot => (
-                <AppointmentSlot
-                  key={`slot-${stylist.id}-${slot.hour}-${slot.minute}`}
-                  onClick={(e: React.MouseEvent) => handleSlotClick(e, stylist.id, slot.hour, slot.minute)}
-                  onDragOver={(e) => handleDragOver(e, stylist.id, slot.hour, slot.minute)}
-                  onDrop={(e) => handleDrop(e, stylist.id, slot.hour, slot.minute)}
-                  sx={{
-                    ...(index === allStylists.length - 1 && {
-                      borderRight: 'none'
-                    }),
-                    ...(isBreakTime(stylist.id, slot.hour, slot.minute) && { 
-                      backgroundColor: 'rgba(220, 53, 69, 0.6)', // Solid red background
-                      border: '1px solid rgba(220, 0, 0, 0.8)', // Solid red border
-                      cursor: 'not-allowed',
-                      '&:hover': {
-                        backgroundColor: 'rgba(220, 53, 69, 0.7)' // Slightly darker on hover
-                      }
-                    })
-                  }}
-                />
-              ))}
+              <Typography variant="subtitle1">
+                {stylist.name}
+              </Typography>
+            </StylistHeader>
+          );
+
+          return (
+            <StylistColumn key={stylist.id}>
+              {isOnHoliday ? (
+                <Tooltip title="Cannot add breaks: Stylist is on holiday">
+                  <span>{headerContent}</span>
+                </Tooltip>
+              ) : (
+                <span onClick={() => handleBreakDialogOpen(stylist.id)}>{headerContent}</span>
+              )}
+              {timeSlots.map((slot, index) => {
+                const hour = slot.hour;
+                const minute = slot.minute;
+
+                const appointmentSlot = (
+                  <AppointmentSlot
+                    key={`${stylist.id}-${hour}-${minute}`}
+                    className={isOnHoliday ? 'holiday' : ''}
+                    sx={{
+                      ...(index === availableStylists.length - 1 && {
+                        borderRight: 'none'
+                      }),
+                      ...(isBreakTime(stylist.id, hour, minute) && {
+                        backgroundColor: 'rgba(220, 53, 69, 0.3)',
+                        backgroundImage: 'repeating-linear-gradient(135deg, transparent, transparent 6px, rgba(220, 53, 69, 0.5) 6px, rgba(220, 53, 69, 0.5) 12px)',
+                        border: '1px dashed rgba(220, 0, 0, 0.8)',
+                        cursor: 'not-allowed',
+                        '&:hover': {
+                          backgroundColor: 'rgba(220, 53, 69, 0.4)'
+                        }
+                      })
+                    }}
+                  />
+                );
+
+                // Wrap holiday slots in a Tooltip
+                if (isOnHoliday) {
+                  return (
+                    <Tooltip key={`${stylist.id}-${hour}-${minute}`} title="Stylist is on holiday">
+                      {appointmentSlot}
+                    </Tooltip>
+                  );
+                } else {
+                  // For non-holiday slots, add click and drop handlers directly
+                  return React.cloneElement(appointmentSlot, {
+                    onClick: () => handleSlotClick(stylist.id, hour, minute),
+                    onDragOver: (e: React.DragEvent) => handleDragOver(e, stylist.id, hour, minute),
+                    onDrop: (e: React.DragEvent) => handleDrop(e, stylist.id, hour, minute),
+                  });
+                }
+              })}
               
               {renderAppointmentsForStylist(stylist.id)}
               
@@ -2748,15 +2145,15 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
                       color: 'white',
                       borderRadius: '8px',
                       padding: theme.spacing(1, 1.5),
-                      boxShadow: 'none',
+                      boxShadow: '0 2px 4px rgba(0,0,0,0.15)',
                       zIndex: 5,
                       display: 'flex',
                       flexDirection: 'column',
                       justifyContent: 'space-between',
                       border: '1px solid rgba(255, 255, 255, 0.25)',
                       '&:hover': {
-                        boxShadow: 'none',
-                        transform: 'none'
+                        boxShadow: '0 3px 6px rgba(0,0,0,0.2)',
+                        transform: 'translateY(-2px)'
                       }
                     }}
                     onClick={() => handleEditBreakDialogOpen(breakItem)}
@@ -2816,34 +2213,19 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
                 );
               })}
             </StylistColumn>
-          ))}
-        </MemoizedScheduleGrid>
-      </GridWrapper>
+          );
+        })}
+      </ScheduleGrid>
       
       {/* Edit Appointment Drawer */}
       <Drawer anchor="right" variant="persistent" open={editDialogOpen} onClose={handleEditDialogClose}
               ModalProps={{ keepMounted: true }}
-              PaperProps={{
-                sx: {
-                  width: 500,
-                  display: 'flex',
-                  flexDirection: 'column',
-                  transition: theme.transitions.create('transform', {
-                    duration: theme.transitions.duration.complex,
-                    easing: theme.transitions.easing.easeInOut,
-                  }),
-                }
-              }}>
+              PaperProps={{ sx: { width: 500, display: 'flex', flexDirection: 'column' } }}>
         
-        {/* Header with calendar icon */}
-        <Box sx={{ p: 3, pb: 1, display: 'flex', alignItems: 'center', borderBottom: '1px solid', borderColor: 'divider', position: 'relative' }}>
-          <IconButton onClick={handleDatePickerClick} sx={{ position: 'absolute', left: 8 }}>
-            <CalendarMonth sx={{ color: theme.palette.primary.main }} />
-          </IconButton>
-          <Typography variant="h6" sx={{ flex: 1, textAlign: 'center' }}>Edit Appointment</Typography>
-          <IconButton onClick={handleEditDialogClose} sx={{ position: 'absolute', right: 8 }}>
-            <CloseIcon />
-          </IconButton>
+        {/* Header */}
+        <Box sx={{ p: 3, pb: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid', borderColor: 'divider' }}>
+          <Typography variant="h6">Edit Appointment</Typography>
+          <IconButton onClick={handleEditDialogClose}><CloseIcon /></IconButton>
         </Box>
         
         {/* Scrollable content area */}
@@ -3425,100 +2807,66 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
           {snackbarMessage}
         </Alert>
       </Snackbar>
-      {/* Custom context menu to prevent scroll interference */}
-      {contextMenuPosition && (
-        <Box
-          tabIndex={-1}
-          sx={{
-            position: 'fixed',
-            top: contextMenuPosition.mouseY,
-            left: contextMenuPosition.mouseX,
-            zIndex: 9999,
-            backgroundColor: 'white',
-            boxShadow: 3,
-            borderRadius: 1,
-            minWidth: '120px',
-            border: '1px solid',
-            borderColor: 'divider'
-          }}
-          onContextMenu={(e) => e.preventDefault()}
-        >
-          <Box
-            tabIndex={-1}
-            onClick={contextMenuAppointment && checkedInIds.has(contextMenuAppointment.id) ? handleCheckOut : handleCheckIn}
-            sx={{
-              px: 2,
-              py: 1.5,
-              cursor: 'pointer',
-              fontSize: '0.875rem',
-              '&:hover': {
-                backgroundColor: 'action.hover'
-              }
-            }}
-          >
-            {contextMenuAppointment && checkedInIds.has(contextMenuAppointment.id) ? 'Check Out' : 'Check In'}
-          </Box>
-        </Box>
-      )}
-      
-      {contextMenuPosition && (
-        <Box
-          tabIndex={-1}
-          sx={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            width: '100vw',
-            height: '100vh',
-            zIndex: 9998,
-            backgroundColor: 'transparent'
-          }}
-          onClick={handleCloseContextMenu}
-          onContextMenu={handleCloseContextMenu}
-        />
-      )}
 
       {/* Check-in Confirmation Dialog */}
       <Dialog
         open={checkInConfirmDialog.open}
-        onClose={handleCancelCheckInDialog}
+        onClose={() => setCheckInConfirmDialog(prev => ({ ...prev, open: false }))}
         maxWidth="sm"
         fullWidth
       >
-        <DialogTitle sx={{ color: 'primary.main' }}>
-          Check In Appointments
-        </DialogTitle>
-        <DialogContent dividers>
+        <DialogTitle>Check In Appointments</DialogTitle>
+        <DialogContent>
           <Typography variant="body1" sx={{ mb: 2 }}>
             You have multiple appointments for this client today. Would you like to:
           </Typography>
-          <Box sx={{ pl: 2 }}>
-            <Typography variant="body2" sx={{ mb: 1 }}>
-              • Check in all {checkInConfirmDialog.appointments.length} appointments for {
-                checkInConfirmDialog.singleAppointment && 
-                allClients.find(c => c.id === checkInConfirmDialog.singleAppointment.client_id)?.full_name || 'this client'
-              }
+          <Box component="ul" sx={{ pl: 2, mb: 2 }}>
+            <Typography component="li" variant="body1" sx={{ mb: 1 }}>
+              Check in all {checkInConfirmDialog.appointments.length} appointments for {checkInConfirmDialog.singleAppointment?.clientDetails?.[0]?.full_name || 'this client'}
             </Typography>
-            <Typography variant="body2">
-              • Or check in only this specific appointment
+            <Typography component="li" variant="body1">
+              Or check in only this specific appointment
             </Typography>
           </Box>
+          {/* Optionally, keep a list of appointments for reference */}
+          {/* <List>
+            {checkInConfirmDialog.appointments.map((appointment) => (
+              <ListItem key={appointment.id}>
+                <ListItemText
+                  primary={appointment.clientDetails?.[0]?.full_name || 'Unknown Client'}
+                  secondary={`${formatTime(appointment.start_time)} - ${formatTime(appointment.end_time)}`}
+                />
+              </ListItem>
+            ))}
+          </List> */}
         </DialogContent>
-        <DialogActions>
-          <Button onClick={handleCancelCheckInDialog}>
+        <DialogActions sx={{ p: 3, pt: 1, justifyContent: 'flex-end', gap: 2 }}>
+          <Button onClick={() => setCheckInConfirmDialog(prev => ({ ...prev, open: false }))}>
             Cancel
           </Button>
-          <Button 
-            onClick={handleConfirmCheckInSingle}
+          <Button
+            onClick={() => {
+              if (checkInConfirmDialog.singleAppointment) {
+                setCheckedInIds(prev => new Set(prev).add(checkInConfirmDialog.singleAppointment.id));
+              }
+              setCheckInConfirmDialog(prev => ({ ...prev, open: false }));
+            }}
             variant="outlined"
             color="primary"
+            sx={{ borderColor: 'primary.main', color: 'primary.main', '&:hover': { borderColor: 'primary.dark', backgroundColor: 'rgba(107, 142, 35, 0.04)' } }}
           >
             Check In This Only
           </Button>
           <Button
-            onClick={handleConfirmCheckInAll}
+            onClick={() => {
+              checkInConfirmDialog.appointments.forEach(appointment => {
+                setCheckedInIds(prev => new Set(prev).add(appointment.id));
+              });
+              setCheckInConfirmDialog(prev => ({ ...prev, open: false }));
+            }}
             variant="contained"
             color="primary"
+            sx={{ bgcolor: '#6B8E23', '&:hover': { bgcolor: '#566E1C' } }}
           >
             Check In All {checkInConfirmDialog.appointments.length}
           </Button>
@@ -3528,50 +2876,90 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
       {/* Check-out Confirmation Dialog */}
       <Dialog
         open={checkOutConfirmDialog.open}
-        onClose={handleCancelCheckOutDialog}
+        onClose={() => setCheckOutConfirmDialog(prev => ({ ...prev, open: false }))}
         maxWidth="sm"
         fullWidth
       >
-        <DialogTitle sx={{ color: 'primary.main' }}>
-          Check Out Appointments
-        </DialogTitle>
-        <DialogContent dividers>
+        <DialogTitle>Check Out Appointments</DialogTitle>
+        <DialogContent>
           <Typography variant="body1" sx={{ mb: 2 }}>
-            You have multiple appointments for this client today. Would you like to:
+            This client has multiple appointments today. Would you like to:
           </Typography>
-          <Box sx={{ pl: 2 }}>
-            <Typography variant="body2" sx={{ mb: 1 }}>
-              • Check out all {checkOutConfirmDialog.appointments.length} appointments for {
-                checkOutConfirmDialog.singleAppointment && 
-                allClients.find(c => c.id === checkOutConfirmDialog.singleAppointment.client_id)?.full_name || 'this client'
-              }
+          <Box component="ul" sx={{ pl: 2, mb: 2 }}>
+            <Typography component="li" variant="body1" sx={{ mb: 1 }}>
+              Check out all {checkOutConfirmDialog.appointments.length} appointments for {checkOutConfirmDialog.singleAppointment?.clientDetails?.[0]?.full_name || 'this client'}
             </Typography>
-            <Typography variant="body2">
-              • Or check out only this specific appointment
+            <Typography component="li" variant="body1">
+              Or check out only this specific appointment
             </Typography>
           </Box>
+          {/* Optionally, keep a list of appointments for reference */}
+          {/* <List>
+            {checkOutConfirmDialog.appointments.map((appointment) => (
+              <ListItem key={appointment.id}>
+                <ListItemText
+                  primary={appointment.clientDetails?.[0]?.full_name || 'Unknown Client'}
+                  secondary={`${formatTime(appointment.start_time)} - ${formatTime(appointment.end_time)}`}
+                />
+              </ListItem>
+            ))}
+          </List> */}
         </DialogContent>
-        <DialogActions>
-          <Button onClick={handleCancelCheckOutDialog}>
+        <DialogActions sx={{ p: 3, pt: 1, justifyContent: 'flex-end', gap: 2 }}>
+          <Button onClick={() => setCheckOutConfirmDialog(prev => ({ ...prev, open: false }))}>
             Cancel
           </Button>
-          <Button 
-            onClick={handleConfirmCheckOutSingle}
+          <Button
+            onClick={() => {
+              if (checkOutConfirmDialog.singleAppointment) {
+                setCheckedInIds(prev => {
+                  const newSet = new Set(prev);
+                  newSet.delete(checkOutConfirmDialog.singleAppointment.id);
+                  return newSet;
+                });
+              }
+              setCheckOutConfirmDialog(prev => ({ ...prev, open: false }));
+            }}
             variant="outlined"
             color="primary"
+            sx={{ borderColor: 'primary.main', color: 'primary.main', '&:hover': { borderColor: 'primary.dark', backgroundColor: 'rgba(107, 142, 35, 0.04)' } }}
           >
             Check Out This Only
           </Button>
           <Button
-            onClick={handleConfirmCheckOutAll}
+            onClick={() => {
+              checkOutConfirmDialog.appointments.forEach(appointment => {
+                setCheckedInIds(prev => {
+                  const newSet = new Set(prev);
+                  newSet.delete(appointment.id);
+                  return newSet;
+                });
+              });
+              setCheckOutConfirmDialog(prev => ({ ...prev, open: false }));
+            }}
             variant="contained"
             color="primary"
+            sx={{ bgcolor: '#6B8E23', '&:hover': { bgcolor: '#566E1C' } }}
           >
             Check Out All {checkOutConfirmDialog.appointments.length}
           </Button>
         </DialogActions>
       </Dialog>
-    </DayViewContainer>
+
+      {/* Context Menu */}
+      <Menu
+        open={Boolean(contextMenuAnchorEl)}
+        anchorEl={contextMenuAnchorEl}
+        onClose={memoizedHandleCloseContextMenu}
+      >
+        <MenuItem onClick={memoizedHandleCheckIn}>
+          Check In
+        </MenuItem>
+        <MenuItem onClick={memoizedHandleCheckOut}>
+          Check Out
+        </MenuItem>
+      </Menu>
+    </Box>
   );
 }
 

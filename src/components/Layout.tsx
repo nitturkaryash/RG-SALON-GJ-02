@@ -17,6 +17,7 @@ import {
   useMediaQuery,
   Avatar,
   Button,
+  Tooltip,
 } from '@mui/material'
 import {
   Menu as MenuIcon,
@@ -28,6 +29,7 @@ import {
   ShoppingCart,
   PointOfSale,
   ChevronLeft,
+  ChevronRight,
   Storefront,
   Category,
   CardMembership,
@@ -43,6 +45,7 @@ import { alpha } from '@mui/material/styles'
 import { useAuthContext } from '../contexts/AuthContext'
 
 const drawerWidth = 240
+const collapsedDrawerWidth = 64
 
 interface LayoutProps {
   children: React.ReactNode
@@ -94,6 +97,7 @@ export default function Layout({ children }: LayoutProps) {
   const location = useLocation()
   const isMobile = useMediaQuery(theme.breakpoints.down('md'))
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [collapsed, setCollapsed] = useState(false)
   const { session, logout } = useAuthContext()
   const [isLoggingOut, setIsLoggingOut] = useState(false)
 
@@ -116,6 +120,10 @@ export default function Layout({ children }: LayoutProps) {
     setMobileOpen(!mobileOpen)
   }
 
+  const handleCollapseToggle = () => {
+    setCollapsed(!collapsed)
+  }
+
   const handleLogout = async () => {
     try {
       setIsLoggingOut(true)
@@ -132,37 +140,64 @@ export default function Layout({ children }: LayoutProps) {
   }
 
   const userSection = (
-    <Box sx={{ p: 2, borderTop: 1, borderColor: 'divider' }}>
-      <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-        <Avatar sx={{ bgcolor: 'primary.main', mr: 2 }}>
-          {session?.username?.charAt(0)?.toUpperCase() || getUsernameFromLocalStorage()?.charAt(0)?.toUpperCase() || 'U'}
-        </Avatar>
-        <Box>
-          <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
-            {session?.username || getUsernameFromLocalStorage() || 'User'}
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            Administrator
-          </Typography>
+    <Box sx={{ p: collapsed ? 1 : 2, borderTop: 1, borderColor: 'divider' }}>
+      {!collapsed ? (
+        <>
+          <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+            <Avatar sx={{ bgcolor: 'primary.main', mr: 2 }}>
+              {session?.username?.charAt(0)?.toUpperCase() || getUsernameFromLocalStorage()?.charAt(0)?.toUpperCase() || 'U'}
+            </Avatar>
+            <Box>
+              <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                {session?.username || getUsernameFromLocalStorage() || 'User'}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Administrator
+              </Typography>
+            </Box>
+          </Box>
+          <Button
+            fullWidth
+            variant="outlined"
+            color="primary"
+            startIcon={<Logout />}
+            onClick={handleLogout}
+            disabled={isLoggingOut}
+            sx={{
+              justifyContent: 'flex-start',
+              px: 2,
+              '&:hover': {
+                backgroundColor: alpha(theme.palette.primary.main, 0.1),
+              },
+            }}
+          >
+            {isLoggingOut ? 'Logging out...' : 'Logout'}
+          </Button>
+        </>
+      ) : (
+        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
+          <Tooltip title={session?.username || getUsernameFromLocalStorage() || 'User'} placement="right">
+            <Avatar sx={{ bgcolor: 'primary.main', width: 32, height: 32 }}>
+              {session?.username?.charAt(0)?.toUpperCase() || getUsernameFromLocalStorage()?.charAt(0)?.toUpperCase() || 'U'}
+            </Avatar>
+          </Tooltip>
+          <Tooltip title="Logout" placement="right">
+            <IconButton
+              size="small"
+              color="primary"
+              onClick={handleLogout}
+              disabled={isLoggingOut}
+              sx={{
+                '&:hover': {
+                  backgroundColor: alpha(theme.palette.primary.main, 0.1),
+                },
+              }}
+            >
+              <Logout fontSize="small" />
+            </IconButton>
+          </Tooltip>
         </Box>
-      </Box>
-      <Button
-        fullWidth
-        variant="outlined"
-        color="primary"
-        startIcon={<Logout />}
-        onClick={handleLogout}
-        disabled={isLoggingOut}
-        sx={{
-          justifyContent: 'flex-start',
-          px: 2,
-          '&:hover': {
-            backgroundColor: alpha(theme.palette.primary.main, 0.1),
-          },
-        }}
-      >
-        {isLoggingOut ? 'Logging out...' : 'Logout'}
-      </Button>
+      )}
     </Box>
   )
 
@@ -171,30 +206,49 @@ export default function Layout({ children }: LayoutProps) {
       <Toolbar sx={{ 
         display: 'flex', 
         alignItems: 'center', 
-        justifyContent: 'center',
-        px: [1],
+        justifyContent: collapsed ? 'center' : 'space-between',
+        px: collapsed ? 1 : [1],
         py: 2,
-        position: 'relative'
+        position: 'relative',
+        transition: 'all 0.3s ease',
       }}>
-        <Typography 
-          variant="h5" 
-          noWrap 
-          component="div" 
-          color="primary"
-          align="center"
-          sx={{
-            fontWeight: 800,
-            letterSpacing: '0.08em',
-            background: theme => `linear-gradient(45deg, ${theme.palette.primary.main} 30%, ${theme.palette.success.main} 90%)`,
-            WebkitBackgroundClip: 'text',
-            WebkitTextFillColor: 'transparent',
-            textShadow: '0 2px 4px rgba(0,0,0,0.1)',
-            py: 1.5,
-            width: '100%'
-          }}
-        >
-          R&G SPALON
-        </Typography>
+        {!collapsed && (
+          <Typography 
+            variant="h5" 
+            noWrap 
+            component="div" 
+            color="primary"
+            align="center"
+            sx={{
+              fontWeight: 800,
+              letterSpacing: '0.08em',
+              background: theme => `linear-gradient(45deg, ${theme.palette.primary.main} 30%, ${theme.palette.success.main} 90%)`,
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+              textShadow: '0 2px 4px rgba(0,0,0,0.1)',
+              py: 1.5,
+              flex: 1,
+            }}
+          >
+            R&G SPALON
+          </Typography>
+        )}
+        
+        {!isMobile && (
+          <Tooltip title={collapsed ? "Expand menu" : "Collapse menu"} placement="right">
+            <IconButton 
+              onClick={handleCollapseToggle}
+              sx={{ 
+                ml: collapsed ? 0 : 1,
+                transition: 'all 0.3s ease',
+              }}
+              aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            >
+              {collapsed ? <ChevronRight /> : <ChevronLeft />}
+            </IconButton>
+          </Tooltip>
+        )}
+        
         {isMobile && (
           <IconButton 
             onClick={handleDrawerToggle}
@@ -223,35 +277,48 @@ export default function Layout({ children }: LayoutProps) {
               disablePadding
               sx={{ width: '100%' }}
             >
-              <ListItemButton
-                component={Link}
-                to={link.path}
-                selected={location.pathname === link.path}
-                onClick={isMobile ? handleDrawerToggle : undefined}
-                sx={{
-                  borderRadius: 1,
-                  minHeight: '48px',
-                  px: 2,
-                }}
+              <Tooltip 
+                title={collapsed ? link.text : ""} 
+                placement="right" 
+                disableHoverListener={!collapsed}
               >
-                <ListItemIcon 
-                  sx={{ 
-                    color: location.pathname === link.path ? 'primary.main' : 'inherit',
-                    minWidth: 40,
+                <ListItemButton
+                  component={Link}
+                  to={link.path}
+                  selected={location.pathname === link.path}
+                  onClick={isMobile ? handleDrawerToggle : undefined}
+                  sx={{
+                    borderRadius: 1,
+                    minHeight: '48px',
+                    px: collapsed ? 1 : 2,
+                    justifyContent: collapsed ? 'center' : 'flex-start',
+                    transition: 'all 0.3s ease',
                   }}
                 >
-                  {link.icon}
-                </ListItemIcon>
-                <ListItemText 
-                  primary={link.text}
-                  sx={{
-                    '& .MuiListItemText-primary': {
+                  <ListItemIcon 
+                    sx={{ 
                       color: location.pathname === link.path ? 'primary.main' : 'inherit',
-                      fontWeight: location.pathname === link.path ? 600 : 400,
-                    }
-                  }}
-                />
-              </ListItemButton>
+                      minWidth: collapsed ? 'auto' : 40,
+                      mr: collapsed ? 0 : 2,
+                      justifyContent: 'center',
+                      transition: 'all 0.3s ease',
+                    }}
+                  >
+                    {link.icon}
+                  </ListItemIcon>
+                  {!collapsed && (
+                    <ListItemText 
+                      primary={link.text}
+                      sx={{
+                        '& .MuiListItemText-primary': {
+                          color: location.pathname === link.path ? 'primary.main' : 'inherit',
+                          fontWeight: location.pathname === link.path ? 600 : 400,
+                        }
+                      }}
+                    />
+                  )}
+                </ListItemButton>
+              </Tooltip>
             </ListItemStyled>
           </FramerMotion.motion.div>
         ))}
@@ -259,6 +326,8 @@ export default function Layout({ children }: LayoutProps) {
       {userSection}
     </>
   )
+
+  const currentDrawerWidth = collapsed ? collapsedDrawerWidth : drawerWidth
 
   return (
     <Box sx={{ display: 'flex' }}>
@@ -305,7 +374,11 @@ export default function Layout({ children }: LayoutProps) {
 
       <Box
         component="nav"
-        sx={{ width: { md: drawerWidth }, flexShrink: { md: 0 } }}
+        sx={{ 
+          width: { md: currentDrawerWidth }, 
+          flexShrink: { md: 0 },
+          transition: 'width 0.3s ease',
+        }}
       >
         {/* Mobile drawer */}
         <Drawer
@@ -334,10 +407,12 @@ export default function Layout({ children }: LayoutProps) {
             display: { xs: 'none', md: 'block' },
             '& .MuiDrawer-paper': { 
               boxSizing: 'border-box', 
-              width: drawerWidth,
+              width: currentDrawerWidth,
               backgroundColor: 'background.paper',
               borderRight: '1px solid',
               borderColor: 'divider',
+              transition: 'width 0.3s ease',
+              overflowX: 'hidden',
             },
           }}
           open
@@ -351,10 +426,11 @@ export default function Layout({ children }: LayoutProps) {
         sx={{
           flexGrow: 1,
           p: { xs: 2, md: 3 },
-          width: { xs: '100%', md: `calc(100% - ${drawerWidth}px)` },
+          width: { xs: '100%', md: `calc(100% - ${currentDrawerWidth}px)` },
           mt: { xs: 8, md: 0 },
           minHeight: '100vh',
           backgroundColor: 'background.default',
+          transition: 'width 0.3s ease, margin 0.3s ease',
         }}
       >
         <FramerMotion.AnimatePresence initial={false} mode="sync">
