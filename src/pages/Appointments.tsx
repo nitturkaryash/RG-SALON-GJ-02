@@ -2083,7 +2083,7 @@ export default function Appointments() {
                 <Box sx={{ p: 2 }}>
                   <Autocomplete<Stylist, false, false, false>
                     fullWidth
-                    options={stylists.filter((stylist: Stylist) => stylist.available !== false)}
+                    options={stylists.filter((stylist: Stylist) => stylist.available !== false).sort((a, b) => a.name.localeCompare(b.name))}
                     getOptionLabel={(option: Stylist) => option.name}
                     value={stylists.find((s: Stylist) => s.id === service.stylistId) || null}
                     onChange={(_, newValue: Stylist | null) => {
@@ -2281,7 +2281,7 @@ export default function Appointments() {
                 {/* Expert Selection */}
                 <Autocomplete<Stylist, false, false, false>
                   fullWidth
-                  options={stylists.filter((stylist: Stylist) => stylist.available !== false)}
+                  options={stylists.filter((stylist: Stylist) => stylist.available !== false).sort((a, b) => a.name.localeCompare(b.name))}
                   getOptionLabel={(option: Stylist) => option.name}
                   value={stylists.find((s: Stylist) => s.id === inlineServiceData.stylistId) || null}
                   onChange={(_, newValue: Stylist | null) => { // Added type for newValue

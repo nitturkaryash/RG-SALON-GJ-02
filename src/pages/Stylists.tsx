@@ -531,121 +531,123 @@ export default function Stylists() {
                 </TableRow>
               </TableHead>
               <TableBody>
-                {holidayReports.map((report) => {
-                  const stylist = stylists.find(s => s.id === report.stylistId);
-                  if (!stylist) return null;
-                  
-                  // Synchronously check if stylist is on holiday today
-                  const todayDate = format(new Date(), 'yyyy-MM-dd');
-                  const todayHoliday = getStylistHolidayForDate(stylist, new Date());
-                  const isOnHolidayToday = !!todayHoliday;
-                  
-                  return (
-                    <TableRow 
-                      key={report.stylistId}
-                      sx={{ 
-                        bgcolor: isOnHolidayToday ? 'warning.lighter' : 'inherit',
-                        '&:hover': { backgroundColor: 'action.hover' }
-                      }}
-                    >
-                      <TableCell>
-                        <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                          <Badge
-                            overlap="circular"
-                            anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-                            badgeContent={
-                              isOnHolidayToday ? (
-                                <Tooltip title="On holiday today">
-                                  <HolidayIcon color="warning" />
-                                </Tooltip>
-                              ) : null
-                            }
-                          >
-                            <Avatar 
-                              src={stylist.imageUrl || DEFAULT_AVATAR} 
-                              sx={{ width: 40, height: 40, mr: 2 }}
-                            />
-                          </Badge>
-                          <Box>
-                            <Typography variant="subtitle2">
-                              {report.stylistName}
-                            </Typography>
-                            <Typography variant="caption" color={isOnHolidayToday ? 'warning.main' : 'text.secondary'}>
-                              {isOnHolidayToday ? 'On Holiday Today' : stylist.available ? 'Available' : 'Not Available'}
-                            </Typography>
-                          </Box>
-                        </Box>
-                      </TableCell>
-                      <TableCell>
-                        {report.totalHolidays > 0 ? (
-                          <Chip 
-                            label={`${report.totalHolidays} holiday(s)`} 
-                            color={isOnHolidayToday ? "warning" : "primary"} 
-                            size="small" 
-                          />
-                        ) : 'No holidays this month'}
-                      </TableCell>
-                      <TableCell>
-                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                          {report.holidays.map(holiday => {
-                            const holidayDate = new Date(holiday.holiday_date);
-                            const isToday = isSameDay(holidayDate, new Date());
-                            const isPast = isBefore(holidayDate, new Date()) && !isToday;
-                            
-                            return (
-                              <Tooltip 
-                                key={holiday.id} 
-                                title={holiday.reason || 'No reason provided'}
-                              >
-                                <Chip
-                                  icon={<EventBusyIcon />}
-                                  label={format(holidayDate, 'MMM dd (EEE)')}
-                                  size="small"
-                                  color={isToday ? 'warning' : isPast ? 'default' : 'primary'}
-                                  onDelete={() => stylist && removeHoliday(stylist, holiday.id)}
-                                  deleteIcon={<DeleteIcon fontSize="small" />}
-                                  sx={{ 
-                                    m: 0.5,
-                                    textDecoration: isPast ? 'line-through' : 'none',
-                                    opacity: isPast ? 0.7 : 1
-                                  }}
-                                />
-                              </Tooltip>
-                            );
-                          })}
-                        </Box>
-                      </TableCell>
-                      <TableCell>
-                        <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-                          <Tooltip title="Add Holiday">
-                            <IconButton
-                              size="small"
-                              color="primary"
-                              onClick={() => openHolidayDialog(stylist)}
+                {holidayReports
+                  .sort((a, b) => a.stylistName.localeCompare(b.stylistName))
+                  .map((report) => {
+                    const stylist = stylists.find(s => s.id === report.stylistId);
+                    if (!stylist) return null;
+                    
+                    // Synchronously check if stylist is on holiday today
+                    const todayDate = format(new Date(), 'yyyy-MM-dd');
+                    const todayHoliday = getStylistHolidayForDate(stylist, new Date());
+                    const isOnHolidayToday = !!todayHoliday;
+                    
+                    return (
+                      <TableRow 
+                        key={report.stylistId}
+                        sx={{ 
+                          bgcolor: isOnHolidayToday ? 'warning.lighter' : 'inherit',
+                          '&:hover': { backgroundColor: 'action.hover' }
+                        }}
+                      >
+                        <TableCell>
+                          <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                            <Badge
+                              overlap="circular"
+                              anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+                              badgeContent={
+                                isOnHolidayToday ? (
+                                  <Tooltip title="On holiday today">
+                                    <HolidayIcon color="warning" />
+                                  </Tooltip>
+                                ) : null
+                              }
                             >
-                              <HolidayIcon />
-                            </IconButton>
-                          </Tooltip>
-                          {report.totalHolidays > 0 && (
-                            <Tooltip title="Edit Holidays">
+                              <Avatar 
+                                src={stylist.imageUrl || DEFAULT_AVATAR} 
+                                sx={{ width: 40, height: 40, mr: 2 }}
+                              />
+                            </Badge>
+                            <Box>
+                              <Typography variant="subtitle2">
+                                {report.stylistName}
+                              </Typography>
+                              <Typography variant="caption" color={isOnHolidayToday ? 'warning.main' : 'text.secondary'}>
+                                {isOnHolidayToday ? 'On Holiday Today' : stylist.available ? 'Available' : 'Not Available'}
+                              </Typography>
+                            </Box>
+                          </Box>
+                        </TableCell>
+                        <TableCell>
+                          {report.totalHolidays > 0 ? (
+                            <Chip 
+                              label={`${report.totalHolidays} holiday(s)`} 
+                              color={isOnHolidayToday ? "warning" : "primary"} 
+                              size="small" 
+                            />
+                          ) : 'No holidays this month'}
+                        </TableCell>
+                        <TableCell>
+                          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                            {report.holidays.map(holiday => {
+                              const holidayDate = new Date(holiday.holiday_date);
+                              const isToday = isSameDay(holidayDate, new Date());
+                              const isPast = isBefore(holidayDate, new Date()) && !isToday;
+                              
+                              return (
+                                <Tooltip 
+                                  key={holiday.id} 
+                                  title={holiday.reason || 'No reason provided'}
+                                >
+                                  <Chip
+                                    icon={<EventBusyIcon />}
+                                    label={format(holidayDate, 'MMM dd (EEE)')}
+                                    size="small"
+                                    color={isToday ? 'warning' : isPast ? 'default' : 'primary'}
+                                    onDelete={() => stylist && removeHoliday(stylist, holiday.id)}
+                                    deleteIcon={<DeleteIcon fontSize="small" />}
+                                    sx={{ 
+                                      m: 0.5,
+                                      textDecoration: isPast ? 'line-through' : 'none',
+                                      opacity: isPast ? 0.7 : 1
+                                    }}
+                                  />
+                                </Tooltip>
+                              );
+                            })}
+                          </Box>
+                        </TableCell>
+                        <TableCell>
+                          <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+                            <Tooltip title="Add Holiday">
                               <IconButton
                                 size="small"
-                                color="warning"
-                                onClick={() => {
-                                  // edit the first holiday in the list
-                                  const firstHoliday = report.holidays[0];
-                                  openHolidayDialog(stylist, firstHoliday);
-                                }}
+                                color="primary"
+                                onClick={() => openHolidayDialog(stylist)}
                               >
-                                <EditIcon />
+                                <HolidayIcon />
                               </IconButton>
                             </Tooltip>
-                          )}
-                        </Box>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
+                            {report.totalHolidays > 0 && (
+                              <Tooltip title="Edit Holidays">
+                                <IconButton
+                                  size="small"
+                                  color="warning"
+                                  onClick={() => {
+                                    // edit the first holiday in the list
+                                    const firstHoliday = report.holidays[0];
+                                    openHolidayDialog(stylist, firstHoliday);
+                                  }}
+                                >
+                                  <EditIcon />
+                                </IconButton>
+                              </Tooltip>
+                            )}
+                          </Box>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
               </TableBody>
             </Table>
           </TableContainer>

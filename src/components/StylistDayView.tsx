@@ -2496,9 +2496,11 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
                     <Autocomplete
                       sx={{ mb: 2 }}
                       multiple
-                      options={(stylists || [])
+                      options={(availableStylists || []) // Use availableStylists
                         .filter(st => st.available !== false) // Only show available stylists
-                        .map(st => ({ id: st.id, name: st.name }))}
+                        .sort((a, b) => a.name.localeCompare(b.name)) // Sort by name
+                        .map(st => ({ id: st.id, name: st.name })) // Map to {id, name} format
+                      }
                       getOptionLabel={st => st.name}
                       value={entry.stylistList || []} // Ensure value is always an array
                       onChange={(_, stylists) => handleStylistsChange(entry.id, stylists)}
