@@ -52,6 +52,7 @@ export interface Appointment {
   service_ids?: string[];
   is_for_someone_else?: boolean;
   booking_id?: string | null;
+  checked_in?: boolean;
 }
 
 export interface MergedAppointment extends Appointment {
@@ -180,6 +181,7 @@ interface UpdateAppointmentData {
   stylist_id?: string;
   service_id?: string;
   booking_id?: string | null;
+  checked_in?: boolean;
 }
 
 interface ServiceResponse {
@@ -700,7 +702,8 @@ export function useAppointments() {
         client_id, 
         stylist_id, 
         service_id,
-        booking_id
+        booking_id,
+        checked_in
       } = appointmentBaseUpdates;
 
       const validBaseUpdateData: Partial<Appointment> & { updated_at?: string } = {
@@ -714,6 +717,7 @@ export function useAppointments() {
         ...(paid !== undefined && { paid }),
         ...(billed !== undefined && { billed }),
         ...(booking_id !== undefined && { booking_id }),
+        ...(checked_in !== undefined && { checked_in }),
         updated_at: new Date().toISOString()
       };
       

@@ -608,13 +608,21 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
     onSelectTimeSlot(stylistId, selectedTime);
   };
 
-  const handleAppointmentClick = (appointment: any, event: React.MouseEvent<HTMLElement>) => {
-    event.preventDefault();
+  const handleAppointmentClick = (appointment: any) => {
+    // Call the prop function to open the edit drawer
+    if (onAppointmentClick) {
+      onAppointmentClick(appointment);
+    }
+  };
+
+  // Add a new function to handle context menu click (right click)
+  const handleContextMenuClick = (appointment: any, event: React.MouseEvent<HTMLElement>) => {
+    event.preventDefault(); // Prevent the default browser context menu
     setSelectedAppointment(appointment);
     setContextMenuAppointment(appointment);
     setContextMenuAnchorEl(event.currentTarget as HTMLElement);
   };
-  
+
   // Drag and drop handlers
   const handleDragStart = (e: React.DragEvent, appointment: any) => {
     // Store the appointment being dragged
@@ -1742,7 +1750,9 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
             <AppointmentCard
               draggable
               onDragStart={(e) => handleDragStart(e, appointment)}
-              onClick={(e) => handleAppointmentClick(appointment, e)}
+              onClick={() => handleAppointmentClick(appointment)}
+              onDoubleClick={() => handleAppointmentClick(appointment)}
+              onContextMenu={(e) => handleContextMenuClick(appointment, e)}
               style={{
                 top: `${getAppointmentPosition(appointment.start_time)}px`,
                 height: `${getAppointmentDuration(appointment.start_time, appointment.end_time)}px`,
@@ -1866,6 +1876,19 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
   const [contextMenuAppointment, setContextMenuAppointment] = useState<any>(null);
   const [contextMenuAnchorEl, setContextMenuAnchorEl] = useState<null | HTMLElement>(null);
   const [checkedInIds, setCheckedInIds] = useState<Set<string>>(new Set());
+  // Add useEffect to initialize checkedInIds from fetched appointments
+  useEffect(() => {
+    if (appointments && appointments.length > 0) {
+      const initialCheckedIn = new Set<string>();
+      appointments.forEach(appointment => {
+        if (appointment.checked_in) {
+          initialCheckedIn.add(appointment.id);
+        }
+      });
+      setCheckedInIds(initialCheckedIn);
+    }
+  }, [appointments]); // Rerun effect when appointments prop changes
+
   const [checkInConfirmDialog, setCheckInConfirmDialog] = useState<{
     open: boolean;
     appointments: any[];
@@ -1891,7 +1914,7 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
     setContextMenuAppointment(null);
   }, []);
 
-  const memoizedHandleCheckIn = useCallback(() => {
+  const memoizedHandleCheckIn = useCallback(async () => {
     if (contextMenuAppointment) {
       const appointmentDate = format(new Date(contextMenuAppointment.start_time), 'yyyy-MM-dd');
       const currentDate_formatted = format(currentDate, 'yyyy-MM-dd');
@@ -1909,17 +1932,42 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
             singleAppointment: contextMenuAppointment
           });
         } else {
-          setCheckedInIds(prev => new Set(prev).add(contextMenuAppointment.id));
-          // Optional: call onUpdateAppointment to persist check-in
+          // Update backend and local state for single appointment
+          if (onUpdateAppointment) {
+            try {
+              await onUpdateAppointment(contextMenuAppointment.id, { checked_in: true });
+              setCheckedInIds(prev => new Set(prev).add(contextMenuAppointment.id));
+              setSnackbarMessage('Appointment checked in');
+              setSnackbarOpen(true);
+            } catch (error) {
+              console.error('Failed to check in appointment:', error);
+              setSnackbarMessage('Failed to check in appointment');
+              setSnackbarOpen(true);
+              setSnackbarSeverity('error');
+            }
+          }
         }
       } else {
-        setCheckedInIds(prev => new Set(prev).add(contextMenuAppointment.id));
+        // Update backend and local state for single appointment (different day)
+        if (onUpdateAppointment) {
+          try {
+            await onUpdateAppointment(contextMenuAppointment.id, { checked_in: true });
+            setCheckedInIds(prev => new Set(prev).add(contextMenuAppointment.id));
+            setSnackbarMessage('Appointment checked in');
+            setSnackbarOpen(true);
+          } catch (error) {
+            console.error('Failed to check in appointment:', error);
+            setSnackbarMessage('Failed to check in appointment');
+            setSnackbarOpen(true);
+            setSnackbarSeverity('error');
+          }
+        }
       }
     }
     memoizedHandleCloseContextMenu();
-  }, [contextMenuAppointment, memoizedHandleCloseContextMenu, appointments, currentDate]);
+  }, [contextMenuAppointment, memoizedHandleCloseContextMenu, appointments, currentDate, onUpdateAppointment]);
 
-  const memoizedHandleCheckOut = useCallback(() => {
+  const memoizedHandleCheckOut = useCallback(async () => {
     if (contextMenuAppointment) {
       const appointmentDate = format(new Date(contextMenuAppointment.start_time), 'yyyy-MM-dd');
       const currentDate_formatted = format(currentDate, 'yyyy-MM-dd');
@@ -1937,22 +1985,48 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
             singleAppointment: contextMenuAppointment
           });
         } else {
-          setCheckedInIds(prev => {
-            const newSet = new Set(prev);
-            newSet.delete(contextMenuAppointment.id);
-            return newSet;
-          });
+          // Update backend and local state for single appointment
+          if (onUpdateAppointment) {
+            try {
+              await onUpdateAppointment(contextMenuAppointment.id, { checked_in: false });
+              setCheckedInIds(prev => {
+                const newSet = new Set(prev);
+                newSet.delete(contextMenuAppointment.id);
+                return newSet;
+              });
+              setSnackbarMessage('Appointment checked out');
+              setSnackbarOpen(true);
+            } catch (error) {
+              console.error('Failed to check out appointment:', error);
+              setSnackbarMessage('Failed to check out appointment');
+              setSnackbarOpen(true);
+              setSnackbarSeverity('error');
+            }
+          }
         }
       } else {
-        setCheckedInIds(prev => {
-          const newSet = new Set(prev);
-          newSet.delete(contextMenuAppointment.id);
-          return newSet;
-        });
+        // Update backend and local state for single appointment (different day)
+        if (onUpdateAppointment) {
+          try {
+            await onUpdateAppointment(contextMenuAppointment.id, { checked_in: false });
+            setCheckedInIds(prev => {
+              const newSet = new Set(prev);
+              newSet.delete(contextMenuAppointment.id);
+              return newSet;
+            });
+            setSnackbarMessage('Appointment checked out');
+            setSnackbarOpen(true);
+          } catch (error) {
+            console.error('Failed to check out appointment:', error);
+            setSnackbarMessage('Failed to check out appointment');
+            setSnackbarOpen(true);
+            setSnackbarSeverity('error');
+          }
+        }
       }
     }
     memoizedHandleCloseContextMenu();
-  }, [contextMenuAppointment, memoizedHandleCloseContextMenu, appointments, currentDate]);
+  }, [contextMenuAppointment, memoizedHandleCloseContextMenu, appointments, currentDate, onUpdateAppointment]);
 
   return (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -2845,9 +2919,24 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
             Cancel
           </Button>
           <Button
-            onClick={() => {
+            onClick={async () => {
               if (checkInConfirmDialog.singleAppointment) {
-                setCheckedInIds(prev => new Set(prev).add(checkInConfirmDialog.singleAppointment.id));
+                // Update backend for single appointment
+                if (onUpdateAppointment) {
+                  try {
+                    await onUpdateAppointment(checkInConfirmDialog.singleAppointment.id, { checked_in: true });
+                    // Update local state only after successful backend update
+                    setCheckedInIds(prev => new Set(prev).add(checkInConfirmDialog.singleAppointment.id));
+                    setSnackbarMessage('Appointment checked in');
+                    setSnackbarOpen(true);
+                    setSnackbarSeverity('success');
+                  } catch (error) {
+                    console.error('Failed to check in single appointment:', error);
+                    setSnackbarMessage('Failed to check in appointment');
+                    setSnackbarOpen(true);
+                    setSnackbarSeverity('error');
+                  }
+                }
               }
               setCheckInConfirmDialog(prev => ({ ...prev, open: false }));
             }}
@@ -2858,10 +2947,31 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
             Check In This Only
           </Button>
           <Button
-            onClick={() => {
-              checkInConfirmDialog.appointments.forEach(appointment => {
-                setCheckedInIds(prev => new Set(prev).add(appointment.id));
-              });
+            onClick={async () => {
+              if (onUpdateAppointment) {
+                try {
+                  // Update backend for all appointments in the group
+                  await Promise.all(checkInConfirmDialog.appointments.map(appointment =>
+                    onUpdateAppointment(appointment.id, { checked_in: true })
+                  ));
+                  // Update local state after all backend updates are successful
+                  setCheckedInIds(prev => {
+                    const newSet = new Set(prev);
+                    checkInConfirmDialog.appointments.forEach(appointment =>
+                      newSet.add(appointment.id)
+                    );
+                    return newSet;
+                  });
+                  setSnackbarMessage('All appointments checked in');
+                  setSnackbarOpen(true);
+                  setSnackbarSeverity('success');
+                } catch (error) {
+                  console.error('Failed to check in all appointments:', error);
+                  setSnackbarMessage('Failed to check in appointments');
+                  setSnackbarOpen(true);
+                  setSnackbarSeverity('error');
+                }
+              }
               setCheckInConfirmDialog(prev => ({ ...prev, open: false }));
             }}
             variant="contained"
@@ -2910,38 +3020,64 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
             Cancel
           </Button>
           <Button
-            onClick={() => {
+            onClick={async () => {
               if (checkOutConfirmDialog.singleAppointment) {
-                setCheckedInIds(prev => {
-                  const newSet = new Set(prev);
-                  newSet.delete(checkOutConfirmDialog.singleAppointment.id);
-                  return newSet;
-                });
+                // Update backend for single appointment
+                if (onUpdateAppointment) {
+                  try {
+                    await onUpdateAppointment(checkOutConfirmDialog.singleAppointment.id, { checked_in: false });
+                    // Update local state only after successful backend update
+                    setCheckedInIds(prev => {
+                      const newSet = new Set(prev);
+                      newSet.delete(checkOutConfirmDialog.singleAppointment.id);
+                      return newSet;
+                    });
+                    setSnackbarMessage('Appointment checked out');
+                    setSnackbarOpen(true);
+                    setSnackbarSeverity('success');
+                  } catch (error) {
+                    console.error('Failed to check out single appointment:', error);
+                    setSnackbarMessage('Failed to check out appointment');
+                    setSnackbarOpen(true);
+                    setSnackbarSeverity('error');
+                  }
+                }
+                setCheckOutConfirmDialog({ ...checkOutConfirmDialog, open: false });
               }
-              setCheckOutConfirmDialog(prev => ({ ...prev, open: false }));
             }}
-            variant="outlined"
             color="primary"
-            sx={{ borderColor: 'primary.main', color: 'primary.main', '&:hover': { borderColor: 'primary.dark', backgroundColor: 'rgba(107, 142, 35, 0.04)' } }}
+            variant="contained"
           >
             Check Out This Only
           </Button>
           <Button
-            onClick={() => {
-              checkOutConfirmDialog.appointments.forEach(appointment => {
-                setCheckedInIds(prev => {
-                  const newSet = new Set(prev);
-                  newSet.delete(appointment.id);
-                  return newSet;
-                });
-              });
-              setCheckOutConfirmDialog(prev => ({ ...prev, open: false }));
+            onClick={async () => {
+              if (checkOutConfirmDialog.appointments) {
+                // Update backend for all related appointments
+                if (onUpdateAppointment) {
+                  try {
+                    await Promise.all(checkOutConfirmDialog.appointments.map(async (appt) => {
+                      await onUpdateAppointment(appt.id, { checked_in: false });
+                    }));
+                    // Update local state only after successful backend update
+                    const idsToUncheck = new Set(checkOutConfirmDialog.appointments.map(appt => appt.id));
+                    setCheckedInIds(prev => new Set([...prev].filter(id => !idsToUncheck.has(id))));
+                    setSnackbarMessage('All related appointments checked out');
+                    setSnackbarOpen(true);
+                    setSnackbarSeverity('success');
+                  } catch (error) {
+                    console.error('Failed to check out related appointments:', error);
+                    setSnackbarMessage('Failed to check out related appointments');
+                    setSnackbarOpen(true);
+                    setSnackbarSeverity('error');
+                  }
+                }
+                setCheckOutConfirmDialog({ ...checkOutConfirmDialog, open: false });
+              }
             }}
-            variant="contained"
-            color="primary"
-            sx={{ bgcolor: '#6B8E23', '&:hover': { bgcolor: '#566E1C' } }}
+            color="secondary"
           >
-            Check Out All {checkOutConfirmDialog.appointments.length}
+            Check Out All
           </Button>
         </DialogActions>
       </Dialog>
