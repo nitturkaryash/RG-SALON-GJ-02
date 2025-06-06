@@ -96,7 +96,7 @@ export default function SalesHistoryTable({
   onDeleteSale
 }: SalesHistoryTableProps) {
   const theme = useTheme();
-  const [showAdditionalFields, setShowAdditionalFields] = useState(false);
+  const [showAdditionalFields, setShowAdditionalFields] = useState(true); // Show by default to see product types
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
 
   // Handle row expansion toggle
@@ -219,7 +219,7 @@ export default function SalesHistoryTable({
                 size="small"
               />
             }
-            label={<Typography variant="body2">Show All Fields</Typography>}
+            label={<Typography variant="body2">Show Additional Fields (HSN, Product Type, MRP, etc.)</Typography>}
           />
           {onExportCsv && (
             <Button 

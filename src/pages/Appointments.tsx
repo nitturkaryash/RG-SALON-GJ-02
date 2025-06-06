@@ -422,9 +422,13 @@ export default function Appointments() {
     setEditingAppointment(null);
     const startDate = new Date(selectInfo.start);
     const endDate = new Date(selectInfo.end);
+    // Format times in HH:mm format for new appointments
+    const formattedStartTime = `${String(startDate.getHours()).padStart(2, '0')}:${String(startDate.getMinutes()).padStart(2, '0')}`;
+    const formattedEndTime = `${String(endDate.getHours()).padStart(2, '0')}:${String(endDate.getMinutes()).padStart(2, '0')}`;
+    
     setAppointmentTime({
-      startTime: `${startDate.getHours()}:${String(startDate.getMinutes()).padStart(2, '0')}`,
-      endTime: `${endDate.getHours()}:${String(endDate.getMinutes()).padStart(2, '0')}`,
+      startTime: formattedStartTime,
+      endTime: formattedEndTime,
     });
     setClientEntries([{ id: uuidv4(), client: null, services: [], stylists: [], isForSomeoneElse: false }]);
     setAppointmentNotes('');
@@ -579,12 +583,17 @@ export default function Appointments() {
     const overallStartDate = new Date(overallStartTimeToSet);
     const overallEndDate = new Date(overallEndTimeToSet);
     
+    // Format times in HH:mm format
+    const formattedStartTime = `${String(overallStartDate.getHours()).padStart(2, '0')}:${String(overallStartDate.getMinutes()).padStart(2, '0')}`;
+    const formattedEndTime = `${String(overallEndDate.getHours()).padStart(2, '0')}:${String(overallEndDate.getMinutes()).padStart(2, '0')}`;
+
+    // Set appointment times
     setAppointmentTime({
-      startTime: `${overallStartDate.getHours()}:${String(overallStartDate.getMinutes()).padStart(2, '0')}`,
-      endTime: `${overallEndDate.getHours()}:${String(overallEndDate.getMinutes()).padStart(2, '0')}`,
+      startTime: formattedStartTime,
+      endTime: formattedEndTime,
     });
     setAppointmentNotes(appointment.notes || '');
-    console.log("[handleAppointmentClick] Drawer populated. Services count:", consolidatedServiceEntries.length, "Overall Times:", appointmentTime);
+    console.log("[handleAppointmentClick] Drawer populated. Services count:", consolidatedServiceEntries.length, "Overall Times:", { startTime: formattedStartTime, endTime: formattedEndTime });
   };
 
   const handleDayViewSelect = (stylistId: string, time: Date) => {
@@ -620,9 +629,13 @@ export default function Appointments() {
     }
     
     setEditingAppointment(null);
+    // Format times in HH:mm format with leading zeros
+    const formattedStartTime = `${String(time.getHours()).padStart(2, '0')}:${String(time.getMinutes()).padStart(2, '0')}`;
+    const formattedEndTime = `${String(defaultEndTime.getHours()).padStart(2, '0')}:${String(defaultEndTime.getMinutes()).padStart(2, '0')}`;
+    
     setAppointmentTime({
-      startTime: `${time.getHours()}:${String(time.getMinutes()).padStart(2, '0')}`,
-      endTime: `${defaultEndTime.getHours()}:${String(defaultEndTime.getMinutes()).padStart(2, '0')}`
+      startTime: formattedStartTime,
+      endTime: formattedEndTime
     });
     
     const preSelectedStylist = (stylists || []).find(s => s.id === stylistId);
@@ -1064,13 +1077,12 @@ export default function Appointments() {
       }
     } else {
       // --- UPDATE EXISTING APPOINTMENT ---
-      if (!editingAppointment.id) { // Use editingAppointment.id and ensure editingAppointment itself is checked if necessary
+      if (!editingAppointment.id) {
         setSnackbarMessage('Error: No appointment selected for update.');
         setSnackbarSeverity('error');
         setSnackbarOpen(true);
         return;
       }
-      // Removed extra brace that was here
 
       const primaryEntry = clientEntries[0]; 
       if (!primaryEntry || !primaryEntry.client?.id || primaryEntry.services.length === 0) {
@@ -1079,38 +1091,63 @@ export default function Appointments() {
         setSnackbarOpen(true);
         return;
       }
-      const existingAppointmentDbData = allAppointments.find(app => app.id === editingAppointment!.id); // Added non-null assertion as editingAppointment.id is checked
-
-      const [startHour, startMinute] = primaryEntry.services[0].fromTime.split(':').map(Number);
-      const [endHour, endMinute] = primaryEntry.services[0].toTime.split(':').map(Number);
-      const baseDate = new Date(drawerDate);
-
-      const startTime = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate(), startHour, startMinute);
-      const endTime = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate(), endHour, endMinute);
-      if (endTime <= startTime) endTime.setDate(endTime.getDate() + 1);
 
       try {
-        const updatePayload: UpdateAppointmentData = {
-          id: editingAppointment.id, // Use editingAppointment.id
-          client_id: primaryEntry.client.id,
-          stylist_id: primaryEntry.services[0].stylistId, 
-          service_id: primaryEntry.services[0].id, 
-          start_time: startTime.toISOString(),
-          end_time: endTime.toISOString(),
-          notes: appointmentNotes, // Use appointmentNotes
-          status: editingAppointment.status || 'scheduled', 
-          paid: editingAppointment.paid || false,
-          billed: editingAppointment.billed || false,
-          is_for_someone_else: primaryEntry.isForSomeoneElse,
-          booking_id: existingAppointmentDbData?.booking_id || editingAppointment.booking_id || null,
-          clientDetails: clientEntries.map(entry => ({
-            clientId: entry.client!.id,
-            serviceIds: entry.services.map(s => s.id),
-            stylistIds: entry.services.map(s => s.stylistId) 
-          }))
-        };
+        const existingAppointmentDbData = allAppointments.find(app => app.id === editingAppointment.id);
+        const bookingId = existingAppointmentDbData?.booking_id || editingAppointment.booking_id || uuidv4();
         
-        await updateAppointment(updatePayload as any);
+        // First, find all existing appointments with the same booking_id or client_id on the same day
+        const clickedDate = new Date(editingAppointment.start_time);
+        const relatedAppointments = allAppointments.filter((app: MergedAppointment) =>
+          (app.booking_id === bookingId || 
+           (app.client_id === primaryEntry.client!.id && 
+            isSameDay(new Date(app.start_time), clickedDate) && 
+            !app.is_for_someone_else))
+        );
+
+        console.log('[UPDATE] Found related appointments to delete:', relatedAppointments.map(a => a.id));
+
+        // Delete all existing related appointments
+        await Promise.all(relatedAppointments.map(app => deleteAppointment(app.id)));
+
+        // Create new appointments for each service (similar to create logic)
+        const appointmentsToCreatePromises = primaryEntry.services.map(async service => {
+          const [startHour, startMinute] = service.fromTime.split(':').map(Number);
+          const [endHour, endMinute] = service.toTime.split(':').map(Number);
+          const baseDate = new Date(drawerDate);
+          
+          const startTime = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate(), startHour, startMinute);
+          const endTime = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate(), endHour, endMinute);
+          if (endTime <= startTime) endTime.setDate(endTime.getDate() + 1);
+
+          return {
+            client_id: primaryEntry.client!.id,
+            stylist_id: service.stylistId,
+            service_id: service.id,
+            start_time: startTime.toISOString(),
+            end_time: endTime.toISOString(),
+            status: editingAppointment.status || 'scheduled' as Appointment['status'],
+            notes: appointmentNotes,
+            paid: editingAppointment.paid || false,
+            billed: editingAppointment.billed || false,
+            is_for_someone_else: primaryEntry.isForSomeoneElse,
+            clientDetails: [{ 
+              clientId: primaryEntry.client!.id,
+              serviceIds: [service.id],
+              stylistIds: [service.stylistId]
+            }],
+            booking_id: bookingId
+          };
+        });
+
+        const appointmentsToCreate = await Promise.all(appointmentsToCreatePromises);
+        
+        // Create all new appointments
+        await Promise.all(appointmentsToCreate.map(appData => 
+          createAppointment(appData as CreateAppointmentData)
+        ));
+
+        console.log('[UPDATE] Created new appointments:', appointmentsToCreate.length);
         
         // Send WhatsApp notifications for appointment updates
         if (isWhatsAppEnabled()) {
@@ -1119,13 +1156,22 @@ export default function Appointments() {
             try {
               const firstService = primaryEntry.services[0];
               if (firstService && editingAppointment) {
+                // Calculate the start and end times for the first service
+                const [startHour, startMinute] = firstService.fromTime.split(':').map(Number);
+                const [endHour, endMinute] = firstService.toTime.split(':').map(Number);
+                const baseDate = new Date(drawerDate);
+                
+                const serviceStartTime = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate(), startHour, startMinute);
+                const serviceEndTime = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate(), endHour, endMinute);
+                if (serviceEndTime <= serviceStartTime) serviceEndTime.setDate(serviceEndTime.getDate() + 1);
+
                 const appointmentData = {
                   id: editingAppointment.id,
                   client_id: primaryEntry.client.id,
                   stylist_id: firstService.stylistId,
                   service_id: firstService.id,
-                  start_time: startTime.toISOString(),
-                  end_time: endTime.toISOString(),
+                  start_time: serviceStartTime.toISOString(),
+                  end_time: serviceEndTime.toISOString(),
                   status: editingAppointment.status || 'scheduled',
                   notes: appointmentNotes
                 };
@@ -1266,7 +1312,7 @@ export default function Appointments() {
     setEditingAppointment(null);
     setIsBilling(false);
     setClientEntries([{ id: uuidv4(), client: null, services: [], stylists: [], isForSomeoneElse: false }]);
-    setAppointmentTime({ startTime: '', endTime: '' });
+    // Don't reset appointment times when closing drawer
     setAppointmentNotes('');
     setServiceSearchTerm('');
     setServiceGenderFilter(null);
@@ -2125,6 +2171,11 @@ export default function Appointments() {
                         <Select
                           value={service.fromTime}
                           label="From Time"
+                          displayEmpty
+                          renderValue={(value) => {
+                            const option = timeOptions.find(opt => opt.value === value);
+                            return option ? option.label : value;
+                          }}
                           onChange={(e) => updateServiceTime(clientEntries[0].id, serviceIndex, 'fromTime', e.target.value)}
                         >
                           {timeOptions.map(option => (
@@ -2139,6 +2190,11 @@ export default function Appointments() {
                         <Select
                           value={service.toTime}
                           label="To Time"
+                          displayEmpty
+                          renderValue={(value) => {
+                            const option = timeOptions.find(opt => opt.value === value);
+                            return option ? option.label : value;
+                          }}
                           onChange={(e) => updateServiceTime(clientEntries[0].id, serviceIndex, 'toTime', e.target.value)}
                         >
                           {timeOptions.map(option => (
@@ -2311,6 +2367,11 @@ export default function Appointments() {
                       <Select
                         value={inlineServiceData.fromTime}
                         label="From Time"
+                        displayEmpty
+                        renderValue={(value) => {
+                          const option = timeOptions.find(opt => opt.value === value);
+                          return option ? option.label : value;
+                        }}
                         onChange={(e) => {
                           const newFromTime = e.target.value as string;
                           setInlineServiceData(prev => ({
@@ -2349,6 +2410,11 @@ export default function Appointments() {
                       <Select
                         value={inlineServiceData.toTime}
                         label="To Time"
+                        displayEmpty
+                        renderValue={(value) => {
+                          const option = timeOptions.find(opt => opt.value === value);
+                          return option ? option.label : value;
+                        }}
                         onChange={(e) => {
                           setInlineServiceData(prev => ({
                             ...prev,

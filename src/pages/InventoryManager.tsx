@@ -332,10 +332,12 @@ export default function InventoryManager() {
 
   // Function to fetch sales history data
   const fetchSalesHistory = useCallback(async () => {
+    console.log('[InventoryManager] Starting fetchSalesHistory...');
     setIsLoadingSalesHistory(true);
     setSalesHistoryError(null);
     
     try {
+      console.log('[InventoryManager] Fetching sales history from sales_history_final...');
       const { data, error } = await supabase
         .from('sales_history_final')
         .select('*')
@@ -346,6 +348,61 @@ export default function InventoryManager() {
       }
       
       if (data) {
+        console.log(`[InventoryManager] Fetched ${data.length} sales history records`);
+        
+        // Fetch product master data to get product types
+        console.log('[InventoryManager] Fetching product master data for product types...');
+        const { data: productMasterData, error: productError } = await supabase
+          .from('products')
+          .select('*'); // Get all fields to help with debugging
+
+        if (productError) {
+          console.error('[InventoryManager] Error fetching product master data:', productError);
+          // Continue without product types rather than failing completely
+        }
+
+        // Log sample of product master data
+        if (productMasterData && productMasterData.length > 0) {
+          console.log(`[InventoryManager] Fetched ${productMasterData.length} products from product master`);
+          console.log('[InventoryManager] Sample product:', productMasterData[0]);
+          
+          // Check field names and values availability
+          const productTypeCount = productMasterData.filter(p => p.product_type).length;
+          console.log(`[InventoryManager] Products with product_type: ${productTypeCount}/${productMasterData.length}`);
+          if (productTypeCount === 0) {
+            console.warn('[InventoryManager] No products have product_type set in product master!');
+          }
+        } else {
+          console.warn('[InventoryManager] No products found in product master!');
+        }
+
+        // Create lookup maps for product types
+        const productTypeByName: Record<string, string> = {};
+        const productTypeByHsn: Record<string, string> = {};
+        
+        if (productMasterData) {
+          productMasterData.forEach((product: any) => {
+            if (product.name && product.product_type) {
+              // Normalize the name to improve matching
+              const normalizedName = product.name.toLowerCase().trim();
+              productTypeByName[normalizedName] = product.product_type;
+            }
+            if (product.hsn_code && product.product_type) {
+              productTypeByHsn[product.hsn_code] = product.product_type;
+            }
+          });
+        }
+
+        console.log(`[InventoryManager] Created product type lookup maps with ${Object.keys(productTypeByName).length} names and ${Object.keys(productTypeByHsn).length} HSN codes`);
+        
+        // Log a few examples from the maps for debugging
+        if (Object.keys(productTypeByName).length > 0) {
+          const sampleKeys = Object.keys(productTypeByName).slice(0, 3);
+          console.log('[InventoryManager] Sample product type mappings:');
+          sampleKeys.forEach(key => {
+            console.log(`  "${key}" => "${productTypeByName[key]}"`);
+          });
+        }
         // Sort data by date, oldest first (for assigning serial numbers)
         const sortedData = [...data].sort((a, b) => {
           const dateA = new Date(a.date).getTime();
@@ -377,7 +434,42 @@ export default function InventoryManager() {
           const sgstCurrentStock = taxableValueCurrentStock * (item.gst_percentage / 200);
           const totalValueCurrentStock = taxableValueCurrentStock + cgstCurrentStock + sgstCurrentStock;
           
-          return {
+          // Get product type by matching with product master data
+          const productName = item.product_name || 'Unknown Product';
+          const productNameLower = productName.toLowerCase().trim();
+          const hsnCode = item.hsn_code;
+          
+          console.log(`[InventoryManager] Matching product type for "${productName}" (${item.order_id})`);
+          
+          // Try to get product type by product name first, then by HSN code
+          let productType = 'Unknown';
+          
+          // First try exact match by name
+          if (productTypeByName[productNameLower]) {
+            productType = productTypeByName[productNameLower];
+            console.log(`[InventoryManager] Found product type by exact name match: ${productType}`);
+          } 
+          // Then try fuzzy match by name
+          else {
+            const productMasterKeys = Object.keys(productTypeByName);
+            const matchingKey = productMasterKeys.find(key => 
+              productNameLower.includes(key) || key.includes(productNameLower)
+            );
+            
+            if (matchingKey) {
+              productType = productTypeByName[matchingKey];
+              console.log(`[InventoryManager] Found product type by fuzzy name match: ${productType} (${matchingKey})`);
+            }
+            // Finally try by HSN code
+            else if (hsnCode && productTypeByHsn[hsnCode]) {
+              productType = productTypeByHsn[hsnCode];
+              console.log(`[InventoryManager] Found product type by HSN code: ${productType}`);
+            } else {
+              console.log(`[InventoryManager] Could not find product type for "${productName}"`);
+            }
+          }
+          
+          const processedItem = {
             ...item,
             serial_no: `SALES-${String(index + 1).padStart(2, '0')}`,
             unit_price_incl_gst: unitPriceIncGst,
@@ -396,8 +488,21 @@ export default function InventoryManager() {
             total_value_current_stock: totalValueCurrentStock,
             // Ensure MRP and discounted rates are populated with real values if empty
             mrp_incl_gst: item.mrp_incl_gst || unitPriceIncGst,
-            discounted_sales_rate_ex_gst: item.discounted_sales_rate_ex_gst || item.unit_price_ex_gst
+            discounted_sales_rate_ex_gst: item.discounted_sales_rate_ex_gst || item.unit_price_ex_gst,
+            // Set the product type from the matching
+            product_type: productType
           };
+          
+          // Log every few items to verify product type assignment
+          if (index < 3) {
+            console.log(`[InventoryManager] Sample processed item ${index + 1}:`, {
+              product_name: processedItem.product_name,
+              product_type: processedItem.product_type,
+              hsn_code: processedItem.hsn_code
+            });
+          }
+          
+          return processedItem;
         });
         
         // Sort back by date descending (newest first) for display
@@ -408,6 +513,15 @@ export default function InventoryManager() {
         });
         
         setSalesHistory(finalSortedData);
+        console.log(`[InventoryManager] Sales history processing complete. Final data count: ${finalSortedData.length}`);
+        
+        // Log a summary of product type mapping results
+        const productTypeCounts = finalSortedData.reduce((acc: Record<string, number>, item) => {
+          const type = item.product_type || 'Unknown';
+          acc[type] = (acc[type] || 0) + 1;
+          return acc;
+        }, {});
+        console.log('[InventoryManager] Product type distribution:', productTypeCounts);
       } else {
         setSalesHistory([]);
       }

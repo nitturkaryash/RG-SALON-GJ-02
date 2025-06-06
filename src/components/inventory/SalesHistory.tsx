@@ -77,8 +77,25 @@ export default function SalesHistory() {
 
   // Fetch sales history on mount
   useEffect(() => {
+    console.log('[SalesHistory] Component mounted, fetching sales history...');
     fetchSalesHistory();
   }, [fetchSalesHistory]);
+
+  // Debug log when salesHistory changes
+  useEffect(() => {
+    if (salesHistory.length > 0) {
+      console.log('[SalesHistory] Sales history loaded:', salesHistory.length, 'items');
+      // Log first few items to check product types
+      const sampleItems = salesHistory.slice(0, 3);
+      console.log('[SalesHistory] Sample items with product types:', 
+        sampleItems.map(item => ({
+          product_name: item.product_name,
+          product_type: item.product_type,
+          hsn_code: item.hsn_code
+        }))
+      );
+    }
+  }, [salesHistory]);
 
   // Apply filtering when data or filters change
   useEffect(() => {

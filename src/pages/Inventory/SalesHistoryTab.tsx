@@ -94,6 +94,7 @@ interface GroupedSalesItem {
   total_invoice_value: number;
   combined_product_names: string;
   combined_hsn_codes: string;
+  combined_product_types: string; // Add product types field
   gst_percentage: number; // Most common GST percentage in the order
 }
 
@@ -218,6 +219,60 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
 
       console.log(`Received ${ordersData.length} orders from pos_orders table`);
       console.log('Sample order:', ordersData[0]);
+
+      // Fetch product master data to get product types
+      console.log('[SalesHistoryTab] Fetching product master data for product types...');
+      const { data: productMasterData, error: productError } = await supabase
+        .from('products')
+        .select('*'); // Get all fields to help with debugging
+
+      if (productError) {
+        console.error('[SalesHistoryTab] Error fetching product master data:', productError);
+        // Continue without product types rather than failing completely
+      }
+
+      // Log sample of product master data
+      if (productMasterData && productMasterData.length > 0) {
+        console.log(`[SalesHistoryTab] Fetched ${productMasterData.length} products from product master`);
+        console.log('[SalesHistoryTab] Sample product:', productMasterData[0]);
+        
+        // Check field names and values availability
+        const productTypeCount = productMasterData.filter(p => p.product_type).length;
+        console.log(`[SalesHistoryTab] Products with product_type: ${productTypeCount}/${productMasterData.length}`);
+        if (productTypeCount === 0) {
+          console.warn('[SalesHistoryTab] No products have product_type set in product master!');
+        }
+      } else {
+        console.warn('[SalesHistoryTab] No products found in product master!');
+      }
+
+      // Create lookup maps for product types
+      const productTypeByName: Record<string, string> = {};
+      const productTypeByHsn: Record<string, string> = {};
+      
+      if (productMasterData) {
+        productMasterData.forEach((product: any) => {
+          if (product.name && product.product_type) {
+            // Normalize the name to improve matching
+            const normalizedName = product.name.toLowerCase().trim();
+            productTypeByName[normalizedName] = product.product_type;
+          }
+          if (product.hsn_code && product.product_type) {
+            productTypeByHsn[product.hsn_code] = product.product_type;
+          }
+        });
+      }
+
+      console.log(`[SalesHistoryTab] Created product type lookup maps with ${Object.keys(productTypeByName).length} names and ${Object.keys(productTypeByHsn).length} HSN codes`);
+      
+      // Log a few examples from the maps for debugging
+      if (Object.keys(productTypeByName).length > 0) {
+        const sampleKeys = Object.keys(productTypeByName).slice(0, 3);
+        console.log('[SalesHistoryTab] Sample product type mappings:');
+        sampleKeys.forEach(key => {
+          console.log(`  "${key}" => "${productTypeByName[key]}"`);
+        });
+      }
       
       // Process orders to extract and group product data like Orders.tsx does
       const groupedData: GroupedSalesItem[] = ordersData.map((order, index) => {
@@ -245,6 +300,64 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
         const productNames = productServices.map((service: any) => service.service_name).join(', ');
         const hsnCodes = [...new Set(productServices.map((service: any) => service.hsn_code).filter(Boolean))].join(', ');
         
+        // Get product types by matching with product master data
+        const productTypes = productServices.map((service: any) => {
+          const serviceName = service.service_name;
+          const serviceHsn = service.hsn_code;
+          
+          if (!serviceName) return 'Unknown';
+          
+          const serviceNameLower = serviceName.toLowerCase().trim();
+          console.log(`[SalesHistoryTab] Trying to match product type for "${serviceName}"`);
+          
+          // First try to match by exact product name (case-insensitive)
+          if (productTypeByName[serviceNameLower]) {
+            console.log(`[SalesHistoryTab] Found product type by exact name match: ${productTypeByName[serviceNameLower]}`);
+            return productTypeByName[serviceNameLower];
+          }
+          
+          // Then try fuzzy matching by product name
+          const productMasterKeys = Object.keys(productTypeByName);
+          
+          // Try various matching approaches in order of precision
+          const exactMatchKey = productMasterKeys.find(key => key === serviceNameLower);
+          const containedMatchKey = productMasterKeys.find(key => 
+            serviceNameLower.includes(key) || key.includes(serviceNameLower)
+          );
+          
+          // Try matching by removing spaces and special characters
+          const normalizedServiceName = serviceNameLower.replace(/[^a-z0-9]/g, '');
+          const normalizedMatchKey = !exactMatchKey && !containedMatchKey ? 
+            productMasterKeys.find(key => {
+              const normalizedKey = key.replace(/[^a-z0-9]/g, '');
+              return normalizedServiceName.includes(normalizedKey) || normalizedKey.includes(normalizedServiceName);
+            }) : null;
+            
+          const matchingKey = exactMatchKey || containedMatchKey || normalizedMatchKey;
+          
+          if (matchingKey) {
+            console.log(`[SalesHistoryTab] Found product type by fuzzy name match: ${productTypeByName[matchingKey]} (${matchingKey})`);
+            return productTypeByName[matchingKey];
+          }
+          
+          // Then try to match by HSN code
+          if (serviceHsn && productTypeByHsn[serviceHsn]) {
+            console.log(`[SalesHistoryTab] Found product type by HSN code: ${productTypeByHsn[serviceHsn]}`);
+            return productTypeByHsn[serviceHsn];
+          }
+          
+          console.log(`[SalesHistoryTab] Could not find product type for "${serviceName}"`);
+          // Default fallback
+          return 'Unknown';
+        });
+        const uniqueProductTypes = [...new Set(productTypes.filter(Boolean))].join(', ');
+        
+        // Check if any product types are found
+        if (productTypes.length > 0 && productTypes.every(pt => pt === 'Unknown')) {
+          console.warn(`[SalesHistoryTab] No product types found for any products in order ${order.id}. Products:`, 
+            productServices.map((s: any) => s.service_name).join(', '));
+        }
+        
         // Get the most common GST percentage
         const gstPercentages = productServices.map((service: any) => service.gst_percentage || 18);
         const avgGstPercentage = gstPercentages.length > 0 ? gstPercentages.reduce((a: number, b: number) => a + b, 0) / gstPercentages.length : 18;
@@ -263,6 +376,7 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
           total_invoice_value: totalInvoiceValue,
           combined_product_names: productNames,
           combined_hsn_codes: hsnCodes,
+          combined_product_types: uniqueProductTypes,
           gst_percentage: avgGstPercentage
         };
       }).filter(item => item.total_quantity > 0); // Only include orders with products
@@ -343,6 +457,7 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
       const filtered = groupedSalesData.filter(item => 
         item.combined_product_names.toLowerCase().includes(searchValue) ||
         item.combined_hsn_codes.toLowerCase().includes(searchValue) ||
+        item.combined_product_types.toLowerCase().includes(searchValue) ||
         item.order_id.toLowerCase().includes(searchValue)
       );
       setFilteredData(filtered);
@@ -371,7 +486,7 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
       
       // Build header and row arrays so Excel columns exactly match the UI table
       const headers = [
-        'Serial No.', 'Date', 'Product Names', 'HSN Codes', 'Total Qty.',
+        'Serial No.', 'Date', 'Product Names', 'HSN Codes', 'Product Types', 'Total Qty.',
         'Taxable Value', 'GST %', 'Discount %', 'Taxable After Discount', 
         'CGST', 'SGST', 'Total Value', 'Order ID'
       ];
@@ -380,6 +495,7 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
         formatDate(item.date),
         item.combined_product_names,
         item.combined_hsn_codes || 'N/A',
+        item.combined_product_types || 'N/A',
         item.total_quantity,
         item.total_taxable_value,
         Number(item.gst_percentage ?? 0).toFixed(2) + '%',
@@ -476,7 +592,7 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
           <Grid item xs={12} md={4}>
             <TextField
               fullWidth
-              placeholder="Search by product name, HSN code, or order ID"
+              placeholder="Search by product name, HSN code, product type, or order ID"
               value={searchTerm}
               onChange={handleSearch}
               variant="outlined"
@@ -550,6 +666,7 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
                 {renderSortableHeader('date', 'Date')}
                 {renderSortableHeader('combined_product_names', 'Product Names')}
                 {renderSortableHeader('combined_hsn_codes', 'HSN Codes')}
+                {renderSortableHeader('combined_product_types', 'Product Types')}
                 {renderSortableHeader('total_quantity', 'Total Qty.')}
                 {renderSortableHeader('total_taxable_value', 'Taxable Value')}
                 {renderSortableHeader('gst_percentage', 'GST %')}
@@ -564,7 +681,7 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={14} align="center" sx={{ py: 3 }}>
+                  <TableCell colSpan={15} align="center" sx={{ py: 3 }}>
                     <CircularProgress />
                     <Typography variant="body2" sx={{ mt: 1 }}>
                       Loading sales data...
@@ -581,6 +698,7 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
                       <TableCell align="center">{formatDate(row.date)}</TableCell>
                       <TableCell align="left">{row.combined_product_names}</TableCell>
                       <TableCell align="center">{row.combined_hsn_codes}</TableCell>
+                      <TableCell align="center">{row.combined_product_types || 'N/A'}</TableCell>
                       <TableCell align="center">{row.total_quantity}</TableCell>
                       <TableCell align="right">{formatCurrency(row.total_taxable_value)}</TableCell>
                       <TableCell align="right">{Number(row.gst_percentage ?? 0).toFixed(2)}%</TableCell>
@@ -600,7 +718,7 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
                   ))
               ) : (
                 <TableRow>
-                  <TableCell colSpan={14} align="center" sx={{ py: 3 }}>
+                  <TableCell colSpan={15} align="center" sx={{ py: 3 }}>
                     <Typography variant="body1">No sales data found</Typography>
                     <Typography variant="body2" color="textSecondary" sx={{ mt: 1 }}>
                       {searchTerm 
@@ -614,7 +732,7 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
               {/* Totals row */}
               {tableData.length > 0 && (
                 <TableRow sx={{ backgroundColor: '#f8f9fa' }}>
-                  <TableCell colSpan={5} align="right" sx={{ fontWeight: 'bold' }}>Totals:</TableCell>
+                  <TableCell colSpan={6} align="right" sx={{ fontWeight: 'bold' }}>Totals:</TableCell>
                   <TableCell align="right" sx={{ fontWeight: 'bold' }}>{totals.quantity}</TableCell>
                   <TableCell align="right" sx={{ fontWeight: 'bold' }}>{formatCurrency(totals.taxableValue)}</TableCell>
                   <TableCell align="right" sx={{ fontWeight: 'bold' }}></TableCell>

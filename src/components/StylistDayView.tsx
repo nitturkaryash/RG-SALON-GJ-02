@@ -114,6 +114,7 @@ const ScheduleGrid = styled(Box)(({ theme }) => ({
   overflow: 'auto',
   position: 'relative',
   width: '100%', // Ensure it takes full width
+  height: '100%', // Ensure fixed height for sticky positioning
   '& > *': {  // This affects all direct children
     height: 'fit-content',  // Allow elements to grow beyond viewport
     minHeight: '100%'       // But at minimum be full height
@@ -129,7 +130,9 @@ const TimeColumn = styled(Box)(({ theme }) => ({
   backgroundColor: theme.palette.background.paper,
   zIndex: 2,
   paddingTop: 0, // Remove padding to ensure alignment
-  marginTop: 0 // Remove margin to ensure alignment
+  marginTop: 0, // Remove margin to ensure alignment
+  height: 'fit-content',
+  minHeight: '100%'
 }));
 
 const StylistColumn = styled(Box, { shouldForwardProp: (prop) => prop !== 'isOnHoliday' })<{ isOnHoliday?: boolean }>(({ theme, isOnHoliday }) => ({
@@ -140,7 +143,8 @@ const StylistColumn = styled(Box, { shouldForwardProp: (prop) => prop !== 'isOnH
   },
   position: 'relative',
   backgroundColor: theme.palette.salon.offWhite,
-  height: '100%',
+  height: 'fit-content',
+  minHeight: '100%',
   paddingBottom: '50vh', // Add extra space at the bottom for scrolling
 }));
 
@@ -149,16 +153,17 @@ const StylistHeader = styled(Box, { shouldForwardProp: (prop) => prop !== 'isOnH
   textAlign: 'center',
   borderBottom: `1px solid ${theme.palette.divider}`,
   borderRight: `1px solid ${theme.palette.divider}`,
-  backgroundColor: isOnHoliday ? theme.palette.grey[400] : (stylistColor || theme.palette.salon.oliveLight),
+  backgroundColor: isOnHoliday ? theme.palette.grey[400] : (stylistColor || '#6B8E25'),
   color: theme.palette.common.white,
   position: 'sticky',
   top: 0,
-  zIndex: 3,
+  zIndex: 10, // Increased z-index to ensure it stays above other elements
   height: 56,
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
   opacity: isOnHoliday ? 0.8 : 1,
+  boxShadow: '0 2px 4px rgba(0,0,0,0.1)', // Add shadow for better visual separation
   '&::after': isOnHoliday ? {
     content: '"On Holiday"',
     position: 'absolute',
@@ -270,15 +275,11 @@ const AppointmentCard = styled(Box, {
     pointerEvents: 'none',
   },
   ...(isCheckedIn && {
-    borderLeft: '4px solid #4caf50',
-    '&::before': {
-      content: '"✓"',
-      position: 'absolute',
-      top: 4,
-      right: 4,
-      color: '#4caf50',
-      fontWeight: 'bold',
-      fontSize: '1rem',
+    backgroundColor: '#D2B48C', // Warm tan color
+    boxShadow: '0px 4px 12px rgba(210, 180, 140, 0.25)', // Consistent shadow style with tan color
+    '&:hover': {
+      boxShadow: '0px 6px 16px rgba(210, 180, 140, 0.4)',
+      transform: 'translateY(-2px)',
     }
   })
 }));
@@ -1692,7 +1693,8 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
             color: 'rgba(0, 0, 0, 0.7)',
             position: 'sticky',
             top: 0,
-            zIndex: 10
+            zIndex: 11, // Higher than stylist headers to stay above them
+            boxShadow: '0 2px 4px rgba(0,0,0,0.1)' // Add shadow for better visual separation
           }}
         >
           Time
@@ -1756,11 +1758,13 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
               style={{
                 top: `${getAppointmentPosition(appointment.start_time)}px`,
                 height: `${getAppointmentDuration(appointment.start_time, appointment.end_time)}px`,
-                backgroundColor: status === 'completed'
-                  ? theme.palette.grey[400]
-                  : isPaid
-                    ? theme.palette.success.light
-                    : theme.palette.primary.main
+                backgroundColor: isCheckedIn 
+                  ? '#D2B48C' // Use warm tan color for checked-in appointments
+                  : status === 'completed'
+                    ? theme.palette.grey[400]
+                    : isPaid
+                      ? theme.palette.success.light
+                      : theme.palette.primary.main
               }}
               duration={getAppointmentDuration(appointment.start_time, appointment.end_time)}
               isPaid={isPaid}
@@ -2029,7 +2033,7 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
   }, [contextMenuAppointment, memoizedHandleCloseContextMenu, appointments, currentDate, onUpdateAppointment]);
 
   return (
-    <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+    <Box sx={{ height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <DayViewHeader>
         <Box>
           <Box display="flex" alignItems="center">
@@ -3090,12 +3094,16 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
         anchorEl={contextMenuAnchorEl}
         onClose={memoizedHandleCloseContextMenu}
       >
-        <MenuItem onClick={memoizedHandleCheckIn}>
-          Check In
-        </MenuItem>
-        <MenuItem onClick={memoizedHandleCheckOut}>
-          Check Out
-        </MenuItem>
+        {contextMenuAppointment && !checkedInIds.has(contextMenuAppointment.id) && (
+          <MenuItem onClick={memoizedHandleCheckIn}>
+            Check In
+          </MenuItem>
+        )}
+        {contextMenuAppointment && checkedInIds.has(contextMenuAppointment.id) && (
+          <MenuItem onClick={memoizedHandleCheckOut}>
+            Check Out
+          </MenuItem>
+        )}
       </Menu>
     </Box>
   );
