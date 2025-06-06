@@ -51,6 +51,9 @@ export interface Appointment {
   stylist_ids?: string[];
   service_ids?: string[];
   is_for_someone_else?: boolean;
+  booker_name?: string;
+  booker_phone?: string;
+  booker_email?: string;
   booking_id?: string | null;
   checked_in?: boolean;
 }
@@ -152,23 +155,24 @@ interface CreateAppointmentData {
   end_time: string;
   status: 'scheduled' | 'completed' | 'cancelled';
   notes?: string;
-  client_id?: string; // Optional client_id
-  phone?: string;     // Optional phone
-  email?: string;     // Optional email
+  client_id?: string;
+  phone?: string;
+  email?: string;
   is_for_someone_else?: boolean;
+  booker_name?: string;
+  booker_phone?: string;
+  booker_email?: string;
   booking_id?: string | null;
 }
 
 // Define the expected input type for the update mutation
 interface UpdateAppointmentData {
-  id: string; // Appointment ID
-  // Simplified clientDetails structure
-  clientDetails: {
+  id: string;
+  clientDetails?: {
     clientId: string;
     serviceIds: string[];
     stylistIds: string[];
   }[];
-  // Other updatable fields for the base 'appointments' table
   start_time?: string;
   end_time?: string;
   notes?: string;
@@ -176,8 +180,10 @@ interface UpdateAppointmentData {
   paid?: boolean;
   billed?: boolean;
   is_for_someone_else?: boolean;
-  // Primary keys if required by base table schema (might be redundant if clientDetails covers all)
-  client_id?: string; 
+  booker_name?: string;
+  booker_phone?: string;
+  booker_email?: string;
+  client_id?: string;
   stylist_id?: string;
   service_id?: string;
   booking_id?: string | null;
@@ -373,12 +379,15 @@ export function useAppointments() {
         // Step 1: Fetch base appointments
         const { data: baseAppointments, error: baseError } = await supabase
           .from('appointments')
-          .select('*')
+          .select('*, booker_name, booker_phone, booker_email')
           .order('start_time', { ascending: true });
 
         if (baseError) throw new Error(`Failed to fetch base appointments: ${baseError.message}`);
-        if (!baseAppointments || baseAppointments.length === 0) return [];
-        console.log(`Fetched ${baseAppointments.length} base appointments.`);
+        if (!baseAppointments || baseAppointments.length === 0) {
+          console.log("Fetched 0 base appointments.");
+          return [];
+        }
+        console.log(`Fetched ${baseAppointments.length} base appointments:`, baseAppointments);
 
         const appointmentIds = baseAppointments.map(a => a.id);
         if (appointmentIds.length === 0) return []; // No appointments, no need to fetch details
@@ -467,7 +476,7 @@ export function useAppointments() {
             booking_id: appointment.booking_id
           };
         });
-        console.log("Finished merging appointment data.");
+        console.log("Finished merging appointment data:", mergedAppointments);
         return mergedAppointments;
 
       } catch (error) {
@@ -509,12 +518,16 @@ export function useAppointments() {
         .from('appointments')
         .insert({
           ...appointmentBaseData,
-          start_time: formattedStartTime, // Use formatted times
+          start_time: formattedStartTime,
           end_time: formattedEndTime,
-          paid: false, // Default paid status
-          booking_id: appointmentBaseData.booking_id // Save booking_id
+          paid: false,
+          booking_id: appointmentBaseData.booking_id,
+          is_for_someone_else: appointmentBaseData.is_for_someone_else,
+          booker_name: appointmentBaseData.booker_name,
+          booker_phone: appointmentBaseData.booker_phone,
+          booker_email: appointmentBaseData.booker_email
         })
-        .select() // Select the newly created appointment record
+        .select()
         .single();
 
       if (appointmentError) throw new Error(`Error inserting appointment: ${appointmentError.message}`);
@@ -732,7 +745,13 @@ export function useAppointments() {
       console.log(` -> Updating base appointment ${appointmentId} with:`, validBaseUpdateData);
       const { data: updatedAppointment, error: updateError } = await supabase
           .from('appointments')
-          .update(validBaseUpdateData)
+          .update({
+            ...validBaseUpdateData,
+            is_for_someone_else: data.is_for_someone_else,
+            booker_name: data.booker_name,
+            booker_phone: data.booker_phone,
+            booker_email: data.booker_email
+          })
           .eq('id', appointmentId)
           .select()
           .single();

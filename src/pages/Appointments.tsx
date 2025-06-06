@@ -175,8 +175,10 @@ interface ClientAppointmentEntry {
   client: (Client & { inputValue?: string }) | null;
   services: ServiceEntry[];
   stylists: Pick<Stylist, 'id' | 'name'>[];
-  // Flag to indicate booking on behalf of someone else
   isForSomeoneElse: boolean;
+  bookerName?: string;
+  bookerPhone?: string;
+  bookerEmail?: string;
 }
 
 // Define filter for freeSolo client options
@@ -548,7 +550,10 @@ export default function Appointments() {
       client: primaryClientInfo, 
       services: consolidatedServiceEntries, 
       stylists: finalStylistsForEntry,
-      isForSomeoneElse: appointment.is_for_someone_else || false
+      isForSomeoneElse: appointment.is_for_someone_else || false,
+      bookerName: appointment.booker_name || undefined,
+      bookerPhone: appointment.booker_phone || undefined,
+      bookerEmail: appointment.booker_email || undefined,
     }]);
 
     // Determine overall start/end from the consolidated services if available, otherwise use main appointment times
@@ -976,7 +981,11 @@ export default function Appointments() {
                 serviceIds: [service.id],
                 stylistIds: [service.stylistId]
               }],
-              booking_id: newBookingId
+              booking_id: newBookingId,
+              is_for_someone_else: entry.isForSomeoneElse,
+              booker_name: entry.bookerName,
+              booker_phone: entry.bookerPhone,
+              booker_email: entry.bookerEmail
             };
           })
         );
@@ -1136,7 +1145,10 @@ export default function Appointments() {
               serviceIds: [service.id],
               stylistIds: [service.stylistId]
             }],
-            booking_id: bookingId
+            booking_id: bookingId,
+            booker_name: primaryEntry.bookerName,
+            booker_phone: primaryEntry.bookerPhone,
+            booker_email: primaryEntry.bookerEmail
           };
         });
 
@@ -1918,17 +1930,76 @@ export default function Appointments() {
 
             {/* Add 'Book for someone else' checkbox */}
             {clientEntries[0]?.client && (
-              <FormControlLabel
-                control={
-                  <Checkbox
-                    checked={clientEntries[0].isForSomeoneElse}
-                    onChange={(e) => updateEntry(clientEntries[0].id, { isForSomeoneElse: e.target.checked })}
-                    color="primary"
-                  />
-                }
-                label="Book for someone else"
-                sx={{ mt: 2 }}
-              />
+              <>
+                <FormControlLabel
+                  control={
+                    <Checkbox
+                      checked={clientEntries[0].isForSomeoneElse}
+                      onChange={(e) => updateEntry(clientEntries[0].id, { isForSomeoneElse: e.target.checked })}
+                      color="primary"
+                    />
+                  }
+                  label="Book for someone else"
+                  sx={{ mt: 2 }}
+                />
+                
+                {/* Booker's Information Fields */}
+                {clientEntries[0].isForSomeoneElse && (
+                  <Box sx={{ mt: 2, p: 2, border: '1px solid #E0E0E0', borderRadius: 2 }}>
+                    <Typography variant="subtitle2" sx={{ mb: 2 }}>Booker's Information</Typography>
+                    
+                    <TextField
+                      fullWidth
+                      label="Booker's Name *"
+                      value={clientEntries[0].bookerName || ''}
+                      onChange={(e) => updateEntry(clientEntries[0].id, { bookerName: e.target.value })}
+                      required
+                      error={!clientEntries[0].bookerName}
+                      helperText={!clientEntries[0].bookerName ? "Booker's name is required" : ""}
+                      sx={{ mb: 2 }}
+                      InputProps={{
+                        sx: {
+                          borderRadius: '8px',
+                          '& .MuiOutlinedInput-notchedOutline': {
+                            borderColor: '#E0E0E0'
+                          }
+                        }
+                      }}
+                    />
+                    
+                    <TextField
+                      fullWidth
+                      label="Booker's Phone *"
+                      value={clientEntries[0].bookerPhone || ''}
+                      onChange={(e) => updateEntry(clientEntries[0].id, { bookerPhone: e.target.value })}
+                      required
+                      error={!clientEntries[0].bookerPhone}
+                      helperText={!clientEntries[0].bookerPhone ? "Booker's phone is required" : ""}
+                      sx={{ mb: 2 }}
+                      InputProps={{
+                        sx: {
+                          borderRadius: '8px',
+                          '& .MuiOutlinedInput-notchedOutline': {
+                            borderColor: '#E0E0E0'
+                          }
+                        }
+                      }}
+                    />
+                    
+                    <TextField
+                      fullWidth
+                      label="Booker's Email"
+                      value={clientEntries[0].bookerEmail || ''}
+                      onChange={(e) => updateEntry(clientEntries[0].id, { bookerEmail: e.target.value })}
+                      sx={{
+                        '& .MuiOutlinedInput-notchedOutline': {
+                          borderColor: '#E0E0E0'
+                        }
+                      }}
+                    />
+                  </Box>
+                )}
+              </>
             )}
 
             {/* Client History Dialog */}

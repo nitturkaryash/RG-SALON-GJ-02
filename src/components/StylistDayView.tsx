@@ -1743,10 +1743,31 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
         const startTime = formatTime(appointment.start_time);
         const endTime = formatTime(appointment.end_time);
         
+        console.log(`Rendering appointment ${appointment.id} for stylist ${stylistId}:`, appointment);
+
         return (
           <Tooltip
             key={appointment.id}
-            title={`${appointment.clientDetails?.[0]?.full_name || (allClients?.find(c => c.id === appointment.client_id)?.full_name ?? 'Unknown Client')} - ${serviceName} (${startTime} - ${endTime})${isCheckedIn ? ' - Checked In' : ''}`}
+            title={
+              <Box>
+                <Typography variant="subtitle2">
+                  {appointment.clientDetails?.[0]?.full_name || (allClients?.find(c => c.id === appointment.client_id)?.full_name ?? 'Unknown Client')}
+                </Typography>
+                <Typography variant="body2">
+                  {serviceName} ({startTime} - {endTime})
+                </Typography>
+                {isCheckedIn && <Typography variant="body2">✓ Checked In</Typography>}
+                {appointment.is_for_someone_else && appointment.booker_name && (
+                  <>
+                    <Divider sx={{ my: 0.5 }} />
+                    <Typography variant="caption" sx={{ color: '#1976D2', fontWeight: 'bold' }}>
+                      Booked by: {appointment.booker_name}
+                      {appointment.booker_phone && ` (${appointment.booker_phone})`}
+                    </Typography>
+                  </>
+                )}
+              </Box>
+            }
             arrow
           >
             <AppointmentCard
@@ -1759,7 +1780,7 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
                 top: `${getAppointmentPosition(appointment.start_time)}px`,
                 height: `${getAppointmentDuration(appointment.start_time, appointment.end_time)}px`,
                 backgroundColor: isCheckedIn 
-                  ? '#D2B48C' // Use warm tan color for checked-in appointments
+                  ? '#D2B48C'
                   : status === 'completed'
                     ? theme.palette.grey[400]
                     : isPaid
@@ -1774,11 +1795,12 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
               <Typography variant="subtitle2" className="appointment-client-name">
                 {appointment.clientDetails?.[0]?.full_name
                   || (allClients?.find(c => c.id === appointment.client_id)?.full_name ?? 'Unknown Client')}
+                {appointment.is_for_someone_else && ' 👤'}
               </Typography>
               <Typography variant="body2" className="appointment-service">
                 {serviceName}
               </Typography>
-              <Typography variant="caption" className="appointment-time">
+              <Typography variant="body2" className="appointment-time">
                 {`${startTime} - ${endTime}`}
               </Typography>
             </AppointmentCard>
