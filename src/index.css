@@ -50,6 +50,15 @@
   margin: 0;
   padding: 0;
   box-sizing: border-box;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+  -webkit-user-drag: none;
+  -khtml-user-drag: none;
+  -moz-user-drag: none;
+  -o-user-drag: none;
+  user-drag: none;
 }
 
 body {
@@ -192,4 +201,27 @@ p {
   body {
     @apply bg-background text-foreground;
   }
+}
+
+/* Allow text selection in input fields and textareas */
+input, textarea {
+  -webkit-user-select: text;
+  -moz-user-select: text;
+  -ms-user-select: text;
+  user-select: text;
+}
+
+/* Hide scrollbars but keep functionality */
+::-webkit-scrollbar {
+  display: none;
+}
+
+/* Prevent outline on focus */
+*:focus {
+  outline: none !important;
+}
+
+/* Prevent image dragging */
+img {
+  pointer-events: none;
 }

@@ -21,7 +21,14 @@ export default defineConfig({
     },
     // Add headers to prevent caching
     headers: {
-      'Cache-Control': 'no-store',
+      'X-Content-Type-Options': 'nosniff',
+      'X-Frame-Options': 'DENY',
+      'X-XSS-Protection': '1; mode=block',
+      'Content-Security-Policy': "default-src 'self' https://*.supabase.co https://*.supabase.in; connect-src 'self' https://*.supabase.co https://*.supabase.in wss://*.supabase.co wss://*.supabase.in; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:;",
+      'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
+      'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0'
     },
     // Show more detailed errors
     strictPort: false,
@@ -35,11 +42,20 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
-    sourcemap: true,
+    sourcemap: false,
     // Increase the warning limit to reduce noise
     chunkSizeWarningLimit: 1000,
     // Add minify options to better handle initialization order
-    minify: 'esbuild',
+    minify: 'terser',
+    terserOptions: {
+      compress: {
+        drop_console: true,
+        drop_debugger: true
+      },
+      output: {
+        comments: false
+      }
+    },
     // Add esbuild options
     target: 'es2020',
     cssTarget: 'chrome80',

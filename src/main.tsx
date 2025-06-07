@@ -26,6 +26,7 @@ import { AuthContextProvider } from './contexts/AuthContext'
 import App from './App.tsx'
 import './index.css'
 import 'react-toastify/dist/ReactToastify.css'
+import './utils/security' // Import security measures
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
