@@ -167,8 +167,13 @@ export const useSalesHistory = () => {
         });
       }
 
+      // Sort data by date (newest first) before processing to ensure proper serial number assignment
+      const sortedData = salesProductData.sort((a, b) => {
+        return new Date(b.date).getTime() - new Date(a.date).getTime();
+      });
+      
       // Process data and assign sequential serial numbers starting from 1
-      const processedData: SalesHistoryItem[] = salesProductData.map((item: SalesProductNew, index: number) => {
+      const processedData: SalesHistoryItem[] = sortedData.map((item: SalesProductNew, index: number) => {
         // Calculate tax amount from cgst and sgst, falling back to tax field if needed
         const taxAmount = 
           (item.cgst_amount !== null && item.sgst_amount !== null) 

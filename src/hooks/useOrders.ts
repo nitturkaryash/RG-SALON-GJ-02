@@ -91,6 +91,67 @@ export function useOrders() {
     return orders.find((order) => order.id === id || order.order_id === id)
   }
   
+  // Get orders by appointment ID
+  const getOrdersByAppointmentId = async (appointmentId: string): Promise<Order[]> => {
+    if (!appointmentId) {
+      console.error('getOrdersByAppointmentId: appointmentId is undefined or null');
+      return [];
+    }
+    
+    try {
+      console.log(`Fetching orders for appointment ID: ${appointmentId}`);
+      
+      // First try to fetch from Supabase
+      const { data: supabaseOrders, error: supabaseError } = await supabase
+        .from('pos_orders')
+        .select('*')
+        .eq('appointment_id', appointmentId)
+        .order('created_at', { ascending: false });
+      
+      if (supabaseError) {
+        console.error('Error fetching orders by appointment ID from Supabase:', supabaseError);
+        // Fallback to local orders
+        const localOrders = orders.filter(order => order.appointment_id === appointmentId);
+        console.log(`Found ${localOrders.length} matching orders in local state`);
+        return localOrders;
+      }
+      
+      console.log(`Found ${supabaseOrders?.length || 0} matching orders in Supabase`);
+      
+      if (supabaseOrders && supabaseOrders.length > 0) {
+        // Process orders and fetch their services
+        const ordersWithServices = await Promise.all(supabaseOrders.map(async (order) => {
+          console.log(`Fetching services for order ID: ${order.id}`);
+          const { data: services, error: servicesError } = await supabase
+            .from('pos_order_items')
+            .select('*')
+            .eq('order_id', order.id);
+            
+          if (servicesError) {
+            console.error(`Error fetching services for order ${order.id}:`, servicesError);
+          }
+          
+          return {
+            ...order,
+            services: servicesError ? [] : services || []
+          };
+        }));
+        
+        const normalizedOrders = normalizeOrders(ordersWithServices);
+        console.log(`Returning ${normalizedOrders.length} orders with services`);
+        return normalizedOrders;
+      }
+      
+      // Fallback to local orders
+      const localOrders = orders.filter(order => order.appointment_id === appointmentId);
+      console.log(`No orders found in Supabase, returning ${localOrders.length} local orders`);
+      return localOrders;
+    } catch (err) {
+      console.error('Error in getOrdersByAppointmentId:', err);
+      return [];
+    }
+  };
+  
   // Add a refresh function
   const refreshOrders = () => {
     loadOrders()
@@ -182,6 +243,7 @@ export function useOrders() {
     isLoading,
     error,
     getOrder,
+    getOrdersByAppointmentId,
     refreshOrders,
     deleteOrderById,
     deleteAllOrders

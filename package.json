@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "yarn vite",
     "build": "yarn vite build",
-    "vercel-build": "echo \"Environment check...\" && node -e \"console.log('VITE_SUPABASE_URL:', process.env.VITE_SUPABASE_URL)\" && yarn vite build",
+    "vercel-build": "npm install @jridgewell/trace-mapping@0.3.25 --save-dev && echo \"Environment check...\" && node -e \"console.log('VITE_SUPABASE_URL:', process.env.VITE_SUPABASE_URL)\" && yarn vite build",
     "preview": "yarn vite preview",
     "lint": "yarn eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "test": "yarn vitest",
@@ -77,10 +77,12 @@
   },
   "optionalDependencies": {
     "@esbuild/linux-x64": "^0.21.5",
-    "@rollup/rollup-linux-x64-gnu": "^4.9.5"
+    "@rollup/rollup-linux-x64-gnu": "^4.9.5",
+    "lightningcss-linux-x64-gnu": "1.29.2"
   },
   "devDependencies": {
     "@emotion/babel-plugin": "^11.11.0",
+    "@jridgewell/trace-mapping": "0.3.25",
     "@tailwindcss/postcss": "^4.1.4",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.3.0",

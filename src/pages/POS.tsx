@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Container, Box, Typography, Paper, Tabs, Tab, TextField, Button, Grid, Card, CardContent, CardActions, FormControl, InputLabel, Select, MenuItem, IconButton, Chip, Dialog, DialogTitle, DialogContent, DialogActions, Snackbar, Alert, CircularProgress, Collapse, Tooltip, FormHelperText } from '@mui/material';
-import { Add as AddIcon, Close as CloseIcon, RemoveShoppingCart, ShoppingBag, Check as CheckIcon, Refresh as RefreshIcon, AttachMoney, CreditCard, LocalAtm, AccountBalance, Receipt, Inventory, Search, Info as InfoIcon } from '@mui/icons-material';
+import { Add as AddIcon, Close as CloseIcon, RemoveShoppingCart, ShoppingBag, Check as CheckIcon, Refresh as RefreshIcon, AttachMoney, CreditCard, LocalAtm, AccountBalance, Receipt as ReceiptIcon, Inventory, Search, Info as InfoIcon } from '@mui/icons-material';
 import AccountBalanceWalletIcon from '@mui/icons-material/AccountBalanceWallet';
 import CardMembershipIcon from '@mui/icons-material/CardMembership';
 import { supabase } from '../utils/supabase/supabaseClient';
@@ -51,6 +51,7 @@ import { useOrders } from '../hooks/useOrders'; // Import useOrders
 import RefreshInventoryButton from '../components/RefreshInventoryButton';
 import LowStockWarning from '../components/LowStockWarning';
 import ErrorBoundary from '../components/ErrorBoundary';
+import { printBill } from '../utils/printUtils';
 // First, import the useServices hook
 import { useServices, Service } from '../hooks/useServices';
 // Import useInventory hook
@@ -510,6 +511,10 @@ export default function POS() {
 	const [activeClientMembership, setActiveClientMembership] = useState<ActiveMembershipDetails | null>(null);
 	// Add state for order date (used for all orders)
 	const [orderDate, setOrderDate] = useState<Date | null>(new Date());
+	
+	// State for last created order and print dialog
+	const [lastCreatedOrder, setLastCreatedOrder] = useState<any>(null);
+	const [printDialogOpen, setPrintDialogOpen] = useState(false);
 
 	// When membership payment toggled, clear discounts
 	useEffect(() => {
@@ -1644,6 +1649,7 @@ export default function POS() {
 				client_name: clientNameToUse,    
 				stylist_id: staffInfo?.id || '',
 				stylist_name: staffInfo?.name || '',
+				appointment_id: currentAppointmentId || undefined, // Add appointment_id to link order with appointment
 				items: [],
 				// Make sure to include individual item discounts in the services array
 				services: ([...formattedProducts, ...formattedServices, ...formattedMemberships].map(item => ({
@@ -1684,6 +1690,24 @@ export default function POS() {
 			// --- Update Appointment Status if Applicable ---
 			if (currentAppointmentId && updateAppointment) {
 				try {
+					// Try to update the just-created order with the appointment_id if it wasn't included
+					if (orderResult.order && orderResult.order.id) {
+						console.log(`DEBUG: Updating order ${orderResult.order.id} with appointment_id ${currentAppointmentId}`);
+						
+						// Update the order with the appointment ID
+						const { error: updateOrderError } = await supabase
+							.from('pos_orders')
+							.update({ appointment_id: currentAppointmentId })
+							.eq('id', orderResult.order.id);
+							
+						if (updateOrderError) {
+							console.error('Error updating order with appointment_id:', updateOrderError);
+						} else {
+							console.log(`Successfully linked order ${orderResult.order.id} to appointment ${currentAppointmentId}`);
+						}
+					}
+					
+					// Update the appointment status
 					await updateAppointment({ 
 						id: currentAppointmentId, 
 						status: 'completed', 
@@ -1700,6 +1724,13 @@ export default function POS() {
 
 			setSnackbarMessage("Order created successfully!");
 			setSnackbarOpen(true);
+			
+			// Store the created order for printing
+			if (orderResult.order) {
+				setLastCreatedOrder(orderResult.order);
+				setPrintDialogOpen(true);
+			}
+			
 			resetFormState();
 			
 			if (orderResult.success) {
@@ -2239,6 +2270,14 @@ export default function POS() {
 
 			// Success message
 			toast.success('Salon consumption recorded successfully');
+			
+			// Save order for printing
+			const orderForPrinting = {
+				...orderData,
+				services: orderData.services
+			};
+			setLastCreatedOrder(orderForPrinting);
+			setPrintDialogOpen(true);
 
 			// Reset form and navigate to orders page instead of inventory page
 			resetFormState();
@@ -4172,6 +4211,54 @@ export default function POS() {
 					)}
 				</Box>
 			</Drawer>
+			
+			{/* Print Bill Dialog */}
+			<Dialog
+				open={printDialogOpen}
+				onClose={() => setPrintDialogOpen(false)}
+				maxWidth="xs"
+				fullWidth
+			>
+				<DialogTitle>
+					<Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+						<Typography variant="h6">Bill Created</Typography>
+						<IconButton onClick={() => setPrintDialogOpen(false)} size="small">
+							<CloseIcon />
+						</IconButton>
+					</Box>
+				</DialogTitle>
+				<DialogContent>
+					<Box sx={{ mb: 2 }}>
+						<Typography variant="body1" paragraph>
+							Your order has been created successfully.
+						</Typography>
+						<Typography variant="body2">
+							Would you like to print the bill?
+						</Typography>
+					</Box>
+				</DialogContent>
+				<DialogActions>
+					<Button 
+						onClick={() => {
+							setPrintDialogOpen(false);
+							if (lastCreatedOrder) {
+								printBill(lastCreatedOrder);
+							}
+						}}
+						variant="contained"
+						color="primary"
+						startIcon={<ReceiptIcon />}
+					>
+						Print Bill
+					</Button>
+					<Button 
+						onClick={() => setPrintDialogOpen(false)}
+						variant="outlined"
+					>
+						Skip
+					</Button>
+				</DialogActions>
+			</Dialog>
 		</Box>
 	);
 }

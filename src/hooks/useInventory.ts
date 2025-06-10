@@ -428,7 +428,7 @@ export const useInventory = () => {
         // Check if the table exists
         const { error: checkError } = await supabase
           .from(tableName)
-          .select('id', { count: 'exact', head: true })
+          .select('product_name', { count: 'exact', head: true })
           .limit(1);
 
         if (checkError) {

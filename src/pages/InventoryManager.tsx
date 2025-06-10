@@ -50,7 +50,7 @@ import {
 } from '@mui/icons-material';
 import { styled } from '@mui/material/styles';
 import { useProducts, Product } from '../hooks/useProducts';
-import { usePurchaseHistory, PurchaseTransaction } from '../hooks/usePurchaseHistory';
+import { usePurchaseHistory, PurchaseTransaction, InventoryUpdateData } from '../hooks/usePurchaseHistory';
 import { addPurchaseTransaction } from '../utils/inventoryUtils';
 import { initialFormData, ProductFormData } from '../data/formData';
 import { supabase, handleSupabaseError } from '../utils/supabase/supabaseClient';
@@ -201,12 +201,14 @@ export default function InventoryManager() {
     error: errorPurchases,
     fetchPurchases: fetchPurchasesFromHook,
     deletePurchaseTransaction,
-    updatePurchaseTransaction
+    updatePurchaseTransaction,
+    addInventoryUpdate
   } = usePurchaseHistory();
 
   const [open, setOpen] = useState(false);
   const [purchaseFormData, setPurchaseFormData] = useState<ExtendedProductFormData>(extendedInitialFormData);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [dialogMode, setDialogMode] = useState<'purchase' | 'inventory'>('purchase');
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [activeTab, setActiveTab] = useState<'purchaseHistory' | 'salesHistory' | 'salonConsumption' | 'balanceStock'>('purchaseHistory');
@@ -1180,8 +1182,8 @@ export default function InventoryManager() {
       const workbook = XLSX.utils.book_new();
       
       // Purchase History sheet - All columns as in frontend
-      const purchaseData = filteredPurchases.map((purchase, index) => {
-        const serial = index + 1;
+      // Use sortedPurchases instead of filteredPurchases to match the frontend display order
+      const purchaseData = sortedPurchases.map((purchase, index) => {
         // Use the stock_after_purchase directly from the purchase record
         const stockAfterPurchaseDisplay = typeof purchase.stock_after_purchase === 'number' 
           ? purchase.stock_after_purchase 
@@ -1213,14 +1215,13 @@ export default function InventoryManager() {
         }
 
         return {
-          'Serial No': (purchase as any).serial_no || `PURCHASE-${filteredPurchases.length - index}`,
-          'S.No': serial,
+          'Serial No': (purchase as any).serial_no || `PURCHASE-${sortedPurchases.length - index}`,
           'Date': purchase.date ? new Date(purchase.date).toLocaleDateString() : '-',
           'Product Name': purchase.product_name || '-',
           'HSN Code': purchase.hsn_code || '-',
           'UNITS': purchase.units || '-',
-          'Vendor': purchase.supplier || '-',
-          'Purchase Invoice No.': purchase.purchase_invoice_number || '-',
+          'Vendor': purchase.transaction_type === 'inventory_update' ? 'INVENTORY UPDATE' : (purchase.supplier || '-'),
+          'Purchase Invoice No.': purchase.transaction_type === 'inventory_update' ? 'INV-UPDATE' : (purchase.purchase_invoice_number || '-'),
           'Purchase Qty.': purchase.purchase_qty || 0,
           'MRP Incl. GST (Rs.)': purchase.mrp_incl_gst || 0,
           'MRP Ex. GST (Rs.)': calculatePriceExcludingGST(purchase.mrp_incl_gst ?? 0, purchase.gst_percentage ?? 0),
@@ -1241,11 +1242,40 @@ export default function InventoryManager() {
           'Total CGST (Current Stock Rs.)': totalCGST > 0 ? totalCGST : 0,
           'Total SGST (Current Stock Rs.)': totalSGST > 0 ? totalSGST : 0,
           'Total IGST (Current Stock Rs.)': totalIGST > 0 ? totalIGST : 0,
-          'Total Amount (Incl. GST Current Stock Rs.)': (totalValueMRP + totalCGST + totalSGST + totalIGST) > 0 ? (totalValueMRP + totalCGST + totalSGST + totalIGST) : 0
+          'Total Amount (Incl. GST Current Stock Rs.)': (totalValueMRP + totalCGST + totalSGST + totalIGST) > 0 ? (totalValueMRP + totalCGST + totalSGST + totalIGST) : 0,
+          'Transaction Type': purchase.transaction_type || 'purchase'
         };
       });
+      
       if (purchaseData.length) {
         const ws = XLSX.utils.json_to_sheet(purchaseData);
+        
+        // Apply yellow highlighting to inventory update rows
+        const inventoryUpdateRows: number[] = [];
+        sortedPurchases.forEach((purchase, index) => {
+          if (purchase.transaction_type === 'inventory_update') {
+            inventoryUpdateRows.push(index + 2); // +2 because Excel is 1-indexed and row 1 is headers
+          }
+        });
+        
+        // Apply yellow background to inventory update rows
+        if (inventoryUpdateRows.length > 0) {
+          const range = XLSX.utils.decode_range(ws['!ref'] || 'A1');
+          
+          for (const rowIndex of inventoryUpdateRows) {
+            for (let col = range.s.c; col <= range.e.c; col++) {
+              const cellRef = XLSX.utils.encode_cell({ r: rowIndex - 1, c: col }); // -1 because XLSX uses 0-based indexing
+              if (ws[cellRef]) {
+                if (!ws[cellRef].s) ws[cellRef].s = {};
+                ws[cellRef].s.fill = {
+                  fgColor: { rgb: "FFFF00" }, // Yellow background
+                  patternType: "solid"
+                };
+              }
+            }
+          }
+        }
+        
         XLSX.utils.book_append_sheet(workbook, ws, 'Purchase History');
       }
 
@@ -1264,7 +1294,7 @@ export default function InventoryManager() {
         const stockTotalValue = sale.stock_total_value || (stockTaxableValue + stockCgst + stockSgst);
 
         return {
-          'S.No': sale.serial_no,
+          'Serial No': sale.serial_no,
           'Date': new Date(sale.date).toLocaleDateString(),
           'Product Name': sale.product_name,
           'HSN Code': sale.hsn_code || '-',
@@ -1307,7 +1337,6 @@ export default function InventoryManager() {
 
         return {
           'Serial No': (item as any).serial_no || `SALON-${filteredSalonConsumption.length - index}`,
-          'S.No': index + 1,
           'Date': new Date(item.date).toLocaleDateString(),
           'Voucher No': item.requisition_voucher_no,
           'Order ID': item.order_id,
@@ -1390,9 +1419,25 @@ export default function InventoryManager() {
   };
 
   const handleOpen = () => {
+    setDialogMode('purchase');
     setOpen(true);
     setPurchaseFormData(extendedInitialFormData);
     // Reset summary when opening for new addition
+    setAddedProductsSummary([]);
+    setCurrentSessionTotal({
+        totalProducts: 0,
+        totalQuantity: 0,
+        totalValue: 0
+    });
+    // Reset summary editing state
+    setEditingSummaryIndex(null);
+  };
+
+  const handleOpenInventoryUpdate = () => {
+    setDialogMode('inventory');
+    setOpen(true);
+    setPurchaseFormData(extendedInitialFormData);
+    // Reset summary when opening for inventory update
     setAddedProductsSummary([]);
     setCurrentSessionTotal({
         totalProducts: 0,
@@ -1419,6 +1464,7 @@ export default function InventoryManager() {
   };
 
   const handleEdit = (purchase: PurchaseTransaction) => {
+    setDialogMode(purchase.transaction_type === 'inventory_update' ? 'inventory' : 'purchase');
     setEditingId(purchase.purchase_id);
     setPurchaseFormData({
       ...extendedInitialFormData,
@@ -1493,42 +1539,101 @@ export default function InventoryManager() {
             // Handle updating summary item (not saving to database yet)
             saveSummaryItemChanges();
         } else {
-            // Handle adding new purchase
-            const result = await addPurchaseTransaction(purchaseFormData);
-
-            if (result.success) {
-                // Add to summary instead of closing dialog
-                const currentProduct = { ...purchaseFormData };
-                setAddedProductsSummary(prev => [...prev, currentProduct]);
-                
-                // Update session totals
-                const newTotalProducts = addedProductsSummary.length + 1;
-                const newTotalQuantity = addedProductsSummary.reduce((acc, prod) => acc + prod.purchase_qty, 0) + purchaseFormData.purchase_qty;
-                const newTotalValue = addedProductsSummary.reduce((acc, prod) => acc + prod.purchase_invoice_value, 0) + purchaseFormData.purchase_invoice_value;
-                
-                setCurrentSessionTotal({
-                    totalProducts: newTotalProducts,
-                    totalQuantity: newTotalQuantity,
-                    totalValue: newTotalValue
-                });
-
-                toast.success('Product added to purchase! Add another product or close to finish.');
-                
-                // Reset form for next product but keep vendor, date and invoice number
-                const resetFormData = {
-                    ...extendedInitialFormData,
+            // Handle adding new purchase or inventory update
+            if (dialogMode === 'inventory') {
+                // Handle inventory update
+                const inventoryData: InventoryUpdateData = {
+                    product_id: purchaseFormData.product_id,
                     date: purchaseFormData.date,
-                    vendor: purchaseFormData.vendor,
-                    purchase_invoice_number: purchaseFormData.purchase_invoice_number,
+                    product_name: purchaseFormData.product_name,
+                    hsn_code: purchaseFormData.hsn_code,
+                    units: purchaseFormData.unit_type,
+                    update_qty: purchaseFormData.purchase_qty,
+                    mrp_incl_gst: purchaseFormData.mrp_incl_gst,
+                    mrp_excl_gst: purchaseFormData.mrp_excl_gst,
+                    discount_on_purchase_percentage: purchaseFormData.discount_on_purchase_percentage,
+                    gst_percentage: purchaseFormData.gst_percentage,
+                    purchase_cost_per_unit_ex_gst: purchaseFormData.purchase_excl_gst,
+                    purchase_taxable_value: purchaseFormData.purchase_cost_taxable_value,
+                    purchase_igst: purchaseFormData.purchase_igst,
+                    purchase_cgst: purchaseFormData.purchase_cgst,
+                    purchase_sgst: purchaseFormData.purchase_sgst,
+                    purchase_invoice_value_rs: purchaseFormData.purchase_invoice_value,
                     is_interstate: purchaseFormData.is_interstate
                 };
-                setPurchaseFormData(resetFormData);
-                
-                await fetchPurchasesData();
-                await fetchProducts();
+
+                const result = await addInventoryUpdate(inventoryData);
+
+                if (result.success) {
+                    // Add to summary instead of closing dialog
+                    const currentProduct = { ...purchaseFormData };
+                    setAddedProductsSummary(prev => [...prev, currentProduct]);
+                    
+                    // Update session totals
+                    const newTotalProducts = addedProductsSummary.length + 1;
+                    const newTotalQuantity = addedProductsSummary.reduce((acc, prod) => acc + prod.purchase_qty, 0) + purchaseFormData.purchase_qty;
+                    const newTotalValue = addedProductsSummary.reduce((acc, prod) => acc + prod.purchase_invoice_value, 0) + purchaseFormData.purchase_invoice_value;
+                    
+                    setCurrentSessionTotal({
+                        totalProducts: newTotalProducts,
+                        totalQuantity: newTotalQuantity,
+                        totalValue: newTotalValue
+                    });
+
+                    toast.success('Inventory updated! Add another product or close to finish.');
+                    
+                    // Reset form for next product but keep date
+                    const resetFormData = {
+                        ...extendedInitialFormData,
+                        date: purchaseFormData.date,
+                        is_interstate: purchaseFormData.is_interstate
+                    };
+                    setPurchaseFormData(resetFormData);
+                    
+                    await fetchPurchasesData();
+                    await fetchProducts();
+                } else {
+                    console.error("Failed to add inventory update:", result.error);
+                    toast.error(`Error: ${result.error?.message || 'Failed to update inventory.'}`);
+                }
             } else {
-                console.error("Failed to add purchase transaction:", result.error);
-                toast.error(`Error: ${result.error?.message || 'Failed to save purchase.'}`);
+                // Handle purchase
+                const result = await addPurchaseTransaction(purchaseFormData);
+
+                if (result.success) {
+                    // Add to summary instead of closing dialog
+                    const currentProduct = { ...purchaseFormData };
+                    setAddedProductsSummary(prev => [...prev, currentProduct]);
+                    
+                    // Update session totals
+                    const newTotalProducts = addedProductsSummary.length + 1;
+                    const newTotalQuantity = addedProductsSummary.reduce((acc, prod) => acc + prod.purchase_qty, 0) + purchaseFormData.purchase_qty;
+                    const newTotalValue = addedProductsSummary.reduce((acc, prod) => acc + prod.purchase_invoice_value, 0) + purchaseFormData.purchase_invoice_value;
+                    
+                    setCurrentSessionTotal({
+                        totalProducts: newTotalProducts,
+                        totalQuantity: newTotalQuantity,
+                        totalValue: newTotalValue
+                    });
+
+                    toast.success('Product added to purchase! Add another product or close to finish.');
+                    
+                    // Reset form for next product but keep vendor, date and invoice number
+                    const resetFormData = {
+                        ...extendedInitialFormData,
+                        date: purchaseFormData.date,
+                        vendor: purchaseFormData.vendor,
+                        purchase_invoice_number: purchaseFormData.purchase_invoice_number,
+                        is_interstate: purchaseFormData.is_interstate
+                    };
+                    setPurchaseFormData(resetFormData);
+                    
+                    await fetchPurchasesData();
+                    await fetchProducts();
+                } else {
+                    console.error("Failed to add purchase transaction:", result.error);
+                    toast.error(`Error: ${result.error?.message || 'Failed to save purchase.'}`);
+                }
             }
         }
     } catch (error) {
@@ -1566,12 +1671,21 @@ export default function InventoryManager() {
       alert('Unit type (Units) is required');
       return false;
     }
-    if (!purchaseFormData.vendor?.trim()) {
-      alert('Vendor name is required');
-      return false;
+    
+    // Only validate vendor and invoice for purchases, not inventory updates
+    if (dialogMode === 'purchase') {
+      if (!purchaseFormData.vendor?.trim()) {
+        alert('Vendor name is required');
+        return false;
+      }
+      if (!purchaseFormData.purchase_invoice_number?.trim()) {
+        alert('Purchase Invoice Number is required');
+        return false;
+      }
     }
+    
     if (purchaseFormData.purchase_qty <= 0) {
-      alert('Purchase Quantity must be greater than 0');
+      alert(dialogMode === 'inventory' ? 'Inventory Update Quantity must be greater than 0' : 'Purchase Quantity must be greater than 0');
       return false;
     }
     if (!purchaseFormData.mrp_incl_gst || purchaseFormData.mrp_incl_gst <= 0) {
@@ -1725,7 +1839,7 @@ export default function InventoryManager() {
 
   const handleProductSelect = (product: Product | null) => {
     if (!product) {
-        setPurchaseFormData(prev => ({ ...prev, product_name: '', hsn_code: '', unit_type: '', gst_percentage: 0, mrp_incl_gst: 0 }));
+        setPurchaseFormData(prev => ({ ...prev, product_id: '', product_name: '', hsn_code: '', unit_type: '', gst_percentage: 0, mrp_incl_gst: 0 }));
         return;
     }
 
@@ -1735,6 +1849,7 @@ export default function InventoryManager() {
 
     setPurchaseFormData(prev => ({
       ...prev,
+      product_id: product.id || '', // Set the product_id from the selected product
       product_name: product.name,
       hsn_code: product.hsn_code || '',
       unit_type: unitTypeFromMaster, // Set unit_type from product master
@@ -2251,14 +2366,24 @@ export default function InventoryManager() {
         
         <Box sx={{ display: 'flex', gap: 1 }}>
           {activeTab === 'purchaseHistory' && (
-            <Button
-              variant="contained"
-              color="primary"
-              startIcon={<AddIcon />}
-              onClick={handleOpen}
-            >
-              Add Purchase
-            </Button>
+            <>
+              <Button
+                variant="contained"
+                color="primary"
+                startIcon={<AddIcon />}
+                onClick={handleOpen}
+              >
+                Add Purchase
+              </Button>
+              <Button
+                variant="contained"
+                color="warning"
+                startIcon={<SpeedIcon />}
+                onClick={handleOpenInventoryUpdate}
+              >
+                Update Inventory
+              </Button>
+            </>
           )}
           <Button 
             variant="outlined" 
@@ -2481,7 +2606,6 @@ export default function InventoryManager() {
                   <StyledTableCell>
                     Serial No
                   </StyledTableCell>
-                  <SortablePurchaseTableCell label="S.No" property="purchase_id" />
                   <SortablePurchaseTableCell label="Date" property="date" />
                   <SortablePurchaseTableCell label="Product Name" property="product_name" />
                   <SortablePurchaseTableCell label="HSN Code" property="hsn_code" />
@@ -2520,7 +2644,6 @@ export default function InventoryManager() {
                   sortedPurchases
                     .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
                     .map((purchase, index) => {
-                      const serial = page * rowsPerPage + index + 1;
                       // Use the stock_after_purchase directly from the purchase record
                       const stockAfterPurchaseDisplay = typeof purchase.stock_after_purchase === 'number' 
                         ? purchase.stock_after_purchase 
@@ -2559,7 +2682,15 @@ export default function InventoryManager() {
                       }
 
                       return (
-                        <TableRow key={purchase.purchase_id} hover>
+                        <TableRow 
+                          key={purchase.purchase_id} 
+                          hover
+                          sx={{
+                            backgroundColor: purchase.transaction_type === 'inventory_update' 
+                              ? 'rgba(255, 193, 7, 0.1)' 
+                              : 'inherit'
+                          }}
+                        >
                           <TableCell>
                             <div style={{ 
                               padding: '4px 8px', 
@@ -2572,13 +2703,32 @@ export default function InventoryManager() {
                               {(purchase as any).serial_no || `PURCHASE-${sortedPurchases.length - (page * rowsPerPage + index)}`}
                             </div>
                           </TableCell>
-                          <TableCell>{serial}</TableCell>
                           <TableCell>{new Date(purchase.date).toLocaleDateString() || '-'}</TableCell>
-                          <TableCell>{purchase.product_name}</TableCell>
+                          <TableCell>
+                            {purchase.product_name}
+                            {purchase.transaction_type === 'inventory_update' && (
+                              <Chip 
+                                label="Inventory Update" 
+                                size="small" 
+                                color="warning" 
+                                sx={{ ml: 1, fontSize: '0.75rem' }}
+                              />
+                            )}
+                          </TableCell>
                           <TableCell>{purchase.hsn_code || '-'}</TableCell>
                           <TableCell>{purchase.units || '-'}</TableCell>
-                          <TableCell>{purchase.supplier || '-'}</TableCell>
-                          <TableCell>{purchase.purchase_invoice_number || '-'}</TableCell>
+                          <TableCell>
+                            {purchase.transaction_type === 'inventory_update' 
+                              ? 'INVENTORY UPDATE' 
+                              : (purchase.supplier || '-')
+                            }
+                          </TableCell>
+                          <TableCell>
+                            {purchase.transaction_type === 'inventory_update' 
+                              ? 'INV-UPDATE' 
+                              : (purchase.purchase_invoice_number || '-')
+                            }
+                          </TableCell>
                           <TableCell align="right">{purchase.purchase_qty ?? '-'}</TableCell>
                           <TableCell align="right">₹{purchase.mrp_incl_gst?.toFixed(2) || '0.00'}</TableCell>
                           <TableCell align="right">
@@ -3527,9 +3677,20 @@ export default function InventoryManager() {
       {/* Dialog for adding/editing purchases */}
       <Dialog open={open} onClose={handleClose} maxWidth="lg" fullWidth>
         <DialogTitle>
-          {editingId ? 'Edit Purchase Transaction' : 'Add New Product Purchase'}
+          {editingId 
+            ? (dialogMode === 'inventory' ? 'Edit Inventory Update' : 'Edit Purchase Transaction')
+            : (dialogMode === 'inventory' ? 'Update Product Inventory' : 'Add New Product Purchase')
+          }
         </DialogTitle>
         <DialogContent>
+          {dialogMode === 'inventory' && (
+            <Alert severity="info" sx={{ mb: 2 }}>
+              <Typography variant="body2">
+                <strong>Inventory Update Mode:</strong> You are adding inventory without a purchase record. 
+                This will increase stock levels and will be highlighted in yellow in exports.
+              </Typography>
+            </Alert>
+          )}
           <Grid container spacing={2} sx={{ mt: 1 }}>
              <Grid item xs={12}>
                <Autocomplete
@@ -3691,26 +3852,30 @@ export default function InventoryManager() {
               />
             </Grid>
             
-            <Grid item xs={12} sm={6} md={4}>
-              <TextField
-                label="Vendor Name *"
-                value={purchaseFormData.vendor}
-                onChange={(e) => handleInputChange('vendor', e.target.value)}
-                fullWidth
-                required
-                placeholder="Enter supplier name"
-              />
-            </Grid>
-            
-            <Grid item xs={12} sm={6} md={4}>
-              <TextField
-                label="Purchase Invoice No. *"
-                value={purchaseFormData.purchase_invoice_number}
-                onChange={(e) => handleInputChange('purchase_invoice_number', e.target.value)}
-                fullWidth
-                required
-              />
-            </Grid>
+            {dialogMode === 'purchase' && (
+              <>
+                <Grid item xs={12} sm={6} md={4}>
+                  <TextField
+                    label="Vendor Name *"
+                    value={purchaseFormData.vendor}
+                    onChange={(e) => handleInputChange('vendor', e.target.value)}
+                    fullWidth
+                    required
+                    placeholder="Enter supplier name"
+                  />
+                </Grid>
+                
+                <Grid item xs={12} sm={6} md={4}>
+                  <TextField
+                    label="Purchase Invoice No. *"
+                    value={purchaseFormData.purchase_invoice_number}
+                    onChange={(e) => handleInputChange('purchase_invoice_number', e.target.value)}
+                    fullWidth
+                    required
+                  />
+                </Grid>
+              </>
+            )}
             
             <Grid item xs={12} sm={6} md={4}>
               <TextField
@@ -3779,7 +3944,7 @@ export default function InventoryManager() {
             
             <Grid item xs={12} sm={6} md={4}>
               <TextField
-                label="Purchase Qty. *"
+                label={dialogMode === 'inventory' ? 'Inventory Update Qty. *' : 'Purchase Qty. *'}
                 type="number"
                 value={purchaseFormData.purchase_qty}
                 onChange={(e) => handleInputChange('purchase_qty', parseFloat(e.target.value) || 0)}
@@ -3789,6 +3954,7 @@ export default function InventoryManager() {
                   startAdornment: <InputAdornment position="start">#</InputAdornment>,
                   inputProps: { min: 1, step: 1 }
                 }}
+                helperText={dialogMode === 'inventory' ? 'Quantity to add to inventory' : 'Quantity purchased'}
               />
             </Grid>
             
@@ -3994,13 +4160,16 @@ export default function InventoryManager() {
                 <Button 
                   variant="contained" 
                   onClick={handleSubmit}
-                  disabled={!purchaseFormData.product_name || !purchaseFormData.vendor || !purchaseFormData.purchase_invoice_number}
+                  disabled={
+                    !purchaseFormData.product_name || 
+                    (dialogMode === 'purchase' && (!purchaseFormData.vendor || !purchaseFormData.purchase_invoice_number))
+                  }
                 >
                   {editingId 
-                    ? 'Update Purchase' 
+                    ? (dialogMode === 'inventory' ? 'Update Inventory' : 'Update Purchase')
                     : addedProductsSummary.length > 0 
-                      ? 'Add Another Product' 
-                      : 'Save Purchase'
+                      ? (dialogMode === 'inventory' ? 'Add Another Update' : 'Add Another Product')
+                      : (dialogMode === 'inventory' ? 'Update Inventory' : 'Save Purchase')
                   }
                 </Button>
               </>

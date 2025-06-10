@@ -140,9 +140,31 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
   const [isExporting, setIsExporting] = useState(false);
   const { deleteSale } = useInventory();
   
-  // Compute remaining-stock tax breakdown on the client
+  // Compute remaining-stock tax breakdown on the client and apply sorting
   const tableData = useMemo(() => {
-    return filteredData.map(item => {
+    // First apply sorting
+    const sortedData = [...filteredData].sort((a, b) => {
+      if (!sortBy.column) return 0;
+      
+      const aValue = a[sortBy.column];
+      const bValue = b[sortBy.column];
+      
+      // Handle different data types
+      if (sortBy.column === 'date') {
+        const dateA = new Date(aValue as string).getTime();
+        const dateB = new Date(bValue as string).getTime();
+        return sortBy.direction === 'asc' ? dateA - dateB : dateB - dateA;
+      } else if (typeof aValue === 'number' && typeof bValue === 'number') {
+        return sortBy.direction === 'asc' ? aValue - bValue : bValue - aValue;
+      } else {
+        const strA = String(aValue || '').toLowerCase();
+        const strB = String(bValue || '').toLowerCase();
+        return sortBy.direction === 'asc' ? strA.localeCompare(strB) : strB.localeCompare(strA);
+      }
+    });
+    
+    // Then assign serial numbers and calculate tax breakdowns
+    return sortedData.map((item, index) => {
       // For grouped data, we calculate aggregated current stock values
       const totalCurrentStockTaxable = item.products.reduce((sum, product) => {
         const qty = product.remaining_stock ?? 0;
@@ -163,6 +185,7 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
 
       return {
         ...item,
+        serial_no: index + 1, // Assign proper sequential serial number
         current_stock_taxable_value: totalCurrentStockTaxable,
         current_stock_cgst: totalCurrentStockCgst,
         current_stock_sgst: totalCurrentStockSgst,
@@ -173,7 +196,7 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
         taxable_after_discount: item.total_taxable_value * (1 - (item.total_discount / item.total_taxable_value || 0))
       };
     });
-  }, [filteredData]);
+  }, [filteredData, sortBy]);
 
   // Notify parent of latest table data
   useEffect(() => {
@@ -364,7 +387,7 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
 
         return {
           id: order.id,
-          serial_no: index + 1,
+          serial_no: 0, // Will be assigned later in tableData
           order_id: order.id,
           date: order.created_at || order.date,
           products: [], // Not needed for display
@@ -386,7 +409,15 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
       // Set the data
       setSalesData([]); // Not needed for the grouped approach
       setGroupedSalesData(groupedData);
-      setFilteredData(groupedData);
+      
+      // Apply initial sorting by date (newest first) and assign serial numbers
+      const sortedData = [...groupedData].sort((a, b) => {
+        const dateA = new Date(a.date).getTime();
+        const dateB = new Date(b.date).getTime();
+        return dateB - dateA; // Newest first
+      });
+      
+      setFilteredData(sortedData);
     } catch (err) {
       console.error('Error fetching data:', err);
       setError('An unexpected error occurred while loading sales data.');
@@ -437,13 +468,7 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
     }));
   };
   
-  // Utility function to reindex serial numbers after filtering or sorting
-  const reindexSerialNumbers = (data: GroupedSalesItem[]): GroupedSalesItem[] => {
-    return data.map((item, index) => ({
-      ...item,
-      serial_no: index + 1
-    }));
-  };
+
 
   // Handle search for grouped data
   const handleSearch = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -452,7 +477,13 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
     
     // Apply the search filter
     if (searchValue.trim() === '') {
-      setFilteredData(groupedSalesData);
+      // Apply initial sorting by date (newest first)
+      const sortedData = [...groupedSalesData].sort((a, b) => {
+        const dateA = new Date(a.date).getTime();
+        const dateB = new Date(b.date).getTime();
+        return dateB - dateA; // Newest first
+      });
+      setFilteredData(sortedData);
     } else {
       const filtered = groupedSalesData.filter(item => 
         item.combined_product_names.toLowerCase().includes(searchValue) ||
@@ -460,7 +491,15 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
         item.combined_product_types.toLowerCase().includes(searchValue) ||
         item.order_id.toLowerCase().includes(searchValue)
       );
-      setFilteredData(filtered);
+      
+      // Sort filtered results by date (newest first)
+      const sortedFiltered = filtered.sort((a, b) => {
+        const dateA = new Date(a.date).getTime();
+        const dateB = new Date(b.date).getTime();
+        return dateB - dateA; // Newest first
+      });
+      
+      setFilteredData(sortedFiltered);
     }
     
     setPage(0); // Reset to first page

@@ -40,7 +40,7 @@ import {
   Menu
 } from '@mui/material';
 import { styled } from '@mui/material/styles';
-import { ChevronLeft, ChevronRight, Today, Receipt, CalendarMonth, Delete as DeleteIcon, Close as CloseIcon, Add as AddIcon, Edit as EditIcon, Save as SaveIcon } from '@mui/icons-material';
+import { ChevronLeft, ChevronRight, Today, Receipt as ReceiptIcon, CalendarMonth, Delete as DeleteIcon, Close as CloseIcon, Add as AddIcon, Edit as EditIcon, Save as SaveIcon } from '@mui/icons-material';
 import { format, addDays, isSameDay } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
 import { useClients, Client } from '../hooks/useClients';
@@ -60,6 +60,10 @@ import { MergedAppointment } from '../hooks/useAppointments';
 import { StylistHoliday, useStylistHolidays } from '../hooks/useStylistHolidays';
 import { useScrollPreservation } from '../utils/scrollPreservation';
 import { useLocalStorage } from '../utils/useLocalStorage';
+import { useOrders } from '../hooks/useOrders';
+import { PAYMENT_METHOD_LABELS, PaymentMethod } from '../hooks/usePOS';
+import { supabase } from '../utils/supabase/supabaseClient';
+import { printBill } from '../utils/printUtils';
 
 // Custom implementations of date-fns functions
 const formatTime = (time: string | Date): string => {
@@ -611,9 +615,12 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
     onSelectTimeSlot(stylistId, selectedTime);
   };
 
+  // Update the click handler function
   const handleAppointmentClick = (appointment: any) => {
-    // Call the prop function to open the edit drawer
-    if (onAppointmentClick) {
+    // For completed appointments, show bill details
+    if (appointment.status === 'completed') {
+      handleViewBillDetails(appointment);
+    } else if (onAppointmentClick) {
       onAppointmentClick(appointment);
     }
   };
@@ -1751,6 +1758,43 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
         const startTime = formatTime(appointment.start_time);
         const endTime = formatTime(appointment.end_time);
         
+        // Helper function to get client name with all available fallbacks
+        const getClientName = (appointment: any): string => {
+          // First try clientDetails array
+          if (appointment.clientDetails && 
+              appointment.clientDetails.length > 0 && 
+              appointment.clientDetails[0]?.full_name) {
+            return appointment.clientDetails[0].full_name;
+          }
+          
+          // Then try direct fields on the appointment
+          if (appointment.clientName) {
+            return appointment.clientName;
+          }
+
+          if (appointment.client_name) {
+            return appointment.client_name;
+          }
+          
+          // Then try looking up from clients array
+          if (appointment.client_id && allClients) {
+            const client = allClients.find(c => c.id === appointment.client_id);
+            if (client?.full_name) {
+              return client.full_name;
+            }
+          }
+          
+          // Then try booker_name for appointments booked for someone else
+          if (appointment.is_for_someone_else && appointment.booker_name) {
+            return `${appointment.booker_name} (Booker)`;
+          }
+          
+          // If all else fails, show "Unknown Client"
+          return 'Unknown Client';
+        };
+        
+        const clientName = getClientName(appointment);
+        
         console.log(`Rendering appointment ${appointment.id} for stylist ${stylistId}:`, appointment);
 
         return (
@@ -1759,12 +1803,13 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
             title={
               <Box>
                 <Typography variant="subtitle2">
-                  {appointment.clientDetails?.[0]?.full_name || (allClients?.find(c => c.id === appointment.client_id)?.full_name ?? 'Unknown Client')}
+                  {clientName}
                 </Typography>
                 <Typography variant="body2">
                   {serviceName} ({startTime} - {endTime})
                 </Typography>
                 {isCheckedIn && <Typography variant="body2">✓ Checked In</Typography>}
+                {status === 'completed' && <Typography variant="body2">✓ Completed (Click to view bill)</Typography>}
                 {appointment.is_for_someone_else && appointment.booker_name && (
                   <>
                     <Divider sx={{ my: 0.5 }} />
@@ -1801,8 +1846,7 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
               isCheckedIn={isCheckedIn}
             >
               <Typography variant="subtitle2" className="appointment-client-name">
-                {appointment.clientDetails?.[0]?.full_name
-                  || (allClients?.find(c => c.id === appointment.client_id)?.full_name ?? 'Unknown Client')}
+                {clientName}
                 {appointment.is_for_someone_else && ' 👤'}
               </Typography>
               <Typography variant="body2" className="appointment-service">
@@ -2061,6 +2105,127 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
     }
     memoizedHandleCloseContextMenu();
   }, [contextMenuAppointment, memoizedHandleCloseContextMenu, appointments, currentDate, onUpdateAppointment]);
+
+  // Add state for bill details dialog
+  const [billDetailsOpen, setBillDetailsOpen] = useState(false);
+  const [selectedBill, setSelectedBill] = useState<any>(null);
+  const { getOrdersByAppointmentId } = useOrders();
+
+  // Function to handle viewing bill details for completed appointments
+  const handleViewBillDetails = async (appointment: any) => {
+    if (appointment.status === 'completed') {
+      try {
+        console.log('DEBUG: Viewing bill details for completed appointment:', appointment);
+        
+        // Fetch order details based on appointment ID
+        if (!appointment.id) {
+          console.error('DEBUG: Appointment ID is missing', appointment);
+          setSnackbarMessage('Cannot fetch bill: Appointment ID is missing');
+          setSnackbarOpen(true);
+          return;
+        }
+        
+        // First try direct Supabase query for the appointment ID
+        try {
+          const { data: directOrders, error: directError } = await supabase
+            .from('pos_orders')
+            .select('*')
+            .eq('appointment_id', appointment.id)
+            .order('created_at', { ascending: false });
+            
+          console.log('DEBUG: Direct query for appointment_id:', appointment.id);
+          console.log('DEBUG: Direct query results:', directOrders);
+          
+          if (directOrders && directOrders.length > 0) {
+            console.log('DEBUG: Found order directly with appointment_id!');
+            setSelectedBill(directOrders[0]);
+            setBillDetailsOpen(true);
+            return;
+          }
+        } catch (directQueryError) {
+          console.error('DEBUG: Error in direct query:', directQueryError);
+        }
+        
+        // Try the hook method as backup
+        const orderResponse = await getOrdersByAppointmentId(appointment.id);
+        console.log('DEBUG: Orders from hook:', orderResponse);
+        
+        if (orderResponse && orderResponse.length > 0) {
+          // Get the latest order (in case there are multiple)
+          const order = orderResponse[0];
+          console.log('DEBUG: Selected bill for display from hook:', order);
+          setSelectedBill(order);
+          setBillDetailsOpen(true);
+          return;
+        }
+        
+        // If hook approach didn't work, try to find orders created without appointment_id but at the same time
+        const appointmentStartTime = new Date(appointment.start_time);
+        
+        // Look for orders created within 10 minutes of the appointment start time
+        const tenMinutesInMs = 10 * 60 * 1000;
+        const startTimeRange = new Date(appointmentStartTime.getTime() - tenMinutesInMs);
+        const endTimeRange = new Date(appointmentStartTime.getTime() + tenMinutesInMs);
+        
+        // Format dates for Supabase query
+        const startTimeStr = startTimeRange.toISOString();
+        const endTimeStr = endTimeRange.toISOString();
+        
+        console.log(`DEBUG: Looking for orders between ${startTimeStr} and ${endTimeStr}`);
+        
+        // Search for orders by client name and time range
+        if (appointment.clientDetails && appointment.clientDetails[0] && appointment.clientDetails[0].full_name) {
+          const clientName = appointment.clientDetails[0].full_name;
+          
+          try {
+            const { data: timeRangeOrders, error: timeRangeError } = await supabase
+              .from('pos_orders')
+              .select('*')
+              .eq('client_name', clientName)
+              .gte('created_at', startTimeStr)
+              .lte('created_at', endTimeStr)
+              .order('created_at', { ascending: false });
+              
+            console.log('DEBUG: Orders by time range and client name:', timeRangeOrders);
+            
+            if (timeRangeOrders && timeRangeOrders.length > 0) {
+              // Use the first matching order
+              setSelectedBill(timeRangeOrders[0]);
+              setBillDetailsOpen(true);
+              return;
+            }
+          } catch (timeRangeQueryError) {
+            console.error('DEBUG: Error in time range query:', timeRangeQueryError);
+          }
+        }
+        
+        // No order found for this appointment
+        console.warn(`DEBUG: No bill found for appointment ${appointment.id}`);
+        setSnackbarMessage('No bill found for this appointment');
+        setSnackbarOpen(true);
+      } catch (error) {
+        console.error('DEBUG: Error fetching bill details:', error);
+        setSnackbarMessage('Error fetching bill details');
+        setSnackbarOpen(true);
+      }
+    } else {
+      // For non-completed appointments, just do the regular appointment click handling
+      console.log('DEBUG: Appointment is not completed, handling regular click');
+      if (onAppointmentClick) onAppointmentClick(appointment);
+    }
+  };
+
+  // Function to close the bill details dialog
+  const handleCloseBillDetails = () => {
+    setBillDetailsOpen(false);
+    setSelectedBill(null);
+  };
+
+  // Format order ID for display
+  const formatOrderId = (order: any) => {
+    if (!order || !order.id) return 'Unknown';
+    return `INV-${order.id.substring(0, 8)}`;
+  };
 
   return (
     <Box sx={{ height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -2679,7 +2844,7 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
               }
             }}
             variant="contained"
-            startIcon={<Receipt />}
+            startIcon={<ReceiptIcon />}
           >
             Create Bill
           </Button>
@@ -3135,6 +3300,143 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
           </MenuItem>
         )}
       </Menu>
+
+      {/* Bill Details Dialog */}
+      {selectedBill && (
+        <Dialog
+          open={billDetailsOpen}
+          onClose={handleCloseBillDetails}
+          maxWidth="md"
+          fullWidth
+        >
+          <DialogTitle>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                <ReceiptIcon sx={{ mr: 1 }} />
+                <Typography variant="h6">Bill Details</Typography>
+              </Box>
+              <IconButton onClick={handleCloseBillDetails} size="small">
+                <CloseIcon />
+              </IconButton>
+            </Box>
+          </DialogTitle>
+          <DialogContent>
+            <Box sx={{ mb: 3 }}>
+              <Typography variant="subtitle1" gutterBottom sx={{ fontWeight: 'bold' }}>Order Information</Typography>
+              <Box sx={{ mb: 2 }}>
+                <Typography variant="body2">
+                  <strong>Order ID:</strong> {formatOrderId(selectedBill)}
+                </Typography>
+                <Typography variant="body2">
+                  <strong>Date:</strong> {new Date(selectedBill.created_at).toLocaleString()}
+                </Typography>
+                <Typography variant="body2">
+                  <strong>Customer:</strong> {selectedBill.client_name}
+                </Typography>
+                <Typography variant="body2">
+                  <strong>Stylist:</strong> {selectedBill.stylist_name}
+                </Typography>
+              </Box>
+            </Box>
+            
+            {/* Item Details */}
+            <Typography variant="subtitle1" gutterBottom sx={{ fontWeight: 'bold' }}>Items</Typography>
+            <TableContainer component={Paper} variant="outlined" sx={{ mb: 3 }}>
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Item</TableCell>
+                    <TableCell align="right">Qty</TableCell>
+                    <TableCell align="right">Price</TableCell>
+                    <TableCell align="right">Total</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {selectedBill.services && selectedBill.services.map((item: any, index: number) => (
+                    <TableRow key={index}>
+                      <TableCell>{item.service_name || item.name}</TableCell>
+                      <TableCell align="right">{item.quantity || 1}</TableCell>
+                      <TableCell align="right">{formatCurrency(item.price)}</TableCell>
+                      <TableCell align="right">{formatCurrency((item.price * (item.quantity || 1)))}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+            
+            {/* Payment Summary */}
+            <Typography variant="subtitle1" gutterBottom sx={{ fontWeight: 'bold' }}>Payment Summary</Typography>
+            <Box sx={{ mb: 3 }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                <Typography variant="body2">Subtotal:</Typography>
+                <Typography variant="body2">{formatCurrency(selectedBill.subtotal)}</Typography>
+              </Box>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                <Typography variant="body2">GST (18%):</Typography>
+                <Typography variant="body2">{formatCurrency(selectedBill.tax)}</Typography>
+              </Box>
+              {selectedBill.discount > 0 && (
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                  <Typography variant="body2">Discount:</Typography>
+                  <Typography variant="body2" color="error">-{formatCurrency(selectedBill.discount)}</Typography>
+                </Box>
+              )}
+              <Divider sx={{ my: 1 }} />
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                <Typography variant="body2" fontWeight="bold">Total:</Typography>
+                <Typography variant="body2" fontWeight="bold">{formatCurrency(selectedBill.total)}</Typography>
+              </Box>
+              
+              {/* Payment Method */}
+              <Box sx={{ mt: 2 }}>
+                <Typography variant="subtitle2" gutterBottom>Payment Method</Typography>
+                {selectedBill.payments && selectedBill.payments.length > 0 ? (
+                  <TableContainer component={Paper} variant="outlined">
+                    <Table size="small">
+                      <TableHead>
+                        <TableRow>
+                          <TableCell>Method</TableCell>
+                          <TableCell align="right">Amount</TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {selectedBill.payments.map((payment: any) => (
+                          <TableRow key={payment.id}>
+                            <TableCell>{PAYMENT_METHOD_LABELS[payment.payment_method as PaymentMethod] || payment.payment_method}</TableCell>
+                            <TableCell align="right">{formatCurrency(payment.amount)}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
+                ) : (
+                  <Typography>
+                    {PAYMENT_METHOD_LABELS[selectedBill.payment_method as PaymentMethod] || selectedBill.payment_method}: {formatCurrency(selectedBill.total)}
+                  </Typography>
+                )}
+              </Box>
+            </Box>
+          </DialogContent>
+          <DialogActions>
+            <Button 
+              onClick={() => selectedBill && printBill(selectedBill)}
+              variant="contained"
+              color="secondary"
+              startIcon={<ReceiptIcon />}
+              sx={{ mr: 1 }}
+            >
+              Print Bill
+            </Button>
+            <Button 
+              onClick={handleCloseBillDetails} 
+              variant="contained"
+              color="primary"
+            >
+              Close
+            </Button>
+          </DialogActions>
+        </Dialog>
+      )}
     </Box>
   );
 }

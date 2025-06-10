@@ -24,7 +24,7 @@ export default defineConfig({
       'X-Content-Type-Options': 'nosniff',
       'X-Frame-Options': 'DENY',
       'X-XSS-Protection': '1; mode=block',
-      'Content-Security-Policy': "default-src 'self' https://*.supabase.co https://*.supabase.in; connect-src 'self' https://*.supabase.co https://*.supabase.in wss://*.supabase.co wss://*.supabase.in; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:;",
+      'Content-Security-Policy': "default-src 'self' https://*.supabase.co https://*.supabase.in; connect-src 'self' https://*.supabase.co https://*.supabase.in wss://*.supabase.co wss://*.supabase.in; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: https:; font-src 'self' data: https://fonts.gstatic.com; worker-src 'self' blob:;",
       'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
       'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
       'Pragma': 'no-cache',
@@ -42,14 +42,14 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
-    sourcemap: false,
+    sourcemap: true, // Enable sourcemaps for better debugging
     // Increase the warning limit to reduce noise
     chunkSizeWarningLimit: 1000,
     // Add minify options to better handle initialization order
     minify: 'terser',
     terserOptions: {
       compress: {
-        drop_console: true,
+        drop_console: false, // Keep console logs for debugging
         drop_debugger: true
       },
       output: {
@@ -147,15 +147,32 @@ export default defineConfig({
       'react-toastify',
       'framer-motion',
       '@mui/x-date-pickers',
-      '@mui/x-date-pickers/AdapterDateFns'
+      '@mui/x-date-pickers/AdapterDateFns',
+      '@mui/x-date-pickers/DatePicker',
+      '@mui/x-date-pickers/LocalizationProvider',
+      'date-fns',
+      '@fullcalendar/react',
+      '@fullcalendar/daygrid',
+      '@fullcalendar/timegrid',
+      '@fullcalendar/interaction'
     ],
     // Force nested dependencies to be pre-bundled
-    force: true
+    force: true,
+    esbuildOptions: {
+      target: 'es2020',
+      supported: {
+        'dynamic-import': true
+      }
+    }
   },
   // Add resolve aliases for cleaner imports
   resolve: {
     alias: {
       '@': resolve(__dirname, 'src')
-    }
+    },
+    extensions: ['.mjs', '.js', '.ts', '.jsx', '.tsx', '.json']
+  },
+  esbuild: {
+    logOverride: { 'this-is-undefined-in-esm': 'silent' }
   }
 })

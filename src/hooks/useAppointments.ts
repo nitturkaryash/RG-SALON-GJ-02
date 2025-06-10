@@ -70,6 +70,8 @@ export interface MergedAppointment extends Appointment {
     selectedCollectionId: string | null;
   }[];
   booking_id?: string | null;
+  clientName?: string;
+  phone?: string;
 }
 
 // Add a function to check if an appointment conflicts with a stylist's break
@@ -473,7 +475,9 @@ export function useAppointments() {
           return {
             ...appointment, // Spread base appointment fields
             clientDetails: clientDetailsForThisAppointment, // Add the structured array
-            booking_id: appointment.booking_id
+            booking_id: appointment.booking_id,
+            clientName: appointment.booker_name,
+            phone: appointment.booker_phone
           };
         });
         console.log("Finished merging appointment data:", mergedAppointments);
@@ -542,6 +546,30 @@ export function useAppointments() {
         await Promise.all(clientDetails.map(async (detail) => {
           const { clientId, serviceIds, stylistIds } = detail;
           console.log(`Processing joins for client ${clientId}...`);
+
+          // Fetch client details to store in the appointment record
+          const { data: clientData, error: clientFetchError } = await supabase
+            .from('clients')
+            .select('full_name, phone, email')
+            .eq('id', clientId)
+            .single();
+            
+          if (clientFetchError) {
+            console.warn(`Could not fetch client details for ID ${clientId}: ${clientFetchError.message}`);
+          } else if (clientData) {
+            // Update the appointment with client details for easier retrieval
+            const { error: updateError } = await supabase
+              .from('appointments')
+              .update({
+                client_name: clientData.full_name,
+                client_phone: clientData.phone
+              })
+              .eq('id', newAppointmentId);
+              
+            if (updateError) {
+              console.warn(`Failed to update appointment with client details: ${updateError.message}`);
+            }
+          }
 
           // 2a: Insert into appointment_clients (Appointment <-> Client link)
           const { error: acError } = await supabase

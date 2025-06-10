@@ -39,6 +39,7 @@ import { useClients, Client } from '../hooks/useClients'
 import { useOrders } from '../hooks/useOrders'
 import { formatCurrency } from '../utils/format'
 import { toast } from 'react-hot-toast'
+import { isValidPhoneNumber, isValidEmail } from '../utils/validation'
 
 export default function Clients() {
   const { clients, isLoading, createClient, updateClient, processPendingPayment, deleteClient, deleteAllClients } = useClients()
@@ -62,6 +63,13 @@ export default function Clients() {
     birth_date: '',
     anniversary_date: ''
   })
+
+  // Form validation errors
+  const [formErrors, setFormErrors] = useState({
+    full_name: '',
+    phone: '',
+    email: ''
+  })
   
   // Handle form input changes
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -70,6 +78,48 @@ export default function Clients() {
       ...formData,
       [name]: value
     })
+
+    // Clear error when field is being edited
+    if (formErrors[name as keyof typeof formErrors]) {
+      setFormErrors({
+        ...formErrors,
+        [name]: ''
+      })
+    }
+  }
+
+  // Validate form fields
+  const validateForm = () => {
+    const errors = {
+      full_name: '',
+      phone: '',
+      email: ''
+    }
+    let isValid = true
+
+    // Validate full name
+    if (!formData.full_name.trim()) {
+      errors.full_name = 'Full name is required'
+      isValid = false
+    }
+
+    // Validate phone
+    if (!formData.phone.trim()) {
+      errors.phone = 'Phone number is required'
+      isValid = false
+    } else if (!isValidPhoneNumber(formData.phone)) {
+      errors.phone = 'Please enter a valid phone number'
+      isValid = false
+    }
+
+    // Validate email if provided
+    if (formData.email && !isValidEmail(formData.email)) {
+      errors.email = 'Please enter a valid email address'
+      isValid = false
+    }
+
+    setFormErrors(errors)
+    return isValid
   }
   
   // Filter clients based on search query
@@ -81,6 +131,10 @@ export default function Clients() {
   
   // Handle add client
   const handleAddClient = async () => {
+    if (!validateForm()) {
+      return
+    }
+
     await createClient({
       ...formData,
       birth_date: formData.birth_date || null,
@@ -102,6 +156,10 @@ export default function Clients() {
   const handleEditClient = async () => {
     if (!selectedClient) return
     
+    if (!validateForm()) {
+      return
+    }
+    
     await updateClient({
       id: selectedClient.id,
       ...formData
@@ -117,13 +175,38 @@ export default function Clients() {
     setFormData({
       full_name: client.full_name,
       phone: client.phone,
-      email: client.email,
+      email: client.email || '',
       notes: client.notes || '',
       gender: client.gender || '',
       birth_date: client.birth_date || '',
       anniversary_date: client.anniversary_date || ''
     })
+    // Clear any previous errors
+    setFormErrors({
+      full_name: '',
+      phone: '',
+      email: ''
+    })
     setOpenEditDialog(true)
+  }
+
+  // Reset form and errors when opening add dialog
+  const handleOpenAddDialog = () => {
+    setFormData({
+      full_name: '',
+      phone: '',
+      email: '',
+      notes: '',
+      gender: '',
+      birth_date: '',
+      anniversary_date: ''
+    })
+    setFormErrors({
+      full_name: '',
+      phone: '',
+      email: ''
+    })
+    setOpenAddDialog(true)
   }
   
   // Open payment dialog for BNPL
@@ -212,7 +295,7 @@ export default function Clients() {
           <Button
             variant="contained"
             startIcon={<PersonAddIcon />}
-            onClick={() => setOpenAddDialog(true)}
+            onClick={handleOpenAddDialog}
             sx={{ height: 'fit-content' }}
           >
             Add Client
@@ -348,20 +431,25 @@ export default function Clients() {
             <Grid item xs={12}>
               <TextField
                 name="full_name"
-                label="Full Name"
+                label="Full Name *"
                 value={formData.full_name}
                 onChange={handleInputChange}
                 fullWidth
                 required
+                error={!!formErrors.full_name}
+                helperText={formErrors.full_name}
               />
             </Grid>
             <Grid item xs={12} sm={6}>
               <TextField
                 name="phone"
-                label="Phone Number"
+                label="Phone Number *"
                 value={formData.phone}
                 onChange={handleInputChange}
                 fullWidth
+                required
+                error={!!formErrors.phone}
+                helperText={formErrors.phone}
               />
             </Grid>
             <Grid item xs={12} sm={6}>
@@ -372,6 +460,8 @@ export default function Clients() {
                 value={formData.email}
                 onChange={handleInputChange}
                 fullWidth
+                error={!!formErrors.email}
+                helperText={formErrors.email}
               />
             </Grid>
             <Grid item xs={12} sm={6}>
@@ -424,13 +514,7 @@ export default function Clients() {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setOpenAddDialog(false)}>Cancel</Button>
-          <Button 
-            onClick={handleAddClient} 
-            variant="contained"
-            disabled={!formData.full_name}
-          >
-            Add Client
-          </Button>
+          <Button onClick={handleAddClient} variant="contained" color="primary">Add Client</Button>
         </DialogActions>
       </Dialog>
       
@@ -442,20 +526,25 @@ export default function Clients() {
             <Grid item xs={12}>
               <TextField
                 name="full_name"
-                label="Full Name"
+                label="Full Name *"
                 value={formData.full_name}
                 onChange={handleInputChange}
                 fullWidth
                 required
+                error={!!formErrors.full_name}
+                helperText={formErrors.full_name}
               />
             </Grid>
             <Grid item xs={12} sm={6}>
               <TextField
                 name="phone"
-                label="Phone Number"
+                label="Phone Number *"
                 value={formData.phone}
                 onChange={handleInputChange}
                 fullWidth
+                required
+                error={!!formErrors.phone}
+                helperText={formErrors.phone}
               />
             </Grid>
             <Grid item xs={12} sm={6}>
@@ -466,6 +555,8 @@ export default function Clients() {
                 value={formData.email}
                 onChange={handleInputChange}
                 fullWidth
+                error={!!formErrors.email}
+                helperText={formErrors.email}
               />
             </Grid>
             <Grid item xs={12} sm={6}>

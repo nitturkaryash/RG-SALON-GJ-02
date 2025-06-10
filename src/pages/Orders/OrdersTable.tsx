@@ -13,13 +13,19 @@ import {
   TablePagination,
   CircularProgress,
   Skeleton,
-  Stack
+  Stack,
+  IconButton,
+  Tooltip,
+  ButtonGroup,
+  Button
 } from '@mui/material';
 import { deleteOrder } from '../../hooks/usePOS';
 import { Order } from '../../models/orderTypes';
 import { formatCurrency } from '../../utils/format';
 import DeleteButton from '../../components/DeleteButton';
 import { toast } from 'react-toastify';
+import PrintIcon from '@mui/icons-material/Print';
+import { printBill } from '../../utils/printUtils';
 
 interface OrdersTableProps {
   orders: Order[];
@@ -51,6 +57,11 @@ const OrdersTable: React.FC<OrdersTableProps> = ({
       console.error('Error deleting order:', error);
       toast.error('Error deleting order');
     }
+  };
+
+  // Handle printing bill
+  const handlePrintBill = (order: Order) => {
+    printBill(order);
   };
 
   // Format date for display
@@ -170,12 +181,23 @@ const OrdersTable: React.FC<OrdersTableProps> = ({
                   </TableCell>
                   <TableCell>{getStatusChip(order.status)}</TableCell>
                   <TableCell align="center">
-                    <DeleteButton
-                      onDelete={() => handleDeleteOrder(order.order_id || order.id)}
-                      itemName={`Order ${order.order_id || order.id}`}
-                      itemType="order"
-                      size="small"
-                    />
+                    <ButtonGroup size="small">
+                      <Tooltip title="Print Bill">
+                        <IconButton 
+                          size="small" 
+                          color="primary" 
+                          onClick={() => handlePrintBill(order)}
+                        >
+                          <PrintIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                      <DeleteButton
+                        onDelete={() => handleDeleteOrder(order.order_id || order.id)}
+                        itemName={`Order ${order.order_id || order.id}`}
+                        itemType="order"
+                        size="small"
+                      />
+                    </ButtonGroup>
                   </TableCell>
                 </TableRow>
               ))

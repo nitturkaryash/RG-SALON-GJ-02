@@ -8,9 +8,13 @@ echo "NPM version: $(npm -v)"
 export VITE_CJS_IGNORE_WARNING=true
 export NODE_OPTIONS="--max-old-space-size=4096 --no-warnings"
 
-# Clean install dependencies
+# Clean install dependencies including dev dependencies
 echo "Installing dependencies..."
-npm ci --quiet
+npm install --include=dev
+
+# Ensure @jridgewell/trace-mapping is installed
+echo "Installing @jridgewell/trace-mapping..."
+npm install @jridgewell/trace-mapping --save-dev
 
 # Build the application
 echo "Building application..."

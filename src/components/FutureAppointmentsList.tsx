@@ -66,9 +66,12 @@ const AppointmentCard = ({ appointment, onDeleteClick, onEditClick }: Appointmen
       }];
     }
 
+    // Get client name with proper fallbacks
+    const clientName = getClientName(appointment);
+
     const appointmentDataForPOS = {
       id: appointment.id,
-      clientName: appointment.clientDetails?.[0]?.full_name || 'Unknown Client',
+      clientName: clientName,
       stylistId: appointment.stylist_id,
       services: servicesForPOS,
       type: servicesForPOS.length > 1 ? 'service_collection' : 'service',
@@ -88,6 +91,32 @@ const AppointmentCard = ({ appointment, onDeleteClick, onEditClick }: Appointmen
         appointmentData: appointmentDataForPOS
       }
     });
+  };
+
+  // Helper function to get client name with multiple fallbacks
+  const getClientName = (appointment: any): string => {
+    // First try clientDetails array
+    if (appointment.clientDetails && appointment.clientDetails.length > 0 && appointment.clientDetails[0]?.full_name) {
+      return appointment.clientDetails[0].full_name;
+    }
+    
+    // Then try the direct clientName property
+    if (appointment.clientName) {
+      return appointment.clientName;
+    }
+    
+    // Then try booker_name for appointments booked for someone else
+    if (appointment.is_for_someone_else && appointment.booker_name) {
+      return `${appointment.booker_name} (Booker)`;
+    }
+    
+    // Finally, try to fetch from the client object
+    if (appointment.client && appointment.client.full_name) {
+      return appointment.client.full_name;
+    }
+    
+    // If all else fails, show "Unknown Client"
+    return 'Unknown Client';
   };
 
   // Format date to display like "25-May-2025, 03:00 PM"
@@ -128,11 +157,11 @@ const AppointmentCard = ({ appointment, onDeleteClick, onEditClick }: Appointmen
       <CardContent sx={{ pt: 2, pb: 2, px: 2, display: 'flex', flexDirection: 'column', height: '100%' }}>
         <Box sx={{ mb: 1 }}>
           <Typography variant="h6" component="div" sx={{ fontWeight: 'medium', mb: 0.5 }}>
-            {appointment.clientDetails?.[0]?.full_name || 'Unknown Client'}
+            {getClientName(appointment)}
           </Typography>
           <Typography variant="body2" sx={{ display: 'flex', alignItems: 'center', gap: 0.5, color: 'text.secondary' }}>
             <PhoneIcon fontSize="small" />
-            {appointment.clientDetails?.[0]?.phone || appointment.phone || 'No phone'}
+            {appointment.clientDetails?.[0]?.phone || appointment.phone || appointment.booker_phone || 'No phone'}
           </Typography>
         </Box>
 

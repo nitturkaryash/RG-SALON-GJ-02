@@ -41,6 +41,7 @@ import {
 import {
   Visibility as VisibilityIcon,
   Receipt as ReceiptIcon,
+  LocalPrintshopOutlined as PrintIcon,
   FileDownload as FileDownloadIcon,
   PictureAsPdf as PdfIcon,
   TableChart as CsvIcon,
@@ -64,6 +65,7 @@ import { useOrders } from '../hooks/useOrders'
 import { formatCurrency } from '../utils/format'
 import { AccessibleDialog } from '../components/AccessibleDialog'
 import { exportToCSV, exportToPDF, formatOrdersForExport, orderExportHeaders } from '../utils/exportUtils'
+import { printBill } from '../utils/printUtils'
 import { PAYMENT_METHODS, PAYMENT_METHOD_LABELS, PaymentMethod, usePOS, PaymentDetail } from '../hooks/usePOS'
 import CompletePaymentDialog from '../components/orders/CompletePaymentDialog'
 import { DatePicker } from '@mui/x-date-pickers/DatePicker'
@@ -220,6 +222,10 @@ export default function Orders() {
     setDetailsOpen(false)
     // Clear the selected order after dialog closes
     setTimeout(() => setSelectedOrder(null), 300)
+  }
+  
+  const handlePrintBill = (order: any) => {
+    printBill(order)
   }
 
   const handleDeleteOrder = async (order: any) => {
@@ -1297,6 +1303,15 @@ export default function Orders() {
                             View
                           </Button>
                         </Tooltip>
+                        <Tooltip title="Print Bill">
+                          <Button
+                            color="secondary"
+                            onClick={() => handlePrintBill(order)}
+                            startIcon={<PrintIcon />}
+                          >
+                            Print
+                          </Button>
+                        </Tooltip>
                         <Tooltip title="Delete Order">
                           <Button
                             color="error"
@@ -1351,13 +1366,24 @@ export default function Orders() {
             </Box>
           )}
           actions={
-            <Button 
-              onClick={handleCloseDetails} 
-              color="primary" 
-              variant="contained"
-            >
-              Close
-            </Button>
+            <>
+              <Button 
+                onClick={() => selectedOrder && handlePrintBill(selectedOrder)}
+                variant="contained"
+                color="secondary"
+                startIcon={<ReceiptIcon />}
+                sx={{ mr: 1 }}
+              >
+                Print Bill
+              </Button>
+              <Button 
+                onClick={handleCloseDetails} 
+                color="primary" 
+                variant="contained"
+              >
+                Close
+              </Button>
+            </>
           }
         >
           <Grid container spacing={2}>

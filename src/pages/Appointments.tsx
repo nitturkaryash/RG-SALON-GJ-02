@@ -103,7 +103,8 @@ import { DatePicker } from '@mui/x-date-pickers/DatePicker'
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider'
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns'
 import { useAuthContext } from '../contexts/AuthContext'
-import { sendAppointmentWhatsAppNotification, isWhatsAppEnabled, isValidPhoneNumber } from '../utils/whatsappNotifications'
+import { sendAppointmentWhatsAppNotification, isWhatsAppEnabled } from '../utils/whatsappNotifications'
+import { isValidPhoneNumber, isValidEmail } from '../utils/validation'
 
 // Define Drawer width as a constant
 const drawerWidth = 500;
@@ -127,20 +128,19 @@ const generateTimeOptions = (intervalMinutes: number = 15) => {
 
   for (let hour = startHourOperating; hour <= endHourOperating; hour++) {
     for (let minute = 0; minute < 60; minute += intervalMinutes) {
-      // Ensure that for the last operating hour, we don't generate times beyond a certain point if needed
-      // For example, if endHourOperating is 22 and last slot is 22:30
-      // if (hour === endHourOperating && minute > 30 && intervalMinutes <= 30) continue;
-
       const period = hour >= 12 && hour < 24 ? 'PM' : 'AM';
       let hour12 = hour % 12;
       if (hour12 === 0) hour12 = 12;
 
       const minuteStr = minute.toString().padStart(2, '0');
+      // Store in 24-hour format
       const timeValue = `${hour.toString().padStart(2, '0')}:${minuteStr}`;
+      // Display in 12-hour format with AM/PM
+      const displayValue = `${hour12}:${minuteStr} ${period}`;
 
       options.push({
         value: timeValue,
-        label: `${hour12}:${minuteStr} ${period}`
+        label: displayValue
       });
     }
   }
@@ -290,6 +290,38 @@ const CustomAutocompleteListbox = React.forwardRef<HTMLUListElement, CustomListb
   }
 );
 CustomAutocompleteListbox.displayName = 'CustomAutocompleteListbox';
+
+// Add this helper function before the Appointments component declaration
+export const getClientName = (appointment: any): string => {
+  // First try clientDetails array
+  if (appointment.clientDetails && 
+      appointment.clientDetails.length > 0 && 
+      appointment.clientDetails[0]?.full_name) {
+    return appointment.clientDetails[0].full_name;
+  }
+  
+  // Then try direct fields on the appointment
+  if (appointment.clientName) {
+    return appointment.clientName;
+  }
+
+  if (appointment.client_name) {
+    return appointment.client_name;
+  }
+  
+  // Then try looking up from client_id
+  if (appointment.client && appointment.client.full_name) {
+    return appointment.client.full_name;
+  }
+  
+  // Then try booker_name for appointments booked for someone else
+  if (appointment.is_for_someone_else && appointment.booker_name) {
+    return `${appointment.booker_name} (Booker)`;
+  }
+  
+  // If all else fails, show "Unknown Client"
+  return 'Unknown Client';
+};
 
 export default function Appointments() {
   const theme = useTheme();
@@ -803,21 +835,64 @@ export default function Appointments() {
     if (!entry) return;
     
     const updatedServices = [...entry.services];
+    
+    // Store the original values before updating
+    const currentFromTime = updatedServices[serviceIndex].fromTime;
+    const currentToTime = updatedServices[serviceIndex].toTime;
+    
+    // Update the selected field with the new value
     updatedServices[serviceIndex] = {
       ...updatedServices[serviceIndex],
       [field]: value
     };
+    
+    // After updating, get the new from/to times
+    const fromTime = field === 'fromTime' ? value : currentFromTime;
+    const toTime = field === 'toTime' ? value : currentToTime;
+    
+    // Parse times to compare them
+    const [fromHour, fromMinute] = fromTime.split(':').map(Number);
+    const [toHour, toMinute] = toTime.split(':').map(Number);
+    
+    // Convert times to minutes for easier comparison
+    const fromTimeMinutes = (fromHour * 60) + fromMinute;
+    const toTimeMinutes = (toHour * 60) + toMinute;
+    
+    // If toTime is earlier than or equal to fromTime, adjust toTime
+    if (toTimeMinutes <= fromTimeMinutes) {
+      // Add at least 15 minutes to the fromTime
+      let newToTimeMinutes = fromTimeMinutes + 15;
+      const newToHour = Math.floor(newToTimeMinutes / 60) % 24;
+      const newToMinute = newToTimeMinutes % 60;
+      const newToTime = `${newToHour}:${newToMinute.toString().padStart(2, '0')}`;
+      
+      // Update the toTime
+      updatedServices[serviceIndex].toTime = newToTime;
+      
+      // Show notification
+      toast.info("End time adjusted to be after start time");
+    }
     
     // If changing start time and there are following services, recalculate their times
     if (field === 'fromTime' && serviceIndex < updatedServices.length - 1) {
       // Calculate duration of current service
       const [fromHour, fromMinute] = value.split(':').map(Number);
       const [toHour, toMinute] = updatedServices[serviceIndex].toTime.split(':').map(Number);
-      const durationMinutes = ((toHour * 60) + toMinute) - ((fromHour * 60) + fromMinute);
+      
+      // Convert to minutes for calculation
+      const fromMinutes = (fromHour * 60) + fromMinute;
+      const toMinutes = (toHour * 60) + toMinute;
+      
+      // Handle case where toTime might be next day (e.g., service ends after midnight)
+      let durationMinutes = toMinutes - fromMinutes;
+      if (durationMinutes <= 0) {
+        // Assume service ends next day
+        durationMinutes = (toMinutes + 24 * 60) - fromMinutes;
+      }
       
       // Update end time of current service based on new start time and duration
       let totalMinutes = (fromHour * 60) + fromMinute + durationMinutes;
-      const newToHour = Math.floor(totalMinutes / 60);
+      const newToHour = Math.floor(totalMinutes / 60) % 24;
       const newToMinute = totalMinutes % 60;
       updatedServices[serviceIndex].toTime = `${newToHour}:${newToMinute.toString().padStart(2, '0')}`;
       
@@ -831,7 +906,7 @@ export default function Appointments() {
         const serviceDuration = service?.duration || 60;
         
         totalMinutes = (nextFromHour * 60) + nextFromMinute + serviceDuration;
-        const nextToHour = Math.floor(totalMinutes / 60);
+        const nextToHour = Math.floor(totalMinutes / 60) % 24; // Use modulo to keep in 24h format
         const nextToMinute = totalMinutes % 60;
         
         updatedServices[i].toTime = `${nextToHour}:${nextToMinute.toString().padStart(2, '0')}`;
@@ -854,7 +929,7 @@ export default function Appointments() {
         const serviceDuration = service?.duration || 60;
         
         const totalMinutes = (nextFromHour * 60) + nextFromMinute + serviceDuration;
-        const nextToHour = Math.floor(totalMinutes / 60);
+        const nextToHour = Math.floor(totalMinutes / 60) % 24; // Use modulo to keep in 24h format
         const nextToMinute = totalMinutes % 60;
         
         updatedServices[i].toTime = `${nextToHour}:${nextToMinute.toString().padStart(2, '0')}`;
@@ -866,21 +941,69 @@ export default function Appointments() {
 
   // Combined function for booking or updating
   const handleSaveAppointment = async () => {
+    console.log('Saving appointment with data:', {
+      clientEntries,
+      appointmentTime,
+      appointmentNotes
+    });
+
     // --- Validation ---
     let isValid = true;
+    
+    // Validate client entries
     clientEntries.forEach((entry, idx) => {
       const clientName = entry.client?.full_name?.trim() || entry.client?.inputValue?.trim();
       const isNewClient = !entry.client?.id;
       const clientPhone = entry.client?.phone?.trim();
+      const clientEmail = entry.client?.email?.trim();
 
       if (!clientName) {
         console.error(`Validation Error: Client name missing for entry ${idx + 1}`);
         isValid = false;
       }
+      
       if (isNewClient && !clientPhone) {
         console.error(`Validation Error: Phone number required for new client in entry ${idx + 1}`);
-          isValid = false;
+        isValid = false;
+      } else if (isNewClient && clientPhone && !isValidPhoneNumber(clientPhone)) {
+        console.error(`Validation Error: Invalid phone number format for client in entry ${idx + 1}`);
+        isValid = false;
+        toast.error(`Invalid phone number format for client ${clientName}`);
       }
+      
+      // Validate email if provided
+      if (isNewClient && clientEmail && !isValidEmail(clientEmail)) {
+        console.error(`Validation Error: Invalid email format for client in entry ${idx + 1}`);
+        isValid = false;
+        toast.error(`Invalid email format for client ${clientName}`);
+      }
+      
+      // Validate booker information if booking for someone else
+      if (entry.isForSomeoneElse) {
+        if (!entry.bookerName) {
+          console.error(`Validation Error: Booker's name is required when booking for someone else`);
+          isValid = false;
+          toast.error("Booker's name is required");
+        }
+        
+        if (!entry.bookerPhone) {
+          console.error(`Validation Error: Booker's phone is required when booking for someone else`);
+          isValid = false;
+          toast.error("Booker's phone is required");
+        } else if (entry.bookerPhone && !isValidPhoneNumber(entry.bookerPhone)) {
+          console.error(`Validation Error: Invalid booker's phone number format`);
+          isValid = false;
+          toast.error("Invalid booker's phone number format");
+        }
+        
+        // Validate booker email if provided
+        if (entry.bookerEmail && !isValidEmail(entry.bookerEmail)) {
+          console.error(`Validation Error: Invalid booker's email format`);
+          isValid = false;
+          toast.error("Invalid booker's email format");
+        }
+      }
+      
       if (entry.services.length === 0) {
         console.error(`Validation Error: No services selected for entry ${idx + 1}`);
         isValid = false;
@@ -1544,17 +1667,31 @@ export default function Appointments() {
       return;
     }
     
-    // Calculate end time based on service duration if not set
+    // Get fromTime and prepare toTime
+    const fromTime = inlineServiceData.fromTime;
     let toTime = inlineServiceData.toTime;
-    if (toTime === inlineServiceData.fromTime) {
-      const [fromHour, fromMinute] = inlineServiceData.fromTime.split(':').map(Number);
-      const serviceDuration = selectedService.duration || 60; // Default to 60 minutes
+    
+    // Parse times for validation
+    const [fromHour, fromMinute] = fromTime.split(':').map(Number);
+    const [toHour, toMinute] = toTime.split(':').map(Number);
+    
+    // Convert to minutes for easier comparison
+    const fromTimeMinutes = (fromHour * 60) + fromMinute;
+    const toTimeMinutes = (toHour * 60) + toMinute;
+    
+    // Calculate the service duration
+    const serviceDuration = selectedService.duration || 60; // Default to 60 minutes
+    
+    // If toTime is equal to fromTime or earlier than fromTime, calculate a new toTime
+    if (toTimeMinutes <= fromTimeMinutes) {
+      let totalMinutes = fromTimeMinutes + serviceDuration;
+      const newToHour = Math.floor(totalMinutes / 60) % 24; // Use modulo for 24h format
+      const newToMinute = totalMinutes % 60;
       
-      let totalMinutes = (fromHour * 60) + fromMinute + serviceDuration;
-      const toHour = Math.floor(totalMinutes / 60);
-      const toMinute = totalMinutes % 60;
+      toTime = `${newToHour}:${newToMinute.toString().padStart(2, '0')}`;
       
-      toTime = `${toHour}:${toMinute.toString().padStart(2, '0')}`;
+      // Show notification about the adjusted time
+      toast.info("End time adjusted to be after start time");
     }
     
     // Create the new service entry
@@ -1564,7 +1701,7 @@ export default function Appointments() {
       price: selectedService.price || 0,
       stylistId: selectedStylist.id,
       stylistName: selectedStylist.name,
-      fromTime: inlineServiceData.fromTime,
+      fromTime: fromTime,
       toTime: toTime
     };
     
@@ -1593,6 +1730,15 @@ export default function Appointments() {
       </Box>
     );
   }
+
+  // Add a helper function to convert 24h time to 12h format with AM/PM
+  const convertTo12Hour = (time24: string): string => {
+    const [hourStr, minuteStr] = time24.split(':');
+    const hour = parseInt(hourStr, 10);
+    const hour12 = hour % 12 || 12;
+    const period = hour >= 12 ? 'PM' : 'AM';
+    return `${hour12}:${minuteStr} ${period}`;
+  };
 
   return (
     <Box sx={{ 
@@ -1914,8 +2060,48 @@ export default function Appointments() {
                   updateEntry(clientEntries[0].id, { client: updatedClient });
                 }}
                 required
-                error={!clientEntries[0]?.client?.phone}
-                helperText={!clientEntries[0]?.client?.phone ? "Phone required for new client" : ""}
+                error={!clientEntries[0]?.client?.phone || (clientEntries[0]?.client?.phone && !isValidPhoneNumber(clientEntries[0]?.client?.phone))}
+                helperText={
+                  !clientEntries[0]?.client?.phone 
+                    ? "Phone required for new client" 
+                    : (clientEntries[0]?.client?.phone && !isValidPhoneNumber(clientEntries[0]?.client?.phone))
+                      ? "Please enter a valid phone number"
+                      : null
+                }
+                sx={{ mt: 2 }}
+                InputProps={{
+                  sx: {
+                    borderRadius: '8px',
+                    '& .MuiOutlinedInput-notchedOutline': {
+                      borderColor: '#E0E0E0'
+                    }
+                  }
+                }}
+              />
+            )}
+
+            {/* Client Email Field for New Clients */}
+            {clientEntries[0]?.client && !clientEntries[0]?.client.id && (
+              <TextField
+                fullWidth
+                label="Email"
+                type="email"
+                value={clientEntries[0]?.client?.email || ''}
+                onChange={(e) => {
+                  // Update email for a new client entry
+                  const currentClient = clientEntries[0].client!;
+                  const updatedClient: Client & { inputValue?: string } = {
+                    ...currentClient,
+                    email: e.target.value
+                  };
+                  updateEntry(clientEntries[0].id, { client: updatedClient });
+                }}
+                error={clientEntries[0]?.client?.email && !isValidEmail(clientEntries[0]?.client?.email)}
+                helperText={
+                  (clientEntries[0]?.client?.email && !isValidEmail(clientEntries[0]?.client?.email))
+                    ? "Please enter a valid email address"
+                    : null
+                }
                 sx={{ mt: 2 }}
                 InputProps={{
                   sx: {
@@ -1973,8 +2159,14 @@ export default function Appointments() {
                       value={clientEntries[0].bookerPhone || ''}
                       onChange={(e) => updateEntry(clientEntries[0].id, { bookerPhone: e.target.value })}
                       required
-                      error={!clientEntries[0].bookerPhone}
-                      helperText={!clientEntries[0].bookerPhone ? "Booker's phone is required" : ""}
+                      error={!clientEntries[0].bookerPhone || (clientEntries[0].bookerPhone && !isValidPhoneNumber(clientEntries[0].bookerPhone))}
+                      helperText={
+                        !clientEntries[0].bookerPhone 
+                          ? "Booker's phone is required" 
+                          : (clientEntries[0].bookerPhone && !isValidPhoneNumber(clientEntries[0].bookerPhone))
+                            ? "Please enter a valid phone number"
+                            : null
+                      }
                       sx={{ mb: 2 }}
                       InputProps={{
                         sx: {
@@ -1989,11 +2181,22 @@ export default function Appointments() {
                     <TextField
                       fullWidth
                       label="Booker's Email"
+                      type="email"
                       value={clientEntries[0].bookerEmail || ''}
                       onChange={(e) => updateEntry(clientEntries[0].id, { bookerEmail: e.target.value })}
-                      sx={{
-                        '& .MuiOutlinedInput-notchedOutline': {
-                          borderColor: '#E0E0E0'
+                      error={clientEntries[0].bookerEmail && !isValidEmail(clientEntries[0].bookerEmail)}
+                      helperText={
+                        (clientEntries[0].bookerEmail && !isValidEmail(clientEntries[0].bookerEmail))
+                          ? "Please enter a valid email address"
+                          : null
+                      }
+                      sx={{ mb: 2 }}
+                      InputProps={{
+                        sx: {
+                          borderRadius: '8px',
+                          '& .MuiOutlinedInput-notchedOutline': {
+                            borderColor: '#E0E0E0'
+                          }
                         }
                       }}
                     />
@@ -2243,10 +2446,7 @@ export default function Appointments() {
                           value={service.fromTime}
                           label="From Time"
                           displayEmpty
-                          renderValue={(value) => {
-                            const option = timeOptions.find(opt => opt.value === value);
-                            return option ? option.label : value;
-                          }}
+                          renderValue={(value) => convertTo12Hour(value)}
                           onChange={(e) => updateServiceTime(clientEntries[0].id, serviceIndex, 'fromTime', e.target.value)}
                         >
                           {timeOptions.map(option => (
@@ -2262,10 +2462,7 @@ export default function Appointments() {
                           value={service.toTime}
                           label="To Time"
                           displayEmpty
-                          renderValue={(value) => {
-                            const option = timeOptions.find(opt => opt.value === value);
-                            return option ? option.label : value;
-                          }}
+                          renderValue={(value) => convertTo12Hour(value)}
                           onChange={(e) => updateServiceTime(clientEntries[0].id, serviceIndex, 'toTime', e.target.value)}
                         >
                           {timeOptions.map(option => (
@@ -2439,10 +2636,7 @@ export default function Appointments() {
                         value={inlineServiceData.fromTime}
                         label="From Time"
                         displayEmpty
-                        renderValue={(value) => {
-                          const option = timeOptions.find(opt => opt.value === value);
-                          return option ? option.label : value;
-                        }}
+                        renderValue={(value) => convertTo12Hour(value)}
                         onChange={(e) => {
                           const newFromTime = e.target.value as string;
                           setInlineServiceData(prev => ({
@@ -2482,10 +2676,7 @@ export default function Appointments() {
                         value={inlineServiceData.toTime}
                         label="To Time"
                         displayEmpty
-                        renderValue={(value) => {
-                          const option = timeOptions.find(opt => opt.value === value);
-                          return option ? option.label : value;
-                        }}
+                        renderValue={(value) => convertTo12Hour(value)}
                         onChange={(e) => {
                           setInlineServiceData(prev => ({
                             ...prev,
