@@ -175,7 +175,7 @@ export const useProducts = () => {
       // Fetch products from Supabase - select only needed columns
       const { data, error: fetchError } = await supabase
         .from('products')
-        .select('id, name, price, hsn_code, units, mrp_incl_gst, mrp_excl_gst, gst_percentage, stock_quantity, active, created_at, updated_at') // Added active field
+        .select('id, name, price, hsn_code, units, product_type, mrp_incl_gst, mrp_excl_gst, gst_percentage, stock_quantity, active, created_at, updated_at') // Added product_type field
         .order('created_at', { ascending: false });
       
       if (fetchError) {
@@ -189,9 +189,8 @@ export const useProducts = () => {
         product_name: item.name || '', // Map name to product_name
         price: Number(item.price) || 0,
         hsn_code: item.hsn_code || '',
-        unit_type: item.units || '', // Map units to unit_type
-        units: item.units || '',
-        // Remove all purchase-related fields
+        unit_type: item.product_type || item.units || '', // First try product_type, fallback to units
+        units: item.product_type || item.units || '', // First try product_type, fallback to units
         mrp_incl_gst: Number(item.mrp_incl_gst) || 0,
         mrp_per_unit_excl_gst: Number(item.mrp_excl_gst) || 0, 
         gst_percentage: Number(item.gst_percentage) || 0,

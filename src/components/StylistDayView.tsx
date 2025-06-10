@@ -40,7 +40,7 @@ import {
   Menu
 } from '@mui/material';
 import { styled } from '@mui/material/styles';
-import { ChevronLeft, ChevronRight, Today, Receipt as ReceiptIcon, CalendarMonth, Delete as DeleteIcon, Close as CloseIcon, Add as AddIcon, Edit as EditIcon, Save as SaveIcon } from '@mui/icons-material';
+import { ChevronLeft, ChevronRight, Today, Receipt as ReceiptIcon, CalendarMonth, Delete as DeleteIcon, Close as CloseIcon, Add as AddIcon, Edit as EditIcon, Save as SaveIcon, Phone as PhoneIcon } from '@mui/icons-material';
 import { format, addDays, isSameDay } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
 import { useClients, Client } from '../hooks/useClients';
@@ -437,8 +437,9 @@ interface StylistDayViewProps {
   onDateChange?: (date: Date) => void;
   onStylistsChange?: (updatedStylists: Stylist[]) => void;
   onAppointmentClick?: (appointment: any) => void;
-  lastBookedAppointmentTime?: string; // Add this line
-  holidays: StylistHoliday[]; // Assuming holidays is already there or needed
+  lastBookedAppointmentTime?: string;
+  holidays: StylistHoliday[];
+  clients?: any[]; // Add clients prop
 }
 
 // Define filter for freeSolo client options
@@ -460,6 +461,7 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
   onAppointmentClick,
   lastBookedAppointmentTime,
   holidays,
+  clients = [] // Add default empty array
 }) => {
   const theme = useTheme();
   const { clients: allClients, isLoading: isLoadingClients } = useClients();
@@ -620,6 +622,10 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
     // For completed appointments, show bill details
     if (appointment.status === 'completed') {
       handleViewBillDetails(appointment);
+      // Add a notification to inform users about right-click option
+      setSnackbarMessage('Right-click or use context menu to edit this appointment');
+      setSnackbarOpen(true);
+      setSnackbarSeverity('info');
     } else if (onAppointmentClick) {
       onAppointmentClick(appointment);
     }
@@ -1792,8 +1798,45 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
           // If all else fails, show "Unknown Client"
           return 'Unknown Client';
         };
+
+        // Helper function to get client phone with multiple fallbacks
+        const getClientPhone = (appointment: any): string => {
+          // First try clientDetails array
+          if (appointment.clientDetails && 
+              appointment.clientDetails.length > 0 && 
+              appointment.clientDetails[0]?.phone) {
+            return appointment.clientDetails[0].phone;
+          }
+          
+          // Then try direct phone property
+          if (appointment.phone) {
+            return appointment.phone;
+          }
+          
+          // Then try looking up from clients array
+          if (appointment.client_id && allClients.length > 0) {
+            const client = allClients.find(c => c.id === appointment.client_id);
+            if (client?.phone) {
+              return client.phone;
+            }
+          }
+          
+          // Then try client object
+          if (appointment.client && appointment.client.phone) {
+            return appointment.client.phone;
+          }
+          
+          // Then try booker phone for appointments booked for someone else
+          if (appointment.is_for_someone_else && appointment.booker_phone) {
+            return appointment.booker_phone;
+          }
+          
+          // If all else fails
+          return 'No phone';
+        };
         
         const clientName = getClientName(appointment);
+        const clientPhone = getClientPhone(appointment);
         
         console.log(`Rendering appointment ${appointment.id} for stylist ${stylistId}:`, appointment);
 
@@ -1804,6 +1847,10 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
               <Box>
                 <Typography variant="subtitle2">
                   {clientName}
+                </Typography>
+                <Typography variant="body2" sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                  <PhoneIcon fontSize="small" />
+                  {clientPhone}
                 </Typography>
                 <Typography variant="body2">
                   {serviceName} ({startTime} - {endTime})
@@ -2174,9 +2221,8 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
         console.log(`DEBUG: Looking for orders between ${startTimeStr} and ${endTimeStr}`);
         
         // Search for orders by client name and time range
-        if (appointment.clientDetails && appointment.clientDetails[0] && appointment.clientDetails[0].full_name) {
-          const clientName = appointment.clientDetails[0].full_name;
-          
+        const clientName = getClientName(appointment);
+        if (clientName !== 'Unknown Client') {
           try {
             const { data: timeRangeOrders, error: timeRangeError } = await supabase
               .from('pos_orders')
@@ -3289,6 +3335,14 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
         anchorEl={contextMenuAnchorEl}
         onClose={memoizedHandleCloseContextMenu}
       >
+        <MenuItem onClick={() => {
+          if (contextMenuAppointment && onAppointmentClick) {
+            onAppointmentClick(contextMenuAppointment);
+            memoizedHandleCloseContextMenu();
+          }
+        }}>
+          Edit Appointment
+        </MenuItem>
         {contextMenuAppointment && !checkedInIds.has(contextMenuAppointment.id) && (
           <MenuItem onClick={memoizedHandleCheckIn}>
             Check In
@@ -3426,6 +3480,33 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
               sx={{ mr: 1 }}
             >
               Print Bill
+            </Button>
+            <Button 
+              onClick={() => {
+                // Find the appointment associated with this bill
+                const appointment = appointments.find(a => 
+                  a.id === selectedBill.appointment_id || 
+                  (selectedBill.client_name && a.clientDetails && 
+                   a.clientDetails[0]?.full_name === selectedBill.client_name)
+                );
+                
+                if (appointment && onAppointmentClick) {
+                  // Close the bill details dialog
+                  handleCloseBillDetails();
+                  // Open the appointment edit dialog
+                  onAppointmentClick(appointment);
+                } else {
+                  setSnackbarMessage('Could not find the associated appointment');
+                  setSnackbarOpen(true);
+                  setSnackbarSeverity('error');
+                }
+              }}
+              variant="contained"
+              color="primary"
+              startIcon={<EditIcon />}
+              sx={{ mr: 1 }}
+            >
+              Edit Appointment
             </Button>
             <Button 
               onClick={handleCloseBillDetails} 

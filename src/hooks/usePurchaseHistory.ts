@@ -201,37 +201,37 @@ export const usePurchaseHistory = () => {
   const updatePurchaseTransaction = useCallback(async (
     purchaseId: string, 
     updateData: UpdatePurchaseTransactionData
-  ): Promise<boolean> => {
+  ) => {
     try {
-      // Prepare the update object with proper date formatting and updated_at timestamp
-      const updatePayload = {
-        ...updateData,
-        // Ensure date is properly formatted as ISO string if provided
-        ...(updateData.date && { date: new Date(updateData.date).toISOString() }),
-        updated_at: new Date().toISOString()
-      };
-
-      console.log('Updating purchase with ID:', purchaseId);
-      console.log('Update payload:', updatePayload);
-
-      // Update only the main inventory_purchases table
-      // The purchase_history_with_stock view will automatically reflect changes
-      const { error: purchaseError } = await supabase
+      console.log('Updating purchase transaction with ID:', purchaseId);
+      console.log('Updates to apply:', JSON.stringify(updateData));
+      
+      // Log the exact SQL query we're about to execute (for debugging)
+      console.log(`SQL (equivalent): UPDATE inventory_purchases SET date='${updateData.date}', updated_at='${updateData.updated_at}' WHERE purchase_id='${purchaseId}'`);
+      
+      // Update the purchase in inventory_purchases table
+      const { data, error: updateError } = await supabase
         .from('inventory_purchases')
-        .update(updatePayload)
-        .eq('purchase_id', purchaseId);
-
-      if (purchaseError) {
-        console.error('Error updating purchase record:', purchaseError);
-        throw handleSupabaseError(purchaseError);
+        .update(updateData)
+        .eq('purchase_id', purchaseId)
+        .select(); // Add select to get the returned data
+      
+      if (updateError) {
+        console.error('Error updating purchase transaction:', updateError);
+        console.error('Error details:', JSON.stringify(updateError));
+        return { 
+          success: false, 
+          error: { message: updateError.message || 'Failed to update purchase' }
+        };
       }
-
-      console.log('Purchase updated successfully in database');
+      
+      console.log('Purchase transaction updated successfully');
+      console.log('Updated record:', data);
 
       // Update local state to reflect the changes
       setPurchases(prev => prev.map(purchase => 
         purchase.purchase_id === purchaseId 
-          ? { ...purchase, ...updateData, updated_at: updatePayload.updated_at }
+          ? { ...purchase, ...updateData, updated_at: new Date().toISOString() }
           : purchase
       ));
 
@@ -241,12 +241,16 @@ export const usePurchaseHistory = () => {
       await fetchPurchases();
       console.log('Purchase data refreshed');
 
-      return true;
+      return { success: true };
     } catch (err) {
       console.error('Error updating purchase transaction:', err);
+      console.error('Error stack:', err instanceof Error ? err.stack : 'No stack trace');
       const errorMessage = err instanceof Error ? err.message : 'Failed to update purchase transaction';
       setError(errorMessage);
-      return false;
+      return { 
+        success: false, 
+        error: { message: errorMessage }
+      };
     }
   }, [setPurchases, fetchPurchases]);
 
@@ -264,7 +268,7 @@ export const usePurchaseHistory = () => {
         product_name: inventoryData.product_name,
         hsn_code: inventoryData.hsn_code,
         units: inventoryData.units,
-        purchase_invoice_number: `INV-UPDATE-${Date.now()}`, // Auto-generated for inventory updates
+        purchase_invoice_number: "OPENING BALANCE", // Changed to just OPENING BALANCE without timestamp
         purchase_qty: inventoryData.update_qty,
         mrp_incl_gst: inventoryData.mrp_incl_gst,
         mrp_excl_gst: inventoryData.mrp_excl_gst,
@@ -276,7 +280,7 @@ export const usePurchaseHistory = () => {
         purchase_cgst: inventoryData.purchase_cgst,
         purchase_sgst: inventoryData.purchase_sgst,
         purchase_invoice_value_rs: inventoryData.purchase_invoice_value_rs,
-        "Vendor": 'INVENTORY UPDATE', // Fixed vendor name for inventory updates
+        "Vendor": 'OPENING BALANCE', // Changed to OPENING BALANCE
         transaction_type: 'stock_increment', // Changed from 'inventory_update' to 'stock_increment'
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()

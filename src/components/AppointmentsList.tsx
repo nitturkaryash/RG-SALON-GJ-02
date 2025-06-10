@@ -20,49 +20,18 @@ import { formatCurrency } from '../utils/format';
 import { useNavigate } from 'react-router-dom';
 import { getClientName } from '../pages/Appointments';
 
-// Helper function to handle client name display with fallbacks
-const getDisplayClientName = (appointment: any): string => {
-  // Use the imported getClientName if available
-  if (typeof getClientName === 'function') {
-    return getClientName(appointment);
-  }
-  
-  // Fallback to direct implementation if import fails
-  // First try clientDetails array
-  if (appointment.clientDetails && 
-      appointment.clientDetails.length > 0 && 
-      appointment.clientDetails[0]?.full_name) {
-    return appointment.clientDetails[0].full_name;
-  }
-  
-  // Then try direct fields on the appointment
-  if (appointment.clientName) {
-    return appointment.clientName;
-  }
-
-  if (appointment.client_name) {
-    return appointment.client_name;
-  }
-  
-  // Then try booker_name for appointments booked for someone else
-  if (appointment.is_for_someone_else && appointment.booker_name) {
-    return `${appointment.booker_name} (Booker)`;
-  }
-  
-  // If all else fails, show "Unknown Client"
-  return 'Unknown Client';
-};
-
 interface AppointmentsListProps {
   appointments: any[];
   onDeleteAppointment?: (id: string) => Promise<void>;
   onEditAppointment?: (appointment: any) => void;
+  clients?: any[];
 }
 
 const AppointmentsList: React.FC<AppointmentsListProps> = ({
   appointments,
   onDeleteAppointment,
-  onEditAppointment
+  onEditAppointment,
+  clients = []
 }) => {
   const navigate = useNavigate();
 
@@ -121,6 +90,52 @@ const AppointmentsList: React.FC<AppointmentsListProps> = ({
         appointmentData: appointmentDataForPOS
       }
     });
+  };
+
+  // Helper function to handle client name display with fallbacks
+  const getDisplayClientName = (appointment: any): string => {
+    // Use the imported getClientName if available
+    if (typeof getClientName === 'function') {
+      return getClientName(appointment, clients);
+    }
+    
+    // Fallback to direct implementation if import fails
+    // First try clientDetails array
+    if (appointment.clientDetails && 
+        appointment.clientDetails.length > 0 && 
+        appointment.clientDetails[0]?.full_name) {
+      return appointment.clientDetails[0].full_name;
+    }
+    
+    // Then try direct fields on the appointment
+    if (appointment.clientName) {
+      return appointment.clientName;
+    }
+
+    if (appointment.client_name) {
+      return appointment.client_name;
+    }
+    
+    // Then try looking up from client_id in the clients array
+    if (appointment.client_id && clients.length > 0) {
+      const matchingClient = clients.find(c => c.id === appointment.client_id);
+      if (matchingClient?.full_name) {
+        return matchingClient.full_name;
+      }
+    }
+    
+    // Then try looking up from client object
+    if (appointment.client && appointment.client.full_name) {
+      return appointment.client.full_name;
+    }
+    
+    // Then try booker_name for appointments booked for someone else
+    if (appointment.is_for_someone_else && appointment.booker_name) {
+      return `${appointment.booker_name} (Booker)`;
+    }
+    
+    // If all else fails, show "Unknown Client"
+    return 'Unknown Client';
   };
 
   return (
