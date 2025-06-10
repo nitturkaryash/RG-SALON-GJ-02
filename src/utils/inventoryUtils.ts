@@ -250,3 +250,113 @@ export const addPurchaseTransaction = async (purchaseData: PurchaseFormData) => 
     };
   }
 }; 
+
+// Function to update product stock
+export const updateProductStock = async (productId: string, quantity: number, transactionType: string = 'inventory_update') => {
+  try {
+    // Get product details first
+    const { data: product, error: productError } = await supabase
+      .from('products')
+      .select('name, hsn_code, units, gst_percentage, price, stock_quantity')
+      .eq('id', productId)
+      .single();
+
+    if (productError) {
+      console.error('Error fetching product details:', productError);
+      throw productError;
+    }
+
+    // Get current stock from purchase_history_with_stock
+    const { data: latestStock, error: stockError } = await supabase
+      .from('purchase_history_with_stock')
+      .select('current_stock_at_purchase')
+      .eq('product_id', productId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single();
+
+    if (stockError && stockError.code !== 'PGRST116') { // Ignore "no rows returned" error
+      console.error('Error fetching current stock:', stockError);
+      throw stockError;
+    }
+
+    // Use either the latest stock from history or the product's stock_quantity
+    const currentStock = latestStock?.current_stock_at_purchase ?? product.stock_quantity ?? 0;
+    const newStock = Math.max(0, currentStock + quantity); // Add for purchase, subtract for sales
+
+    // Calculate GST values
+    const gstPercentage = product.gst_percentage || 18;
+    const priceExclGst = product.price || 0;
+    const gstAmount = (priceExclGst * gstPercentage) / 100;
+    const priceInclGst = priceExclGst + gstAmount;
+
+    // Create a new stock history record
+    const purchaseRecord = {
+      purchase_id: uuidv4(),
+      date: new Date().toISOString(),
+      product_id: productId,
+      product_name: product.name,
+      hsn_code: product.hsn_code || '',
+      units: product.units || 'UNITS',
+      purchase_invoice_number: `INV-UPDATE-${Date.now()}`,
+      purchase_qty: Math.abs(quantity),
+      mrp_incl_gst: priceInclGst,
+      mrp_excl_gst: priceExclGst,
+      discount_on_purchase_percentage: 0,
+      gst_percentage: gstPercentage,
+      purchase_taxable_value: priceExclGst * Math.abs(quantity),
+      purchase_igst: 0,
+      purchase_cgst: gstAmount / 2,
+      purchase_sgst: gstAmount / 2,
+      purchase_invoice_value_rs: priceInclGst * Math.abs(quantity),
+      supplier: 'INVENTORY UPDATE',
+      current_stock_at_purchase: newStock,
+      computed_stock_taxable_value: 0,
+      computed_stock_igst: 0,
+      computed_stock_cgst: 0,
+      computed_stock_sgst: 0,
+      computed_stock_total_value: 0,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      'Purchase_Cost/Unit(Ex.GST)': priceExclGst,
+      price_inlcuding_disc: priceExclGst,
+      transaction_type: transactionType
+    };
+
+    // Start a transaction to update both tables
+    const { error: insertError } = await supabase
+      .from('purchase_history_with_stock')
+      .insert(purchaseRecord);
+
+    if (insertError) {
+      console.error('Error updating stock history:', insertError);
+      throw insertError;
+    }
+
+    // Update the products table stock
+    const { error: updateError } = await supabase
+      .from('products')
+      .update({ 
+        stock_quantity: newStock,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', productId);
+
+    if (updateError) {
+      console.error('Error updating product stock:', updateError);
+      throw updateError;
+    }
+
+    return {
+      success: true,
+      newStock,
+      message: 'Stock updated successfully'
+    };
+  } catch (error) {
+    console.error('Error in updateProductStock:', error);
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+}; 

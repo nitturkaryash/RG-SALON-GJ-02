@@ -1,7 +1,7 @@
--- Function to decrement product stock and log the change
-CREATE OR REPLACE FUNCTION decrement_product_stock(
+-- Function to increment product stock and log the change
+CREATE OR REPLACE FUNCTION increment_product_stock(
   p_product_id UUID,
-  p_decrement_quantity INTEGER
+  p_increment_quantity INTEGER
 )
 RETURNS JSONB AS $$
 DECLARE
@@ -51,7 +51,7 @@ BEGIN
   END IF;
   
   -- Calculate new stock
-  new_stock := GREATEST(0, current_stock - p_decrement_quantity);
+  new_stock := GREATEST(0, current_stock + p_increment_quantity);
   
   -- Calculate GST values
   DECLARE
@@ -100,17 +100,17 @@ BEGIN
       COALESCE(hsn_code, ''),
       COALESCE(units, 'UNITS'),
       'INV-UPDATE-' || extract(epoch from timestamp)::bigint,
-      p_decrement_quantity,
+      p_increment_quantity,
       price_incl_gst,
       price,
       0,
       COALESCE(gst_percentage, 18),
-      price * p_decrement_quantity,
+      price * p_increment_quantity,
       0,
       gst_amount / 2,
       gst_amount / 2,
-      price_incl_gst * p_decrement_quantity,
-      'POS SALE',
+      price_incl_gst * p_increment_quantity,
+      'INVENTORY UPDATE',
       new_stock,
       0,
       0,
@@ -121,7 +121,7 @@ BEGIN
       timestamp,
       price,
       price,
-      'stock_decrement'
+      'stock_increment'
     );
   END;
 
@@ -138,7 +138,7 @@ BEGIN
     'product_id', p_product_id,
     'product_name', product_name,
     'previous_stock', current_stock,
-    'decremented', p_decrement_quantity,
+    'incremented', p_increment_quantity,
     'new_stock', new_stock
   );
 END;

@@ -277,7 +277,7 @@ export const usePurchaseHistory = () => {
         purchase_sgst: inventoryData.purchase_sgst,
         purchase_invoice_value_rs: inventoryData.purchase_invoice_value_rs,
         "Vendor": 'INVENTORY UPDATE', // Fixed vendor name for inventory updates
-        transaction_type: 'inventory_update',
+        transaction_type: 'stock_increment', // Changed from 'inventory_update' to 'stock_increment'
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       };
@@ -300,24 +300,24 @@ export const usePurchaseHistory = () => {
 
       // Update the product stock in the products table
       const { error: stockUpdateError } = await supabase.rpc('increment_product_stock', {
-        product_id: inventoryData.product_id,
-        increment_amount: inventoryData.update_qty
+        p_product_id: inventoryData.product_id,
+        p_increment_quantity: inventoryData.update_qty
       });
       
       // If RPC doesn't exist, update manually by fetching current stock first
       if (stockUpdateError && stockUpdateError.message?.includes('function')) {
         const { data: currentProduct, error: fetchError } = await supabase
           .from('products')
-          .select('current_stock')
+          .select('stock_quantity')
           .eq('id', inventoryData.product_id)
           .single();
           
         if (!fetchError && currentProduct) {
-          const newStock = (currentProduct.current_stock || 0) + inventoryData.update_qty;
+          const newStock = (currentProduct.stock_quantity || 0) + inventoryData.update_qty;
           const { error: updateError } = await supabase
             .from('products')
             .update({ 
-              current_stock: newStock,
+              stock_quantity: newStock,
               updated_at: new Date().toISOString()
             })
             .eq('id', inventoryData.product_id);

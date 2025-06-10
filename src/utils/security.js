@@ -1,5 +1,5 @@
-// Disable right click
-document.addEventListener('contextmenu', (e) => e.preventDefault());
+// Disable right click (temporarily disabled)
+// document.addEventListener('contextmenu', (e) => e.preventDefault());
 
 // Disable keyboard shortcuts
 document.addEventListener('keydown', (e) => {
@@ -25,20 +25,20 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-// Disable text selection
-document.addEventListener('selectstart', (e) => e.preventDefault());
+// Disable text selection (temporarily disabled)
+// document.addEventListener('selectstart', (e) => e.preventDefault());
 
-// Disable drag and drop
-document.addEventListener('dragstart', (e) => e.preventDefault());
+// Disable drag and drop (temporarily disabled)
+// document.addEventListener('dragstart', (e) => e.preventDefault());
 
-// Disable copy
-document.addEventListener('copy', (e) => e.preventDefault());
+// Disable copy (temporarily disabled)
+// document.addEventListener('copy', (e) => e.preventDefault());
 
-// Disable cut
-document.addEventListener('cut', (e) => e.preventDefault());
+// Disable cut (temporarily disabled)
+// document.addEventListener('cut', (e) => e.preventDefault());
 
-// Disable paste
-document.addEventListener('paste', (e) => e.preventDefault());
+// Disable paste (temporarily disabled)
+// document.addEventListener('paste', (e) => e.preventDefault());
 
 // Disable console.log
 const disableConsole = () => {

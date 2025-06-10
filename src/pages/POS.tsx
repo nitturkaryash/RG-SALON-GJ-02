@@ -73,6 +73,7 @@ import { useMembershipTiers } from '../hooks/useMembershipTiers';
 import { MembershipTier } from '../types/membershipTier';
 // Import the localStorage hook
 import { useLocalStorage } from '../utils/useLocalStorage';
+import { updateProductStock } from '../utils/inventoryUtils';
 
 // Active membership details for payment by balance
 interface ActiveMembershipDetails {
@@ -329,43 +330,19 @@ const debugStockQuantity = async (productId: string) => {
   }
 };
 
-// Add this direct stock update function after the debugStockQuantity function
+// Update the directUpdateStockQuantity function
 const directUpdateStockQuantity = async (productId: string, decrementAmount: number) => {
   try {
     console.log(`🛠️ DIRECT UPDATE: Updating stock for product ID ${productId} by ${decrementAmount}`);
     
-    // First, get current stock
-    const { data: currentProduct, error: fetchError } = await supabase
-      .from('products')
-      .select('id, name, stock_quantity')
-      .eq('id', productId)
-      .single();
+    const result = await updateProductStock(productId, -decrementAmount, 'pos_sale');
     
-    if (fetchError) {
-      console.error(`🛠️ DIRECT UPDATE: Error fetching product ${productId}:`, fetchError);
+    if (!result.success) {
+      console.error(`🛠️ DIRECT UPDATE: Error updating stock for ${productId}:`, result.error);
       return false;
     }
     
-    const currentStock = currentProduct?.stock_quantity || 0;
-    console.log(`🛠️ DIRECT UPDATE: Current stock for ${currentProduct.name}: ${currentStock}`);
-    
-    // Calculate new stock (prevent negative values)
-    const newStock = Math.max(0, currentStock - decrementAmount);
-    console.log(`🛠️ DIRECT UPDATE: Setting new stock to ${newStock}`);
-    
-    // Update the stock
-    const { data: updateResult, error: updateError } = await supabase
-      .from('products')
-      .update({ stock_quantity: newStock })
-      .eq('id', productId)
-      .select();
-    
-    if (updateError) {
-      console.error(`🛠️ DIRECT UPDATE: Error updating stock for ${productId}:`, updateError);
-      return false;
-    }
-    
-    console.log(`🛠️ DIRECT UPDATE: Successfully updated stock for ${currentProduct.name} to ${newStock}`);
+    console.log(`🛠️ DIRECT UPDATE: Successfully updated stock to ${result.newStock}`);
     return true;
   } catch (err) {
     console.error('🛠️ DIRECT UPDATE: Error updating stock quantity:', err);
