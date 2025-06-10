@@ -843,32 +843,38 @@ export default function POS() {
 		return orderItems
 			.filter(item => item.type === 'product')
 			.reduce((sum, item) => {
-				// Calculate item subtotal with individual discount
+				// Calculate item subtotal with individual discount applied (convert inclusive discount to exclusive)
 				const itemTotal = item.price * item.quantity;
-				const itemDiscount = item.discount || 0;
-				return sum + (itemTotal - itemDiscount);
+				const gstPct = item.gst_percentage || productGstRate;
+				const discountIncl = item.discount || 0;
+				const discountExcl = discountIncl / (1 + gstPct / 100);
+				return sum + Math.max(0, itemTotal - discountExcl);
 			}, 0);
-	}, [orderItems]);
+	}, [orderItems, productGstRate]);
 
 	const calculateServiceSubtotal = useCallback(() => {
 		return orderItems
 			.filter(item => item.type === 'service')
 			.reduce((sum, item) => {
-				// Calculate item subtotal with individual discount
+				// Calculate item subtotal with individual discount applied (convert inclusive discount to exclusive)
 				const itemTotal = item.price * item.quantity;
-				const itemDiscount = item.discount || 0;
-				return sum + (itemTotal - itemDiscount);
+				const gstPct = item.gst_percentage || serviceGstRate;
+				const discountIncl = item.discount || 0;
+				const discountExcl = discountIncl / (1 + gstPct / 100);
+				return sum + Math.max(0, itemTotal - discountExcl);
 			}, 0);
-	}, [orderItems]);
+	}, [orderItems, serviceGstRate]);
 
 	const calculateMembershipSubtotal = useCallback(() => {
 		return orderItems
 			.filter(item => item.type === 'membership')
 			.reduce((sum, item) => {
-				// Calculate item subtotal with individual discount
+				// Calculate item subtotal with individual discount applied (convert inclusive discount to exclusive)
 				const itemTotal = item.price * item.quantity;
-				const itemDiscount = item.discount || 0;
-				return sum + (itemTotal - itemDiscount);
+				const gstPct = item.gst_percentage || 18;
+				const discountIncl = item.discount || 0;
+				const discountExcl = discountIncl / (1 + gstPct / 100);
+				return sum + Math.max(0, itemTotal - discountExcl);
 			}, 0);
 	}, [orderItems]);
 
@@ -898,20 +904,17 @@ export default function POS() {
 	}, [useMembershipPayment, isSplitPayment]);
 
 	const calculateTotalDiscount = useCallback(() => {
-		// Sum all individual discounts
-		const individualDiscounts = orderItems.reduce((sum, item) => sum + (item.discount || 0), 0);
-		
-		// Add global discount (only the fixed amount, since percentage is converted to fixed amount in onChange handlers)
+		// Don't double-count individual discounts since they're already applied to item.total
+		// Only add global discount
 		const globalDiscount = walkInDiscount;
 		
 		console.log('Discount calculation:', { 
-			individualDiscounts, 
 			globalDiscount, 
-			total: individualDiscounts + globalDiscount 
+			note: 'Individual item discounts already applied to item.total'
 		});
 		
-		return individualDiscounts + globalDiscount;
-	}, [orderItems, walkInDiscount]);
+		return globalDiscount;
+	}, [walkInDiscount]);
 
 	const calculateTotalAmount = useCallback(() => {
 		const prodSubtotal = calculateProductSubtotal();
@@ -982,31 +985,7 @@ export default function POS() {
 		);
 	}, [orderItems]);
 
-	const serviceSubtotal = useMemo(() => {
-		return serviceItems.reduce(
-			(sum, item) => sum + item.total,
-			0
-		);
-	}, [serviceItems]);
-
-	const productSubtotalCalc = useMemo(() => {
-		return productItems.reduce(
-			(sum, item) => sum + item.total,
-			0
-		);
-	}, [productItems]);
-
-	const orderSubtotal = useMemo(() => {
-		return serviceSubtotal + productSubtotalCalc;
-	}, [serviceSubtotal, productSubtotalCalc]);
-
-	const tax = useMemo(() => {
-		return Math.round(orderSubtotal * 0.18);
-	}, [orderSubtotal]);
-
-	const total = useMemo(() => {
-		return orderSubtotal + tax - walkInDiscount;
-	}, [orderSubtotal, tax, walkInDiscount]);
+	// Removed old useMemo calculations - now using proper calculate functions with discount support
 
 	const salonProductsSubtotal = useMemo(() => {
 		return salonProducts.reduce(
@@ -2692,13 +2671,14 @@ export default function POS() {
 		const combinedGstAmount = productGstAmount + serviceGstAmount + membershipGstAmount;
 		const subtotalIncludingGST = combinedSubtotal + combinedGstAmount;
 
-		// Calculate individual item discounts total
+		// Calculate individual item discounts total (for display only)
 		const individualItemDiscounts = orderItems.reduce((sum, item) => sum + (item.discount || 0), 0);
 		
-		// Total discount is sum of: individual item discounts + global direct discount
+		// Total discount for display (individual discounts already applied to subtotals)
 		const totalDiscount = individualItemDiscounts + walkInDiscount;
 		
-		const totalAmount = Math.max(0, subtotalIncludingGST - totalDiscount);
+		// Use the calculateTotalAmount function which properly handles discounts
+		const totalAmount = calculateTotalAmount();
 
 		return (
 			<Paper sx={{ p: 3, height: '100%' }}>
@@ -2769,9 +2749,8 @@ export default function POS() {
 																			discount: isNaN(discAmount) ? 0 : discAmount,
 																			// Calculate percentage based on GST-inclusive amount
 																			discount_percentage: isNaN(discAmount) ? 0 : 
-																				totalIncludingGst > 0 ? Math.min(100, (discAmount / totalIncludingGst) * 100) : 0,
-																			// Update total with discount (stored as ex-GST total)
-																			total: Math.max(0, (i.price * i.quantity) - (isNaN(discAmount) ? 0 : discAmount))
+																				totalIncludingGst > 0 ? Math.min(100, (discAmount / totalIncludingGst) * 100) : 0
+																			// Don't modify total - keep it as original price × quantity
 																		} 
 																		: i
 																);
@@ -2798,9 +2777,8 @@ export default function POS() {
 																		? { 
 																			...i, 
 																			discount_percentage: validPercentage,
-																			discount: discAmount,
-																			// Update total with discount (stored as ex-GST total)
-																			total: Math.max(0, (i.price * i.quantity) - discAmount)
+																			discount: discAmount
+																			// Don't modify total - keep it as original price × quantity
 																		} 
 																		: i
 																);
