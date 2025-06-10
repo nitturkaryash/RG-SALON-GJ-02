@@ -68,7 +68,6 @@ const formatTime = (time: string | Date): string => {
   const minute = date.getMinutes();
   const hour12 = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
   const period = hour >= 12 ? 'PM' : 'AM';
-  // Format with minutes instead of always showing :00
   return `${hour12}:${minute.toString().padStart(2, '0')} ${period}`;
 };
 
@@ -347,32 +346,35 @@ const generateTimeSlots = () => {
   return slots;
 };
 
+// Define interface for time options
+interface TimeOption {
+  value: string;
+  label: string;
+}
+
 // Update the generateTimeOptions function to include 15-minute intervals
-const generateTimeOptions = () => {
-  const options = [];
+const generateTimeOptions = (): TimeOption[] => {
+  const options: TimeOption[] = [];
   for (let hour = BUSINESS_HOURS.start; hour <= BUSINESS_HOURS.end; hour++) {
     const period = hour >= 12 ? 'PM' : 'AM';
     const hour12 = hour > 12 ? hour - 12 : (hour === 0 ? 12 : hour);
     
     // Add options for 0, 15, 30, and 45 minutes
-    options.push({ 
-      value: `${hour}:00`, 
-      label: `${hour12}:00 ${period}` 
+    const timeFormats = [
+      { minute: '00', value: `${hour}:00` },
+      { minute: '15', value: `${hour}:15` },
+      { minute: '30', value: `${hour}:30` },
+      { minute: '45', value: `${hour}:45` }
+    ];
+
+    timeFormats.forEach(({ minute, value }) => {
+      if (hour < BUSINESS_HOURS.end || minute === '00') {
+        options.push({
+          value: value,
+          label: `${hour12}:${minute} ${period}`
+        });
+      }
     });
-    if (hour < BUSINESS_HOURS.end) {
-      options.push({ 
-        value: `${hour}:15`, 
-        label: `${hour12}:15 ${period}` 
-      });
-      options.push({ 
-        value: `${hour}:30`, 
-        label: `${hour12}:30 ${period}` 
-      });
-      options.push({ 
-        value: `${hour}:45`, 
-        label: `${hour12}:45 ${period}` 
-      });
-    }
   }
   return options;
 };
@@ -923,22 +925,16 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
   const handleTimeChange = (event: SelectChangeEvent, field: 'startTime' | 'endTime') => {
     if (!selectedAppointment) return;
     
-    // Get the selected time value (format: "hour:minute")
     const timeValue = event.target.value;
+    console.log(`Time changed: ${field} = ${timeValue}`);
+    
+    // Parse the selected time
     const [hourStr, minuteStr] = timeValue.split(':');
     const hour = parseInt(hourStr, 10);
     const minute = parseInt(minuteStr, 10);
     
-    // Create a new date object with the selected time
-    const newTime = new Date(
-      currentDate.getFullYear(),
-      currentDate.getMonth(),
-      currentDate.getDate(),
-      hour,
-      minute,
-      0,
-      0
-    );
+    // Calculate minutes since midnight for easier comparison
+    const selectedTimeMinutes = (hour * 60) + minute;
     
     // Update the appropriate field in the editFormData state
     setEditFormData(prev => {
@@ -947,34 +943,46 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
       // Create a copy of the previous state
       const updated = { ...prev };
       
+      // Calculate minutes for the current start/end times
+      const [currentStartHour, currentStartMinute] = updated.startTime.split(':').map(Number);
+      const [currentEndHour, currentEndMinute] = updated.endTime.split(':').map(Number);
+      
+      const startTimeMinutes = (currentStartHour * 60) + currentStartMinute;
+      const endTimeMinutes = (currentEndHour * 60) + currentEndMinute;
+      
       // Update the appropriate field
       if (field === 'startTime') {
         updated.startTime = timeValue;
         
-        // If the new start time is after the end time, adjust the end time
-        const [endHourStr, endMinuteStr] = updated.endTime.split(':');
-        const endHour = parseInt(endHourStr, 10);
-        const endMinute = parseInt(endMinuteStr, 10);
-        
-        if (hour > endHour || (hour === endHour && minute >= endMinute)) {
+        // If the new start time is after or equal to the end time, adjust the end time
+        if (selectedTimeMinutes >= endTimeMinutes) {
           // Set end time to start time + 15 minutes
-          const newEndHour = minute >= 45 ? (hour + 1) % 24 : hour;
-          const newEndMinute = (minute + 15) % 60;
-          updated.endTime = `${newEndHour}:${newEndMinute.toString().padStart(2, '0')}`;
+          const newEndTimeMinutes = selectedTimeMinutes + 15;
+          const newEndHour = Math.floor(newEndTimeMinutes / 60) % 24; // Use modulo for 24h wraparound
+          const newEndMinute = newEndTimeMinutes % 60;
+          
+          updated.endTime = `${newEndHour.toString().padStart(2, '0')}:${newEndMinute.toString().padStart(2, '0')}`;
+          
+          // Show notification about adjusted time
+          toast.success("End time automatically adjusted to be after start time");
         }
       } else {
         updated.endTime = timeValue;
         
-        // If the new end time is before the start time, adjust the start time
-        const [startHourStr, startMinuteStr] = updated.startTime.split(':');
-        const startHour = parseInt(startHourStr, 10);
-        const startMinute = parseInt(startMinuteStr, 10);
-        
-        if (hour < startHour || (hour === startHour && minute <= startMinute)) {
+        // If the new end time is before or equal to the start time, adjust the start time
+        if (selectedTimeMinutes <= startTimeMinutes) {
           // Set start time to end time - 15 minutes
-          const newStartMinute = minute < 15 ? 45 : minute - 15;
-          const newStartHour = minute < 15 ? (hour === 0 ? 23 : hour - 1) : hour;
-          updated.startTime = `${newStartHour}:${newStartMinute.toString().padStart(2, '0')}`;
+          const newStartTimeMinutes = selectedTimeMinutes - 15;
+          // Handle negative minutes (wrap around to previous day)
+          const adjustedStartTimeMinutes = newStartTimeMinutes < 0 ? 24 * 60 + newStartTimeMinutes : newStartTimeMinutes;
+          
+          const newStartHour = Math.floor(adjustedStartTimeMinutes / 60) % 24;
+          const newStartMinute = adjustedStartTimeMinutes % 60;
+          
+          updated.startTime = `${newStartHour.toString().padStart(2, '0')}:${newStartMinute.toString().padStart(2, '0')}`;
+          
+          // Show notification about adjusted time
+          toast.success("Start time automatically adjusted to be before end time");
         }
       }
       
@@ -1779,10 +1787,10 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
               style={{
                 top: `${getAppointmentPosition(appointment.start_time)}px`,
                 height: `${getAppointmentDuration(appointment.start_time, appointment.end_time)}px`,
-                backgroundColor: isCheckedIn 
-                  ? '#D2B48C'
-                  : status === 'completed'
-                    ? theme.palette.grey[400]
+                backgroundColor: status === 'completed'
+                  ? theme.palette.grey[400]
+                  : isCheckedIn 
+                    ? '#D2B48C'
                     : isPaid
                       ? theme.palette.success.light
                       : theme.palette.primary.main

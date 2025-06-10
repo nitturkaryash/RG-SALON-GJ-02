@@ -901,26 +901,17 @@ export default function POS() {
 		// Sum all individual discounts
 		const individualDiscounts = orderItems.reduce((sum, item) => sum + (item.discount || 0), 0);
 		
-		// Add global discount
+		// Add global discount (only the fixed amount, since percentage is converted to fixed amount in onChange handlers)
 		const globalDiscount = walkInDiscount;
-		
-		// Add percentage discount (apply it to the already discounted subtotal)
-		const subtotalAfterIndividualDiscounts = calculateProductSubtotal() + calculateServiceSubtotal() + calculateMembershipSubtotal();
-		const subtotalWithGST = subtotalAfterIndividualDiscounts + 
-			calculateProductGstAmount(calculateProductSubtotal()) + 
-			calculateServiceGstAmount(calculateServiceSubtotal()) +
-			calculateMembershipGstAmount(calculateMembershipSubtotal());
-		const percentageDiscountAmount = (subtotalWithGST * walkInDiscountPercentage) / 100;
 		
 		console.log('Discount calculation:', { 
 			individualDiscounts, 
 			globalDiscount, 
-			percentageDiscountAmount, 
-			total: individualDiscounts + globalDiscount + percentageDiscountAmount 
+			total: individualDiscounts + globalDiscount 
 		});
 		
-		return individualDiscounts + globalDiscount + percentageDiscountAmount;
-	}, [orderItems, walkInDiscount, walkInDiscountPercentage, calculateProductSubtotal, calculateServiceSubtotal, calculateMembershipSubtotal, calculateProductGstAmount, calculateServiceGstAmount, calculateMembershipGstAmount]);
+		return individualDiscounts + globalDiscount;
+	}, [orderItems, walkInDiscount]);
 
 	const calculateTotalAmount = useCallback(() => {
 		const prodSubtotal = calculateProductSubtotal();
@@ -1714,8 +1705,14 @@ export default function POS() {
 			// --- Update Appointment Status if Applicable ---
 			if (currentAppointmentId && updateAppointment) {
 				try {
-					await updateAppointment({ id: currentAppointmentId, status: 'completed', paid: true, clientDetails: [] });
-					console.log(`Appointment ${currentAppointmentId} marked as completed and paid.`);
+					await updateAppointment({ 
+						id: currentAppointmentId, 
+						status: 'completed', 
+						paid: true, 
+						checked_in: false, // Auto check-out when completing order
+						clientDetails: [] 
+					});
+					console.log(`Appointment ${currentAppointmentId} marked as completed, paid, and checked out.`);
 				} catch (updateError) {
 					console.error(`Failed to update appointment status for ${currentAppointmentId}:`, updateError);
 					toast.error('Order created, but failed to update appointment status.');
@@ -2698,11 +2695,8 @@ export default function POS() {
 		// Calculate individual item discounts total
 		const individualItemDiscounts = orderItems.reduce((sum, item) => sum + (item.discount || 0), 0);
 		
-		// Calculate global percentage discount (on subtotal including GST)
-		const percentageDiscountAmount = (subtotalIncludingGST * walkInDiscountPercentage) / 100;
-		
-		// Total discount is sum of: individual item discounts + global direct discount + percentage discount
-		const totalDiscount = individualItemDiscounts + walkInDiscount + percentageDiscountAmount;
+		// Total discount is sum of: individual item discounts + global direct discount
+		const totalDiscount = individualItemDiscounts + walkInDiscount;
 		
 		const totalAmount = Math.max(0, subtotalIncludingGST - totalDiscount);
 
@@ -2729,89 +2723,127 @@ export default function POS() {
 										</Typography>
 									</Typography>
 									<Box sx={{ display: 'flex', alignItems: 'center', mt: 1, gap: 2 }}>
-										<TextField
-											size="small"
-											variant="standard"
-											type="number"
-											value={item.price}
-											onChange={(e) => {
-												const newPrice = parseFloat(e.target.value);
-													handleItemPriceChange(item.id, isNaN(newPrice) ? 0 : newPrice);
-											}}
-											sx={{ width: '80px' }}
-											InputProps={{
-												startAdornment: <InputAdornment position="start">₹</InputAdornment>,
-												inputProps: { step: 0.01, min: 0 }
-											}}
-										/>
-										
-										{/* Individual item discount fields */}
-										<Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-											<TextField
-												size="small"
-												variant="standard"
-												type="number"
-												label="Disc ₹"
-												value={item.discount || 0}
-												onChange={(e) => {
-													const discAmount = parseFloat(e.target.value);
-													const updatedItems = orderItems.map(i => 
-														i.id === item.id 
-															? { 
-																...i, 
-																discount: isNaN(discAmount) ? 0 : discAmount,
-																// Calculate percentage based on amount
-																discount_percentage: isNaN(discAmount) ? 0 : 
-																	i.price > 0 ? Math.min(100, (discAmount / (i.price * i.quantity)) * 100) : 0,
-																// Update total with discount
-																total: Math.max(0, (i.price * i.quantity) - (isNaN(discAmount) ? 0 : discAmount))
-															} 
-															: i
-													);
-													setOrderItems(updatedItems);
-												}}
-												sx={{ width: '70px' }}
-												InputProps={{
-													inputProps: { min: 0, max: item.price * item.quantity }
-												}}
-											/>
-											<TextField
-												size="small"
-												variant="standard"
-												type="number"
-												label="Disc %"
-												value={item.discount_percentage || 0}
-												onChange={(e) => {
-													const discPercentage = parseFloat(e.target.value);
-													const validPercentage = isNaN(discPercentage) ? 0 : Math.max(0, Math.min(100, discPercentage));
-													const discAmount = (validPercentage / 100) * (item.price * item.quantity);
-													const updatedItems = orderItems.map(i => 
-														i.id === item.id 
-															? { 
-																...i, 
-																discount_percentage: validPercentage,
-																discount: discAmount,
-																// Update total with discount
-																total: Math.max(0, (i.price * i.quantity) - discAmount)
-															} 
-															: i
-													);
-													setOrderItems(updatedItems);
-												}}
-												sx={{ width: '70px' }}
-												InputProps={{
-													endAdornment: <InputAdornment position="end">%</InputAdornment>,
-													inputProps: { min: 0, max: 100, step: 1 }
-												}}
-											/>
-										</Box>
+										{(() => {
+											// Calculate GST-inclusive price for display and discount calculations
+											const gstPercentage = item.gst_percentage || (item.type === 'product' ? productGstRate : serviceGstRate) || 18;
+											const isGstApplied = item.type === 'product' ? isProductGstApplied : (item.type === 'service' ? isServiceGstApplied : true);
+											const gstMultiplier = isGstApplied ? (1 + (gstPercentage / 100)) : 1;
+											const priceIncludingGst = item.price * gstMultiplier;
+											const totalIncludingGst = priceIncludingGst * item.quantity;
+											
+											return (
+												<>
+													<TextField
+														size="small"
+														variant="standard"
+														type="number"
+														label="Price (Inc. GST)"
+														value={priceIncludingGst.toFixed(2)}
+														onChange={(e) => {
+															const newPriceIncGst = parseFloat(e.target.value);
+															// Convert back to ex-GST price for storage
+															const newPriceExGst = isGstApplied ? newPriceIncGst / gstMultiplier : newPriceIncGst;
+															handleItemPriceChange(item.id, isNaN(newPriceExGst) ? 0 : newPriceExGst);
+														}}
+														sx={{ width: '100px' }}
+														InputProps={{
+															startAdornment: <InputAdornment position="start">₹</InputAdornment>,
+															inputProps: { step: 0.01, min: 0 }
+														}}
+													/>
+													
+													{/* Individual item discount fields - now working with GST-inclusive amounts */}
+													<Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+														<TextField
+															size="small"
+															variant="standard"
+															type="number"
+															label="Disc ₹"
+															value={item.discount || 0}
+															onChange={(e) => {
+																const discAmount = parseFloat(e.target.value);
+																const updatedItems = orderItems.map(i => 
+																	i.id === item.id 
+																		? { 
+																			...i, 
+																			discount: isNaN(discAmount) ? 0 : discAmount,
+																			// Calculate percentage based on GST-inclusive amount
+																			discount_percentage: isNaN(discAmount) ? 0 : 
+																				totalIncludingGst > 0 ? Math.min(100, (discAmount / totalIncludingGst) * 100) : 0,
+																			// Update total with discount (stored as ex-GST total)
+																			total: Math.max(0, (i.price * i.quantity) - (isNaN(discAmount) ? 0 : discAmount))
+																		} 
+																		: i
+																);
+																setOrderItems(updatedItems);
+															}}
+															sx={{ width: '70px' }}
+															InputProps={{
+																inputProps: { min: 0, max: totalIncludingGst }
+															}}
+														/>
+														<TextField
+															size="small"
+															variant="standard"
+															type="number"
+															label="Disc %"
+															value={item.discount_percentage || 0}
+															onChange={(e) => {
+																const discPercentage = parseFloat(e.target.value);
+																const validPercentage = isNaN(discPercentage) ? 0 : Math.max(0, Math.min(100, discPercentage));
+																// Calculate discount amount based on GST-inclusive total
+																const discAmount = (validPercentage / 100) * totalIncludingGst;
+																const updatedItems = orderItems.map(i => 
+																	i.id === item.id 
+																		? { 
+																			...i, 
+																			discount_percentage: validPercentage,
+																			discount: discAmount,
+																			// Update total with discount (stored as ex-GST total)
+																			total: Math.max(0, (i.price * i.quantity) - discAmount)
+																		} 
+																		: i
+																);
+																setOrderItems(updatedItems);
+															}}
+															sx={{ width: '70px' }}
+															InputProps={{
+																endAdornment: <InputAdornment position="end">%</InputAdornment>,
+																inputProps: { min: 0, max: 100, step: 1 }
+															}}
+														/>
+													</Box>
+												</>
+											);
+										})()}
 									</Box>
 								</Box>
-								<Typography variant="body1" sx={{ fontWeight: 500, minWidth: '70px', textAlign: 'right' }}>
-									{formatCurrency((item.discount && item.discount > 0) 
-										? Math.max(0, (item.price * item.quantity) - item.discount)
-										: item.price * item.quantity)}
-								</Typography>
+								<Box sx={{ textAlign: 'right', minWidth: '100px' }}>
+									{(() => {
+										// Calculate display values with GST
+										const gstPercentage = item.gst_percentage || (item.type === 'product' ? productGstRate : serviceGstRate) || 18;
+										const isGstApplied = item.type === 'product' ? isProductGstApplied : (item.type === 'service' ? isServiceGstApplied : true);
+										const gstMultiplier = isGstApplied ? (1 + (gstPercentage / 100)) : 1;
+										const totalIncludingGst = (item.price * item.quantity * gstMultiplier);
+										const finalAmount = Math.max(0, totalIncludingGst - (item.discount || 0));
+										
+										return (
+											<>
+												<Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.75rem' }}>
+													Inc. GST ({gstPercentage}%)
+												</Typography>
+												<Typography variant="body1" sx={{ fontWeight: 500 }}>
+													{formatCurrency(finalAmount)}
+												</Typography>
+												{item.discount && item.discount > 0 && (
+													<Typography variant="body2" color="text.secondary" sx={{ textDecoration: 'line-through', fontSize: '0.75rem' }}>
+														{formatCurrency(totalIncludingGst)}
+													</Typography>
+												)}
+											</>
+										);
+									})()}
+								</Box>
 								<Tooltip title="Remove Item">
 									<IconButton size="small" color="error" onClick={() => handleRemoveFromOrder(item.id)} sx={{ ml: 1 }}>
 										<CloseIcon fontSize="small" />
@@ -2952,7 +2984,7 @@ export default function POS() {
 				</Box>
 				
 				{/* Show breakdown of discounts if there are different types */}
-				{(individualItemDiscounts > 0 || walkInDiscount > 0 || percentageDiscountAmount > 0) && (
+				{(individualItemDiscounts > 0 || walkInDiscount > 0) && (
 					<Box sx={{ mb: 1, ml: 2 }}>
 						{individualItemDiscounts > 0 && (
 							<Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
@@ -2962,14 +2994,8 @@ export default function POS() {
 						)}
 						{walkInDiscount > 0 && (
 							<Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-								<Typography variant="body2" color="text.secondary">Global Fixed Discount:</Typography> {/* Clarified label */}
+								<Typography variant="body2" color="text.secondary">Global Discount:</Typography>
 								<Typography variant="body2" color="text.secondary">-{formatCurrency(walkInDiscount)}</Typography>
-							</Box>
-						)}
-						{percentageDiscountAmount > 0 && walkInDiscountPercentage > 0 && ( // Ensure percentage is also > 0
-							<Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-								<Typography variant="body2" color="text.secondary">Global Percentage Discount ({walkInDiscountPercentage.toFixed(2)}%):</Typography> {/* Clarified label */}
-								<Typography variant="body2" color="text.secondary">-{formatCurrency(percentageDiscountAmount)}</Typography>
 							</Box>
 						)}
 					</Box>
