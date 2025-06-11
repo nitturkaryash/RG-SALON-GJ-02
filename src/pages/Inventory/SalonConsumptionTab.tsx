@@ -45,6 +45,7 @@ const SalonConsumptionTab: React.FC<SalonConsumptionTabProps> = ({ dateFilter, a
                 id: `${order.id}-${item.product_id || item.service_id}`,
                 created_at: order.created_at,
                 Date: order.created_at,
+                'S.No': `SALON-${order.id.slice(0, 4)}`,
                 "Product Name": resolvedProductName,
                 HSN_Code: item.hsn_code,
                 "Product Type": item.units || '',
@@ -59,10 +60,10 @@ const SalonConsumptionTab: React.FC<SalonConsumptionTabProps> = ({ dateFilter, a
         }
       });
 
-      const processedRows = consumptionRows.map((row, index) => ({
-        ...row,
-        serial_no: index + 1
-      }));
+      // Sort by date descending (latest first)
+      consumptionRows.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      
+      const processedRows = consumptionRows;
 
       // Fetch current stock from balance stock view's balance_qty column
       const { data: stockData, error: stockError } = await supabase
@@ -167,7 +168,7 @@ const SalonConsumptionTab: React.FC<SalonConsumptionTabProps> = ({ dateFilter, a
   }, [filteredData, onDataUpdate]);
 
   const columns = [
-    { id: 'serial_no', label: 'S.No', align: 'center' as const, minWidth: 50 },
+    { id: 'S.No', label: 'S.No' },
     { id: 'Date', label: 'Date', format: (value: string) => new Date(value).toLocaleDateString() },
     { id: 'Product Name', label: 'Product Name' },
     { id: 'HSN_Code', label: 'HSN Code' },
