@@ -1478,45 +1478,20 @@ export default function POS() {
 
 			// If no existing client is selected and a customer name is provided, create a new client
 			if (!selectedClient && customerName.trim() !== "") {
-				isNewClient = true;
-				console.log("Attempting to create new client:", customerName.trim());
 				try {
-					const newClientData = {
+					const newClient = await createClient({
 						full_name: customerName.trim(),
-						phone: newClientPhone.trim(),
-						email: newClientEmail.trim(),
-						notes: 'Added via POS' // Default note
-					};
-					// Assume createClient is async and returns the created client object or relevant part
-					const createdClient = await createClientAsync(newClientData); // Use createClientAsync 
-					if (createdClient && createdClient.id) {
-						clientIdToUse = createdClient.id;
-						clientNameToUse = createdClient.full_name; // Use the name from the created client
-						toast.success(`New client '${clientNameToUse}' created successfully!`);
-						// queryClient.invalidateQueries({ queryKey: ['clients'] }); // Example for TanStack Query
-					} else {
-						// This case might indicate createClient didn't return expected data or failed silently before throwing
-						throw new Error('New client was processed but ID is missing.'); 
-					}
+						phone: '',
+						email: '',
+						notes: ''
+					});
+					clientIdToUse = newClient.id;
+					clientNameToUse = newClient.full_name;
+					isNewClient = true;
 				} catch (error) {
-					console.error("Error creating new client:", error);
-					const message = error instanceof Error ? error.message : "Unknown error creating client";
-					setSnackbarMessage(`Error creating client: ${message}`);
-					setSnackbarOpen(true);
-					setProcessing(false);
-					return; // Stop order processing if client creation fails
+					console.error('Failed to create new client:', error);
+					// Continue with walk-in customer name
 				}
-			}
-
-			// Log order items for inventory tracking
-			const productItems = orderItems.filter(item => item.type === 'product');
-			const serviceItems = orderItems.filter(item => item.type === 'service');
-			
-			console.log(`📦 Creating order with ${orderItems.length} total items, including ${productItems.length} products that will reduce inventory:`);
-			if (productItems.length > 0) {
-				productItems.forEach(product => {
-					console.log(`📦 Product: ${product.item_name}, ID: ${product.item_id}, Quantity: ${product.quantity}`);
-				});
 			}
 
 			// Correct arguments for updateClientFromOrder 
@@ -1536,9 +1511,6 @@ export default function POS() {
 			} else {
 				console.log('Skipping client update for generic Walk-in Customer or missing name.');
 			}
-			
-			// Rather than using the orderData CreateOrderData object directly,
-			// transform it to match the parameters expected by the standalone createWalkInOrder function
 			
 			// Convert services to format expected by standalone function
 			const formattedServices = serviceItems.map(service => ({
@@ -1621,209 +1593,73 @@ export default function POS() {
 			
 			// Create the order with the actual total amount, regardless of payment method
 			const orderResult = await createWalkInOrderMutation.mutateAsync({
-				order_id: uuidv4(),
+				id: uuidv4(),
 				client_id: clientIdToUse || '', 
 				client_name: clientNameToUse,    
 				stylist_id: staffInfo?.id || '',
-				stylist_name: staffInfo?.name || '',
-				appointment_id: currentAppointmentId || undefined, // Add appointment_id to link order with appointment
-				items: [],
-				// Make sure to include individual item discounts in the services array
-				services: ([...formattedProducts, ...formattedServices, ...formattedMemberships].map(item => ({
-					...item,
-					// Ensure discount and discount_percentage are included
-					discount: item.discount || 0,
-					discount_percentage: item.discount_percentage || 0
-				})) as any[]),
-				
-				// Include breakdown of different discount types in the order
-				payment_method: isSplitPayment ? 'split' : (useMembershipPayment ? 'membership' : walkInPaymentMethod),
-				split_payments: isSplitPayment ? splitPayments : undefined,
-				
-				discount: walkInDiscount,
-				discount_percentage: walkInDiscountPercentage,
-				
-				subtotal: subtotal,
-				tax: tax,
-				total: totalAmount, // Always show the actual order amount
-				total_amount: totalAmount, // Always show the actual order amount
-				status: 'completed',
-				order_date: orderDate ? orderDate.toISOString() : new Date().toISOString(),
-				is_walk_in: true,
-				is_salon_consumption: false,
-				pending_amount: Math.max(0, totalAmount - amountPaid),
-				payments: isSplitPayment ? splitPayments : [{
-					id: uuidv4(),
-					amount: totalAmount, // Always store the full order amount
-					payment_method: useMembershipPayment ? 'membership' : walkInPaymentMethod,
-					payment_date: orderDate ? orderDate.toISOString() : new Date().toISOString()
-				}]
-			});
-			
-			if (!orderResult.success) {
-				throw new Error(orderResult.error?.message || 'Failed to create order');
-			}
-
-			// --- Update Appointment Status if Applicable ---
-			if (currentAppointmentId && updateAppointment) {
-				try {
-					// Try to update the just-created order with the appointment_id if it wasn't included
-					if (orderResult.order && orderResult.order.id) {
-						console.log(`DEBUG: Updating order ${orderResult.order.id} with appointment_id ${currentAppointmentId}`);
-						
-						// Update the order with the appointment ID
-						const { error: updateOrderError } = await supabase
-							.from('pos_orders')
-							.update({ appointment_id: currentAppointmentId })
-							.eq('id', orderResult.order.id);
-							
-						if (updateOrderError) {
-							console.error('Error updating order with appointment_id:', updateOrderError);
-						} else {
-							console.log(`Successfully linked order ${orderResult.order.id} to appointment ${currentAppointmentId}`);
-						}
-					}
+					stylist_name: staffInfo?.name || '',
+					appointment_id: currentAppointmentId || undefined, // Add appointment_id to link order with appointment
+					services: ([...formattedProducts, ...formattedServices, ...formattedMemberships].map(item => ({
+						...item,
+						// Ensure discount and discount_percentage are included
+						discount: item.discount || 0,
+						discount_percentage: item.discount_percentage || 0
+					})) as any[]),
 					
-					// Update the appointment status
-					await updateAppointment({ 
-						id: currentAppointmentId, 
-						status: 'completed', 
-						paid: true, 
-						checked_in: false, // Auto check-out when completing order
-						clientDetails: [] 
-					});
-					console.log(`Appointment ${currentAppointmentId} marked as completed, paid, and checked out.`);
-				} catch (updateError) {
-					console.error(`Failed to update appointment status for ${currentAppointmentId}:`, updateError);
-					toast.error('Order created, but failed to update appointment status.');
+					// Include breakdown of different discount types in the order
+					payment_method: isSplitPayment ? 'split' : (useMembershipPayment ? 'membership' : walkInPaymentMethod),
+					split_payments: isSplitPayment ? splitPayments : undefined,
+					
+					discount: walkInDiscount,
+					discount_percentage: walkInDiscountPercentage,
+					
+					subtotal: subtotal,
+					tax: tax,
+					total: totalAmount, // Always show the actual order amount
+					total_amount: totalAmount, // Always show the actual order amount
+					status: 'completed',
+					created_at: orderDate ? orderDate.toISOString() : new Date().toISOString(),
+					is_walk_in: true,
+					is_salon_consumption: false,
+					pending_amount: isSplitPayment ? Math.max(0, totalAmount - amountPaid) : 0,
+					payments: isSplitPayment ? splitPayments : [{
+						id: uuidv4(),
+						amount: totalAmount,
+						payment_method: walkInPaymentMethod,
+						payment_date: new Date().toISOString()
+					}]
+				});
+				
+				if (!orderResult.success) {
+					throw new Error(orderResult.error?.message || 'Failed to create order');
 				}
-			}
 
-			setSnackbarMessage("Order created successfully!");
-			setSnackbarOpen(true);
-			
-			// Store the created order for printing
-			if (orderResult.order) {
-				setLastCreatedOrder(orderResult.order);
-				setPrintDialogOpen(true);
-			}
-			
-			resetFormState();
-			
-			if (orderResult.success) {
-				console.log('🔍 DEBUG: Order created successfully, checking product stock quantities...');
-				
-				// Replace the existing timeout block with this one
-				setTimeout(async () => {
-					let stockUpdateNeeded = false;
-					
-					for (const product of formattedProducts) {
-						if (product.id) {
-							const stockQty = await debugStockQuantity(product.id);
-							console.log(`🔍 DEBUG: After order - Product ${product.name} (${product.id}) stock quantity: ${stockQty}`);
-							
-							// Check if the quantity has actually changed
-							if (stockQty === null || typeof stockQty === 'number') {
-								const initialStockQty = allProducts.find(p => p.id === product.id)?.stock_quantity;
-								console.log(`🔍 DEBUG: Initial stock was: ${initialStockQty}, current is: ${stockQty}`);
-								
-								if (initialStockQty && stockQty !== null && stockQty >= initialStockQty) {
-									console.log(`🔍 DEBUG: Stock not reduced for ${product.name}, applying direct update fallback`);
-									stockUpdateNeeded = true;
-									
-									// Apply direct stock update
-									await directUpdateStockQuantity(product.id, product.quantity || 1);
-									
-									// Verify after direct update
-									const updatedStock = await debugStockQuantity(product.id);
-									console.log(`🔍 DEBUG: After direct update - Product ${product.name} stock: ${updatedStock}`);
-								}
-							}
-						}
-					}
-					
-					if (stockUpdateNeeded) {
-						console.log('🔍 DEBUG: Direct stock updates applied. Refreshing UI...');
-						// Trigger inventory refresh
-						window.dispatchEvent(new CustomEvent('inventory-updated'));
-						fetchBalanceStockData();
-					}
-				}, 1000);
-			}
-			
-			// Process membership payment and update balance
-			if (useMembershipPayment && activeClientMembership) {
-				const newBalance = activeClientMembership.currentBalance - paymentAmounts.membership;
-				const { error } = await supabase
-					.from('members')
-					.update({ current_balance: newBalance })
-					.eq('id', activeClientMembership.id);
-				if (error) {
-					toast.error('Failed to update membership balance');
-				} else {
-					setActiveClientMembership({ ...activeClientMembership, currentBalance: newBalance });
-				}
-			}
-
-			// Initialize balance for new memberships
-			const membershipItemsForProcessing = orderItems.filter(i => i.type === 'membership' || i.category === 'membership');
-			for (const item of membershipItemsForProcessing) {
-				// Check if membership already exists for this client
-				const { data: existingMembership } = await supabase
-					.from('members')
-					.select('id')
-					.eq('client_id', clientIdToUse)
-					.eq('tier_id', item.item_id)
-					.single();
-
-				if (existingMembership) {
-					// Update existing membership
-					const { error: updateError } = await supabase
-						.from('members')
-						.update({
-							current_balance: item.price,
-							total_membership_amount: item.price,
-							expires_at: new Date(Date.now() + (item.duration_months || 12) * 30 * 24 * 60 * 60 * 1000).toISOString()
-						})
-						.eq('id', existingMembership.id);
-
-					if (updateError) {
-						toast.error('Failed to update membership');
-						console.error('Membership update error:', updateError);
-					} else {
-						toast.success('Membership renewed');
-					}
-				} else {
-					// Create new membership
-					const { error: insertError } = await supabase
-						.from('members')
-						.insert({
-							client_id: clientIdToUse,
-							client_name: clientNameToUse,
-							tier_id: item.item_id,
-							purchase_date: new Date().toISOString(),
-							expires_at: new Date(Date.now() + (item.duration_months || 12) * 30 * 24 * 60 * 60 * 1000).toISOString(),
-							current_balance: item.price,
-							total_membership_amount: item.price
-						});
-
-					if (insertError) {
-						toast.error('Failed to record membership purchase');
-						console.error('Membership insert error:', insertError);
-					} else {
-						toast.success('Membership activated');
+				// --- Update Appointment Status if Applicable ---
+				if (currentAppointmentId && updateAppointment) {
+					try {
+						await updateAppointment({ id: currentAppointmentId, status: 'completed', paid: true, clientDetails: [] });
+						console.log(`Appointment ${currentAppointmentId} marked as completed and paid.`);
+					} catch (updateError) {
+						console.error(`Failed to update appointment status for ${currentAppointmentId}:`, updateError);
+						toast.error('Order created, but failed to update appointment status.');
 					}
 				}
+
+				setSnackbarMessage("Order created successfully!");
+				setSnackbarOpen(true);
+				
+				// Reset form state
+				resetFormState();
+				
+			} catch (error) {
+				console.error("Error creating walk-in order:", error);
+				const message = error instanceof Error ? error.message : "Unknown error";
+				setSnackbarMessage(`Error creating order: ${message}`);
+				setSnackbarOpen(true);
+			} finally {
+				setProcessing(false);
 			}
-		} catch (error) {
-			console.error("Error creating walk-in order:", error);
-			const message = error instanceof Error ? error.message : "Unknown error";
-			setSnackbarMessage(`Error creating order: ${message}`);
-			setSnackbarOpen(true);
-		} finally {
-			setProcessing(false);
-		}
-	}, [currentAppointmentId, updateAppointment, orderItems, isOrderValid, calculateProductSubtotal, calculateServiceSubtotal, calculateProductGstAmount, calculateServiceGstAmount, walkInDiscount, getAmountPaid, selectedClient, selectedStylist, customerName, createWalkInOrderMutation, createOrder, isSplitPayment, splitPayments, productGstRate, serviceGstRate, calculateTotalAmount, allProducts, fetchBalanceStockData, directUpdateStockQuantity, createClientAsync, newClientPhone, newClientEmail, useMembershipPayment, activeClientMembership, paymentAmounts]);
+		}, [currentAppointmentId, updateAppointment, orderItems, isOrderValid, calculateProductSubtotal, calculateServiceSubtotal, calculateProductGstAmount, calculateServiceGstAmount, walkInDiscount, getAmountPaid, selectedClient, selectedStylist, customerName, createWalkInOrderMutation, createOrder, isSplitPayment, splitPayments, productGstRate, serviceGstRate, calculateTotalAmount, allProducts, fetchBalanceStockData, directUpdateStockQuantity]);
 
 	const resetFormState = useCallback(() => {
 		// Remove activeStep reset since we don't use steps anymore
@@ -2557,8 +2393,10 @@ export default function POS() {
 								const priceToDisplay = actualPurchaseCostFromMaster !== undefined ? actualPurchaseCostFromMaster : purchaseCost;
 								const priceSource = actualPurchaseCostFromMaster !== undefined ? 'Purchase Cost (Ex.GST)' : `MRP Ex.GST (Fallback)`;
 								
+								const { key, ...otherProps } = props;
+								
 								return (
-									<li {...props}>
+									<li key={key} {...otherProps}>
 										<Box>
 											<Typography variant="body2">{option.name}</Typography>
 											<Typography variant="caption" color="text.secondary">
@@ -3261,6 +3099,10 @@ export default function POS() {
 												// Explicitly fetch client history when a client is selected
 												fetchClientHistory(newValue.full_name);
 											}
+										}}
+										isOptionEqualToValue={(option, value) => {
+											if (!value) return false;
+											return option.id === value.id;
 										}}
 										renderInput={(params) => (
 											<TextField

@@ -2502,26 +2502,22 @@ export default function InventoryManager() {
         </Typography>
         
         <Box sx={{ display: 'flex', gap: 1 }}>
-          {activeTab === 'purchaseHistory' && (
-            <>
-              <Button
-                variant="contained"
-                color="primary"
-                startIcon={<AddIcon />}
-                onClick={handleOpen}
-              >
-                Add Purchase
-              </Button>
-              <Button
-                variant="contained"
-                color="warning"
-                startIcon={<SpeedIcon />}
-                onClick={handleOpenInventoryUpdate}
-              >
-                Update Inventory
-              </Button>
-            </>
-          )}
+          <Button
+            variant="contained"
+            color="primary"
+            startIcon={<AddIcon />}
+            onClick={handleOpen}
+          >
+            Add Purchase
+          </Button>
+          <Button
+            variant="contained"
+            color="warning"
+            startIcon={<SpeedIcon />}
+            onClick={handleOpenInventoryUpdate}
+          >
+            Add Opening Balance
+          </Button>
           <Button 
             variant="outlined" 
             color="primary" 

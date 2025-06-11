@@ -132,8 +132,14 @@ interface PosOrder {
   id: string;
   created_at: string;
   client_name: string;
+  consumption_purpose: string | null;
+  consumption_notes: string | null;
+  total: number;
+  type: string;
+  is_salon_consumption: boolean;
+  status: 'completed' | 'pending' | 'cancelled';
+  payment_method: PaymentMethod | 'split';
   stylist_id: string | null;
-  stylist_name: string;
   services: Array<{
     service_id: string;
     service_name: string;
@@ -150,33 +156,25 @@ interface PosOrder {
     category?: string;
     purpose?: string | null;
   }>;
-  total: number;
   subtotal: number;
   tax: number;
   discount: number;
-  discount_percentage?: number;
-  payment_method: PaymentMethod | 'split';
-  status: 'completed' | 'pending' | 'cancelled';
-  appointment_time?: string;
-  appointment_id?: string;
+  discount_percentage: number;
   is_walk_in: boolean;
   payments: PaymentDetail[];
   pending_amount: number;
   is_split_payment: boolean;
-  is_salon_purchase?: boolean;
-  customer_name?: string;
-  order_date?: string;
-  total_amount?: number;
-  staff_id?: string | null;
-  invoice_number?: string;
-  is_salon_consumption?: boolean;
-  consumption_purpose?: string | null;
-  purchase_type?: string;
-  order_type?: string;
-  category?: string;
-  salon_use?: boolean;
-  stock_snapshot?: string;  // Store stock quantities before order as JSON string
-  current_stock?: string;   // Same data but with different field name as JSON string
+  appointment_id: string | null;
+  is_salon_purchase: boolean;
+  stylist_name: string;
+  order_id: string;
+  customer_name: string;
+  date: string;
+  total_amount: number;
+  appointment_time: string | null;
+  requisition_voucher_no: string | null;
+  stock_snapshot: string;
+  current_stock: string;
 }
 
 export const GST_RATE = 0.18 // 18% GST for salon services in India
@@ -232,25 +230,25 @@ async function updateProductStockQuantities(updates: ProductStockUpdate[]) {
       return { success: false, message: 'No valid product IDs' };
     }
     
-    const results = await Promise.all(
-      validUpdates.map(async (update: ProductStockUpdate) => {
-        const { data, error } = await supabase.rpc('decrement_product_stock', {
-          product_id: update.productId,
-          decrement_quantity: update.quantity
-        });
-        
-        return { 
-          productId: update.productId, 
-          success: !error, 
-          result: data, 
-          error 
-        };
-      })
-    );
+    // Convert updates to the format expected by the compatibility function
+    const productUpdates = validUpdates.map(update => ({
+      product_id: update.productId, // This will be cast to UUID in the function
+      quantity: update.quantity
+    }));
+    
+    // Call the compatibility RPC endpoint with a single jsonb object
+    const { data, error } = await supabase.rpc('decrement_product_stock_compat', {
+      product_updates: productUpdates
+    });
+    
+    if (error) {
+      console.error('Error updating product stock quantities:', error);
+      return { success: false, error };
+    }
     
     return {
-      success: results.every(r => r.success),
-      results
+      success: true,
+      results: data
     };
   } catch (error) {
     console.error('Error updating product stock quantities:', error);
@@ -487,8 +485,8 @@ export async function createWalkInOrder(
       ...products.map(product => ({
         service_id: product.id,
         service_name: product.name,
-        product_id: product.id, // Add product_id for reference
-        product_name: product.name, // Add product_name for display
+        product_id: product.id,
+        product_name: product.name,
         price: product.price,
         quantity: product.quantity,
         type: 'product' as const,
@@ -512,116 +510,42 @@ export async function createWalkInOrder(
     ].reduce((sum, price) => sum + price, 0);
     
     // Calculate tax (simple calculation - can be enhanced)
-    const tax = Math.round(subtotal * 0.18); // 18% GST
+    const tax = Math.round(subtotal * 0.18);
     
-    // Prepare order data without invoice_number field
-    const orderData: any = {
-      order_id: uuidv4(),
-      client_id: '',
+    // Prepare order data
+    const orderData = {
+      id: uuidv4(),
       client_name: customerName,
+      customer_name: customerName, // Ensure both fields are set
       stylist_id: staffInfo?.id || '',
       stylist_name: staffInfo?.name,
-      items: [],
       services: orderServices,
-      payment_method: paymentMethod,
+      total: subtotal + tax,
+      total_amount: subtotal + tax, // Ensure both fields are set
       subtotal: subtotal,
       tax: tax,
-      total: subtotal + tax,
-      total_amount: subtotal + tax,
+      discount: 0,
+      payment_method: paymentMethod,
       status: 'completed',
-      order_date: orderDate || new Date().toISOString(),
       is_walk_in: true,
-      is_salon_consumption: isSalonConsumption,
-      consumption_purpose: consumptionPurpose,
-      pending_amount: 0,
       payments: [{
         id: uuidv4(),
         amount: subtotal + tax,
         payment_method: paymentMethod,
         payment_date: orderDate || new Date().toISOString()
-      }]
-    };
-    
-    // Prepare order data without invoice_number if not supported
-    const orderInsertData: any = {
-      id: orderData.order_id,
-      client_name: orderData.client_name,
-      customer_name: orderData.client_name, // Ensure both fields are set
-      stylist_id: orderData.stylist_id,
-      stylist_name: orderData.stylist_name,
-      services: orderServices, // Use the fully populated services array
-      total: orderData.total,
-      total_amount: orderData.total, // Ensure both fields are set
-      subtotal: orderData.subtotal,
-      tax: orderData.tax,
-      discount: 0,
-      payment_method: orderData.payment_method,
-      status: orderData.status,
-      is_walk_in: orderData.is_walk_in,
-      payments: orderData.payments,
-      pending_amount: orderData.pending_amount,
+      }],
+      pending_amount: 0,
       is_split_payment: false,
       created_at: orderDate || new Date().toISOString(),
-      is_salon_consumption: orderData.is_salon_consumption,
-      consumption_purpose: orderData.consumption_purpose,
+      is_salon_consumption: isSalonConsumption,
+      consumption_purpose: consumptionPurpose,
       type: isSalonConsumption ? 'salon_consumption' : 'sale'
     };
-
-    // Add invoice_number if provided
-    if (invoiceNumber) {
-      orderInsertData.invoice_number = invoiceNumber;
-    }
-
-    // Handle product stock updates
-    if (products.length > 0) {
-      try {
-        // Create a stock snapshot before updating inventory
-        const stockSnapshot: Record<string, number> = {};
-        let currentStock = 0; // Store the first product's quantity as integer
-        
-        // Get current stock quantities before updating
-        for (const product of products) {
-          try {
-            const { data: productData } = await supabase
-              .from('products')
-              .select('stock_quantity')
-              .eq('id', product.id)
-      .single();
-      
-            if (productData && productData.stock_quantity !== undefined) {
-              stockSnapshot[product.id] = productData.stock_quantity;
-              
-              // Just store the first product's stock for current_stock
-              if (currentStock === 0) {
-                currentStock = productData.stock_quantity;
-              }
-            }
-          } catch (err) {
-            console.warn(`Failed to get stock for product ${product.id}:`, err);
-          }
-        }
-        
-        // Add stock snapshot to order insert data - JSON string
-        orderInsertData.stock_snapshot = JSON.stringify(stockSnapshot);
-        // Add current_stock as direct integer value
-        orderInsertData.current_stock = String(currentStock);
-        
-        const stockUpdates = products.map(product => ({
-          productId: product.id,
-          quantity: product.quantity
-        }));
-        
-        await updateProductStockQuantities(stockUpdates);
-      } catch (stockError) {
-        console.warn('Warning: Failed to update some product stock quantities:', stockError);
-        // Continue anyway since the order was created
-      }
-    }
-
+    
     // Submit to Supabase
     const { data: orderResult, error } = await supabase
       .from('pos_orders')
-      .insert(orderInsertData)
+      .insert(orderData)
       .select()
       .single();
       
@@ -637,7 +561,6 @@ export async function createWalkInOrder(
     // Update client financial records if it's not a salon consumption
     if (!isSalonConsumption && customerName && orderResult) {
       try {
-        // Import the necessary function or directly perform the client update
         await updateClientFinancials(
           customerName,
           orderResult.total || (subtotal + tax),
