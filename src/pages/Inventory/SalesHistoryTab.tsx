@@ -185,7 +185,7 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
 
       return {
         ...item,
-        serial_no: index + 1, // Assign proper sequential serial number
+        serial_no: sortedData.length - index, // Assign serial number in reverse order
         current_stock_taxable_value: totalCurrentStockTaxable,
         current_stock_cgst: totalCurrentStockCgst,
         current_stock_sgst: totalCurrentStockSgst,

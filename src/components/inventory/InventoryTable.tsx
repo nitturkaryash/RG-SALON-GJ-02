@@ -199,7 +199,7 @@ const InventoryTable: React.FC<InventoryTableProps> = ({
                       }
                       // Dynamically compute serial number for other tables
                       if (column.id === 'serial_no') {
-                        const serial = page * rowsPerPage + rowIndex + 1;
+                        const serial = data.length - (page * rowsPerPage + rowIndex);
                         return (
                           <TableCell key={`serial-${rowIndex}`} align={column.align}>
                             {serial}
