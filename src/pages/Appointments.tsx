@@ -292,7 +292,7 @@ const CustomAutocompleteListbox = React.forwardRef<HTMLUListElement, CustomListb
 CustomAutocompleteListbox.displayName = 'CustomAutocompleteListbox';
 
 // Add this helper function before the Appointments component declaration
-export const getClientName = (appointment: any): string => {
+export const getClientName = (appointment: any, allClients?: any[]): string => {
   // First try clientDetails array
   if (appointment.clientDetails && 
       appointment.clientDetails.length > 0 && 
@@ -309,7 +309,15 @@ export const getClientName = (appointment: any): string => {
     return appointment.client_name;
   }
   
-  // Then try looking up from client_id
+  // Then try looking up from client_id in the clients array
+  if (appointment.client_id && allClients && allClients.length > 0) {
+    const matchingClient = allClients.find(c => c.id === appointment.client_id);
+    if (matchingClient?.full_name) {
+      return matchingClient.full_name;
+    }
+  }
+  
+  // Then try looking up from client object
   if (appointment.client && appointment.client.full_name) {
     return appointment.client.full_name;
   }
@@ -1822,14 +1830,19 @@ export default function Appointments() {
               }
               lastBookedAppointmentTime={lastBookedAppointmentTime}
               holidays={holidays}
+              clients={clients}
             />
           ) : (
             <FutureAppointmentsList
               appointments={allAppointments || []}
               stylists={stylists || []}
               services={services || []}
+              clients={clients || []}
               onDeleteAppointment={deleteAppointment}
               onEditAppointment={handleAppointmentClick}
+              onUpdateAppointment={async (appointmentId: string, updates: any) => {
+                await updateAppointment({ id: appointmentId, ...updates });
+              }}
             />
           )}
         </Box>
@@ -2060,7 +2073,7 @@ export default function Appointments() {
                   updateEntry(clientEntries[0].id, { client: updatedClient });
                 }}
                 required
-                error={!clientEntries[0]?.client?.phone || (clientEntries[0]?.client?.phone && !isValidPhoneNumber(clientEntries[0]?.client?.phone))}
+                error={!clientEntries[0]?.client?.phone || !!(clientEntries[0]?.client?.phone && !isValidPhoneNumber(clientEntries[0]?.client?.phone))}
                 helperText={
                   !clientEntries[0]?.client?.phone 
                     ? "Phone required for new client" 
@@ -2096,7 +2109,7 @@ export default function Appointments() {
                   };
                   updateEntry(clientEntries[0].id, { client: updatedClient });
                 }}
-                error={clientEntries[0]?.client?.email && !isValidEmail(clientEntries[0]?.client?.email)}
+                error={!!(clientEntries[0]?.client?.email && !isValidEmail(clientEntries[0]?.client?.email))}
                 helperText={
                   (clientEntries[0]?.client?.email && !isValidEmail(clientEntries[0]?.client?.email))
                     ? "Please enter a valid email address"
@@ -2159,7 +2172,7 @@ export default function Appointments() {
                       value={clientEntries[0].bookerPhone || ''}
                       onChange={(e) => updateEntry(clientEntries[0].id, { bookerPhone: e.target.value })}
                       required
-                      error={!clientEntries[0].bookerPhone || (clientEntries[0].bookerPhone && !isValidPhoneNumber(clientEntries[0].bookerPhone))}
+                      error={!clientEntries[0].bookerPhone || !!(clientEntries[0].bookerPhone && !isValidPhoneNumber(clientEntries[0].bookerPhone))}
                       helperText={
                         !clientEntries[0].bookerPhone 
                           ? "Booker's phone is required" 
@@ -2184,7 +2197,7 @@ export default function Appointments() {
                       type="email"
                       value={clientEntries[0].bookerEmail || ''}
                       onChange={(e) => updateEntry(clientEntries[0].id, { bookerEmail: e.target.value })}
-                      error={clientEntries[0].bookerEmail && !isValidEmail(clientEntries[0].bookerEmail)}
+                      error={!!(clientEntries[0].bookerEmail && !isValidEmail(clientEntries[0].bookerEmail))}
                       helperText={
                         (clientEntries[0].bookerEmail && !isValidEmail(clientEntries[0].bookerEmail))
                           ? "Please enter a valid email address"

@@ -95,7 +95,8 @@ const BalanceStockTab: React.FC<BalanceStockTabProps> = ({ balanceStock, isLoadi
     
     // Process purchases
     purchases.forEach(purchase => {
-      const productName = purchase.product_name || 'Unknown Product';
+      const rawName = purchase.product_name || 'Unknown Product';
+      const productName = rawName.trim();
       if (!productMap.has(productName)) {
         productMap.set(productName, {
           id: purchase.id || `purchase-${Date.now()}-${Math.random()}`,
@@ -123,9 +124,27 @@ const BalanceStockTab: React.FC<BalanceStockTabProps> = ({ balanceStock, isLoadi
       record.invoice_value += purchase.purchase_invoice_value_rs || purchase.invoice_value || 0;
     });
     
-    // Process sales
+    // Process sales with deduplication logic
+    // First, deduplicate sales by order_id and product_name to prevent duplicate counting
+    const uniqueSales = new Map<string, typeof sales[0]>();
     sales.forEach(sale => {
-      const productName = sale.product_name || 'Unknown Product';
+      const rawName = sale.product_name || 'Unknown Product';
+      const productName = rawName.trim();
+      const orderId = sale.order_id || sale.invoice_no || sale.id;
+      const dedupeKey = `${orderId}-${productName}`;
+      
+      // Only keep the first occurrence of each order_id + product_name combination
+      if (!uniqueSales.has(dedupeKey)) {
+        uniqueSales.set(dedupeKey, sale);
+      } else {
+        console.warn(`Duplicate sale detected for order ${orderId}, product ${productName}. Skipping duplicate.`);
+      }
+    });
+    
+    // Process the deduplicated sales
+    Array.from(uniqueSales.values()).forEach(sale => {
+      const rawName = sale.product_name || 'Unknown Product';
+      const productName = rawName.trim();
       if (!productMap.has(productName)) {
         productMap.set(productName, {
           id: sale.id || `sale-${Date.now()}-${Math.random()}`,
@@ -154,9 +173,27 @@ const BalanceStockTab: React.FC<BalanceStockTabProps> = ({ balanceStock, isLoadi
       record.invoice_value -= sale.invoice_value || 0;
     });
     
-    // Process consumption
+    // Process consumption with deduplication logic
+    // First, deduplicate consumption by order_id and product_name
+    const uniqueConsumption = new Map<string, typeof consumption[0]>();
     consumption.forEach(cons => {
-      const productName = cons.product_name || 'Unknown Product';
+      const rawName = cons.product_name || 'Unknown Product';
+      const productName = rawName.trim();
+      const orderId = cons.order_id || cons.requisition_voucher_no || cons.id;
+      const dedupeKey = `${orderId}-${productName}`;
+      
+      // Only keep the first occurrence of each order_id + product_name combination
+      if (!uniqueConsumption.has(dedupeKey)) {
+        uniqueConsumption.set(dedupeKey, cons);
+      } else {
+        console.warn(`Duplicate consumption detected for order ${orderId}, product ${productName}. Skipping duplicate.`);
+      }
+    });
+    
+    // Process the deduplicated consumption
+    Array.from(uniqueConsumption.values()).forEach(cons => {
+      const rawName = cons.product_name || 'Unknown Product';
+      const productName = rawName.trim();
       if (!productMap.has(productName)) {
         productMap.set(productName, {
           id: cons.id || `consumption-${Date.now()}-${Math.random()}`,
@@ -200,6 +237,8 @@ const BalanceStockTab: React.FC<BalanceStockTabProps> = ({ balanceStock, isLoadi
     // Convert map to array and sort by product name
     const summaryArray = Array.from(productMap.values())
       .sort((a, b) => a.product_name.localeCompare(b.product_name));
+    
+    console.log(`Balance stock calculated: ${summaryArray.length} unique products, ${uniqueSales.size} unique sales, ${uniqueConsumption.size} unique consumption records`);
     
     setStockSummary(summaryArray);
   }, [purchasesQuery.data, salesQuery.data, consumptionQuery.data]);

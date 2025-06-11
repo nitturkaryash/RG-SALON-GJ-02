@@ -22,19 +22,32 @@ import {
   Divider,
   Paper
 } from '@mui/material';
-import { Delete as DeleteIcon, Edit as EditIcon, Phone as PhoneIcon } from '@mui/icons-material';
+import { Delete as DeleteIcon, Edit as EditIcon, Phone as PhoneIcon, CalendarMonth as CalendarIcon } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { format, addDays, isAfter, isBefore, startOfDay, endOfDay, isSameDay } from 'date-fns';
 import { formatCurrency } from '../utils/format';
+import { DatePicker } from '@mui/x-date-pickers/DatePicker';
+import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
+import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 
 interface AppointmentCardProps {
   appointment: any;
   onDeleteClick: (id: string) => void;
   onEditClick: (appointment: any) => void;
+  onUpdateAppointment?: (appointment: any) => void;
+  clients?: any[];
 }
 
-const AppointmentCard = ({ appointment, onDeleteClick, onEditClick }: AppointmentCardProps) => {
+const AppointmentCard = ({ 
+  appointment, 
+  onDeleteClick, 
+  onEditClick, 
+  onUpdateAppointment,
+  clients = [] 
+}: AppointmentCardProps) => {
   const navigate = useNavigate();
+  const [datePickerOpen, setDatePickerOpen] = useState(false);
+  const [selectedDate, setSelectedDate] = useState<Date | null>(new Date(appointment.start_time));
 
   const handlePosClick = () => {
     // Get all services for this appointment from clientDetails
@@ -105,22 +118,109 @@ const AppointmentCard = ({ appointment, onDeleteClick, onEditClick }: Appointmen
       return appointment.clientName;
     }
     
+    // Then try client_name property
+    if (appointment.client_name) {
+      return appointment.client_name;
+    }
+    
+    // Then try looking up from client_id in the clients array
+    if (appointment.client_id && clients.length > 0) {
+      const matchingClient = clients.find(c => c.id === appointment.client_id);
+      if (matchingClient?.full_name) {
+        return matchingClient.full_name;
+      }
+    }
+    
+    // Then try to fetch from the client object
+    if (appointment.client && appointment.client.full_name) {
+      return appointment.client.full_name;
+    }
+    
     // Then try booker_name for appointments booked for someone else
     if (appointment.is_for_someone_else && appointment.booker_name) {
       return `${appointment.booker_name} (Booker)`;
-    }
-    
-    // Finally, try to fetch from the client object
-    if (appointment.client && appointment.client.full_name) {
-      return appointment.client.full_name;
     }
     
     // If all else fails, show "Unknown Client"
     return 'Unknown Client';
   };
 
+  // Helper function to get client phone with multiple fallbacks
+  const getClientPhone = (appointment: any): string => {
+    // First try clientDetails array
+    if (appointment.clientDetails && 
+        appointment.clientDetails.length > 0 && 
+        appointment.clientDetails[0]?.phone) {
+      return appointment.clientDetails[0].phone;
+    }
+    
+    // Then try direct phone property
+    if (appointment.phone) {
+      return appointment.phone;
+    }
+    
+    // Then try looking up from client_id in the clients array
+    if (appointment.client_id && clients.length > 0) {
+      const matchingClient = clients.find(c => c.id === appointment.client_id);
+      if (matchingClient?.phone) {
+        return matchingClient.phone;
+      }
+    }
+    
+    // Then try client object
+    if (appointment.client && appointment.client.phone) {
+      return appointment.client.phone;
+    }
+    
+    // Then try booker phone for appointments booked for someone else
+    if (appointment.is_for_someone_else && appointment.booker_phone) {
+      return appointment.booker_phone;
+    }
+    
+    // If all else fails
+    return 'No phone';
+  };
+
   // Format date to display like "25-May-2025, 03:00 PM"
   const formattedDateTime = format(new Date(appointment.start_time), 'dd-MMM-yyyy, hh:mm a');
+
+  const handleDateChange = (newDate: Date | null) => {
+    if (!newDate) return;
+    setSelectedDate(newDate);
+    // Don't automatically update - wait for user to click Update button
+  };
+
+  const handleDateUpdate = () => {
+    if (!selectedDate) return;
+    
+    // Create a copy of the appointment with the new date
+    const currentDate = new Date(appointment.start_time);
+    const currentEnd = new Date(appointment.end_time);
+    const duration = currentEnd.getTime() - currentDate.getTime();
+    
+    const newStart = new Date(selectedDate);
+    newStart.setHours(currentDate.getHours(), currentDate.getMinutes());
+    
+    const newEnd = new Date(newStart.getTime() + duration);
+    
+    const updatedAppointment = {
+      ...appointment,
+      start_time: newStart.toISOString(),
+      end_time: newEnd.toISOString()
+    };
+    
+    // Use separate update function instead of onEditClick
+    if (onUpdateAppointment) {
+      onUpdateAppointment(updatedAppointment);
+    }
+    setDatePickerOpen(false);
+  };
+
+  const handleDateCancel = () => {
+    // Reset to original date
+    setSelectedDate(new Date(appointment.start_time));
+    setDatePickerOpen(false);
+  };
 
   return (
     <Card
@@ -140,28 +240,47 @@ const AppointmentCard = ({ appointment, onDeleteClick, onEditClick }: Appointmen
         flexDirection: 'column',
       }}
     >
-      <IconButton
-        size="small"
-        color="error"
-        onClick={() => onDeleteClick(appointment.id)}
-        sx={{
-          position: 'absolute',
-          top: 10,
-          right: 10,
-          zIndex: 2
-        }}
+      <Box 
+        sx={{ position: 'absolute', top: 10, right: 10, zIndex: 2, display: 'flex', gap: 1 }}
       >
-        <DeleteIcon fontSize="small" />
-      </IconButton>
+        <IconButton
+          size="small"
+          color="primary"
+          onClick={() => setDatePickerOpen(true)}
+        >
+          <CalendarIcon fontSize="small" />
+        </IconButton>
+        <IconButton
+          size="small"
+          color="error"
+          onClick={() => onDeleteClick(appointment.id)}
+        >
+          <DeleteIcon fontSize="small" />
+        </IconButton>
+      </Box>
 
-      <CardContent sx={{ pt: 2, pb: 2, px: 2, display: 'flex', flexDirection: 'column', height: '100%' }}>
+      <CardContent 
+        sx={{ 
+          pt: 2, 
+          pb: 2, 
+          px: 2, 
+          display: 'flex', 
+          flexDirection: 'column', 
+          height: '100%',
+          cursor: 'pointer',
+          '&:hover': {
+            backgroundColor: 'rgba(0, 0, 0, 0.04)'
+          }
+        }}
+        onClick={() => onEditClick(appointment)}
+      >
         <Box sx={{ mb: 1 }}>
           <Typography variant="h6" component="div" sx={{ fontWeight: 'medium', mb: 0.5 }}>
             {getClientName(appointment)}
           </Typography>
           <Typography variant="body2" sx={{ display: 'flex', alignItems: 'center', gap: 0.5, color: 'text.secondary' }}>
             <PhoneIcon fontSize="small" />
-            {appointment.clientDetails?.[0]?.phone || appointment.phone || appointment.booker_phone || 'No phone'}
+            {getClientPhone(appointment)}
           </Typography>
         </Box>
 
@@ -191,7 +310,10 @@ const AppointmentCard = ({ appointment, onDeleteClick, onEditClick }: Appointmen
               variant="contained"
               size="small"
               color="primary"
-              onClick={handlePosClick}
+              onClick={(e) => {
+                e.stopPropagation();
+                handlePosClick();
+              }}
               sx={{ fontSize: '0.8rem', py: 0.5, minWidth: 60 }}
             >
               POS
@@ -199,6 +321,38 @@ const AppointmentCard = ({ appointment, onDeleteClick, onEditClick }: Appointmen
           )}
         </Box>
       </CardContent>
+
+      <LocalizationProvider dateAdapter={AdapterDateFns}>
+        <Dialog
+          open={datePickerOpen}
+          onClose={handleDateCancel}
+          sx={{ zIndex: (theme) => theme.zIndex.modal }}
+          maxWidth="sm"
+          fullWidth
+        >
+          <DialogTitle>Change Appointment Date</DialogTitle>
+          <DialogContent>
+            <DatePicker
+              value={selectedDate}
+              onChange={handleDateChange}
+              sx={{ width: '100%', mt: 2 }}
+            />
+          </DialogContent>
+          <DialogActions sx={{ p: 2, gap: 1 }}>
+            <Button onClick={handleDateCancel} variant="outlined">
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleDateUpdate} 
+              variant="contained" 
+              color="primary"
+              disabled={!selectedDate}
+            >
+              Update Date
+            </Button>
+          </DialogActions>
+        </Dialog>
+      </LocalizationProvider>
     </Card>
   );
 };
@@ -207,16 +361,20 @@ interface FutureAppointmentsListProps {
   appointments: any[];
   onDeleteAppointment?: ((id: string) => Promise<void>) | ((id: string) => void);
   onEditAppointment?: (appointment: any) => void;
+  onUpdateAppointment?: (appointmentId: string, updates: any) => Promise<void>;
   stylists?: any[];
   services?: any[];
+  clients?: any[];
 }
 
 const FutureAppointmentsList: React.FC<FutureAppointmentsListProps> = ({
   appointments,
   onDeleteAppointment,
   onEditAppointment,
+  onUpdateAppointment,
   stylists = [],
-  services = []
+  services = [],
+  clients = []
 }) => {
   const [tabValue, setTabValue] = useState(0);
   const [filteredAppointments, setFilteredAppointments] = useState<any[]>([]);
@@ -317,6 +475,33 @@ const FutureAppointmentsList: React.FC<FutureAppointmentsListProps> = ({
     }
   };
 
+  const handleUpdateAppointment = async (updatedAppointment: any) => {
+    // Update backend first
+    if (onUpdateAppointment) {
+      try {
+        await onUpdateAppointment(updatedAppointment.id, {
+          start_time: updatedAppointment.start_time,
+          end_time: updatedAppointment.end_time
+        });
+      } catch (error) {
+        console.error('Failed to update appointment in backend:', error);
+        alert('Failed to update appointment. Please try again.');
+        return;
+      }
+    }
+
+    // Then update local state
+    const index = filteredAppointments.findIndex(app => app.id === updatedAppointment.id);
+    if (index !== -1) {
+      const newAppointments = [...filteredAppointments];
+      newAppointments[index] = {
+        ...newAppointments[index],
+        ...updatedAppointment
+      };
+      setFilteredAppointments(newAppointments);
+    }
+  };
+
   return (
     <Paper 
       elevation={0} 
@@ -377,6 +562,8 @@ const FutureAppointmentsList: React.FC<FutureAppointmentsListProps> = ({
                   appointment={appointment}
                   onDeleteClick={handleDeleteClick}
                   onEditClick={() => handleEditClick(appointment)}
+                  onUpdateAppointment={handleUpdateAppointment}
+                  clients={clients}
                 />
               </Grid>
             ))}
@@ -391,6 +578,8 @@ const FutureAppointmentsList: React.FC<FutureAppointmentsListProps> = ({
                   appointment={appointment}
                   onDeleteClick={handleDeleteClick}
                   onEditClick={() => handleEditClick(appointment)}
+                  onUpdateAppointment={handleUpdateAppointment}
+                  clients={clients}
                 />
               </Grid>
             ))}
@@ -405,6 +594,8 @@ const FutureAppointmentsList: React.FC<FutureAppointmentsListProps> = ({
                   appointment={appointment}
                   onDeleteClick={handleDeleteClick}
                   onEditClick={() => handleEditClick(appointment)}
+                  onUpdateAppointment={handleUpdateAppointment}
+                  clients={clients}
                 />
               </Grid>
             ))}
@@ -419,6 +610,8 @@ const FutureAppointmentsList: React.FC<FutureAppointmentsListProps> = ({
                   appointment={appointment}
                   onDeleteClick={handleDeleteClick}
                   onEditClick={() => handleEditClick(appointment)}
+                  onUpdateAppointment={handleUpdateAppointment}
+                  clients={clients}
                 />
               </Grid>
             ))}
