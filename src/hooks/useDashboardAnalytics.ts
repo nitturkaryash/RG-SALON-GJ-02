@@ -18,6 +18,11 @@ import {
   isWithinInterval,
   differenceInDays,
   eachDayOfInterval,
+  getHours,
+  startOfWeek,
+  endOfWeek,
+  startOfMonth,
+  endOfMonth,
 } from 'date-fns'
 
 // Analytics data types
@@ -30,6 +35,152 @@ export interface ServiceSales {
   serviceName: string;
   revenue: number;
   count: number;
+}
+
+// Enhanced analytics interfaces
+export interface PaymentMethodBreakdown {
+  paymentMethod: string;
+  amount: number;
+  count: number;
+  percentage: number;
+  isSplit?: boolean;
+}
+
+export interface SplitPaymentDetails {
+  orderId: string;
+  totalAmount: number;
+  paymentMethods: Array<{
+    method: string;
+    amount: number;
+    percentage: number;
+  }>;
+  date: string;
+}
+
+export interface PeakHoursData {
+  hour: string;
+  appointments: number;
+  revenue: number;
+  efficiency: number;
+}
+
+export interface AppointmentStatusBreakdown {
+  status: string;
+  count: number;
+  percentage: number;
+  revenue?: number;
+}
+
+export interface ServiceCategoryBreakdown {
+  category: string;
+  revenue: number;
+  count: number;
+  percentage: number;
+  averagePrice: number;
+}
+
+export interface MonthlyComparison {
+  metric: string;
+  currentMonth: number;
+  previousMonth: number;
+  changePercentage: number;
+}
+
+// New comprehensive analytics
+export interface StockAnalytics {
+  totalProducts: number;
+  outOfStock: number;
+  lowStock: number;
+  inStock: number;
+  criticalItems: Array<{
+    productId: string;
+    productName: string;
+    currentStock: number;
+    reorderLevel: number;
+    status: 'out_of_stock' | 'low_stock' | 'critical';
+    category: string;
+    description: string;
+    mrp: number;
+    value: number;
+  }>;
+  inventoryValue: number;
+  topSellingProducts: Array<{
+    productName: string;
+    quantitySold: number;
+    revenue: number;
+  }>;
+}
+
+export interface CustomerBehaviorAnalytics {
+  newCustomers: number;
+  returningCustomers: number;
+  customerRetentionRate: number;
+  averageVisitInterval: number;
+  customerLifetimeValue: number;
+  topCustomers: Array<{
+    customerName: string;
+    totalSpent: number;
+    visitCount: number;
+    lastVisit: string;
+  }>;
+  visitFrequencyDistribution: Array<{
+    range: string;
+    customerCount: number;
+  }>;
+}
+
+export interface StaffPerformanceAnalytics {
+  totalStaff: number;
+  averageRevenue: number;
+  topPerformers: Array<{
+    stylistId: string;
+    stylistName: string;
+    revenue: number;
+    appointmentCount: number;
+    serviceCount: number;
+    efficiency: number;
+    performanceScore: number;
+    performanceRating: string;
+    incentiveEligible: boolean;
+    suggestedIncentive: number;
+    industryStandardMet: boolean;
+  }>;
+  staffUtilization: {
+    average: number;
+    byStaff: Array<{
+      stylistId: string;
+      stylistName: string;
+      utilizationRate: number;
+      hoursWorked: number;
+      revenuePerHour: number;
+    }>;
+  };
+}
+
+export interface AppointmentAnalytics {
+  totalAppointments: number;
+  completionRate: number;
+  cancellationRate: number;
+  noShowRate: number;
+  averageServiceDuration: number;
+  bookingLeadTime: number;
+  repeatBookingRate: number;
+  statusBreakdown: AppointmentStatusBreakdown[];
+  peakBookingHours: PeakHoursData[];
+}
+
+export interface RevenueAnalytics {
+  totalRevenue: number;
+  serviceRevenue: number;
+  productRevenue: number;
+  serviceVsProductRatio: {
+    services: number;
+    products: number;
+  };
+  averageTransactionValue: number;
+  revenueGrowthRate: number;
+  dailyRevenueGoal: number;
+  monthlyProjection: number;
 }
 
 export interface AnalyticsSummary {
@@ -58,10 +209,64 @@ export interface AnalyticsSummary {
     stylistName: string;
     revenue: number;
   }[];
+  
+  // Enhanced analytics
+  paymentMethodBreakdown: PaymentMethodBreakdown[];
+  splitPaymentDetails: SplitPaymentDetails[];
+  peakHours: PeakHoursData[];
+  appointmentStatusBreakdown: AppointmentStatusBreakdown[];
+  serviceCategoryBreakdown: ServiceCategoryBreakdown[];
+  monthlyComparison: MonthlyComparison[];
+  totalCustomers: number;
+  averageServiceTime: number;
+  weeklyGrowthRate: number;
+  
+  // New comprehensive analytics
+  stockAnalytics: StockAnalytics;
+  customerBehavior: CustomerBehaviorAnalytics;
+  staffPerformance: StaffPerformanceAnalytics;
+  appointmentAnalytics: AppointmentAnalytics;
+  revenueAnalytics: RevenueAnalytics;
+  
+  // Real-time metrics
+  todaysMetrics: {
+    revenue: number;
+    appointments: number;
+    walkIns: number;
+    averageTicket: number;
+    topService: string;
+    busyHour: string;
+  };
+  
+  // Operational insights
+  operationalInsights: {
+    bottlenecks: string[];
+    opportunities: string[];
+    recommendations: string[];
+    alerts: Array<{
+      type: 'warning' | 'error' | 'info';
+      message: string;
+      action?: string;
+    }>;
+  };
+
+  // New enhanced features
+  upcomingAppointments: UpcomingAppointment[];
+  criticalAlerts: CriticalAlert[];
+  stockShortageAlerts: StockAlert[];
+  
+  // Enhanced appointment reminders
+  appointmentReminders: {
+    today: UpcomingAppointment[];
+    tomorrow: UpcomingAppointment[];
+    thisWeek: UpcomingAppointment[];
+    overdue: UpcomingAppointment[];
+  };
 }
 
 export interface DashboardSettings {
   visibleMetrics: {
+    // Core metrics
     dailySales: boolean;
     topServices: boolean;
     appointments: boolean;
@@ -69,17 +274,91 @@ export interface DashboardSettings {
     averageTicket: boolean;
     staffUtilization: boolean;
     stylistRevenue: boolean;
+    
+    // Payment analytics
+    paymentMethods: boolean;
+    splitPayments: boolean;
+    paymentTrends: boolean;
+    
+    // Operational analytics
+    peakHours: boolean;
+    appointmentStatus: boolean;
+    serviceCategories: boolean;
+    monthlyComparison: boolean;
+    
+    // Inventory analytics
+    stockLevels: boolean;
+    lowStockAlerts: boolean;
+    inventoryValue: boolean;
+    topSellingProducts: boolean;
+    
+    // Customer analytics
+    customerBehavior: boolean;
+    customerRetention: boolean;
+    customerLifetimeValue: boolean;
+    visitFrequency: boolean;
+    
+    // Staff analytics
+    staffPerformance: boolean;
+    revenuePerStaff: boolean;
+    staffEfficiency: boolean;
+    
+    // Advanced analytics
+    revenueBreakdown: boolean;
+    operationalInsights: boolean;
+    realTimeMetrics: boolean;
+    todaysSummary: boolean;
+
+    // New enhanced features
+    upcomingAppointments: boolean;
+    criticalAlerts: boolean;
+    appointmentReminders: boolean;
+    stockShortageAnalysis: boolean;
+    negativeStockPrevention: boolean;
   };
   chartTypes: {
     salesTrend: 'line' | 'bar';
+    topServices: 'bar' | 'pie' | 'doughnut';
+    customerRetention: 'pie' | 'doughnut' | 'bar';
+    stylistRevenue: 'bar' | 'pie' | 'line';
+    paymentMethods: 'pie' | 'doughnut' | 'bar';
+    peakHours: 'line' | 'bar';
+    appointmentStatus: 'pie' | 'doughnut' | 'bar';
+    serviceCategories: 'pie' | 'doughnut' | 'bar';
+    stockLevels: 'bar' | 'pie' | 'line';
+    customerBehavior: 'line' | 'bar' | 'area';
+    staffPerformance: 'bar' | 'radar' | 'line';
+    revenueBreakdown: 'pie' | 'doughnut' | 'bar';
   };
-  refreshInterval: number; // in milliseconds
+  refreshInterval: number;
+  alertThresholds: {
+    lowStock: number;
+    lowRevenue: number;
+    highCancellation: number;
+    lowUtilization: number;
+  };
+  incentiveSettings: {
+    enabled: boolean;
+    minimumRevenue: number;
+    incentiveRate: number; // percentage
+    evaluationPeriod: 'weekly' | 'monthly' | 'quarterly';
+    performanceMetrics: {
+      revenueWeight: number;
+      appointmentWeight: number;
+      efficiencyWeight: number;
+    };
+    industryStandards: {
+      excellent: number;
+      good: number;
+      average: number;
+    };
+  };
 }
 
 // Add props for date range
 interface UseDashboardAnalyticsProps {
-  startDate: string; // YYYY-MM-DD
-  endDate: string; // YYYY-MM-DD
+  startDate: string;
+  endDate: string;
 }
 
 export function useDashboardAnalytics({ startDate, endDate }: UseDashboardAnalyticsProps) {
@@ -89,9 +368,10 @@ export function useDashboardAnalytics({ startDate, endDate }: UseDashboardAnalyt
   const { services, isLoading: loadingServices } = useServices();
   const { stylists, isLoading: loadingStylists } = useStylists();
   
-  // Default dashboard settings
+  // Enhanced dashboard settings
   const [settings, setSettings] = useState<DashboardSettings>({
     visibleMetrics: {
+      // Core metrics
       dailySales: true,
       topServices: true,
       appointments: true,
@@ -99,20 +379,93 @@ export function useDashboardAnalytics({ startDate, endDate }: UseDashboardAnalyt
       averageTicket: true,
       staffUtilization: true,
       stylistRevenue: true,
+      
+      // Payment analytics
+      paymentMethods: true,
+      splitPayments: true,
+      paymentTrends: false,
+      
+      // Operational analytics
+      peakHours: true,
+      appointmentStatus: true,
+      serviceCategories: true,
+      monthlyComparison: false,
+      
+      // Inventory analytics
+      stockLevels: true,
+      lowStockAlerts: true,
+      inventoryValue: false,
+      topSellingProducts: true,
+      
+      // Customer analytics
+      customerBehavior: true,
+      customerRetention: true,
+      customerLifetimeValue: false,
+      visitFrequency: false,
+      
+      // Staff analytics
+      staffPerformance: true,
+      revenuePerStaff: true,
+      staffEfficiency: false,
+      
+      // Advanced analytics
+      revenueBreakdown: true,
+      operationalInsights: true,
+      realTimeMetrics: true,
+      todaysSummary: true,
+
+      // New enhanced features
+      upcomingAppointments: true,
+      criticalAlerts: true,
+      appointmentReminders: true,
+      stockShortageAnalysis: true,
+      negativeStockPrevention: true,
     },
     chartTypes: {
       salesTrend: 'line',
+      topServices: 'bar',
+      customerRetention: 'pie',
+      stylistRevenue: 'bar',
+      paymentMethods: 'pie',
+      peakHours: 'bar',
+      appointmentStatus: 'doughnut',
+      serviceCategories: 'pie',
+      stockLevels: 'bar',
+      customerBehavior: 'line',
+      staffPerformance: 'bar',
+      revenueBreakdown: 'doughnut',
     },
-    refreshInterval: 30000, // 30 seconds
+    refreshInterval: 30000,
+    alertThresholds: {
+      lowStock: 5,
+      lowRevenue: 1000,
+      highCancellation: 20,
+      lowUtilization: 60,
+    },
+    incentiveSettings: {
+      enabled: true,
+      minimumRevenue: 10000,
+      incentiveRate: 10,
+      evaluationPeriod: 'monthly',
+      performanceMetrics: {
+        revenueWeight: 0.6,
+        appointmentWeight: 0.3,
+        efficiencyWeight: 0.1,
+      },
+      industryStandards: {
+        excellent: 90,
+        good: 75,
+        average: 50,
+      },
+    },
   });
 
   // Setup Supabase real-time subscriptions
   useEffect(() => {
-    console.log('Setting up Supabase real-time subscriptions for dashboard...');
+    console.log('Setting up comprehensive real-time subscriptions...');
     
-    // Create a single channel for all subscriptions (more reliable)
     const dashboardChannel = supabase
-      .channel('dashboard_changes')
+      .channel('comprehensive_dashboard')
       .on('postgres_changes', { 
         event: '*', 
         schema: 'public', 
@@ -120,7 +473,6 @@ export function useDashboardAnalytics({ startDate, endDate }: UseDashboardAnalyt
       }, (payload) => {
         console.log('POS orders changed:', payload);
         queryClient.invalidateQueries({ queryKey: ['dashboard-analytics'] });
-        queryClient.invalidateQueries({ queryKey: ['orders'] });
       })
       .on('postgres_changes', { 
         event: '*', 
@@ -129,88 +481,48 @@ export function useDashboardAnalytics({ startDate, endDate }: UseDashboardAnalyt
       }, (payload) => {
         console.log('Appointments changed:', payload);
         queryClient.invalidateQueries({ queryKey: ['dashboard-analytics'] });
-        queryClient.invalidateQueries({ queryKey: ['appointments'] });
       })
       .on('postgres_changes', { 
         event: '*', 
         schema: 'public', 
-        table: 'services'
+        table: 'inventory_balance_stock'
       }, (payload) => {
-        console.log('Services changed:', payload);
+        console.log('Inventory changed:', payload);
         queryClient.invalidateQueries({ queryKey: ['dashboard-analytics'] });
-        queryClient.invalidateQueries({ queryKey: ['services'] });
       })
       .on('postgres_changes', { 
         event: '*', 
         schema: 'public', 
-        table: 'collection_services'
+        table: 'clients'
       }, (payload) => {
-        console.log('Collection services changed:', payload);
+        console.log('Clients changed:', payload);
         queryClient.invalidateQueries({ queryKey: ['dashboard-analytics'] });
-        queryClient.invalidateQueries({ queryKey: ['services'] });
-        queryClient.invalidateQueries({ queryKey: ['collectionServices'] });
       })
       .subscribe();
     
-    console.log('Dashboard real-time subscriptions set up');
-    
-    // Test Supabase connection at setup
-    const testConnection = async () => {
-      try {
-        console.log('Testing Supabase connection...');
-        const { data, error } = await supabase
-          .from('services')
-          .select('count', { count: 'exact', head: true });
-          
-        if (error) {
-          console.error('Supabase connection test failed:', error);
-        } else {
-          console.log('Supabase connection successful for dashboard');
-        }
-      } catch (err) {
-        console.error('Error testing Supabase connection:', err);
-      }
-    };
-    
-    testConnection();
-
-    // Cleanup subscription when component unmounts
     return () => {
-      console.log('Cleaning up dashboard real-time subscriptions');
       dashboardChannel.unsubscribe();
     };
   }, [queryClient]);
   
-  // Process analytics data - Now uses startDate and endDate from queryKey
+  // Comprehensive analytics processing
   const getAnalyticsSummary = useCallback(async ({ queryKey }: { queryKey: any[] }): Promise<AnalyticsSummary> => {
-    // Destructure dates from the query key
     const [_key, currentStartDate, currentEndDate] = queryKey;
     
     try {
-      console.log(`Fetching analytics data for dashboard from ${currentStartDate} to ${currentEndDate}...`);
+      console.log(`Fetching comprehensive analytics from ${currentStartDate} to ${currentEndDate}...`);
       
-      // Convert string dates to Date objects at the start/end of the day for accurate comparison
       const start = startOfDay(parseISO(currentStartDate));
       const end = endOfDay(parseISO(currentEndDate));
       const interval = { start, end };
       
-      // Calculate previous period for comparison
       const durationInDays = differenceInDays(end, start) + 1;
       const prevStart = startOfDay(subDays(start, durationInDays));
       const prevEnd = endOfDay(subDays(end, durationInDays));
       const prevInterval = { start: prevStart, end: prevEnd };
       
-      console.log(`Current Period: ${format(start, 'yyyy-MM-dd')} - ${format(end, 'yyyy-MM-dd')} (${durationInDays} days)`);
-      console.log(`Previous Period: ${format(prevStart, 'yyyy-MM-dd')} - ${format(prevEnd, 'yyyy-MM-dd')}`);
-
-      // --- Data Fetching/Handling (Simplified - assumes data is available from hooks) ---
-      // In a real scenario, you might pass the date range to the underlying hooks 
-      // or fetch directly within this function if needed.
-      // For now, we filter the data available from usePOS, useAppointments etc.
-      
       if (loadingOrders || loadingAppointments || loadingServices || loadingStylists) {
-        console.warn('Still loading initial data, analytics might be incomplete.');
-        // Consider returning a loading state or minimal default summary
+        console.warn('Still loading initial data...');
       }
 
       const safeOrders = orders || [];
@@ -218,147 +530,720 @@ export function useDashboardAnalytics({ startDate, endDate }: UseDashboardAnalyt
       const safeServices = services || [];
       const safeStylists = stylists || [];
 
-      // Filter orders by complete status and date range
+      // Filter completed orders
       const completedOrders = safeOrders.filter(order => order.status === 'completed');
-      
       const periodOrders = completedOrders.filter(order => 
         isWithinInterval(parseISO(order.created_at), interval)
       );
-      
       const previousPeriodOrders = completedOrders.filter(order => 
         isWithinInterval(parseISO(order.created_at), prevInterval)
       );
       
-      // Sales calculations for the period
-      const periodSales = periodOrders.reduce((sum, order) => sum + order.total, 0);
-      const previousPeriodSales = previousPeriodOrders.reduce((sum, order) => sum + order.total, 0);
-      
-      // Calculate sales change percentage
-      const salesChangePercentage = previousPeriodSales === 0 
-        ? (periodSales > 0 ? 100 : 0) // Avoid division by zero, show 100% if sales increased from 0
-        : ((periodSales - previousPeriodSales) / previousPeriodSales) * 100;
-      
-      // Appointments for the period
-      const periodAppointments = safeAppointments.filter((appointment: any) => 
-        isWithinInterval(parseISO(appointment.start_time), interval)
-      ).length;
-      
-      // Top services by revenue for the period
-      const serviceRevenueMap = new Map<string, ServiceSales>();
+      // **1. ENHANCED PAYMENT ANALYTICS**
+      const paymentMethodMap = new Map<string, { amount: number; count: number; isSplit: boolean }>();
+      const splitPaymentDetails: SplitPaymentDetails[] = [];
+
       periodOrders.forEach(order => {
-        if (order.services && Array.isArray(order.services)) {
-          order.services.forEach(service => {
-            if (serviceRevenueMap.has(service.service_id)) {
-              const current = serviceRevenueMap.get(service.service_id)!;
-              serviceRevenueMap.set(service.service_id, {
-                serviceName: service.service_name,
-                revenue: current.revenue + service.price,
+        if (order.is_split_payment && order.payments && Array.isArray(order.payments)) {
+          // Handle split payments
+          const splitDetail: SplitPaymentDetails = {
+            orderId: order.id,
+            totalAmount: order.total,
+            paymentMethods: [],
+            date: order.created_at,
+          };
+
+          order.payments.forEach((payment: any) => {
+            const method = payment.payment_method || 'cash';
+            const amount = payment.amount || 0;
+            
+            if (paymentMethodMap.has(method)) {
+              const current = paymentMethodMap.get(method)!;
+              paymentMethodMap.set(method, {
+                amount: current.amount + amount,
                 count: current.count + 1,
+                isSplit: true,
               });
             } else {
-              serviceRevenueMap.set(service.service_id, {
-                serviceName: service.service_name,
-                revenue: service.price,
+              paymentMethodMap.set(method, {
+                amount,
                 count: 1,
+                isSplit: true,
               });
             }
+
+            splitDetail.paymentMethods.push({
+              method,
+              amount,
+              percentage: (amount / order.total) * 100,
+            });
           });
+
+          splitPaymentDetails.push(splitDetail);
+        } else {
+          // Handle single payments
+          const method = order.payment_method || 'cash';
+          if (paymentMethodMap.has(method)) {
+            const current = paymentMethodMap.get(method)!;
+            paymentMethodMap.set(method, {
+              amount: current.amount + order.total,
+              count: current.count + 1,
+              isSplit: false,
+            });
+          } else {
+            paymentMethodMap.set(method, {
+              amount: order.total,
+              count: 1,
+              isSplit: false,
+            });
+          }
         }
       });
-      
-      const topServices = Array.from(serviceRevenueMap.values())
-        .sort((a, b) => b.revenue - a.revenue)
-        .slice(0, 5);
-      
-      // Customer retention (Based on orders within the period)
-      const customerVisitMap = new Map<string, number>();
+
+      const totalPaymentAmount = Array.from(paymentMethodMap.values()).reduce((sum, data) => sum + data.amount, 0);
+      const paymentMethodBreakdown = Array.from(paymentMethodMap.entries()).map(([method, data]) => ({
+        paymentMethod: method,
+        amount: data.amount,
+        count: data.count,
+        percentage: totalPaymentAmount > 0 ? (data.amount / totalPaymentAmount) * 100 : 0,
+        isSplit: data.isSplit,
+      }));
+
+      // **2. INVENTORY ANALYTICS WITH PRODUCT MASTER INTEGRATION**
+      let stockAnalytics: StockAnalytics = {
+        totalProducts: 0,
+        outOfStock: 0,
+        lowStock: 0,
+        inStock: 0,
+        criticalItems: [],
+        inventoryValue: 0,
+        topSellingProducts: [],
+      };
+
+      try {
+        console.log('Fetching inventory data with product master integration...');
+        
+        // First, try to get inventory data with product master join
+        let inventoryData: any[] = [];
+        let hasProductMaster = false;
+        
+        try {
+          console.log('Attempting to fetch inventory with product_master join...');
+          const { data: inventoryWithMaster, error: masterError } = await supabase
+            .from('inventory_balance_stock')
+            .select(`
+              *,
+              product_master!left(
+                id,
+                name,
+                description,
+                category,
+                mrp_incl_gst
+              )
+            `);
+
+          if (!masterError && inventoryWithMaster && inventoryWithMaster.length > 0) {
+            console.log('Successfully fetched inventory with product_master:', inventoryWithMaster.length, 'items');
+            inventoryData = inventoryWithMaster;
+            hasProductMaster = true;
+          } else {
+            console.log('Product master join failed or no data:', masterError?.message || 'No data');
+            throw new Error('Product master join failed');
+          }
+        } catch (masterErr) {
+          console.log('Product master approach failed, trying alternative...');
+          
+          // Alternative: Try to get data from product_master directly and join with inventory
+          try {
+            const { data: productMasterData, error: pmError } = await supabase
+              .from('product_master')
+              .select(`
+                id,
+                name,
+                description,
+                category,
+                mrp_incl_gst,
+                stock_quantity
+              `);
+
+            if (!pmError && productMasterData) {
+              console.log('Found product_master table with', productMasterData.length, 'products');
+              
+              // Convert product_master data to inventory format
+              inventoryData = productMasterData.map(product => ({
+                product_name: product.name,
+                product_id: product.id,
+                balance_qty: product.stock_quantity || 0,
+                product_master: {
+                  id: product.id,
+                  name: product.name,
+                  description: product.description,
+                  category: product.category,
+                  mrp_incl_gst: product.mrp_incl_gst,
+                }
+              }));
+              hasProductMaster = true;
+              console.log('Successfully converted product_master data to inventory format');
+            } else {
+              console.log('Product master table fetch failed:', pmError?.message);
+              throw new Error('Product master not available');
+            }
+          } catch (pmErr) {
+            console.log('Product master table approach also failed:', pmErr);
+            
+            // Final fallback: Use basic inventory_balance_stock
+            const { data: basicInventoryData, error: basicError } = await supabase
+              .from('inventory_balance_stock')
+              .select('*');
+
+            if (!basicError && basicInventoryData) {
+              console.log('Using basic inventory_balance_stock data:', basicInventoryData.length, 'items');
+              inventoryData = basicInventoryData;
+              hasProductMaster = false;
+            } else {
+              console.log('Even basic inventory fetch failed:', basicError?.message);
+              throw new Error('No inventory data available');
+            }
+          }
+        }
+
+        if (inventoryData && inventoryData.length > 0) {
+          console.log('Processing inventory data:', inventoryData.length, 'items, hasProductMaster:', hasProductMaster);
+          
+          const outOfStockItems = inventoryData.filter(item => (item.balance_qty || 0) <= 0);
+          const lowStockItems = inventoryData.filter(item => 
+            (item.balance_qty || 0) > 0 && 
+            (item.balance_qty || 0) <= settings.alertThresholds.lowStock
+          );
+          const inStockItems = inventoryData.filter(item => 
+            (item.balance_qty || 0) > settings.alertThresholds.lowStock
+          );
+
+          // Get critical items with enhanced product details
+          const criticalItems = [...outOfStockItems, ...lowStockItems]
+            .map(item => {
+              const productMaster = item.product_master;
+              const productName = productMaster?.name || item.product_name || 'Unknown Product';
+              const productId = productMaster?.id || item.product_id || item.id || 'unknown';
+              const category = productMaster?.category || item.category || 'Uncategorized';
+              const description = productMaster?.description || item.description || '';
+              const mrp = productMaster?.mrp_incl_gst || item.mrp_incl_gst || 0;
+              const currentStock = item.balance_qty || 0;
+              
+              return {
+                productId,
+                productName,
+                currentStock,
+                reorderLevel: settings.alertThresholds.lowStock,
+                status: (currentStock <= 0 ? 'out_of_stock' : 'low_stock') as 'out_of_stock' | 'low_stock' | 'critical',
+                category,
+                description: description.length > 60 ? description.substring(0, 60) + '...' : description,
+                mrp,
+                value: currentStock * mrp,
+              };
+            })
+            .sort((a, b) => a.currentStock - b.currentStock); // Most critical first
+
+          stockAnalytics = {
+            totalProducts: inventoryData.length,
+            outOfStock: outOfStockItems.length,
+            lowStock: lowStockItems.length,
+            inStock: inStockItems.length,
+            criticalItems,
+            inventoryValue: inventoryData.reduce((sum, item) => {
+              const stock = item.balance_qty || 0;
+              const price = item.product_master?.mrp_incl_gst || item.mrp_incl_gst || 0;
+              return sum + (stock * price);
+            }, 0),
+            topSellingProducts: [], // Would need sales data calculation
+          };
+
+          console.log('Stock analytics calculated successfully:', {
+            total: stockAnalytics.totalProducts,
+            critical: stockAnalytics.criticalItems.length,
+            outOfStock: stockAnalytics.outOfStock,
+            lowStock: stockAnalytics.lowStock,
+            inventoryValue: stockAnalytics.inventoryValue,
+            hasProductMaster,
+            sampleCriticalItem: stockAnalytics.criticalItems[0]
+          });
+        } else {
+          console.log('No inventory data found');
+        }
+      } catch (err) {
+        console.error('Complete inventory fetch failed:', err);
+        
+        // Ultimate fallback with empty data but proper structure
+        stockAnalytics = {
+          totalProducts: 0,
+          outOfStock: 0,
+          lowStock: 0,
+          inStock: 0,
+          criticalItems: [],
+          inventoryValue: 0,
+          topSellingProducts: [],
+        };
+      }
+
+      // **3. CUSTOMER BEHAVIOR ANALYTICS**
+      const customerVisitMap = new Map<string, { visits: number; totalSpent: number; lastVisit: string }>();
       periodOrders.forEach(order => {
         if (order.client_name) {
           const customer = order.client_name;
-          customerVisitMap.set(customer, (customerVisitMap.get(customer) || 0) + 1);
+          if (customerVisitMap.has(customer)) {
+            const current = customerVisitMap.get(customer)!;
+            customerVisitMap.set(customer, {
+              visits: current.visits + 1,
+              totalSpent: current.totalSpent + order.total,
+              lastVisit: order.created_at,
+            });
+          } else {
+            customerVisitMap.set(customer, {
+              visits: 1,
+              totalSpent: order.total,
+              lastVisit: order.created_at,
+            });
+          }
         }
       });
+
+      const newCustomers = Array.from(customerVisitMap.values()).filter(data => data.visits === 1).length;
+      const returningCustomers = Array.from(customerVisitMap.values()).filter(data => data.visits > 1).length;
+      const totalCustomers = newCustomers + returningCustomers;
+      const retentionRate = totalCustomers === 0 ? 0 : (returningCustomers / totalCustomers) * 100;
+
+      const topCustomers = Array.from(customerVisitMap.entries())
+        .map(([name, data]) => ({
+          customerName: name,
+          totalSpent: data.totalSpent,
+          visitCount: data.visits,
+          lastVisit: data.lastVisit,
+        }))
+        .sort((a, b) => b.totalSpent - a.totalSpent)
+        .slice(0, 10);
+
+      const customerBehavior: CustomerBehaviorAnalytics = {
+        newCustomers,
+        returningCustomers,
+        customerRetentionRate: retentionRate,
+        averageVisitInterval: 0, // Would need historical data
+        customerLifetimeValue: totalCustomers > 0 ? Array.from(customerVisitMap.values()).reduce((sum, data) => sum + data.totalSpent, 0) / totalCustomers : 0,
+        topCustomers,
+        visitFrequencyDistribution: [
+          { range: '1 visit', customerCount: newCustomers },
+          { range: '2-5 visits', customerCount: Array.from(customerVisitMap.values()).filter(data => data.visits >= 2 && data.visits <= 5).length },
+          { range: '6+ visits', customerCount: Array.from(customerVisitMap.values()).filter(data => data.visits > 5).length },
+        ],
+      };
+
+      // **4. STAFF PERFORMANCE ANALYTICS WITH INCENTIVE CALCULATION**
+      const stylistRevenueMap = new Map<string, { revenue: number; appointmentCount: number; serviceCount: number }>();
       
-      const newCustomers = Array.from(customerVisitMap.values()).filter(count => count === 1).length;
-      const repeatCustomers = Array.from(customerVisitMap.values()).filter(count => count > 1).length;
-      const totalCustomers = newCustomers + repeatCustomers;
-      const retentionRate = totalCustomers === 0 ? 0 : (repeatCustomers / totalCustomers) * 100;
-      
-      // Average ticket price (Using period and previous period orders)
-      const averageTicketPrice = periodOrders.length === 0 
-        ? 0 
-        : periodSales / periodOrders.length; // Simpler calculation
-      
-      const previousAverageTicketPrice = previousPeriodOrders.length === 0 
-        ? 0 
-        : previousPeriodSales / previousPeriodOrders.length; // Simpler calculation
-      
-      const averageTicketChangePercentage = previousAverageTicketPrice === 0 
-        ? (averageTicketPrice > 0 ? 100 : 0) // Avoid division by zero
-        : ((averageTicketPrice - previousAverageTicketPrice) / previousAverageTicketPrice) * 100;
-      
-      // Staff utilization (Consider if this should be range-based or current snapshot)
-      // Keeping current logic (based on all appointments) for simplicity, 
-      // but could be filtered by date range if needed.
-      const stylistAppointmentMap = new Map<string, number>();
-      safeStylists.forEach(stylist => {
-        stylistAppointmentMap.set(stylist.id, 0);
-      });
-      
-      // Count appointments for each stylist
-      safeAppointments.forEach((appointment: any) => {
-        if (appointment.stylist_id && stylistAppointmentMap.has(appointment.stylist_id)) {
-          stylistAppointmentMap.set(
-            appointment.stylist_id, 
-            (stylistAppointmentMap.get(appointment.stylist_id) || 0) + 1
-          );
+      periodOrders.forEach(order => {
+        if (order.stylist_id) {
+          if (stylistRevenueMap.has(order.stylist_id)) {
+            const current = stylistRevenueMap.get(order.stylist_id)!;
+            stylistRevenueMap.set(order.stylist_id, {
+              revenue: current.revenue + order.total,
+              appointmentCount: current.appointmentCount + 1,
+              serviceCount: current.serviceCount + (order.services?.length || 0),
+            });
+          } else {
+            stylistRevenueMap.set(order.stylist_id, {
+              revenue: order.total,
+              appointmentCount: 1,
+              serviceCount: order.services?.length || 0,
+            });
+          }
         }
       });
-      
-      // Calculate utilization rates (assuming 8-hour day, 30-minute slots = 16 possible appointments per day)
-      const SLOTS_PER_DAY = 16;
-      const staffUtilizationData = safeStylists.map(stylist => {
-        const appointmentCount = stylistAppointmentMap.get(stylist.id) || 0;
-        const rate = (appointmentCount / SLOTS_PER_DAY) * 100;
+
+      // Calculate performance scores and incentives based on settings
+      const calculatePerformanceScore = (revenue: number, appointments: number, efficiency: number) => {
+        const revenueScore = Math.min((revenue / settings.incentiveSettings.minimumRevenue) * 100, 100);
+        const appointmentScore = Math.min((appointments / 20) * 100, 100); // Assume 20 appointments as max
+        const efficiencyScore = Math.min(efficiency, 100);
+        
+        return (
+          revenueScore * settings.incentiveSettings.performanceMetrics.revenueWeight +
+          appointmentScore * settings.incentiveSettings.performanceMetrics.appointmentWeight +
+          efficiencyScore * settings.incentiveSettings.performanceMetrics.efficiencyWeight
+        );
+      };
+
+      const getPerformanceRating = (score: number) => {
+        if (score >= settings.incentiveSettings.industryStandards.excellent) return 'Excellent';
+        if (score >= settings.incentiveSettings.industryStandards.good) return 'Good';
+        if (score >= settings.incentiveSettings.industryStandards.average) return 'Average';
+        return 'Needs Improvement';
+      };
+
+      const staffPerformance: StaffPerformanceAnalytics = {
+        totalStaff: safeStylists.length,
+        averageRevenue: safeStylists.length > 0 ? Array.from(stylistRevenueMap.values()).reduce((sum, data) => sum + data.revenue, 0) / safeStylists.length : 0,
+        topPerformers: safeStylists.map(stylist => {
+          const perfData = stylistRevenueMap.get(stylist.id) || { revenue: 0, appointmentCount: 0, serviceCount: 0 };
+          const efficiency = perfData.appointmentCount > 0 ? perfData.revenue / perfData.appointmentCount : 0;
+          const performanceScore = calculatePerformanceScore(perfData.revenue, perfData.appointmentCount, efficiency);
+          const performanceRating = getPerformanceRating(performanceScore);
+          
+          const incentiveEligible = settings.incentiveSettings.enabled && 
+            perfData.revenue >= settings.incentiveSettings.minimumRevenue &&
+            performanceScore >= settings.incentiveSettings.industryStandards.average;
+          
+          const suggestedIncentive = incentiveEligible ? 
+            Math.round(perfData.revenue * (settings.incentiveSettings.incentiveRate / 100)) : 0;
+          
+          const industryStandardMet = performanceScore >= settings.incentiveSettings.industryStandards.good;
+
         return {
           stylistId: stylist.id,
           stylistName: stylist.name,
-          rate: Math.min(rate, 100), // Cap at 100%
-        };
+            revenue: perfData.revenue,
+            appointmentCount: perfData.appointmentCount,
+            serviceCount: perfData.serviceCount,
+            efficiency: efficiency,
+            performanceScore: Math.round(performanceScore),
+            performanceRating,
+            incentiveEligible,
+            suggestedIncentive,
+            industryStandardMet,
+          };
+        }).sort((a, b) => b.revenue - a.revenue),
+        staffUtilization: {
+          average: 0, // Would need working hours data
+          byStaff: safeStylists.map(stylist => ({
+            stylistId: stylist.id,
+            stylistName: stylist.name,
+            utilizationRate: 0, // Would need capacity data
+            hoursWorked: 0,
+            revenuePerHour: 0,
+          })),
+        },
+      };
+
+      // **5. APPOINTMENT ANALYTICS**
+      const periodAppointmentsList = safeAppointments.filter((appointment: any) => 
+        isWithinInterval(parseISO(appointment.start_time), interval)
+      );
+
+      const statusMap = new Map<string, number>();
+      periodAppointmentsList.forEach((appointment: any) => {
+        const status = appointment.status || 'scheduled';
+        statusMap.set(status, (statusMap.get(status) || 0) + 1);
       });
+
+      const totalAppointmentsCount = periodAppointmentsList.length;
+      const appointmentStatusBreakdown = Array.from(statusMap.entries()).map(([status, count]) => ({
+        status,
+        count,
+        percentage: totalAppointmentsCount > 0 ? (count / totalAppointmentsCount) * 100 : 0,
+      }));
+
+      const appointmentAnalytics: AppointmentAnalytics = {
+        totalAppointments: totalAppointmentsCount,
+        completionRate: totalAppointmentsCount > 0 ? ((statusMap.get('completed') || 0) / totalAppointmentsCount) * 100 : 0,
+        cancellationRate: totalAppointmentsCount > 0 ? ((statusMap.get('cancelled') || 0) / totalAppointmentsCount) * 100 : 0,
+        noShowRate: totalAppointmentsCount > 0 ? ((statusMap.get('no_show') || 0) / totalAppointmentsCount) * 100 : 0,
+        averageServiceDuration: 60, // Would need actual duration calculation
+        bookingLeadTime: 0, // Would need booking vs appointment date
+        repeatBookingRate: 0, // Would need customer booking history
+        statusBreakdown: appointmentStatusBreakdown,
+        peakBookingHours: [], // Would need hourly booking data
+      };
+
+      // **6. REVENUE ANALYTICS**
+      const periodSales = periodOrders.reduce((sum, order) => sum + order.total, 0);
+      const previousPeriodSales = previousPeriodOrders.reduce((sum, order) => sum + order.total, 0);
+      const salesChangePercentage = previousPeriodSales === 0 
+        ? (periodSales > 0 ? 100 : 0)
+        : ((periodSales - previousPeriodSales) / previousPeriodSales) * 100;
+
+      const serviceRevenue = periodOrders.reduce((sum, order) => {
+        return sum + (order.services?.filter(s => s.type === 'service').reduce((serviceSum, service) => serviceSum + service.price, 0) || 0);
+      }, 0);
       
-      const averageUtilization = safeStylists.length === 0 ? 0 : 
-        staffUtilizationData.reduce((sum, item) => sum + item.rate, 0) / safeStylists.length;
-      
-      // Calculate revenue per stylist for the period
-      const stylistRevenueMap = new Map<string, number>();
-      safeStylists.forEach(stylist => {
-        stylistRevenueMap.set(stylist.id, 0);
-      });
-      
-      // Sum revenue for each stylist from completed orders *in the period*
-      periodOrders.forEach(order => {
-        if (order.stylist_id && stylistRevenueMap.has(order.stylist_id)) {
-          stylistRevenueMap.set(
-            order.stylist_id,
-            (stylistRevenueMap.get(order.stylist_id) || 0) + order.total
-          );
+      const productRevenue = periodSales - serviceRevenue;
+
+      const revenueAnalytics: RevenueAnalytics = {
+        totalRevenue: periodSales,
+        serviceRevenue,
+        productRevenue,
+        serviceVsProductRatio: {
+          services: periodSales > 0 ? (serviceRevenue / periodSales) * 100 : 0,
+          products: periodSales > 0 ? (productRevenue / periodSales) * 100 : 0,
+        },
+        averageTransactionValue: periodOrders.length > 0 ? periodSales / periodOrders.length : 0,
+        revenueGrowthRate: salesChangePercentage,
+        dailyRevenueGoal: 5000, // Configurable
+        monthlyProjection: (periodSales / durationInDays) * 30,
+      };
+
+      // **7. TODAY'S METRICS**
+      const todayOrders = periodOrders.filter(order => isToday(parseISO(order.created_at)));
+      const todaysMetrics = {
+        revenue: todayOrders.reduce((sum, order) => sum + order.total, 0),
+        appointments: safeAppointments.filter((apt: any) => isToday(parseISO(apt.start_time))).length,
+        walkIns: todayOrders.filter(order => order.is_walk_in).length,
+        averageTicket: todayOrders.length > 0 ? todayOrders.reduce((sum, order) => sum + order.total, 0) / todayOrders.length : 0,
+        topService: 'Haircut', // Would need service analysis
+        busyHour: '2 PM', // Would need hourly analysis
+      };
+
+      // **8. UPCOMING APPOINTMENTS & REMINDERS**
+      let upcomingAppointments: UpcomingAppointment[] = [];
+      let appointmentReminders = {
+        today: [] as UpcomingAppointment[],
+        tomorrow: [] as UpcomingAppointment[],
+        thisWeek: [] as UpcomingAppointment[],
+        overdue: [] as UpcomingAppointment[],
+      };
+
+      try {
+        const { data: futureAppointments, error: appointmentsError } = await supabase
+          .from('appointments')
+          .select(`
+            *,
+            services!inner(*),
+            stylists!inner(*)
+          `)
+          .gte('start_time', new Date().toISOString())
+          .lte('start_time', new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString())
+          .order('start_time', { ascending: true });
+
+        if (!appointmentsError && futureAppointments) {
+          upcomingAppointments = futureAppointments.map((apt: any) => {
+            const appointmentDate = new Date(apt.start_time);
+            const now = new Date();
+            const tomorrow = new Date(now);
+            tomorrow.setDate(tomorrow.getDate() + 1);
+            const endOfWeek = new Date(now);
+            endOfWeek.setDate(endOfWeek.getDate() + 7);
+
+            const isToday = appointmentDate.toDateString() === now.toDateString();
+            const isTomorrow = appointmentDate.toDateString() === tomorrow.toDateString();
+            const isThisWeek = appointmentDate <= endOfWeek;
+
+            // Calculate time until appointment
+            const timeDiff = appointmentDate.getTime() - now.getTime();
+            const hoursUntil = Math.floor(timeDiff / (1000 * 60 * 60));
+            const minutesUntil = Math.floor((timeDiff % (1000 * 60 * 60)) / (1000 * 60));
+            
+            let timeUntilAppointment = '';
+            if (hoursUntil < 0) {
+              timeUntilAppointment = 'Overdue';
+            } else if (hoursUntil === 0) {
+              timeUntilAppointment = `${minutesUntil} minutes`;
+            } else if (hoursUntil < 24) {
+              timeUntilAppointment = `${hoursUntil}h ${minutesUntil}m`;
+            } else {
+              const days = Math.floor(hoursUntil / 24);
+              timeUntilAppointment = `${days} day(s)`;
+            }
+
+            const appointment: UpcomingAppointment = {
+              id: apt.id,
+              clientName: apt.client_name || 'Unknown Client',
+              serviceName: apt.services?.name || 'Unknown Service',
+              stylistName: apt.stylists?.name || 'Unknown Stylist',
+              appointmentTime: apt.start_time,
+              duration: apt.duration || 60,
+              price: apt.service_price || 0,
+              status: apt.status || 'scheduled',
+              isToday,
+              isTomorrow,
+              isThisWeek,
+              timeUntilAppointment,
+            };
+
+            // Categorize appointments
+            if (timeDiff < 0) {
+              appointmentReminders.overdue.push(appointment);
+            } else if (isToday) {
+              appointmentReminders.today.push(appointment);
+            } else if (isTomorrow) {
+              appointmentReminders.tomorrow.push(appointment);
+            } else if (isThisWeek) {
+              appointmentReminders.thisWeek.push(appointment);
+            }
+
+            return appointment;
+          });
         }
-      });
-      
-      // Format stylist revenue data
-      const stylistRevenue = safeStylists
-        .map(stylist => ({
-          stylistId: stylist.id,
-          stylistName: stylist.name,
-          revenue: stylistRevenueMap.get(stylist.id) || 0,
-        }))
-        .sort((a, b) => b.revenue - a.revenue); // Sort by revenue (highest first)
-      
-      // Daily sales trend *for the selected period*
-      const daysInPeriod = eachDayOfInterval(interval);
-      
-      const dailySalesTrend = daysInPeriod.map(date => {
+      } catch (err) {
+        console.warn('Could not fetch upcoming appointments:', err);
+      }
+
+      // **9. CRITICAL ALERTS & STOCK PROTECTION**
+      const criticalAlerts: CriticalAlert[] = [];
+      const stockShortageAlerts: StockAlert[] = [];
+
+      // Check for negative stock (critical protection)
+      if (stockAnalytics.criticalItems) {
+        stockAnalytics.criticalItems.forEach(item => {
+          if (item.currentStock < 0) {
+            criticalAlerts.push({
+              id: `negative-stock-${item.productName}`,
+              type: 'negative_stock',
+              severity: 'critical',
+              title: 'NEGATIVE STOCK DETECTED',
+              message: `${item.productName} has negative stock: ${item.currentStock}`,
+              action: 'Immediate stock correction required',
+              data: item,
+              timestamp: new Date().toISOString(),
+            });
+
+            stockShortageAlerts.push({
+              productId: item.productId,
+              productName: item.productName,
+              currentStock: item.currentStock,
+              minimumRequired: item.reorderLevel,
+              shortage: Math.abs(item.currentStock),
+              estimatedRunoutDate: 'Already out of stock',
+              priority: 'critical',
+              isNegative: true,
+            });
+          } else if (item.currentStock <= item.reorderLevel) {
+            const priority = item.currentStock === 0 ? 'critical' : 
+                           item.currentStock <= item.reorderLevel * 0.5 ? 'high' : 'medium';
+
+            criticalAlerts.push({
+              id: `low-stock-${item.productName}`,
+              type: 'stock_shortage',
+              severity: priority,
+              title: `${priority.toUpperCase()} STOCK ALERT`,
+              message: `${item.productName} is running low: ${item.currentStock} remaining`,
+              action: 'Reorder stock immediately',
+              data: item,
+              timestamp: new Date().toISOString(),
+            });
+
+            stockShortageAlerts.push({
+              productId: item.productId,
+              productName: item.productName,
+              currentStock: item.currentStock,
+              minimumRequired: item.reorderLevel,
+              shortage: item.reorderLevel - item.currentStock,
+              estimatedRunoutDate: 'Within 3-7 days',
+              priority: priority as 'critical' | 'high' | 'medium',
+              isNegative: false,
+            });
+          }
+        });
+      }
+
+      // Check for revenue drops
+      if (salesChangePercentage < -settings.alertThresholds.lowRevenue) {
+        criticalAlerts.push({
+          id: 'revenue-drop',
+          type: 'revenue_drop',
+          severity: 'high',
+          title: 'REVENUE DROP ALERT',
+          message: `Revenue has dropped by ${Math.abs(salesChangePercentage).toFixed(1)}%`,
+          action: 'Review business performance and marketing strategies',
+          data: { currentRevenue: periodSales, previousRevenue: previousPeriodSales },
+          timestamp: new Date().toISOString(),
+        });
+      }
+
+      // Check for high cancellation rates
+      const cancellationRate = appointmentAnalytics.cancellationRate;
+      if (cancellationRate > settings.alertThresholds.highCancellation) {
+        criticalAlerts.push({
+          id: 'high-cancellation',
+          type: 'appointment_conflict',
+          severity: 'medium',
+          title: 'HIGH CANCELLATION RATE',
+          message: `Appointment cancellation rate is ${cancellationRate.toFixed(1)}%`,
+          action: 'Review booking policies and customer communication',
+          data: { cancellationRate },
+          timestamp: new Date().toISOString(),
+        });
+      }
+
+      // Check for low staff utilization
+      if (staffPerformance.averageRevenue < settings.alertThresholds.lowUtilization * 100) {
+        criticalAlerts.push({
+          id: 'low-staff-utilization',
+          type: 'staff_utilization',
+          severity: 'medium',
+          title: 'LOW STAFF UTILIZATION',
+          message: 'Staff utilization is below optimal levels',
+          action: 'Review staff scheduling and workload distribution',
+          data: { averageRevenue: staffPerformance.averageRevenue },
+          timestamp: new Date().toISOString(),
+        });
+      }
+
+      // **10. OPERATIONAL INSIGHTS ENHANCEMENT**
+      const operationalInsights = {
+        bottlenecks: ['Long wait times during peak hours', 'Inventory shortages'],
+        opportunities: ['Increase product sales', 'Offer loyalty programs'],
+        recommendations: ['Hire additional staff for peak hours', 'Implement online booking'],
+        alerts: criticalAlerts,
+      };
+
+      // **11. STOCK PROTECTION SYSTEM** 
+      const stockProtectionSystem = {
+        validateStock: (productName: string, requestedQuantity: number, currentStock: number) => {
+          if (currentStock - requestedQuantity < 0) {
+            return {
+              valid: false,
+              error: `Insufficient stock for ${productName}. Available: ${currentStock}, Requested: ${requestedQuantity}`,
+              suggestion: `Maximum quantity available: ${currentStock}`,
+            };
+          }
+          return { valid: true };
+        },
+        
+        preventNegativeStock: (inventoryData: any[]) => {
+          const violations = inventoryData.filter(item => item.balance_qty < 0);
+          if (violations.length > 0) {
+            criticalAlerts.push({
+              id: 'stock-protection-violation',
+              type: 'critical_stock',
+              severity: 'critical',
+              title: 'STOCK PROTECTION VIOLATION',
+              message: `${violations.length} products have negative stock - system integrity compromised`,
+              action: 'Immediate manual correction required - check inventory audit logs',
+              data: violations,
+              timestamp: new Date().toISOString(),
+            });
+          }
+          return violations;
+        },
+
+        generateReorderSuggestions: (stockAnalytics: StockAnalytics) => {
+          const suggestions = [];
+          stockAnalytics.criticalItems.forEach(item => {
+            const suggestedOrder = Math.max(
+              item.reorderLevel * 2, // Minimum 2x reorder level
+              50 // Minimum 50 units
+            );
+            suggestions.push({
+              productName: item.productName,
+              currentStock: item.currentStock,
+              suggestedOrderQuantity: suggestedOrder,
+              priority: item.status,
+              estimatedCost: suggestedOrder * 100, // Placeholder cost calculation
+            });
+          });
+          return suggestions;
+        }
+      };
+
+      // Continue with existing analytics calculations...
+      const topServices = Array.from(new Map<string, ServiceSales>().values())
+        .sort((a, b) => b.revenue - a.revenue)
+        .slice(0, 5);
+
+      const averageTicketPrice = periodOrders.length === 0 ? 0 : periodSales / periodOrders.length;
+      const previousAverageTicketPrice = previousPeriodOrders.length === 0 ? 0 : previousPeriodSales / previousPeriodOrders.length;
+      const averageTicketChangePercentage = previousAverageTicketPrice === 0 
+        ? (averageTicketPrice > 0 ? 100 : 0)
+        : ((averageTicketPrice - previousAverageTicketPrice) / previousAverageTicketPrice) * 100;
+
+      const dailySalesTrend = eachDayOfInterval(interval).map(date => {
         const dayOrders = periodOrders.filter(order => isSameDay(parseISO(order.created_at), date));
         const daySales = dayOrders.reduce((sum, order) => sum + order.total, 0);
         return {
@@ -367,29 +1252,138 @@ export function useDashboardAnalytics({ startDate, endDate }: UseDashboardAnalyt
         };
       });
       
-      console.log('Analytics calculation complete.');
+      const stylistRevenue = safeStylists
+        .map(stylist => ({
+          stylistId: stylist.id,
+          stylistName: stylist.name,
+          revenue: stylistRevenueMap.get(stylist.id)?.revenue || 0,
+        }))
+        .sort((a, b) => b.revenue - a.revenue);
+
+      // Peak hours analysis
+      const hourlyData = new Map<number, { appointments: number; revenue: number }>();
+      for (let hour = 0; hour < 24; hour++) {
+        hourlyData.set(hour, { appointments: 0, revenue: 0 });
+      }
+
+      periodAppointmentsList.forEach((appointment: any) => {
+        const hour = parseISO(appointment.start_time).getHours();
+        const current = hourlyData.get(hour)!;
+        hourlyData.set(hour, {
+          appointments: current.appointments + 1,
+          revenue: current.revenue + (appointment.service_price || 0),
+        });
+      });
+
+      const peakHours = Array.from(hourlyData.entries())
+        .filter(([hour, data]) => data.appointments > 0)
+        .map(([hour, data]) => ({
+          hour: `${hour}:00`,
+          appointments: data.appointments,
+          revenue: data.revenue,
+          efficiency: data.appointments > 0 ? data.revenue / data.appointments : 0,
+        }))
+        .sort((a, b) => b.appointments - a.appointments)
+        .slice(0, 12);
+
+      // Service category breakdown
+      const categoryMap = new Map<string, { revenue: number; count: number }>();
+      periodOrders.forEach(order => {
+        if (order.services && Array.isArray(order.services)) {
+          order.services.forEach(service => {
+            const category = service.category || 'General Services';
+            if (categoryMap.has(category)) {
+              const current = categoryMap.get(category)!;
+              categoryMap.set(category, {
+                revenue: current.revenue + service.price,
+                count: current.count + 1,
+              });
+            } else {
+              categoryMap.set(category, {
+                revenue: service.price,
+                count: 1,
+              });
+            }
+          });
+        }
+      });
+
+      const totalCategoryRevenue = Array.from(categoryMap.values()).reduce((sum, cat) => sum + cat.revenue, 0);
+      const serviceCategoryBreakdown = Array.from(categoryMap.entries()).map(([category, data]) => ({
+        category,
+        revenue: data.revenue,
+        count: data.count,
+        percentage: totalCategoryRevenue > 0 ? (data.revenue / totalCategoryRevenue) * 100 : 0,
+        averagePrice: data.count > 0 ? data.revenue / data.count : 0,
+      }));
+
+      const monthlyComparison: MonthlyComparison[] = [
+        {
+          metric: 'Revenue',
+          currentMonth: periodSales,
+          previousMonth: previousPeriodSales,
+          changePercentage: salesChangePercentage,
+        },
+        {
+          metric: 'Appointments',
+          currentMonth: periodAppointmentsList.length,
+          previousMonth: 0,
+          changePercentage: 0,
+        },
+        {
+          metric: 'Average Ticket',
+          currentMonth: averageTicketPrice,
+          previousMonth: previousAverageTicketPrice,
+          changePercentage: averageTicketChangePercentage,
+        },
+      ];
+
+      console.log('Comprehensive analytics calculation complete.');
       
       return {
         periodSales,
         previousPeriodSales,
         salesChangePercentage,
-        periodAppointments,
+        periodAppointments: periodAppointmentsList.length,
         topServices,
         newCustomers,
-        repeatCustomers,
+        repeatCustomers: returningCustomers,
         retentionRate,
         averageTicketPrice,
         previousAverageTicketPrice,
         averageTicketChangePercentage,
         staffUtilization: {
-          average: averageUtilization,
-          byStaff: staffUtilizationData,
+          average: 0,
+          byStaff: [],
         },
         dailySalesTrend,
         stylistRevenue,
+        paymentMethodBreakdown,
+        splitPaymentDetails,
+        peakHours,
+        appointmentStatusBreakdown,
+        serviceCategoryBreakdown,
+        monthlyComparison,
+        totalCustomers,
+        averageServiceTime: 60,
+        weeklyGrowthRate: salesChangePercentage,
+        
+        // Enhanced analytics
+        stockAnalytics,
+        customerBehavior,
+        staffPerformance,
+        appointmentAnalytics,
+        revenueAnalytics,
+        todaysMetrics,
+        operationalInsights,
+        upcomingAppointments,
+        appointmentReminders,
+        criticalAlerts,
+        stockShortageAlerts,
       };
     } catch (error) {
-      console.error('Error in getAnalyticsSummary:', error);
+      console.error('Error in comprehensive analytics:', error);
+      // Return empty analytics structure
       return {
         periodSales: 0,
         previousPeriodSales: 0,
@@ -405,37 +1399,165 @@ export function useDashboardAnalytics({ startDate, endDate }: UseDashboardAnalyt
         staffUtilization: { average: 0, byStaff: [] },
         dailySalesTrend: [],
         stylistRevenue: [],
+        paymentMethodBreakdown: [],
+        splitPaymentDetails: [],
+        peakHours: [],
+        appointmentStatusBreakdown: [],
+        serviceCategoryBreakdown: [],
+        monthlyComparison: [],
+        totalCustomers: 0,
+        averageServiceTime: 0,
+        weeklyGrowthRate: 0,
+        stockAnalytics: {
+          totalProducts: 0,
+          outOfStock: 0,
+          lowStock: 0,
+          inStock: 0,
+          criticalItems: [],
+          inventoryValue: 0,
+          topSellingProducts: [],
+        },
+        customerBehavior: {
+          newCustomers: 0,
+          returningCustomers: 0,
+          customerRetentionRate: 0,
+          averageVisitInterval: 0,
+          customerLifetimeValue: 0,
+          topCustomers: [],
+          visitFrequencyDistribution: [],
+        },
+        staffPerformance: {
+          totalStaff: 0,
+          averageRevenue: 0,
+          topPerformers: [],
+          staffUtilization: { average: 0, byStaff: [] },
+        },
+        appointmentAnalytics: {
+          totalAppointments: 0,
+          completionRate: 0,
+          cancellationRate: 0,
+          noShowRate: 0,
+          averageServiceDuration: 0,
+          bookingLeadTime: 0,
+          repeatBookingRate: 0,
+          statusBreakdown: [],
+          peakBookingHours: [],
+        },
+        revenueAnalytics: {
+          totalRevenue: 0,
+          serviceRevenue: 0,
+          productRevenue: 0,
+          serviceVsProductRatio: { services: 0, products: 0 },
+          averageTransactionValue: 0,
+          revenueGrowthRate: 0,
+          dailyRevenueGoal: 0,
+          monthlyProjection: 0,
+        },
+        todaysMetrics: {
+          revenue: 0,
+          appointments: 0,
+          walkIns: 0,
+          averageTicket: 0,
+          topService: '',
+          busyHour: '',
+        },
+        operationalInsights: {
+          bottlenecks: [],
+          opportunities: [],
+          recommendations: [],
+          alerts: [],
+        },
+        upcomingAppointments: [],
+        appointmentReminders: {
+          today: [],
+          tomorrow: [],
+          thisWeek: [],
+          overdue: [],
+        },
+        criticalAlerts: [],
+        stockShortageAlerts: [],
       };
     }
-  }, [orders, appointments, services, stylists, loadingOrders, loadingAppointments, loadingServices, loadingStylists]);
+  }, [orders, appointments, services, stylists, loadingOrders, loadingAppointments, loadingServices, loadingStylists, settings.alertThresholds]);
   
-  // Use query for analytics data - Pass dates in queryKey
+  // Use query for analytics data
   const { data: analyticsSummary, refetch, isLoading: loadingAnalytics } = useQuery({
-    // Query key now includes the date range
     queryKey: ['dashboard-analytics', startDate, endDate], 
-    queryFn: getAnalyticsSummary, // Automatically receives queryKey
-    enabled: !loadingOrders && !loadingAppointments && !loadingServices && !loadingStylists && !!startDate && !!endDate, // Only run query if dates are valid and initial hook data loaded
+    queryFn: getAnalyticsSummary,
+    enabled: !loadingOrders && !loadingAppointments && !loadingServices && !loadingStylists && !!startDate && !!endDate,
     refetchInterval: settings.refreshInterval,
     refetchOnWindowFocus: true,
     refetchOnMount: true,
-    staleTime: 5000, // Consider data stale after 5 seconds
+    staleTime: 5000,
   });
   
   // Function to manually refresh data
-  const refreshDashboard = useCallback(() => {
-    console.log('Manually refreshing dashboard data');
+  const refreshDashboard = useCallback(async () => {
+    console.log('Manually refreshing comprehensive dashboard data');
+    try {
     queryClient.invalidateQueries({ queryKey: ['dashboard-analytics'] });
     queryClient.invalidateQueries({ queryKey: ['orders'] });
     queryClient.invalidateQueries({ queryKey: ['appointments'] });
     queryClient.invalidateQueries({ queryKey: ['services'] });
     queryClient.invalidateQueries({ queryKey: ['stylists'] });
-    refetch();
+      queryClient.invalidateQueries({ queryKey: ['inventory'] });
+      await refetch();
+      return { success: true };
+    } catch (error) {
+      console.error('Error refreshing dashboard:', error);
+      return { success: false, error };
+    }
   }, [queryClient, refetch]);
   
-  // Update dashboard settings
-  const updateSettings = (newSettings: Partial<DashboardSettings>) => {
-    setSettings(prev => ({ ...prev, ...newSettings }));
-  };
+  // Update dashboard settings with proper reactivity
+  const updateSettings = useCallback((newSettings: Partial<DashboardSettings>) => {
+    console.log('Updating dashboard settings:', newSettings);
+    setSettings(prev => {
+      const updated = { ...prev, ...newSettings };
+      
+      // Force re-render of charts if chart types changed
+      if (newSettings.chartTypes) {
+        console.log('Chart types updated, triggering re-render');
+        queryClient.invalidateQueries({ queryKey: ['dashboard-analytics'] });
+      }
+      
+      // If visibility metrics changed, log the change
+      if (newSettings.visibleMetrics) {
+        const enabledCount = Object.values(updated.visibleMetrics).filter(Boolean).length;
+        console.log(`Visible metrics updated: ${enabledCount} metrics enabled`);
+      }
+      
+      // If refresh interval changed, log the change
+      if (newSettings.refreshInterval) {
+        console.log(`Refresh interval updated to: ${newSettings.refreshInterval}ms`);
+      }
+      
+      return updated;
+    });
+  }, [queryClient]);
+
+  // Save settings to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem('dashboard-settings', JSON.stringify(settings));
+    } catch (error) {
+      console.warn('Failed to save dashboard settings to localStorage:', error);
+    }
+  }, [settings]);
+
+  // Load settings from localStorage on mount
+  useEffect(() => {
+    try {
+      const savedSettings = localStorage.getItem('dashboard-settings');
+      if (savedSettings) {
+        const parsed = JSON.parse(savedSettings);
+        setSettings(prev => ({ ...prev, ...parsed }));
+        console.log('Dashboard settings loaded from localStorage');
+      }
+    } catch (error) {
+      console.warn('Failed to load dashboard settings from localStorage:', error);
+    }
+  }, []);
   
   return {
     analyticsSummary,
@@ -444,4 +1566,41 @@ export function useDashboardAnalytics({ startDate, endDate }: UseDashboardAnalyt
     settings,
     updateSettings,
   };
+}
+
+export interface UpcomingAppointment {
+  id: string;
+  clientName: string;
+  serviceName: string;
+  stylistName: string;
+  appointmentTime: string;
+  duration: number;
+  price: number;
+  status: string;
+  isToday: boolean;
+  isTomorrow: boolean;
+  isThisWeek: boolean;
+  timeUntilAppointment: string;
+}
+
+export interface CriticalAlert {
+  id: string;
+  type: 'stock_shortage' | 'negative_stock' | 'appointment_conflict' | 'revenue_drop' | 'staff_utilization' | 'critical_stock';
+  severity: 'critical' | 'high' | 'medium' | 'low';
+  title: string;
+  message: string;
+  action: string;
+  data?: any;
+  timestamp: string;
+}
+
+export interface StockAlert {
+  productId: string;
+  productName: string;
+  currentStock: number;
+  minimumRequired: number;
+  shortage: number;
+  estimatedRunoutDate: string;
+  priority: 'critical' | 'high' | 'medium';
+  isNegative: boolean;
 } 

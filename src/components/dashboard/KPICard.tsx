@@ -23,8 +23,11 @@ interface KPICardProps {
   isLoading?: boolean;
   icon?: React.ReactNode;
   isCurrency?: boolean;
+  isPercentage?: boolean;
   tooltipText?: string;
   height?: number | string;
+  color?: 'primary' | 'secondary' | 'success' | 'error' | 'warning' | 'info';
+  trend?: 'up' | 'down' | 'flat';
 }
 
 export default function KPICard({
@@ -35,13 +38,21 @@ export default function KPICard({
   isLoading = false,
   icon,
   isCurrency = false,
+  isPercentage = false,
   tooltipText,
-  height = 180
+  height = 180,
+  color = 'primary',
+  trend = 'flat'
 }: KPICardProps) {
-  // Format value if it's a currency
-  const formattedValue = isCurrency 
-    ? formatCurrency(value !== undefined && value !== null ? Number(value) : 0) 
-    : value !== undefined && value !== null ? value : '-';
+  // Format value based on type
+  let formattedValue: string;
+  if (isCurrency) {
+    formattedValue = formatCurrency(value !== undefined && value !== null ? Number(value) : 0);
+  } else if (isPercentage) {
+    formattedValue = `${value !== undefined && value !== null ? Number(value).toFixed(1) : '0.0'}%`;
+  } else {
+    formattedValue = value !== undefined && value !== null ? value.toString() : '-';
+  }
   
   // Determine trend icon and color
   let TrendIcon = TrendingFlatIcon;
@@ -80,7 +91,7 @@ export default function KPICard({
         transition: 'all 0.2s',
         '&:hover': {
           boxShadow: 2,
-          borderColor: 'primary.light',
+          borderColor: `${color}.light`,
         },
       }}
     >
@@ -104,13 +115,13 @@ export default function KPICard({
         {icon && (
           <Box
             sx={{
-              backgroundColor: 'primary.light',
+              backgroundColor: `${color}.light`,
               borderRadius: '50%',
               p: 1.2,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              color: 'primary.main',
+              color: `${color}.main`,
             }}
           >
             {icon}
