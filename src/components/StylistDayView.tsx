@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { 
   Box, 
   Paper, 
@@ -64,6 +64,7 @@ import { useOrders } from '../hooks/useOrders';
 import { PAYMENT_METHOD_LABELS, PaymentMethod } from '../hooks/usePOS';
 import { supabase } from '../utils/supabase/supabaseClient';
 import { printBill } from '../utils/printUtils';
+import { getClientName as getAppointmentClientName } from '../pages/Appointments';
 
 // Custom implementations of date-fns functions
 const formatTime = (time: string | Date): string => {
@@ -444,6 +445,21 @@ interface StylistDayViewProps {
 
 // Define filter for freeSolo client options
 const filterClients = createFilterOptions<{ id: string; full_name: string; phone?: string; inputValue?: string }>();
+
+// Move getClientName function to component scope
+const getClientName = (appointment: any): string => {
+  if (!appointment) return '';
+  
+  if (appointment.client_name) {
+    return appointment.client_name;
+  }
+
+  if (appointment.client) {
+    return appointment.client.name || '';
+  }
+
+  return '';
+};
 
 const StylistDayView: React.FC<StylistDayViewProps> = ({
   stylists: initialStylists,
@@ -1766,37 +1782,17 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
         
         // Helper function to get client name with all available fallbacks
         const getClientName = (appointment: any): string => {
-          // First try clientDetails array
-          if (appointment.clientDetails && 
-              appointment.clientDetails.length > 0 && 
-              appointment.clientDetails[0]?.full_name) {
-            return appointment.clientDetails[0].full_name;
-          }
+          if (!appointment) return '';
           
-          // Then try direct fields on the appointment
-          if (appointment.clientName) {
-            return appointment.clientName;
-          }
-
           if (appointment.client_name) {
             return appointment.client_name;
           }
-          
-          // Then try looking up from clients array
-          if (appointment.client_id && allClients) {
-            const client = allClients.find(c => c.id === appointment.client_id);
-            if (client?.full_name) {
-              return client.full_name;
-            }
+
+          if (appointment.client) {
+            return appointment.client.name || '';
           }
-          
-          // Then try booker_name for appointments booked for someone else
-          if (appointment.is_for_someone_else && appointment.booker_name) {
-            return `${appointment.booker_name} (Booker)`;
-          }
-          
-          // If all else fails, show "Unknown Client"
-          return 'Unknown Client';
+
+          return '';
         };
 
         // Helper function to get client phone with multiple fallbacks
@@ -2221,7 +2217,7 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
         console.log(`DEBUG: Looking for orders between ${startTimeStr} and ${endTimeStr}`);
         
         // Search for orders by client name and time range
-        const clientName = getClientName(appointment);
+        const clientName = getAppointmentClientName(appointment, clients);
         if (clientName !== 'Unknown Client') {
           try {
             const { data: timeRangeOrders, error: timeRangeError } = await supabase

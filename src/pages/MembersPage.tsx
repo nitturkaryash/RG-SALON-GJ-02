@@ -43,6 +43,7 @@ interface Member {
   orderData?: any; // Store the original order data for debugging
   currentBalance?: number;
   totalMembershipAmount?: number;
+  benefitAmount?: number;
 }
 
 const MembersPage = () => {
@@ -58,7 +59,7 @@ const MembersPage = () => {
       // 1) Fetch raw membership records
       const { data: membersData, error: membersError } = await supabase
         .from('members')
-        .select('id, client_id, client_name, tier_id, purchase_date, expires_at, current_balance, total_membership_amount')
+        .select('id, client_id, client_name, tier_id, purchase_date, expires_at, current_balance, total_membership_amount, benefit_amount')
         .order('purchase_date', { ascending: false });
       if (membersError) {
         console.error('Error fetching members:', membersError);
@@ -114,7 +115,8 @@ const MembersPage = () => {
           membershipPrice: tier?.price,
           membershipDuration: tier?.duration_months,
           currentBalance: m.current_balance,
-          totalMembershipAmount: m.total_membership_amount
+          totalMembershipAmount: m.total_membership_amount,
+          benefitAmount: m.benefit_amount
         };
       });
     }
@@ -326,10 +328,17 @@ const MembersPage = () => {
                               <AttachMoney fontSize="small" sx={{ mr: 1 }} />
                               <span style={{ minWidth: '70px' }}>Total Amount:</span> Rs. {member.totalMembershipAmount?.toLocaleString() || membershipPrice.toLocaleString()}
                             </Typography>
-                            <Typography variant="body2" color={member.currentBalance && member.currentBalance > 0 ? "success.main" : "error.main"} sx={{ mb: 0.5, display: 'flex', alignItems: 'center' }}>
-                              <AccountBalanceWallet fontSize="small" sx={{ mr: 1 }} />
-                              <span style={{ minWidth: '70px' }}>Balance:</span> Rs. {member.currentBalance?.toLocaleString() || '0'}
-                            </Typography>
+                            <Box sx={{ mb: 1, display: 'flex', alignItems: 'center' }}>
+                              <AccountBalanceWallet sx={{ mr: 1, color: 'text.secondary' }} />
+                              <Typography variant="body2">Balance: <span style={{ fontWeight: 'bold' }}>Rs. {member.currentBalance?.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span></Typography>
+                            </Box>
+
+                            {member.benefitAmount && member.benefitAmount > 0 && (
+                              <Box sx={{ mb: 1, display: 'flex', alignItems: 'center' }}>
+                                <Star sx={{ mr: 1, color: 'gold' }} />
+                                <Typography variant="body2">Benefit Amount: <span style={{ fontWeight: 'bold' }}>Rs. {member.benefitAmount.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span></Typography>
+                              </Box>
+                            )}
                           </>
                         )}
                         

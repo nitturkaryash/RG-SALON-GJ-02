@@ -426,10 +426,10 @@ export default function Dashboard() {
         <Box display="flex" justifyContent="space-between" alignItems="center" width="100%" mb={3} px={2}>
           <Box>
             <Typography variant="h1" gutterBottom sx={{ mb: 0.5 }}>
-              Comprehensive Analytics Dashboard
+              Dashboard
             </Typography>
             <Typography variant="subtitle1" color="text.secondary">
-              Real-time insights for your salon business • Press Ctrl+Alt+A for fullscreen
+              Real-time insights for your salon business
             </Typography>
             {isLoading && (
               <Box sx={{ mt: 1, display: 'flex', alignItems: 'center' }}>
@@ -1024,81 +1024,13 @@ export default function Dashboard() {
               )}
 
               {/* STAFF ANALYTICS */}
-              {(settings.visibleMetrics.staffUtilization || settings.visibleMetrics.revenuePerStaff || 
+              {(settings.visibleMetrics.revenuePerStaff || 
                 settings.visibleMetrics.staffEfficiency || settings.visibleMetrics.stylistRevenue) && (
                 <Grid container spacing={3} mb={4}>
                   <SectionWrapper 
                     title="Staff Performance & Utilization" 
                     icon={<BusinessIcon sx={{ color: 'primary.main' }} />}
                   >
-                    {/* Staff Utilization */}
-                    {settings.visibleMetrics.staffUtilization && (
-                      <Grid item xs={12} md={6}>
-                        <CardWrapper>
-                          <DownloadableCard
-                            title="Staff Utilization Rates"
-                            subtitle={`${analyticsSummary.staffUtilization.average.toFixed(1)}% average utilization`}
-                            data={analyticsSummary.staffUtilization.byStaff}
-                            downloadType="staff-utilization"
-                            icon={<BusinessIcon color="primary" />}
-                            height={350}
-                          >
-                            <Box sx={{ height: '100%', overflowY: 'auto', pr: 1 }}>
-                              <List>
-                                {analyticsSummary.staffUtilization.byStaff.map((staff, index) => (
-                                  <ListItem 
-                                    key={staff.stylistId} 
-                                    divider 
-                                    sx={{ 
-                                      py: 1,
-                                      px: 1
-                                    }}
-                                  >
-                                    <ListItemText
-                                      primary={
-                                        <Box display="flex" justifyContent="space-between" alignItems="center">
-                                          <Typography 
-                                            variant="subtitle2" 
-                                            noWrap 
-                                            sx={{ 
-                                              maxWidth: '70%',
-                                              overflow: 'hidden',
-                                              textOverflow: 'ellipsis'
-                                            }}
-                                          >
-                                            {staff.stylistName}
-                                          </Typography>
-                                          <Chip 
-                                            label={`${staff.rate.toFixed(1)}%`}
-                                            size="small"
-                                            color={staff.rate >= 80 ? "success" : staff.rate >= 60 ? "warning" : "error"}
-                                            sx={{ minWidth: 60 }}
-                                          />
-                                        </Box>
-                                      }
-                                      secondary={
-                                        <Box>
-                                          <LinearProgress 
-                                            variant="determinate" 
-                                            value={Math.min(staff.rate, 100)} 
-                                            sx={{ mt: 1, height: 6, borderRadius: 3 }}
-                                            color={staff.rate >= 80 ? "success" : staff.rate >= 60 ? "warning" : "error"}
-                                          />
-                                          <Typography variant="caption" display="block" sx={{ mt: 0.5 }}>
-                                            {staff.hoursBooked} hrs booked / {staff.hoursAvailable} hrs available
-                                          </Typography>
-                                        </Box>
-                                      }
-                                    />
-                                  </ListItem>
-                                ))}
-                              </List>
-                            </Box>
-                          </DownloadableCard>
-                        </CardWrapper>
-                      </Grid>
-                    )}
-
                     {settings.visibleMetrics.stylistRevenue && (
                       <Grid item xs={12} md={6}>
                         <CardWrapper>
@@ -1158,10 +1090,10 @@ export default function Dashboard() {
                                         secondary={
                                           <Box display="flex" justifyContent="space-between" alignItems="center">
                                             <Typography variant="caption" color="text.secondary">
-                                              {stylist.appointmentCount} appointments
+                                              {stylist.appointmentCount || 0} appointments
                                             </Typography>
                                             <Typography variant="caption" color="text.secondary">
-                                              Avg: {formatCurrency(stylist.revenue / Math.max(stylist.appointmentCount, 1))}
+                                              Avg: {formatCurrency(stylist.revenue / Math.max(stylist.appointmentCount || 1, 1))}
                                             </Typography>
                                           </Box>
                                         }
@@ -1625,7 +1557,9 @@ export default function Dashboard() {
                                     <ListItemText
                                       primary={
                                         <Box display="flex" justifyContent="space-between" alignItems="center">
-                                          <Typography variant="subtitle2">Order #{payment.orderId}</Typography>
+                                          <Typography variant="subtitle2">
+                                            {payment.customerName || 'Anonymous Customer'}
+                                          </Typography>
                                           <Typography variant="caption" color="text.secondary">
                                             {payment.date}
                                           </Typography>
@@ -1635,6 +1569,9 @@ export default function Dashboard() {
                                         <Box>
                                           <Typography variant="caption" display="block" fontWeight="bold">
                                             Total: {formatCurrency(payment.totalAmount)}
+                                          </Typography>
+                                          <Typography variant="caption" display="block" color="text.secondary">
+                                            Order #{payment.orderId.substring(0, 8)}...
                                           </Typography>
                                           {payment.paymentMethods.map((method, idx) => (
                                             <Typography key={idx} variant="caption" display="block">

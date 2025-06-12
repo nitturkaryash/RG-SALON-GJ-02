@@ -371,6 +371,10 @@ interface HistoryItem {
 	};
 }
 
+interface POSOrderItem extends OrderItem {
+  benefitAmount?: number;
+}
+
 export default function POS() {
 	// ====================================================
 	// 1. HOOKS - Call ALL hooks unconditionally first
@@ -440,7 +444,7 @@ export default function POS() {
 	const [selectedStylist, setSelectedStylist] = useLocalStorage<Stylist | null>('pos_selectedStylist', null);
 	const [appointmentDate, setAppointmentDate] = useState<Date | null>(new Date());
 	const [appointmentTime, setAppointmentTime] = useState<Date | null>(new Date());
-	const [orderItems, setOrderItems] = useState<OrderItem[]>([]);
+	const [orderItems, setOrderItems] = useState<POSOrderItem[]>([]);
 	const [walkInPaymentMethod, setWalkInPaymentMethod] = useState<PaymentMethod>("cash");
 	const [walkInDiscount, setWalkInDiscount] = useState(0);
 	const [currentAppointmentId, setCurrentAppointmentId] = useState<string | null>(null);
@@ -593,7 +597,7 @@ export default function POS() {
 		// Determine the type - ensure it is always either 'product' or 'service', never undefined
 		const itemType = service.type === 'service' ? 'service' : 'product';
 		
-		const newItem: OrderItem = {
+		const newItem: POSOrderItem = {
 			id: uuidv4(),
 			order_id: '',
 			item_id: service.id,
@@ -1170,25 +1174,25 @@ export default function POS() {
         console.log('[POS useEffect] Service details lookup:', serviceDetails ? 'found' : 'not found');
          
         						// Create the order item with available data
-						const orderItem: OrderItem = {
+						const orderItem: POSOrderItem = {
 							id: uuidv4(),
 							order_id: '',
 							item_id: service.id,
 							item_name: service.name,
-							price: service.price || (serviceDetails?.price || 0),
 							quantity: service.quantity || 1,
+							price: service.price || (serviceDetails?.price || 0),
 							total: (service.price || (serviceDetails?.price || 0)) * (service.quantity || 1),
 							type: 'service',
 							category: service.category || serviceDetails?.category || 'service',
 							hsn_code: (service as any).hsn_code || serviceDetails?.hsn_code,
 							gst_percentage: (service as any).gst_percentage || serviceDetails?.gst_percentage || 18,
+							for_salon_use: false,
 							discount: 0,
-							discount_percentage: 0,
-							for_salon_use: false
+							discount_percentage: 0
 						};
         
         return orderItem;
-      }).filter(Boolean) as OrderItem[];
+      }).filter(Boolean) as POSOrderItem[];
 
       // Add all valid order items at once
       if (newOrderItems.length > 0) {
@@ -1781,8 +1785,9 @@ export default function POS() {
 					const { error: updateError } = await supabase
 						.from('members')
 						.update({
-							current_balance: item.price,
+							current_balance: item.price + (item.benefitAmount || 0),
 							total_membership_amount: item.price,
+							benefit_amount: item.benefitAmount || 0,
 							expires_at: new Date(Date.now() + (item.duration_months || 12) * 30 * 24 * 60 * 60 * 1000).toISOString()
 						})
 						.eq('id', existingMembership.id);
@@ -1803,8 +1808,9 @@ export default function POS() {
 							tier_id: item.item_id,
 							purchase_date: new Date().toISOString(),
 							expires_at: new Date(Date.now() + (item.duration_months || 12) * 30 * 24 * 60 * 60 * 1000).toISOString(),
-							current_balance: item.price,
-							total_membership_amount: item.price
+							current_balance: item.price + (item.benefitAmount || 0),
+							total_membership_amount: item.price,
+							benefit_amount: item.benefitAmount || 0
 						});
 
 					if (insertError) {
@@ -2707,7 +2713,8 @@ export default function POS() {
 						<Typography color="text.secondary">No items added yet.</Typography>
 					) : (
 						orderItems.map((item) => (
-							<Box key={item.id} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1.5, borderBottom: '1px dashed', borderColor: 'divider', pb: 1.5 }}>
+							<React.Fragment key={item.id}>
+							<Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1.5, borderBottom: '1px dashed', borderColor: 'divider', pb: 1.5 }}>
 								<Box sx={{ flexGrow: 1, mr: 1 }}>
 									<Typography variant="body1" sx={{ fontWeight: 500, display: 'flex', alignItems: 'center' }}>
 										{item.type === 'service' && <ContentCutIcon fontSize="inherit" sx={{ verticalAlign: 'middle', mr: 0.5, color: 'primary.main' }} />}
@@ -2844,6 +2851,34 @@ export default function POS() {
 									</IconButton>
 								</Tooltip>
 							</Box>
+							{item.type === 'membership' && (
+								<Box sx={{ pl: 4, pb: 2, display: 'flex', justifyContent: 'flex-start', alignItems: 'center' }}>
+										<TextField
+												size="small"
+												variant="outlined"
+												type="number"
+												label="Add Benefit Amount"
+												value={item.benefitAmount || ''}
+												onChange={(e) => {
+														const benefit = parseFloat(e.target.value);
+														const updatedItems = orderItems.map(i =>
+																i.id === item.id
+																		? {
+																				...i,
+																				benefitAmount: isNaN(benefit) ? 0 : benefit,
+																			}
+																		: i
+														);
+														setOrderItems(updatedItems);
+												}}
+												sx={{ width: '220px' }}
+												InputProps={{
+														startAdornment: <InputAdornment position="start">₹</InputAdornment>,
+												}}
+										/>
+								</Box>
+							)}
+							</React.Fragment>
 						))
 					)}
 				</Box>
@@ -3031,7 +3066,7 @@ export default function POS() {
 
 	// Add a handler for adding memberships to order
 	const handleAddMembershipToOrder = useCallback((membership: POSMembership) => {
-		const newItem: OrderItem = {
+		const newItem: POSOrderItem = {
 			id: uuidv4(),
 			order_id: '',                          // no parent order yet
 			item_id: membership.id,
@@ -3041,7 +3076,8 @@ export default function POS() {
 			total: membership.price * 1,         // price times quantity
 			type: 'membership',
 			category: 'membership',
-			duration_months: membership.duration_months
+			duration_months: membership.duration_months,
+			benefitAmount: 0
 		};
 		
 		setOrderItems(prev => [...prev, newItem]);
@@ -3552,6 +3588,13 @@ export default function POS() {
 						</Paper>
 					</Grid>
 
+					{/* Order Summary */}
+					<Grid item xs={12}>
+						<Paper sx={{ p: 2, mb: 2 }}>
+							{renderOrderSummary()}
+						</Paper>
+					</Grid>
+
 					{/* Payment Details */}
 					<Grid item xs={12}>
 						<Paper sx={{ p: 2, mb: 2 }}>
@@ -3997,13 +4040,6 @@ export default function POS() {
 							>
 								{processing ? 'Processing...' : 'Complete Order'}
 							</Button>
-						</Paper>
-					</Grid>
-
-					{/* Order Summary */}
-					<Grid item xs={12}>
-						<Paper sx={{ p: 2, mb: 2 }}>
-							{renderOrderSummary()}
 						</Paper>
 					</Grid>
 				</Grid>

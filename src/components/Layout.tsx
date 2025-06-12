@@ -62,12 +62,12 @@ const menuLinks: MenuLink[] = [
   { text: 'Appointments', path: '/appointments', icon: <CalendarMonth /> },
   { text: 'Clients', path: '/clients', icon: <People /> },
   { text: 'Services', path: '/services', icon: <Category /> },
+  { text: 'Products', path: '/product-master', icon: <InventoryRounded /> },
   { text: 'Stylists', path: '/stylists', icon: <Person /> },
   { text: 'Orders', path: '/orders', icon: <ShoppingCart /> },
   { text: 'POS', path: '/pos', icon: <PointOfSale /> },
-  { text: 'Inventory Manager', path: '/products', icon: <StoreIcon /> },
-  { text: 'Product Master', path: '/product-master', icon: <InventoryRounded /> },
-  { text: 'Membership Tiers', path: '/membership-tiers', icon: <CardMembership /> },
+  { text: 'Inventory', path: '/products', icon: <StoreIcon /> },
+  { text: 'Memberships', path: '/membership-tiers', icon: <CardMembership /> },
   { text: 'Members', path: '/members', icon: <CardMembership /> },
 ]
 

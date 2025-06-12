@@ -25,6 +25,26 @@ import {
   endOfMonth,
 } from 'date-fns'
 
+// Helper for deep merging settings
+const isObject = (item: any): item is object => {
+  return item && typeof item === 'object' && !Array.isArray(item);
+};
+
+const mergeDeep = <T extends object>(target: T, source: Partial<T>): T => {
+  const output = { ...target };
+  if (isObject(target) && isObject(source)) {
+    Object.keys(source).forEach((key) => {
+      const sourceKey = key as keyof T;
+      if (isObject(source[sourceKey]) && target[sourceKey] && isObject(target[sourceKey])) {
+        output[sourceKey] = mergeDeep(target[sourceKey] as object, source[sourceKey] as object) as T[keyof T];
+      } else if (source[sourceKey] !== undefined) {
+        output[sourceKey] = source[sourceKey] as T[keyof T];
+      }
+    });
+  }
+  return output;
+};
+
 // Analytics data types
 export interface DailySales {
   date: string;
@@ -49,6 +69,7 @@ export interface PaymentMethodBreakdown {
 export interface SplitPaymentDetails {
   orderId: string;
   totalAmount: number;
+  customerName?: string;
   paymentMethods: Array<{
     method: string;
     amount: number;
@@ -167,6 +188,12 @@ export interface AppointmentAnalytics {
   repeatBookingRate: number;
   statusBreakdown: AppointmentStatusBreakdown[];
   peakBookingHours: PeakHoursData[];
+  stylistRevenue: {
+    stylistId: string;
+    stylistName: string;
+    revenue: number;
+    appointmentCount: number;
+  }[];
 }
 
 export interface RevenueAnalytics {
@@ -195,19 +222,12 @@ export interface AnalyticsSummary {
   averageTicketPrice: number;
   previousAverageTicketPrice: number;
   averageTicketChangePercentage: number;
-  staffUtilization: {
-    average: number;
-    byStaff: {
-      stylistId: string;
-      stylistName: string;
-      rate: number;
-    }[];
-  };
   dailySalesTrend: DailySales[];
   stylistRevenue: {
     stylistId: string;
     stylistName: string;
     revenue: number;
+    appointmentCount: number;
   }[];
   
   // Enhanced analytics
@@ -272,7 +292,6 @@ export interface DashboardSettings {
     appointments: boolean;
     retentionRate: boolean;
     averageTicket: boolean;
-    staffUtilization: boolean;
     stylistRevenue: boolean;
     
     // Payment analytics
@@ -302,6 +321,7 @@ export interface DashboardSettings {
     staffPerformance: boolean;
     revenuePerStaff: boolean;
     staffEfficiency: boolean;
+    staffUtilization: boolean;
     
     // Advanced analytics
     revenueBreakdown: boolean;
@@ -363,7 +383,7 @@ interface UseDashboardAnalyticsProps {
 
 export function useDashboardAnalytics({ startDate, endDate }: UseDashboardAnalyticsProps) {
   const queryClient = useQueryClient()
-  const { orders, isLoading: loadingOrders } = usePOS();
+  const { orders, loading: loadingOrders } = usePOS();
   const { appointments, isLoading: loadingAppointments } = useAppointments();
   const { services, isLoading: loadingServices } = useServices();
   const { stylists, isLoading: loadingStylists } = useStylists();
@@ -377,7 +397,6 @@ export function useDashboardAnalytics({ startDate, endDate }: UseDashboardAnalyt
       appointments: true,
       retentionRate: true,
       averageTicket: true,
-      staffUtilization: true,
       stylistRevenue: true,
       
       // Payment analytics
@@ -407,6 +426,7 @@ export function useDashboardAnalytics({ startDate, endDate }: UseDashboardAnalyt
       staffPerformance: true,
       revenuePerStaff: true,
       staffEfficiency: false,
+      staffUtilization: true,
       
       // Advanced analytics
       revenueBreakdown: true,
@@ -549,6 +569,7 @@ export function useDashboardAnalytics({ startDate, endDate }: UseDashboardAnalyt
           const splitDetail: SplitPaymentDetails = {
             orderId: order.id,
             totalAmount: order.total,
+            customerName: order.client_name,
             paymentMethods: [],
             date: order.created_at,
           };
@@ -896,9 +917,9 @@ export function useDashboardAnalytics({ startDate, endDate }: UseDashboardAnalyt
           
           const industryStandardMet = performanceScore >= settings.incentiveSettings.industryStandards.good;
 
-        return {
-          stylistId: stylist.id,
-          stylistName: stylist.name,
+          return {
+            stylistId: stylist.id,
+            stylistName: stylist.name,
             revenue: perfData.revenue,
             appointmentCount: perfData.appointmentCount,
             serviceCount: perfData.serviceCount,
@@ -911,15 +932,9 @@ export function useDashboardAnalytics({ startDate, endDate }: UseDashboardAnalyt
           };
         }).sort((a, b) => b.revenue - a.revenue),
         staffUtilization: {
-          average: 0, // Would need working hours data
-          byStaff: safeStylists.map(stylist => ({
-            stylistId: stylist.id,
-            stylistName: stylist.name,
-            utilizationRate: 0, // Would need capacity data
-            hoursWorked: 0,
-            revenuePerHour: 0,
-          })),
-        },
+          average: 0,
+          byStaff: []
+        }
       };
 
       // **5. APPOINTMENT ANALYTICS**
@@ -950,6 +965,7 @@ export function useDashboardAnalytics({ startDate, endDate }: UseDashboardAnalyt
         repeatBookingRate: 0, // Would need customer booking history
         statusBreakdown: appointmentStatusBreakdown,
         peakBookingHours: [], // Would need hourly booking data
+        stylistRevenue: [],
       };
 
       // **6. REVENUE ANALYTICS**
@@ -1180,7 +1196,11 @@ export function useDashboardAnalytics({ startDate, endDate }: UseDashboardAnalyt
         bottlenecks: ['Long wait times during peak hours', 'Inventory shortages'],
         opportunities: ['Increase product sales', 'Offer loyalty programs'],
         recommendations: ['Hire additional staff for peak hours', 'Implement online booking'],
-        alerts: criticalAlerts,
+        alerts: criticalAlerts.map((a): {type: 'warning' | 'error' | 'info'; message: string; action: string} => ({
+            type: a.severity === 'critical' || a.severity === 'high' ? 'error' : a.severity === 'medium' ? 'warning' : 'info',
+            message: a.message,
+            action: a.action,
+        })),
       };
 
       // **11. STOCK PROTECTION SYSTEM** 
@@ -1214,7 +1234,13 @@ export function useDashboardAnalytics({ startDate, endDate }: UseDashboardAnalyt
         },
 
         generateReorderSuggestions: (stockAnalytics: StockAnalytics) => {
-          const suggestions = [];
+          const suggestions: {
+            productName: string;
+            currentStock: number;
+            suggestedOrderQuantity: number;
+            priority: 'out_of_stock' | 'low_stock' | 'critical';
+            estimatedCost: number;
+          }[] = [];
           stockAnalytics.criticalItems.forEach(item => {
             const suggestedOrder = Math.max(
               item.reorderLevel * 2, // Minimum 2x reorder level
@@ -1257,6 +1283,7 @@ export function useDashboardAnalytics({ startDate, endDate }: UseDashboardAnalyt
           stylistId: stylist.id,
           stylistName: stylist.name,
           revenue: stylistRevenueMap.get(stylist.id)?.revenue || 0,
+          appointmentCount: stylistRevenueMap.get(stylist.id)?.appointmentCount || 0,
         }))
         .sort((a, b) => b.revenue - a.revenue);
 
@@ -1352,10 +1379,6 @@ export function useDashboardAnalytics({ startDate, endDate }: UseDashboardAnalyt
         averageTicketPrice,
         previousAverageTicketPrice,
         averageTicketChangePercentage,
-        staffUtilization: {
-          average: 0,
-          byStaff: [],
-        },
         dailySalesTrend,
         stylistRevenue,
         paymentMethodBreakdown,
@@ -1396,7 +1419,6 @@ export function useDashboardAnalytics({ startDate, endDate }: UseDashboardAnalyt
         averageTicketPrice: 0,
         previousAverageTicketPrice: 0,
         averageTicketChangePercentage: 0,
-        staffUtilization: { average: 0, byStaff: [] },
         dailySalesTrend: [],
         stylistRevenue: [],
         paymentMethodBreakdown: [],
@@ -1430,7 +1452,10 @@ export function useDashboardAnalytics({ startDate, endDate }: UseDashboardAnalyt
           totalStaff: 0,
           averageRevenue: 0,
           topPerformers: [],
-          staffUtilization: { average: 0, byStaff: [] },
+          staffUtilization: {
+            average: 0,
+            byStaff: []
+          }
         },
         appointmentAnalytics: {
           totalAppointments: 0,
@@ -1442,6 +1467,7 @@ export function useDashboardAnalytics({ startDate, endDate }: UseDashboardAnalyt
           repeatBookingRate: 0,
           statusBreakdown: [],
           peakBookingHours: [],
+          stylistRevenue: [],
         },
         revenueAnalytics: {
           totalRevenue: 0,
@@ -1511,35 +1537,15 @@ export function useDashboardAnalytics({ startDate, endDate }: UseDashboardAnalyt
   
   // Update dashboard settings with proper reactivity
   const updateSettings = useCallback((newSettings: Partial<DashboardSettings>) => {
-    console.log('Updating dashboard settings:', newSettings);
-    setSettings(prev => {
-      const updated = { ...prev, ...newSettings };
-      
-      // Force re-render of charts if chart types changed
-      if (newSettings.chartTypes) {
-        console.log('Chart types updated, triggering re-render');
-        queryClient.invalidateQueries({ queryKey: ['dashboard-analytics'] });
-      }
-      
-      // If visibility metrics changed, log the change
-      if (newSettings.visibleMetrics) {
-        const enabledCount = Object.values(updated.visibleMetrics).filter(Boolean).length;
-        console.log(`Visible metrics updated: ${enabledCount} metrics enabled`);
-      }
-      
-      // If refresh interval changed, log the change
-      if (newSettings.refreshInterval) {
-        console.log(`Refresh interval updated to: ${newSettings.refreshInterval}ms`);
-      }
-      
-      return updated;
-    });
-  }, [queryClient]);
+    console.log('Updating dashboard settings with:', newSettings);
+    setSettings(prev => mergeDeep(prev, newSettings));
+  }, []);
 
   // Save settings to localStorage
   useEffect(() => {
     try {
       localStorage.setItem('dashboard-settings', JSON.stringify(settings));
+      console.log('Dashboard settings saved to localStorage.');
     } catch (error) {
       console.warn('Failed to save dashboard settings to localStorage:', error);
     }
@@ -1551,8 +1557,8 @@ export function useDashboardAnalytics({ startDate, endDate }: UseDashboardAnalyt
       const savedSettings = localStorage.getItem('dashboard-settings');
       if (savedSettings) {
         const parsed = JSON.parse(savedSettings);
-        setSettings(prev => ({ ...prev, ...parsed }));
-        console.log('Dashboard settings loaded from localStorage');
+        setSettings(currentSettings => mergeDeep(currentSettings, parsed));
+        console.log('Dashboard settings loaded and merged from localStorage');
       }
     } catch (error) {
       console.warn('Failed to load dashboard settings from localStorage:', error);

@@ -164,6 +164,7 @@ interface ExtendedProductFormData extends ProductFormData {
   is_interstate: boolean;
   mrp_per_unit_excl_gst: number;
   unit_type: string;
+  purchase_cost_per_unit_ex_gst: number;
 }
 
 // Update the extendedInitialFormData with all required fields
@@ -173,8 +174,11 @@ const extendedInitialFormData: ExtendedProductFormData = {
   product_name: '',
   hsn_code: '',
   units: '',
+  unit_type: '',
+  invoice_number: '',
   purchase_invoice_number: '',
   purchase_qty: 0,
+  purchase_incl_gst: 0,
   mrp_incl_gst: 0,
   mrp_excl_gst: 0,
   discount_on_purchase_percentage: 0,
@@ -188,9 +192,8 @@ const extendedInitialFormData: ExtendedProductFormData = {
   supplier: '',
   is_interstate: false,
   mrp_per_unit_excl_gst: 0,
-  unit_type: '',
   purchase_cost_per_unit_ex_gst: 0,
-  purchase_excl_gst: 0  // Add this field with initial value
+  purchase_excl_gst: 0
 };
 
 export default function InventoryManager() {
@@ -1225,6 +1228,28 @@ export default function InventoryManager() {
     try {
       const workbook = XLSX.utils.book_new();
       
+      // Helper function to safely format numbers with proper decimal places
+      const safeNumber = (value: any, decimals: number = 2): number => {
+        if (value === null || value === undefined || isNaN(Number(value))) return 0;
+        return Number(Number(value).toFixed(decimals));
+      };
+
+      // Helper function to safely format strings
+      const safeString = (value: any): string => {
+        if (value === null || value === undefined) return '-';
+        return String(value);
+      };
+
+      // Helper function to safely format dates
+      const safeDate = (value: any): string => {
+        try {
+          if (!value) return '-';
+          return new Date(value).toLocaleDateString();
+        } catch {
+          return '-';
+        }
+      };
+      
       // Purchase History sheet - All columns as in frontend
       // Use sortedPurchases instead of filteredPurchases to match the frontend display order
       const purchaseData = sortedPurchases.map((purchase, index) => {
@@ -1281,42 +1306,48 @@ export default function InventoryManager() {
           }
         }
 
+        // Calculate MRP Ex GST
+        const mrpExGst = calculatePriceExcludingGST(
+          purchase.mrp_incl_gst ?? 0, 
+          purchase.gst_percentage ?? 0
+        );
+
+        // Calculate Purchase Cost/Unit (Ex.GST)
+        const discountPercentage = purchase.discount_on_purchase_percentage ?? 0;
+        const purchaseCostPerUnit = mrpExGst * (1 - (discountPercentage / 100));
+
         return {
           'Serial No': purchase.transaction_type === 'stock_increment' || purchase.transaction_type === 'inventory_update' 
             ? "OPENING BALANCE" 
             : serialNo,
-          'Date': purchase.date ? new Date(purchase.date).toLocaleDateString() : '-',
-          'Product Name': purchase.product_name || '-',
-          'HSN Code': purchase.hsn_code || '-',
-          'UNITS': purchase.units || '-',
+          'Date': safeDate(purchase.date),
+          'Product Name': safeString(purchase.product_name),
+          'HSN Code': safeString(purchase.hsn_code),
+          'UNITS': safeString(purchase.units),
           'Vendor': purchase.transaction_type === 'stock_increment' || purchase.transaction_type === 'inventory_update' 
             ? 'OPENING BALANCE' 
-            : (purchase.supplier || '-'),
+            : safeString(purchase.supplier),
           'Purchase Invoice No.': purchase.transaction_type === 'stock_increment' || purchase.transaction_type === 'inventory_update' 
             ? 'OPENING BALANCE' 
-            : (purchase.purchase_invoice_number || '-'),
-          'Purchase Qty.': purchase.purchase_qty || 0,
-          'MRP Incl. GST (Rs.)': purchase.mrp_incl_gst || 0,
-          'MRP Ex. GST (Rs.)': calculatePriceExcludingGST(purchase.mrp_incl_gst ?? 0, purchase.gst_percentage ?? 0),
-          'Discount %': purchase.discount_on_purchase_percentage || 0,
-          'Purchase Cost/Unit (Ex.GST)': (() => {
-            const mrpExGst = calculatePriceExcludingGST(purchase.mrp_incl_gst ?? 0, purchase.gst_percentage ?? 0);
-            const discountPercentage = purchase.discount_on_purchase_percentage ?? 0;
-            return mrpExGst * (1 - (discountPercentage / 100));
-          })(),
-          'GST %': purchase.gst_percentage || 0,
-          'Taxable Value (Transaction Rs.)': purchase.purchase_taxable_value || 0,
-          'IGST (Transaction Rs.)': (purchase.purchase_igst ?? 0) > 0 ? (purchase.purchase_igst ?? 0) : 0,
-          'CGST (Transaction Rs.)': purchase.purchase_cgst || 0,
-          'SGST (Transaction Rs.)': purchase.purchase_sgst || 0,
-          'Invoice Value (Transaction Rs.)': purchase.purchase_invoice_value_rs || 0,
-          'Current Stock After Purchase': stockAfterPurchaseDisplay,
-          'Total Taxable Value (Current Stock Rs.)': totalValueMRP > 0 ? totalValueMRP : 0,
-          'Total CGST (Current Stock Rs.)': totalCGST > 0 ? totalCGST : 0,
-          'Total SGST (Current Stock Rs.)': totalSGST > 0 ? totalSGST : 0,
-          'Total IGST (Current Stock Rs.)': totalIGST > 0 ? totalIGST : 0,
-          'Total Amount (Incl. GST Current Stock Rs.)': (totalValueMRP + totalCGST + totalSGST + totalIGST) > 0 ? (totalValueMRP + totalCGST + totalSGST + totalIGST) : 0,
-          'Transaction Type': purchase.transaction_type || 'purchase'
+            : safeString(purchase.purchase_invoice_number),
+          'Purchase Qty.': safeNumber(purchase.purchase_qty, 0),
+          'MRP Incl. GST (Rs.)': safeNumber(purchase.mrp_incl_gst),
+          'MRP Ex. GST (Rs.)': safeNumber(mrpExGst),
+          'Discount %': safeNumber(purchase.discount_on_purchase_percentage),
+          'Purchase Cost/Unit (Ex.GST)': safeNumber(purchaseCostPerUnit),
+          'GST %': safeNumber(purchase.gst_percentage),
+          'Taxable Value (Transaction Rs.)': safeNumber(purchase.purchase_taxable_value),
+          'IGST (Transaction Rs.)': safeNumber(purchase.purchase_igst),
+          'CGST (Transaction Rs.)': safeNumber(purchase.purchase_cgst),
+          'SGST (Transaction Rs.)': safeNumber(purchase.purchase_sgst),
+          'Invoice Value (Transaction Rs.)': safeNumber(purchase.purchase_invoice_value_rs),
+          'Current Stock After Purchase': safeNumber(stockAfterPurchaseDisplay, 0),
+          'Total Taxable Value (Current Stock Rs.)': safeNumber(totalValueMRP),
+          'Total CGST (Current Stock Rs.)': safeNumber(totalCGST),
+          'Total SGST (Current Stock Rs.)': safeNumber(totalSGST),
+          'Total IGST (Current Stock Rs.)': safeNumber(totalIGST),
+          'Total Amount (Incl. GST Current Stock Rs.)': safeNumber(totalValueMRP + totalCGST + totalSGST + totalIGST),
+          'Transaction Type': safeString(purchase.transaction_type || 'purchase')
         };
       });
       
@@ -1353,7 +1384,7 @@ export default function InventoryManager() {
       }
 
       // Sales History sheet - All columns as in frontend
-      const salesData = filteredSalesHistory.map((sale, index) => {
+      const salesData = sortedSalesHistory.map((sale, index) => {
         const unitPriceInclGst = sale.unit_price_incl_gst || sale.unit_price_ex_gst * (1 + sale.gst_percentage / 100);
         const discountPercentage = sale.discount_percentage || 0;
         const taxableAfterDiscount = sale.taxable_after_discount || sale.taxable_value * (1 - discountPercentage / 100);
@@ -1367,32 +1398,32 @@ export default function InventoryManager() {
         const stockTotalValue = sale.stock_total_value || (stockTaxableValue + stockCgst + stockSgst);
 
         return {
-          'Serial No': sale.serial_no,
-          'Date': new Date(sale.date).toLocaleDateString(),
-          'Product Name': sale.product_name,
-          'HSN Code': sale.hsn_code || '-',
-          'Product Type': sale.product_type,
-          'Qty.': Number(sale.quantity),
-          'Unit Price (Ex. GST)': Number(sale.unit_price_ex_gst),
-          'Unit Price (Incl. GST)': Number(unitPriceInclGst),
-          'Taxable Value': Number(sale.taxable_value),
-          'GST %': Number(sale.gst_percentage),
-          'Discount %': Number(discountPercentage),
-          'Taxable After Discount': Number(taxableAfterDiscount),
-          'CGST': Number(sale.cgst_amount),
-          'SGST': Number(sale.sgst_amount),
-          'IGST': Number(sale.igst_amount),
-          'Discount': Number(sale.discount || 0),
-          'Tax': Number(sale.tax || 0),
-          'Invoice Value': Number(sale.invoice_value),
-          'MRP (Incl. GST)': Number(mrpInclGst),
-          'Discounted Rate': Number(discountedRate),
-          'Stock': Number(sale.stock),
-          'Stock Taxable Value': Number(stockTaxableValue),
-          'Stock CGST': Number(stockCgst),
-          'Stock SGST': Number(stockSgst),
-          'Stock Total Value': Number(stockTotalValue),
-          'Order ID': sale.order_id
+          'Serial No': safeString(sale.serial_no),
+          'Date': safeDate(sale.date),
+          'Product Name': safeString(sale.product_name),
+          'HSN Code': safeString(sale.hsn_code),
+          'Product Type': safeString(sale.product_type),
+          'Qty.': safeNumber(sale.quantity, 0),
+          'Unit Price (Ex. GST)': safeNumber(sale.unit_price_ex_gst),
+          'Unit Price (Incl. GST)': safeNumber(unitPriceInclGst),
+          'Taxable Value': safeNumber(sale.taxable_value),
+          'GST %': safeNumber(sale.gst_percentage),
+          'Discount %': safeNumber(discountPercentage),
+          'Taxable After Discount': safeNumber(taxableAfterDiscount),
+          'CGST': safeNumber(sale.cgst_amount),
+          'SGST': safeNumber(sale.sgst_amount),
+          'IGST': safeNumber(sale.igst_amount),
+          'Discount': safeNumber(sale.discount),
+          'Tax': safeNumber(sale.tax),
+          'Invoice Value': safeNumber(sale.invoice_value),
+          'MRP (Incl. GST)': safeNumber(mrpInclGst),
+          'Discounted Rate': safeNumber(discountedRate),
+          'Stock': safeNumber(sale.stock, 0),
+          'Stock Taxable Value': safeNumber(stockTaxableValue),
+          'Stock CGST': safeNumber(stockCgst),
+          'Stock SGST': safeNumber(stockSgst),
+          'Stock Total Value': safeNumber(stockTotalValue),
+          'Order ID': safeString(sale.order_id)
         };
       });
       if (salesData.length) {
@@ -1401,7 +1432,7 @@ export default function InventoryManager() {
       }
 
       // Salon Consumption sheet - All columns as in frontend
-      const salonData = filteredSalonConsumption.map((item, index) => {
+      const salonData = sortedSalonConsumption.map((item, index) => {
         const taxableValueCurrentStock = Number(item.current_stock) * Number(item.purchase_cost_per_unit_ex_gst || 0);
         const cgstCurrentStock = taxableValueCurrentStock * (Number(item.purchase_gst_percentage || 0) / 200);
         const sgstCurrentStock = taxableValueCurrentStock * (Number(item.purchase_gst_percentage || 0) / 200);
@@ -1409,27 +1440,27 @@ export default function InventoryManager() {
         const totalValueCurrentStock = taxableValueCurrentStock + cgstCurrentStock + sgstCurrentStock + igstCurrentStock;
 
         return {
-          'Serial No': (item as any).serial_no || `SALON-${filteredSalonConsumption.length - index}`,
-          'Date': new Date(item.date).toLocaleDateString(),
-          'Voucher No': item.requisition_voucher_no,
-          'Order ID': item.order_id,
-          'Product Name': item.product_name,
-          'HSN Code': item.hsn_code || '-',
-          'Quantity': Number(item.consumption_qty),
-          'Unit Price (Ex. GST)': Number(item.purchase_cost_per_unit_ex_gst),
-          'GST %': Number(item.purchase_gst_percentage),
-          'Taxable Value': Number(item.purchase_taxable_value),
-          'IGST': Number(item.purchase_igst),
-          'CGST': Number(item.purchase_cgst),
-          'SGST': Number(item.purchase_sgst),
-          'Total Cost': Number(item.total_purchase_cost),
-          'Discounted Rate': Number(item.discounted_sales_rate),
-          'Current Stock': Number(item.current_stock),
-          'Taxable Value (Current Stock Rs.)': taxableValueCurrentStock,
-          'IGST (Current Stock Rs.)': igstCurrentStock,
-          'CGST (Current Stock Rs.)': cgstCurrentStock,
-          'SGST (Current Stock Rs.)': sgstCurrentStock,
-          'Total Value (Current Stock Rs.)': totalValueCurrentStock
+          'Serial No': safeString((item as any).serial_no || `SALON-${sortedSalonConsumption.length - index}`),
+          'Date': safeDate(item.date),
+          'Voucher No': safeString(item.requisition_voucher_no),
+          'Order ID': safeString(item.order_id),
+          'Product Name': safeString(item.product_name),
+          'HSN Code': safeString(item.hsn_code),
+          'Quantity': safeNumber(item.consumption_qty, 0),
+          'Unit Price (Ex. GST)': safeNumber(item.purchase_cost_per_unit_ex_gst),
+          'GST %': safeNumber(item.purchase_gst_percentage),
+          'Taxable Value': safeNumber(item.purchase_taxable_value),
+          'IGST': safeNumber(item.purchase_igst),
+          'CGST': safeNumber(item.purchase_cgst),
+          'SGST': safeNumber(item.purchase_sgst),
+          'Total Cost': safeNumber(item.total_purchase_cost),
+          'Discounted Rate': safeNumber(item.discounted_sales_rate),
+          'Current Stock': safeNumber(item.current_stock, 0),
+          'Taxable Value (Current Stock Rs.)': safeNumber(taxableValueCurrentStock),
+          'IGST (Current Stock Rs.)': safeNumber(igstCurrentStock),
+          'CGST (Current Stock Rs.)': safeNumber(cgstCurrentStock),
+          'SGST (Current Stock Rs.)': safeNumber(sgstCurrentStock),
+          'Total Value (Current Stock Rs.)': safeNumber(totalValueCurrentStock)
         };
       });
       if (salonData.length) {
@@ -1438,19 +1469,19 @@ export default function InventoryManager() {
       }
 
       // Balance Stock sheet - All columns as in frontend
-      const balanceData = filteredBalanceStock.map((item, index) => ({
-        'Serial No': item.serial_no || `STOCK-${filteredBalanceStock.length - index}`,
-        'Date': new Date(item.date).toLocaleDateString(),
-        'Product Name': item.product_name,
-        'HSN Code': item.hsn_code || '-',
-        'Units': item.units,
+      const balanceData = sortedBalanceStock.map((item, index) => ({
+        'Serial No': safeString(item.serial_no || `STOCK-${sortedBalanceStock.length - index}`),
+        'Date': safeDate(item.date),
+        'Product Name': safeString(item.product_name),
+        'HSN Code': safeString(item.hsn_code),
+        'Units': safeString(item.units),
         'Change Type': item.change_type === 'addition' ? 'Addition' : 'Reduction',
-        'Source': item.source,
-        'Reference ID': item.reference_id,
+        'Source': safeString(item.source),
+        'Reference ID': safeString(item.reference_id),
         'Quantity Change': item.change_type === 'addition'
-          ? `+${Math.abs(Number(item.quantity_change))}`
-          : `-${Math.abs(Number(item.quantity_change))}`,
-        'Quantity After': Number(item.quantity_after_change)
+          ? safeNumber(Math.abs(Number(item.quantity_change)), 0)
+          : safeNumber(-Math.abs(Number(item.quantity_change)), 0),
+        'Quantity After': safeNumber(item.quantity_after_change, 0)
       }));
       if (balanceData.length) {
         const ws = XLSX.utils.json_to_sheet(balanceData);
@@ -1463,6 +1494,7 @@ export default function InventoryManager() {
       saveAs(blob, `inventory_export_${new Date().toISOString().split('T')[0]}.xlsx`);
       toast.success('Exported all tables successfully with all columns!');
     } catch (error) {
+      console.error('Export error:', error);
       toast.error(`Export failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setIsExporting(false);
@@ -2498,7 +2530,7 @@ export default function InventoryManager() {
     <Box sx={{ p: 3 }}>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
         <Typography variant="h1">
-          Inventory Manager
+          Inventory
         </Typography>
         
         <Box sx={{ display: 'flex', gap: 1 }}>
