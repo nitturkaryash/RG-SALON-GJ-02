@@ -211,44 +211,39 @@ export default function Orders() {
         // This is a multi-expert appointment - aggregate the orders
         console.log('[Orders Aggregation] Aggregating multi-expert orders for appointment:', appointmentId, 'orders:', appointmentOrders.length);
         
-        // Use the first order as the base and aggregate the rest
+        // Use the first order as the base and preserve original amounts
         const baseOrder = appointmentOrders[0];
         const aggregatedOrder: ExtendedOrder & { stylist_names: string[] } = {
           ...baseOrder,
-          total: 0,
-          total_amount: 0,
-          subtotal: 0,
-          tax: 0,
+          // Keep original amounts from base order - don't sum split amounts
+          total: baseOrder.total || 0,
+          total_amount: baseOrder.total_amount || 0,
+          subtotal: baseOrder.subtotal || 0,
+          tax: baseOrder.tax || 0,
+          // Keep original payment method from base order
+          payment_method: baseOrder.payment_method,
           stylist_names: [],
-          payments: [],
-          services: [],
+          // Keep original payments from base order - don't duplicate split payments
+          payments: baseOrder.payments || [],
+          // Keep services from the base order only - don't duplicate items
+          services: baseOrder.services || [],
           aggregated_multi_expert: true as any
         };
 
-        // Aggregate all orders for this appointment
+        // Only aggregate stylist names, keep original financial data
         appointmentOrders.forEach(order => {
-          aggregatedOrder.total = (aggregatedOrder.total || 0) + (order.total || 0);
-          aggregatedOrder.total_amount = (aggregatedOrder.total_amount || 0) + (order.total_amount || 0);
-          aggregatedOrder.subtotal = (aggregatedOrder.subtotal || 0) + (order.subtotal || 0);
-          aggregatedOrder.tax = (aggregatedOrder.tax || 0) + (order.tax || 0);
-          
           if (order.stylist_name && !aggregatedOrder.stylist_names.includes(order.stylist_name)) {
             aggregatedOrder.stylist_names.push(order.stylist_name);
           }
           
-          if (order.payments) {
-            aggregatedOrder.payments = [...(aggregatedOrder.payments || []), ...order.payments];
-          }
-          
-          if (order.services) {
-            aggregatedOrder.services = [...(aggregatedOrder.services || []), ...order.services];
-          }
+          // Don't aggregate payments or amounts - the split is only for commission tracking
+          // The customer should see the original order amounts, not the stylist split amounts
         });
 
         // Update stylist_name to show all stylists
         aggregatedOrder.stylist_name = aggregatedOrder.stylist_names.filter(Boolean).join(', ');
         
-        console.log('[Orders Aggregation] Created aggregate for appointment:', appointmentId, 'stylists:', aggregatedOrder.stylist_name, 'total:', aggregatedOrder.total);
+        console.log('[Orders Aggregation] Created aggregate for appointment:', appointmentId, 'stylists:', aggregatedOrder.stylist_name, 'total:', aggregatedOrder.total, 'items:', aggregatedOrder.services?.length);
         
         result.push(aggregatedOrder as ExtendedOrder);
       } else {
