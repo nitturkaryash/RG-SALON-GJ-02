@@ -1759,149 +1759,157 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
 
   // Update the renderAppointmentsForStylist function
   const renderAppointmentsForStylist = (stylistId: string) => {
-    return todayAppointments
-      .filter(appointment => appointment.stylist_id === stylistId)
-      .map(appointment => {
-        // Find the service details
-        const serviceName = appointment.serviceDetails?.name || 
-                           (services.find(s => s.id === appointment.service_id)?.name) || 
-                           'Unknown Service';
-        
-        // Determine if the appointment is paid
-        const isPaid = appointment.paid || false;
-        
-        // Determine appointment status
-        const status = appointment.status || 'scheduled';
-        
-        // Check if appointment is checked in
-        const isCheckedIn = checkedInIds.has(appointment.id);
-        
-        // Format times properly
-        const startTime = formatTime(appointment.start_time);
-        const endTime = formatTime(appointment.end_time);
-        
-        // Helper function to get client name with all available fallbacks
-        const getClientName = (appointment: any): string => {
-          if (!appointment) return '';
-          
-          if (appointment.client_name) {
-            return appointment.client_name;
-          }
+    // 1. Collect and sort today's appointments for the stylist
+    const stylistAppointments = todayAppointments
+      .filter(app => app.stylist_id === stylistId)
+      .sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
 
-          if (appointment.client) {
-            return appointment.client.name || '';
-          }
+    // 2. Pre-compute a column index and total columns for each appointment so that
+    //    overlapping ones appear side-by-side instead of on top of each other.
+    //    This is a simple interval-partitioning algorithm.
+    interface ColumnMeta { column: number; totalColumns: number }
+    const metaMap: Record<string, ColumnMeta> = {};
+    const active: { id: string; end: number; column: number }[] = [];
 
-          return '';
-        };
+    stylistAppointments.forEach(app => {
+      const appStart = new Date(app.start_time).getTime();
+      const appEndRaw = new Date(app.end_time).getTime();
+      // Handle overnight appointments (end before start) – push to next day
+      const appEnd = appEndRaw <= appStart ? appEndRaw + 24 * 60 * 60 * 1000 : appEndRaw;
 
-        // Helper function to get client phone with multiple fallbacks
-        const getClientPhone = (appointment: any): string => {
-          // First try clientDetails array
-          if (appointment.clientDetails && 
-              appointment.clientDetails.length > 0 && 
-              appointment.clientDetails[0]?.phone) {
-            return appointment.clientDetails[0].phone;
-          }
-          
-          // Then try direct phone property
-          if (appointment.phone) {
-            return appointment.phone;
-          }
-          
-          // Then try looking up from clients array
-          if (appointment.client_id && allClients.length > 0) {
-            const client = allClients.find(c => c.id === appointment.client_id);
-            if (client?.phone) {
-              return client.phone;
-            }
-          }
-          
-          // Then try client object
-          if (appointment.client && appointment.client.phone) {
-            return appointment.client.phone;
-          }
-          
-          // Then try booker phone for appointments booked for someone else
-          if (appointment.is_for_someone_else && appointment.booker_phone) {
-            return appointment.booker_phone;
-          }
-          
-          // If all else fails
-          return 'No phone';
-        };
-        
-        const clientName = getClientName(appointment);
-        const clientPhone = getClientPhone(appointment);
-        
-        console.log(`Rendering appointment ${appointment.id} for stylist ${stylistId}:`, appointment);
+      // Remove no-longer-overlapping appointments from active list
+      for (let i = active.length - 1; i >= 0; i--) {
+        if (active[i].end <= appStart) {
+          active.splice(i, 1);
+        }
+      }
 
-        return (
-          <Tooltip
-            key={appointment.id}
-            title={
-              <Box>
-                <Typography variant="subtitle2">
-                  {clientName}
-                </Typography>
-                <Typography variant="body2" sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                  <PhoneIcon fontSize="small" />
-                  {clientPhone}
-                </Typography>
-                <Typography variant="body2">
-                  {serviceName} ({startTime} - {endTime})
-                </Typography>
-                {isCheckedIn && <Typography variant="body2">✓ Checked In</Typography>}
-                {status === 'completed' && <Typography variant="body2">✓ Completed (Click to view bill)</Typography>}
-                {appointment.is_for_someone_else && appointment.booker_name && (
-                  <>
-                    <Divider sx={{ my: 0.5 }} />
-                    <Typography variant="caption" sx={{ color: '#1976D2', fontWeight: 'bold' }}>
-                      Booked by: {appointment.booker_name}
-                      {appointment.booker_phone && ` (${appointment.booker_phone})`}
-                    </Typography>
-                  </>
-                )}
-              </Box>
-            }
-            arrow
-          >
-            <AppointmentCard
-              draggable
-              onDragStart={(e) => handleDragStart(e, appointment)}
-              onClick={() => handleAppointmentClick(appointment)}
-              onDoubleClick={() => handleAppointmentClick(appointment)}
-              onContextMenu={(e) => handleContextMenuClick(appointment, e)}
-              style={{
-                top: `${getAppointmentPosition(appointment.start_time)}px`,
-                height: `${getAppointmentDuration(appointment.start_time, appointment.end_time)}px`,
-                backgroundColor: status === 'completed'
-                  ? theme.palette.grey[400]
-                  : isCheckedIn 
-                    ? '#D2B48C'
-                    : isPaid
-                      ? theme.palette.success.light
-                      : theme.palette.primary.main
-              }}
-              duration={getAppointmentDuration(appointment.start_time, appointment.end_time)}
-              isPaid={isPaid}
-              status={status as 'scheduled' | 'completed' | 'cancelled'}
-              isCheckedIn={isCheckedIn}
-            >
-              <Typography variant="subtitle2" className="appointment-client-name">
-                {clientName}
-                {appointment.is_for_someone_else && ' 👤'}
-              </Typography>
-              <Typography variant="body2" className="appointment-service">
-                {serviceName}
-              </Typography>
-              <Typography variant="body2" className="appointment-time">
-                {`${startTime} - ${endTime}`}
-              </Typography>
-            </AppointmentCard>
-          </Tooltip>
-        );
+      // Determine used columns among currently active appointments
+      const usedColumns = new Set(active.map(a => a.column));
+      let column = 0;
+      while (usedColumns.has(column)) column++;
+
+      // Assign column to current appointment and push to active list
+      active.push({ id: app.id, end: appEnd, column });
+      metaMap[app.id] = { column, totalColumns: Math.max(usedColumns.size + 1, column + 1) };
+
+      // Update totalColumns for previously active appointments if needed
+      active.forEach(a => {
+        metaMap[a.id].totalColumns = Math.max(metaMap[a.id].totalColumns, metaMap[app.id].totalColumns);
       });
+    });
+
+    // Helper to compute positioning styles based on metaMap
+    const getPositionStyle = (appointmentId: string): React.CSSProperties => {
+      const meta = metaMap[appointmentId];
+      if (!meta) return {};
+      const { column, totalColumns } = meta;
+      const gutterPx = 4; // space between columns
+      const columnWidthPercent = 100 / totalColumns;
+      const widthCalc = `calc(${columnWidthPercent}% - ${gutterPx * (totalColumns - 1) / totalColumns}px)`;
+      const leftCalc = `calc(${column * columnWidthPercent}% + ${gutterPx * column}px)`;
+      return {
+        width: widthCalc,
+        left: leftCalc,
+        right: 'auto', // override default right spacing from styled component
+      } as React.CSSProperties;
+    };
+
+    // 3. Render the appointment cards with the computed styles
+    return stylistAppointments.map(appointment => {
+      // Find the service details
+      const serviceName = appointment.serviceDetails?.name ||
+                         (services.find(s => s.id === appointment.service_id)?.name) ||
+                         'Unknown Service';
+
+      // Determine if the appointment is paid
+      const isPaid = appointment.paid || false;
+      const status = appointment.status || 'scheduled';
+      const isCheckedIn = checkedInIds.has(appointment.id);
+      const startTime = formatTime(appointment.start_time);
+      const endTime = formatTime(appointment.end_time);
+
+      const clientName = getClientName(appointment);
+      const clientPhone = (() => {
+        // First try clientDetails array
+        if (appointment.clientDetails && appointment.clientDetails.length > 0 && appointment.clientDetails[0]?.phone) {
+          return appointment.clientDetails[0].phone;
+        }
+        if (appointment.phone) return appointment.phone;
+        if (appointment.client_id && allClients.length > 0) {
+          const client = allClients.find(c => c.id === appointment.client_id);
+          if (client?.phone) return client.phone;
+        }
+        if (appointment.client && appointment.client.phone) return appointment.client.phone;
+        if (appointment.is_for_someone_else && appointment.booker_phone) return appointment.booker_phone;
+        return 'No phone';
+      })();
+
+      return (
+        <Tooltip
+          key={appointment.id}
+          title={
+            <Box>
+              <Typography variant="subtitle2">{clientName}</Typography>
+              <Typography variant="body2" sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                <PhoneIcon fontSize="small" />
+                {clientPhone}
+              </Typography>
+              <Typography variant="body2">
+                {serviceName} ({startTime} - {endTime})
+              </Typography>
+              {isCheckedIn && <Typography variant="body2">✓ Checked In</Typography>}
+              {status === 'completed' && <Typography variant="body2">✓ Completed (Click to view bill)</Typography>}
+              {appointment.is_for_someone_else && appointment.booker_name && (
+                <>
+                  <Divider sx={{ my: 0.5 }} />
+                  <Typography variant="caption" sx={{ color: '#1976D2', fontWeight: 'bold' }}>
+                    Booked by: {appointment.booker_name}
+                    {appointment.booker_phone && ` (${appointment.booker_phone})`}
+                  </Typography>
+                </>
+              )}
+            </Box>
+          }
+          arrow
+        >
+          <AppointmentCard
+            draggable
+            onDragStart={e => handleDragStart(e, appointment)}
+            onClick={() => handleAppointmentClick(appointment)}
+            onDoubleClick={() => handleAppointmentClick(appointment)}
+            onContextMenu={e => handleContextMenuClick(appointment, e)}
+            style={{
+              top: `${getAppointmentPosition(appointment.start_time)}px`,
+              height: `${getAppointmentDuration(appointment.start_time, appointment.end_time)}px`,
+              backgroundColor: status === 'completed'
+                ? theme.palette.grey[400]
+                : isCheckedIn
+                  ? '#D2B48C'
+                  : isPaid
+                    ? theme.palette.success.light
+                    : theme.palette.primary.main,
+              ...getPositionStyle(appointment.id),
+            }}
+            duration={getAppointmentDuration(appointment.start_time, appointment.end_time)}
+            isPaid={isPaid}
+            status={status as 'scheduled' | 'completed' | 'cancelled'}
+            isCheckedIn={isCheckedIn}
+          >
+            <Typography variant="subtitle2" className="appointment-client-name">
+              {clientName}
+              {appointment.is_for_someone_else && ' 👤'}
+            </Typography>
+            <Typography variant="body2" className="appointment-service">
+              {serviceName}
+            </Typography>
+            <Typography variant="body2" className="appointment-time">
+              {`${startTime} - ${endTime}`}
+            </Typography>
+          </AppointmentCard>
+        </Tooltip>
+      );
+    });
   };
 
   // Add state for edit break functionality
