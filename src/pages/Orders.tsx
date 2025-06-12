@@ -158,39 +158,6 @@ export default function Orders() {
     products: 0,
     totalRevenue: 0,
   })
-  
-  // Update order stats when orders change
-  useEffect(() => {
-    if (orders) {
-      const stats = {
-        total: orders.length,
-        completed: orders.filter(order => normalizeOrder(order).status === 'completed').length,
-        pending: orders.filter(order => normalizeOrder(order).status === 'pending').length,
-        salonPurchases: orders.filter(order => isSalonConsumptionOrder(normalizeOrder(order))).length,
-        services: orders.filter(order => {
-          const normalized = normalizeOrder(order);
-          const type = getPurchaseType(normalized);
-          return type === 'service' || type === 'both';
-        }).length,
-        products: orders.filter(order => {
-          const normalized = normalizeOrder(order);
-          const type = getPurchaseType(normalized);
-          return type === 'product' || type === 'both';
-        }).length,
-        totalRevenue: orders.reduce((sum, orderRaw) => {
-          const order = normalizeOrder(orderRaw);
-          // Only count completed orders or the paid portion of pending orders
-          if (order.status === 'completed') {
-            return sum + (order.total || 0);
-          } else if (order.status === 'pending' && (order.pending_amount || 0) < (order.total || 0)) {
-            return sum + ((order.total || 0) - (order.pending_amount || 0));
-          }
-          return sum;
-        }, 0),
-      };
-      setOrderStats(stats);
-    }
-  }, [orders]);
 
   // Convert any order to our ExtendedOrder type
   const normalizeOrder = (order: any): ExtendedOrder => {
@@ -203,6 +170,142 @@ export default function Orders() {
       total_amount: order.total_amount || order.total || 0,
     } as ExtendedOrder;
   };
+
+  // Aggregate multi-expert orders with same appointment_id
+  const aggregatedOrders = useMemo(() => {
+    if (!orders) return [];
+
+    const result: ExtendedOrder[] = [];
+    const aggMap: Record<string, ExtendedOrder> = {};
+
+    console.log('[Orders Aggregation] Processing orders:', orders.length);
+    
+    // Group orders by appointment_id to find potential multi-expert orders
+    const ordersByAppointment: Record<string, ExtendedOrder[]> = {};
+    const standaloneOrders: ExtendedOrder[] = [];
+    
+    orders.forEach(raw => {
+      const order = normalizeOrder(raw);
+      console.log('[Orders Aggregation] Order:', {
+        id: order.id,
+        client: order.client_name,
+        stylist: order.stylist_name,
+        multi_expert: order.multi_expert,
+        appointment_id: order.appointment_id,
+        total: order.total
+      });
+      
+      if (order.appointment_id) {
+        if (!ordersByAppointment[order.appointment_id]) {
+          ordersByAppointment[order.appointment_id] = [];
+        }
+        ordersByAppointment[order.appointment_id].push(order);
+      } else {
+        standaloneOrders.push(order);
+      }
+    });
+
+    // Process appointment-based orders
+    Object.entries(ordersByAppointment).forEach(([appointmentId, appointmentOrders]) => {
+      if (appointmentOrders.length > 1) {
+        // This is a multi-expert appointment - aggregate the orders
+        console.log('[Orders Aggregation] Aggregating multi-expert orders for appointment:', appointmentId, 'orders:', appointmentOrders.length);
+        
+        // Use the first order as the base and aggregate the rest
+        const baseOrder = appointmentOrders[0];
+        const aggregatedOrder: ExtendedOrder & { stylist_names: string[] } = {
+          ...baseOrder,
+          total: 0,
+          total_amount: 0,
+          subtotal: 0,
+          tax: 0,
+          stylist_names: [],
+          payments: [],
+          services: [],
+          aggregated_multi_expert: true as any
+        };
+
+        // Aggregate all orders for this appointment
+        appointmentOrders.forEach(order => {
+          aggregatedOrder.total = (aggregatedOrder.total || 0) + (order.total || 0);
+          aggregatedOrder.total_amount = (aggregatedOrder.total_amount || 0) + (order.total_amount || 0);
+          aggregatedOrder.subtotal = (aggregatedOrder.subtotal || 0) + (order.subtotal || 0);
+          aggregatedOrder.tax = (aggregatedOrder.tax || 0) + (order.tax || 0);
+          
+          if (order.stylist_name && !aggregatedOrder.stylist_names.includes(order.stylist_name)) {
+            aggregatedOrder.stylist_names.push(order.stylist_name);
+          }
+          
+          if (order.payments) {
+            aggregatedOrder.payments = [...(aggregatedOrder.payments || []), ...order.payments];
+          }
+          
+          if (order.services) {
+            aggregatedOrder.services = [...(aggregatedOrder.services || []), ...order.services];
+          }
+        });
+
+        // Update stylist_name to show all stylists
+        aggregatedOrder.stylist_name = aggregatedOrder.stylist_names.filter(Boolean).join(', ');
+        
+        console.log('[Orders Aggregation] Created aggregate for appointment:', appointmentId, 'stylists:', aggregatedOrder.stylist_name, 'total:', aggregatedOrder.total);
+        
+        result.push(aggregatedOrder as ExtendedOrder);
+      } else {
+        // Single order for this appointment
+        console.log('[Orders Aggregation] Added single appointment order:', appointmentOrders[0].id);
+        result.push(appointmentOrders[0]);
+      }
+    });
+
+    // Add standalone orders (no appointment_id)
+    standaloneOrders.forEach(order => {
+      console.log('[Orders Aggregation] Added standalone order:', order.id);
+      result.push(order);
+    });
+
+    console.log('[Orders Aggregation] Final result count:', result.length, 'from original:', orders.length);
+
+    // Sort by created_at desc to match previous behaviour
+    return result.sort((a, b) => {
+      const da = new Date(a.created_at || '').getTime();
+      const db = new Date(b.created_at || '').getTime();
+      return db - da;
+    });
+  }, [orders]);
+  
+  // Update order stats when orders change
+  useEffect(() => {
+    if (aggregatedOrders) {
+      const stats = {
+        total: aggregatedOrders.length,
+        completed: aggregatedOrders.filter(order => normalizeOrder(order).status === 'completed').length,
+        pending: aggregatedOrders.filter(order => normalizeOrder(order).status === 'pending').length,
+        salonPurchases: aggregatedOrders.filter(order => isSalonConsumptionOrder(normalizeOrder(order))).length,
+        services: aggregatedOrders.filter(order => {
+          const normalized = normalizeOrder(order);
+          const type = getPurchaseType(normalized);
+          return type === 'service' || type === 'both';
+        }).length,
+        products: aggregatedOrders.filter(order => {
+          const normalized = normalizeOrder(order);
+          const type = getPurchaseType(normalized);
+          return type === 'product' || type === 'both';
+        }).length,
+        totalRevenue: aggregatedOrders.reduce((sum, orderRaw) => {
+          const order = normalizeOrder(orderRaw);
+          // Only count completed orders or the paid portion of pending orders
+          if (order.status === 'completed') {
+            return sum + (order.total || 0);
+          } else if (order.status === 'pending' && (order.pending_amount || 0) < (order.total || 0)) {
+            return sum + ((order.total || 0) - (order.pending_amount || 0));
+          }
+          return sum;
+        }, 0),
+      };
+      setOrderStats(stats);
+    }
+  }, [aggregatedOrders]);
 
   // When orders are loaded from the API, normalize them (commented out to prevent recursion)
   /*
@@ -316,10 +419,10 @@ export default function Orders() {
   }
 
   const handleExportCSV = () => {
-    if (!orders || orders.length === 0) return;
+    if (!aggregatedOrders || aggregatedOrders.length === 0) return;
     
-    // Pass `orders` as the second argument for context and override ID to match display
-    let formattedOrders = formatOrdersForExport(filteredOrders, orders);
+    // Pass `aggregatedOrders` as the second argument for context and override ID to match display
+    let formattedOrders = formatOrdersForExport(filteredOrders, aggregatedOrders);
     formattedOrders = formattedOrders.map((item, index) => ({
       ...item,
       id: formatOrderId(filteredOrders[index])
@@ -328,10 +431,10 @@ export default function Orders() {
   }
 
   const handleExportPDF = () => {
-    if (!orders || orders.length === 0) return;
+    if (!aggregatedOrders || aggregatedOrders.length === 0) return;
     
-    // Pass `orders` as the second argument for context and override ID to match display
-    let formattedOrdersPDF = formatOrdersForExport(filteredOrders, orders);
+    // Pass `aggregatedOrders` as the second argument for context and override ID to match display
+    let formattedOrdersPDF = formatOrdersForExport(filteredOrders, aggregatedOrders);
     formattedOrdersPDF = formattedOrdersPDF.map((item, index) => ({
       ...item,
       id: formatOrderId(filteredOrders[index])
@@ -480,9 +583,9 @@ export default function Orders() {
 
   // Filter orders based on all filters
   const filteredOrders = useMemo(() => {
-    if (!orders) return [];
+    if (!aggregatedOrders) return [];
     
-    return orders.map(orderRaw => {
+    return aggregatedOrders.map(orderRaw => {
       // Create a copy of the order to modify and normalize it
       const order = normalizeOrder(orderRaw);
       
@@ -567,7 +670,7 @@ export default function Orders() {
       
       return matchesSearch && matchesPayment && matchesStatus && matchesSalonConsumption && matchesPurchaseType && matchesDateRange;
     });
-  }, [orders, searchQuery, paymentFilter, statusFilter, purchaseTypeFilter, isSalonPurchaseFilter, dateRange]);
+  }, [aggregatedOrders, searchQuery, paymentFilter, statusFilter, purchaseTypeFilter, isSalonPurchaseFilter, dateRange]);
   
   // Apply pagination
   const paginatedOrders = useMemo(() => {
@@ -754,10 +857,10 @@ export default function Orders() {
     // Check if this is a salon consumption order
     const isSalonOrder = isSalonConsumptionOrder(order);
     
-    if (!orders) return order.id;
+    if (!aggregatedOrders) return order.id;
     
     // Sort orders by creation date to maintain consistent numbering
-    const sortedOrders = [...orders].sort((a, b) => {
+    const sortedOrders = [...aggregatedOrders].sort((a, b) => {
       const dateA = new Date(a.created_at || '').getTime();
       const dateB = new Date(b.created_at || '').getTime();
       return dateA - dateB;
@@ -784,13 +887,20 @@ export default function Orders() {
   // Add this function before the return statement
   const renderPaymentMethods = (order: ExtendedOrder) => {
     if (order.payments && order.payments.length > 0) {
+      // Group payments by method and sum up the amounts
+      const paymentSummary: Record<string, number> = {};
+      order.payments.forEach(payment => {
+        const method = payment.payment_method;
+        paymentSummary[method] = (paymentSummary[method] || 0) + payment.amount;
+      });
+
       return (
         <Box>
-          {order.payments.map((payment, index) => (
+          {Object.entries(paymentSummary).map(([method, amount], index) => (
             <Box key={index} sx={{ mb: 0.5 }}>
               <Chip
                 size="small"
-                label={`${PAYMENT_METHOD_LABELS[payment.payment_method as PaymentMethod] || payment.payment_method}: ${formatCurrency(payment.amount)}`}
+                label={`${PAYMENT_METHOD_LABELS[method as PaymentMethod] || method}: ${formatCurrency(amount)}`}
                 sx={{ mr: 0.5 }}
               />
             </Box>
@@ -834,6 +944,8 @@ export default function Orders() {
       </Box>
     );
   };
+
+
 
   if (isLoading) {
     return (
@@ -1233,20 +1345,33 @@ export default function Orders() {
                 {paginatedOrders.map((order) => {
                   // Check if this is a salon consumption order
                   const isSalonOrder = isSalonConsumptionOrder(order);
+                  // Check if this is an aggregated multi-expert order
+                  const isAggregatedOrder = (order as any).aggregated_multi_expert;
                   
                   return (
                   <TableRow 
                     key={order.id}
                     sx={{
-                      backgroundColor: isSalonOrder ? 'rgba(237, 108, 2, 0.05)' : 'inherit',
+                      backgroundColor: isSalonOrder ? 'rgba(237, 108, 2, 0.05)' : 
+                                      isAggregatedOrder ? 'rgba(156, 39, 176, 0.05)' : 'inherit',
                       '&:hover': {
-                        backgroundColor: isSalonOrder ? 'rgba(237, 108, 2, 0.12)' : 'rgba(0, 0, 0, 0.04)',
-                      }
+                        backgroundColor: isSalonOrder ? 'rgba(237, 108, 2, 0.12)' : 
+                                        isAggregatedOrder ? 'rgba(156, 39, 176, 0.12)' : 'rgba(0, 0, 0, 0.04)',
+                      },
+                      borderLeft: isAggregatedOrder ? '3px solid #9c27b0' : 'none'
                     }}
                   >
                     <TableCell>
                       <Typography variant="body2" fontFamily="monospace">
                         {formatOrderId(order)}
+                        {isAggregatedOrder && (
+                          <Chip 
+                            size="small" 
+                            label="Multi-Expert" 
+                            color="secondary" 
+                            sx={{ ml: 1, fontSize: '0.7rem' }} 
+                          />
+                        )}
                       </Typography>
                     </TableCell>
                     <TableCell>
@@ -1392,6 +1517,14 @@ export default function Orders() {
               <Box sx={{ mb: 2 }}>
                 <Typography variant="body2">
                   <strong>Order ID:</strong> {formatOrderId(selectedOrder)}
+                  {(selectedOrder as any).aggregated_multi_expert && (
+                    <Chip 
+                      size="small" 
+                      label="Multi-Expert Order" 
+                      color="secondary" 
+                      sx={{ ml: 1 }} 
+                    />
+                  )}
                 </Typography>
                 <Typography variant="body2">
                   <strong>Date:</strong> {new Date(selectedOrder.created_at).toLocaleString()}
@@ -1408,7 +1541,12 @@ export default function Orders() {
                   )}
                 </Typography>
                 <Typography variant="body2">
-                  <strong>Stylist:</strong> {selectedOrder.stylist_name}
+                  <strong>Stylist{(selectedOrder as any).aggregated_multi_expert ? 's' : ''}:</strong> {selectedOrder.stylist_name}
+                  {(selectedOrder as any).aggregated_multi_expert && (
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                      Revenue split among all experts
+                    </Typography>
+                  )}
                 </Typography>
                 <Typography variant="body2">
                   <strong>Purchase Type:</strong> <Box component="span" sx={{ ml: 1 }}>{renderPurchaseTypeChip(getPurchaseType(selectedOrder), selectedOrder)}</Box>

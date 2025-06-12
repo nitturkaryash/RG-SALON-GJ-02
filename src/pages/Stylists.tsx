@@ -183,7 +183,9 @@ export default function Stylists() {
           return isBefore(holidayDate, today) && !isToday(holidayDate);
         }).length;
         
-        // Calculate service revenue
+        // Calculate service revenue with proper multi-expert revenue splitting
+        // Since POS now creates separate orders for each expert with split amounts, 
+        // we can simply sum up the revenue from orders assigned to this stylist
         const stylistOrders = orders.filter(order => {
           const orderStylistId = order.stylist?.id;
           const orderStylistName = order.stylist_name || order.stylist?.name;
@@ -196,14 +198,19 @@ export default function Stylists() {
             if (order.status === 'completed' && order.services && Array.isArray(order.services)) {
               const servicePriceInOrder = order.services
                 .filter(item => !item.type || item.type === 'service')
-                .reduce((sum, service) => sum + (service.price || 0), 0);
+                .reduce((sum, service) => sum + ((service.price || 0) * (service.quantity || 1)), 0);
 
+              let revenueToAdd = servicePriceInOrder;
+              
+              // Add proportional tax if applicable
               if (servicePriceInOrder > 0 && order.subtotal > 0 && order.tax > 0) {
                 const serviceTax = (servicePriceInOrder / order.subtotal) * order.tax;
-                return total + servicePriceInOrder + serviceTax;
+                revenueToAdd += serviceTax;
               }
               
-              return total + servicePriceInOrder;
+              console.log(`[Revenue Calculation] ${stylist.name}: Order ${order.id} contributes ${revenueToAdd} (Service: ${servicePriceInOrder}, Tax: ${servicePriceInOrder > 0 && order.subtotal > 0 && order.tax > 0 ? (servicePriceInOrder / order.subtotal) * order.tax : 0})`);
+              
+              return total + revenueToAdd;
             }
           }
           return total;
@@ -653,6 +660,29 @@ export default function Stylists() {
                           <Typography variant="subtitle2" color="primary">
                             {formatCurrency(report.serviceRevenue)}
                           </Typography>
+                          {/* Show indicator if this stylist has any multi-expert orders in the current month */}
+                          {orders && orders.some(order => {
+                            const orderDate = new Date(order.created_at);
+                            const isInMonth = isWithinInterval(orderDate, { start: startOfMonth(reportMonth), end: endOfMonth(reportMonth) });
+                            const orderStylistId = order.stylist?.id;
+                            const orderStylistName = order.stylist_name || order.stylist?.name;
+                            const isStylistOrder = orderStylistId ? orderStylistId === stylist.id : orderStylistName === stylist.name;
+                            
+                            // Check if this order is part of a multi-expert appointment
+                            if (isInMonth && isStylistOrder && order.appointment_id) {
+                              const relatedOrders = orders.filter(relOrder => 
+                                relOrder.appointment_id === order.appointment_id && 
+                                relOrder.status === 'completed' &&
+                                relOrder.id !== order.id // Exclude the current order
+                              );
+                              return relatedOrders.length > 0; // If there are other orders with same appointment_id
+                            }
+                            return false;
+                          }) && (
+                            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.7rem' }}>
+                              * Revenue shared with other experts
+                            </Typography>
+                          )}
                         </TableCell>
                         <TableCell>
                           <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>

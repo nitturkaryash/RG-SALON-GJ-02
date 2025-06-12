@@ -1760,8 +1760,34 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
   // Update the renderAppointmentsForStylist function
   const renderAppointmentsForStylist = (stylistId: string) => {
     // 1. Collect and sort today's appointments for the stylist
+    // For multi-expert appointments (with booking_id), only show in the primary expert's column
     const stylistAppointments = todayAppointments
-      .filter(app => app.stylist_id === stylistId)
+      .filter(app => {
+        // Always show appointments where this stylist is the primary stylist
+        if (app.stylist_id === stylistId) {
+          // If this appointment has a booking_id, check if this is the primary appointment
+          if (app.booking_id) {
+            // Find all appointments with the same booking_id
+            const relatedAppointments = todayAppointments.filter(relApp => 
+              relApp.booking_id === app.booking_id && relApp.booking_id
+            );
+            
+            // If there are multiple appointments with the same booking_id,
+            // only show in the column of the stylist with the earliest appointment time
+            if (relatedAppointments.length > 1) {
+              // Find the primary appointment (earliest start time)
+              const primaryAppointment = relatedAppointments.reduce((earliest, current) => 
+                new Date(current.start_time).getTime() < new Date(earliest.start_time).getTime() ? current : earliest
+              );
+              
+              // Only show if this is the primary appointment's stylist
+              return primaryAppointment.stylist_id === stylistId;
+            }
+          }
+          return true;
+        }
+        return false;
+      })
       .sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
 
     // 2. Pre-compute a column index and total columns for each appointment so that
@@ -1830,6 +1856,11 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
       const endTime = formatTime(appointment.end_time);
 
       const clientName = getAppointmentClientName(appointment, allClients || []);
+      
+      // Check if this is a multi-expert appointment
+      const isMultiExpert = appointment.booking_id && todayAppointments.filter(app => 
+        app.booking_id === appointment.booking_id && app.booking_id
+      ).length > 1;
       const clientPhone = (() => {
         // First try clientDetails array
         if (appointment.clientDetails && appointment.clientDetails.length > 0 && appointment.clientDetails[0]?.phone) {
@@ -1858,6 +1889,11 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
               <Typography variant="body2">
                 {serviceName} ({startTime} - {endTime})
               </Typography>
+              {isMultiExpert && (
+                <Typography variant="body2" sx={{ color: '#FF9800', fontWeight: 'bold' }}>
+                  👥 Multi-Expert Service
+                </Typography>
+              )}
               {isCheckedIn && <Typography variant="body2">✓ Checked In</Typography>}
               {status === 'completed' && <Typography variant="body2">✓ Completed (Click to view bill)</Typography>}
               {appointment.is_for_someone_else && appointment.booker_name && (
@@ -1899,6 +1935,7 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
             <Typography variant="subtitle2" className="appointment-client-name">
               {clientName}
               {appointment.is_for_someone_else && ' 👤'}
+              {isMultiExpert && ' 👥'}
             </Typography>
             <Typography variant="body2" className="appointment-service">
               {serviceName}

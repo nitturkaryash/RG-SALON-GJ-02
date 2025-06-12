@@ -168,6 +168,7 @@ interface ServiceEntry {
   hsn_code?: string; // Optional: Harmonized System of Nomenclature code for GST
   gst_percentage?: number; // Optional: GST percentage applicable
   category?: string; // Optional: Category of the service
+  experts?: { id?: string; name?: string }[]; // Optional: Experts for the service
 }
 
 interface ClientAppointmentEntry {
@@ -508,14 +509,22 @@ export default function Appointments() {
     const consolidatedServiceEntries: ServiceEntry[] = [];
     const involvedStylistIds = new Set<string>();
 
+    // Group appointments by service and consolidate experts
+    const serviceMap = new Map<string, {
+      service: any;
+      experts: { id: string; name: string }[];
+      appointmentIds: string[];
+      startTime: string;
+      endTime: string;
+    }>();
+
     groupAppointments.forEach((app: MergedAppointment) => {
       let servicesAddedFromDetail = false;
       if (app.clientDetails && Array.isArray(app.clientDetails) && app.clientDetails.length > 0) {
         app.clientDetails.forEach(clientDetailEntry => {
           if (clientDetailEntry.id === primaryClientInfo.id && Array.isArray(clientDetailEntry.services)) {
             clientDetailEntry.services.forEach(serviceFromDetail => {
-              // Use the current appointment instance id for editing/rescheduling
-              const originalAppointmentId = app.id;
+              const serviceId = serviceFromDetail.id;
               const serviceStylistId = (serviceFromDetail as any).original_stylist_id ||
                                       (serviceFromDetail as any).stylist_id || app.stylist_id;
               const serviceStartTimeStr = (serviceFromDetail as any).original_start_time ||
@@ -524,22 +533,22 @@ export default function Appointments() {
                                         (serviceFromDetail as any).end_time || app.end_time;
               const stylist = stylists.find(s => s.id === serviceStylistId);
               if (stylist) involvedStylistIds.add(stylist.id);
-              const startDate = new Date(serviceStartTimeStr);
-              const endDate = new Date(serviceEndTimeStr);
-              consolidatedServiceEntries.push({
-                id: serviceFromDetail.id,
-                name: serviceFromDetail.name,
-                price: serviceFromDetail.price || 0,
-                stylistId: stylist?.id || '',
-                stylistName: stylist?.name || 'Unknown',
-                fromTime: `${startDate.getHours()}:${String(startDate.getMinutes()).padStart(2,'0')}`,
-                toTime: `${endDate.getHours()}:${String(endDate.getMinutes()).padStart(2,'0')}`,
-                appointmentInstanceId: originalAppointmentId,
-                isNew: false,
-                hsn_code: (serviceFromDetail as any).hsn_code,
-                gst_percentage: (serviceFromDetail as any).gst_percentage,
-                category: (serviceFromDetail as any).category
-              });
+
+              if (!serviceMap.has(serviceId)) {
+                serviceMap.set(serviceId, {
+                  service: serviceFromDetail,
+                  experts: [],
+                  appointmentIds: [],
+                  startTime: serviceStartTimeStr,
+                  endTime: serviceEndTimeStr
+                });
+              }
+
+              const serviceEntry = serviceMap.get(serviceId)!;
+              if (stylist && !serviceEntry.experts.find(e => e.id === stylist.id)) {
+                serviceEntry.experts.push({ id: stylist.id, name: stylist.name });
+              }
+              serviceEntry.appointmentIds.push(app.id);
               servicesAddedFromDetail = true;
             });
           }
@@ -549,25 +558,49 @@ export default function Appointments() {
         const serviceDef = services.find(s => s.id === app.service_id);
         const stylist = stylists.find(s => s.id === app.stylist_id);
         if (serviceDef) {
-          const startDate = new Date(app.start_time);
-          const endDate = new Date(app.end_time);
-          consolidatedServiceEntries.push({
-            id: serviceDef.id,
-            name: serviceDef.name,
-            price: serviceDef.price || 0,
-            stylistId: stylist?.id || '',
-            stylistName: stylist?.name || 'Unknown',
-            fromTime: `${startDate.getHours()}:${String(startDate.getMinutes()).padStart(2,'0')}`,
-            toTime: `${endDate.getHours()}:${String(endDate.getMinutes()).padStart(2,'0')}`,
-            appointmentInstanceId: app.id,
-            isNew: false,
-            hsn_code: serviceDef.hsn_code,
-            gst_percentage: serviceDef.gst_percentage,
-            category: serviceDef.category
-          });
+          const serviceId = serviceDef.id;
+          
+          if (!serviceMap.has(serviceId)) {
+            serviceMap.set(serviceId, {
+              service: serviceDef,
+              experts: [],
+              appointmentIds: [],
+              startTime: app.start_time,
+              endTime: app.end_time
+            });
+          }
+
+          const serviceEntry = serviceMap.get(serviceId)!;
+          if (stylist && !serviceEntry.experts.find(e => e.id === stylist.id)) {
+            serviceEntry.experts.push({ id: stylist.id, name: stylist.name });
+          }
+          serviceEntry.appointmentIds.push(app.id);
           if (stylist) involvedStylistIds.add(stylist.id);
         }
       }
+    });
+
+    // Convert service map to consolidated service entries
+    serviceMap.forEach((serviceData, serviceId) => {
+      const startDate = new Date(serviceData.startTime);
+      const endDate = new Date(serviceData.endTime);
+      const primaryStylist = serviceData.experts[0]; // Use first expert as primary
+      
+      consolidatedServiceEntries.push({
+        id: serviceId,
+        name: serviceData.service.name,
+        price: serviceData.service.price || 0,
+        stylistId: primaryStylist?.id || '',
+        stylistName: primaryStylist?.name || 'Unknown',
+        fromTime: `${startDate.getHours()}:${String(startDate.getMinutes()).padStart(2,'0')}`,
+        toTime: `${endDate.getHours()}:${String(endDate.getMinutes()).padStart(2,'0')}`,
+        appointmentInstanceId: serviceData.appointmentIds[0], // Use first appointment ID
+        isNew: false,
+        hsn_code: (serviceData.service as any).hsn_code,
+        gst_percentage: (serviceData.service as any).gst_percentage,
+        category: (serviceData.service as any).category,
+        experts: serviceData.experts // Include all experts for this service
+      });
     });
 
     // Derive stylist order directly from service entries to preserve order
@@ -748,7 +781,8 @@ export default function Appointments() {
       fromTime,
       toTime,
       isNew: true, // Mark as new when added via UI to an existing or new booking
-      appointmentInstanceId: undefined // No DB ID yet
+      appointmentInstanceId: undefined, // No DB ID yet
+      experts: stylistId ? [{ id: stylistId, name: stylistName }] : []
     };
 
     updateEntry(entryId, {
@@ -831,8 +865,28 @@ export default function Appointments() {
     updatedServices[serviceIndex] = {
       ...updatedServices[serviceIndex],
       stylistId: stylist.id,
-      stylistName: stylist.name
+      stylistName: stylist.name,
+      experts: updatedServices[serviceIndex].experts || [{ id: stylist.id, name: stylist.name }]
     };
+    
+    updateEntry(entryId, { services: updatedServices });
+  };
+
+  // Add function to handle adding another expert
+  const handleAddExpert = (entryId: string, serviceIndex: number) => {
+    const entry = clientEntries.find(e => e.id === entryId);
+    if (!entry) return;
+    
+    const updatedServices = [...entry.services];
+    const currentService = updatedServices[serviceIndex];
+    
+    // Initialize experts array if it doesn't exist
+    if (!currentService.experts) {
+      currentService.experts = [];
+    }
+    
+    // Add placeholder expert; user must select stylist before saving
+    currentService.experts.push({});
     
     updateEntry(entryId, { services: updatedServices });
   };
@@ -1018,6 +1072,21 @@ export default function Appointments() {
       }
     });
     
+    // Validate experts for each service
+    clientEntries.forEach((entry, idx) => {
+      entry.services.forEach((service, sIdx) => {
+        const expertsArr = service.experts && service.experts.length > 0 ? service.experts : [{ id: service.stylistId, name: service.stylistName }];
+        // Only validate experts that have been started (have either id or name), ignore completely empty objects
+        const expertsToValidate = expertsArr.filter(exp => exp.id || exp.name);
+        const hasInvalid = expertsToValidate.some(exp => !exp.id);
+        if (hasInvalid) {
+          console.error(`Validation Error: Service ${service.name} in entry ${idx + 1} has unassigned expert(s).`);
+          isValid = false;
+          toast.error(`Please assign all experts for service ${service.name}`);
+        }
+      });
+    });
+    
     if (!isValid) {
       setSnackbarMessage('Validation failed. Ensure all required fields are filled correctly.');
       setSnackbarSeverity('error');
@@ -1082,45 +1151,51 @@ export default function Appointments() {
       // --- CREATE NEW APPOINTMENT(S) ---
       try {
         const appointmentsToCreatePromises = clientEntries.flatMap(entry =>
-          entry.services.map(async service => {
-            let currentClientId = entry.client?.id;
-            if (!currentClientId && entry.client) {
-              const newClient = await handleAddNewClient(entry); 
-              if (newClient) currentClientId = newClient.id;
-              else throw new Error('Failed to ensure client exists for new appointment.');
-            }
-            if (!currentClientId) throw new Error('Client ID is missing for a new appointment entry.');
+          entry.services.flatMap(service => {
+            const rawExpertsList = (service.experts && service.experts.length > 0) ? service.experts : [{ id: service.stylistId, name: service.stylistName }];
+            const expertsList = rawExpertsList.filter(e => e.id && e.id.trim() !== '');
+            if (expertsList.length === 0) return []; // skip if no valid expert
+            return expertsList.map(async expert => {
+              let currentClientId = entry.client?.id;
+              if (!currentClientId && entry.client) {
+                const newClient = await handleAddNewClient(entry); 
+                if (newClient) currentClientId = newClient.id;
+                else throw new Error('Failed to ensure client exists for new appointment.');
+              }
+              if (!currentClientId) throw new Error('Client ID is missing for a new appointment entry.');
 
-            const [startHour, startMinute] = service.fromTime.split(':').map(Number);
-            const [endHour, endMinute] = service.toTime.split(':').map(Number);
-            const baseDate = new Date(drawerDate);
-            
-            const startTime = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate(), startHour, startMinute);
-            const endTime = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate(), endHour, endMinute);
-            if (endTime <= startTime) endTime.setDate(endTime.getDate() + 1);
+              const [startHour, startMinute] = service.fromTime.split(':').map(Number);
+              const [endHour, endMinute] = service.toTime.split(':').map(Number);
+              const baseDate = new Date(drawerDate);
+              
+              const startTime = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate(), startHour, startMinute);
+              const endTime = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate(), endHour, endMinute);
+              if (endTime <= startTime) endTime.setDate(endTime.getDate() + 1);
 
-            return {
-              client_id: currentClientId,
-              stylist_id: service.stylistId,
-              service_id: service.id,
-              start_time: startTime.toISOString(),
-              end_time: endTime.toISOString(),
-              status: 'scheduled' as Appointment['status'],
-              notes: appointmentNotes,
-              clientDetails: [{ 
-                clientId: currentClientId,
-                serviceIds: [service.id],
-                stylistIds: [service.stylistId]
-              }],
-              booking_id: newBookingId,
-              is_for_someone_else: entry.isForSomeoneElse,
-              booker_name: entry.bookerName,
-              booker_phone: entry.bookerPhone,
-              booker_email: entry.bookerEmail
-            };
+              return {
+                client_id: currentClientId,
+                stylist_id: expert.id,
+                service_id: service.id,
+                start_time: startTime.toISOString(),
+                end_time: endTime.toISOString(),
+                status: 'scheduled' as Appointment['status'],
+                notes: appointmentNotes,
+                clientDetails: [{ 
+                  clientId: currentClientId,
+                  serviceIds: [service.id],
+                  stylistIds: expertsList.map(e => e.id)
+                }],
+                booking_id: newBookingId,
+                is_for_someone_else: entry.isForSomeoneElse,
+                booker_name: entry.bookerName,
+                booker_phone: entry.bookerPhone,
+                booker_email: entry.bookerEmail
+              };
+            });
           })
         );
-        const appointmentsToCreate = await Promise.all(appointmentsToCreatePromises);
+        // Flatten nested arrays
+        const appointmentsToCreate = (await Promise.all(appointmentsToCreatePromises)).flat();
 
         if (appointmentsToCreate.length === 0) {
           setSnackbarMessage('No services selected to book.');
@@ -1251,39 +1326,44 @@ export default function Appointments() {
         await Promise.all(relatedAppointments.map(app => deleteAppointment(app.id)));
 
         // Create new appointments for each service (similar to create logic)
-        const appointmentsToCreatePromises = primaryEntry.services.map(async service => {
-          const [startHour, startMinute] = service.fromTime.split(':').map(Number);
-          const [endHour, endMinute] = service.toTime.split(':').map(Number);
-          const baseDate = new Date(drawerDate);
-          
-          const startTime = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate(), startHour, startMinute);
-          const endTime = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate(), endHour, endMinute);
-          if (endTime <= startTime) endTime.setDate(endTime.getDate() + 1);
+        const appointmentsToCreatePromises = primaryEntry.services.flatMap(service => {
+          const rawExpertsList = (service.experts && service.experts.length > 0) ? service.experts : [{ id: service.stylistId, name: service.stylistName }];
+          const expertsList = rawExpertsList.filter(e => e.id && e.id.trim() !== '');
+          if (expertsList.length === 0) return []; // skip if no valid expert
+          return expertsList.map(async expert => {
+            const [startHour, startMinute] = service.fromTime.split(':').map(Number);
+            const [endHour, endMinute] = service.toTime.split(':').map(Number);
+            const baseDate = new Date(drawerDate);
+            
+            const startTime = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate(), startHour, startMinute);
+            const endTime = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate(), endHour, endMinute);
+            if (endTime <= startTime) endTime.setDate(endTime.getDate() + 1);
 
-          return {
-            client_id: primaryEntry.client!.id,
-            stylist_id: service.stylistId,
-            service_id: service.id,
-            start_time: startTime.toISOString(),
-            end_time: endTime.toISOString(),
-            status: editingAppointment.status || 'scheduled' as Appointment['status'],
-            notes: appointmentNotes,
-            paid: editingAppointment.paid || false,
-            billed: editingAppointment.billed || false,
-            is_for_someone_else: primaryEntry.isForSomeoneElse,
-            clientDetails: [{ 
-              clientId: primaryEntry.client!.id,
-              serviceIds: [service.id],
-              stylistIds: [service.stylistId]
-            }],
-            booking_id: bookingId,
-            booker_name: primaryEntry.bookerName,
-            booker_phone: primaryEntry.bookerPhone,
-            booker_email: primaryEntry.bookerEmail
-          };
+            return {
+              client_id: primaryEntry.client!.id,
+              stylist_id: expert.id,
+              service_id: service.id,
+              start_time: startTime.toISOString(),
+              end_time: endTime.toISOString(),
+              status: editingAppointment.status || 'scheduled' as Appointment['status'],
+              notes: appointmentNotes,
+              paid: editingAppointment.paid || false,
+              billed: editingAppointment.billed || false,
+              is_for_someone_else: primaryEntry.isForSomeoneElse,
+              clientDetails: [{ 
+                clientId: primaryEntry.client!.id,
+                serviceIds: [service.id],
+                stylistIds: expertsList.map(e => e.id)
+              }],
+              booking_id: bookingId,
+              booker_name: primaryEntry.bookerName,
+              booker_phone: primaryEntry.bookerPhone,
+              booker_email: primaryEntry.bookerEmail
+            };
+          });
         });
 
-        const appointmentsToCreate = await Promise.all(appointmentsToCreatePromises);
+        const appointmentsToCreate = (await Promise.all(appointmentsToCreatePromises)).flat();
         
         // Create all new appointments
         await Promise.all(appointmentsToCreate.map(appData => 
@@ -1710,7 +1790,8 @@ export default function Appointments() {
       stylistId: selectedStylist.id,
       stylistName: selectedStylist.name,
       fromTime: fromTime,
-      toTime: toTime
+      toTime: toTime,
+      experts: [{ id: selectedStylist.id, name: selectedStylist.name }]
     };
     
     // Add to the client entry
@@ -2414,78 +2495,117 @@ export default function Appointments() {
                 
                 {/* Expert selection */}
                 <Box sx={{ p: 2 }}>
-                  <Autocomplete<Stylist, false, false, false>
-                    fullWidth
-                    options={stylists.filter((stylist: Stylist) => stylist.available !== false).sort((a, b) => a.name.localeCompare(b.name))}
-                    getOptionLabel={(option: Stylist) => option.name}
-                    value={stylists.find((s: Stylist) => s.id === service.stylistId) || null}
-                    onChange={(_, newValue: Stylist | null) => {
-                      if (newValue) {
-                        updateServiceStylist(clientEntries[0].id, serviceIndex, newValue);
-                      } else {
-                        // Handle case where selection is cleared if necessary
-                        const clearedStylist: Stylist = { 
-                          id: '', 
-                          name: '', 
-                          phone: '', 
-                          email: '', 
-                          available: true, 
-                          // created_at: '', // Removed as it's not in the expected Stylist type for this context
-                          breaks: [], 
-                          specialties: []
-                        };
-                        updateServiceStylist(clientEntries[0].id, serviceIndex, clearedStylist);
-                      }
-                    }}
-                    renderInput={(params) => (
-                      <TextField
-                        {...params}
-                        label="Expert"
-                        variant="outlined"
-                        InputProps={{
-                          ...params.InputProps,
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+                    <Autocomplete<Stylist, false, false, false>
+                      fullWidth
+                      options={stylists.filter((stylist: Stylist) => stylist.available !== false).sort((a, b) => a.name.localeCompare(b.name))}
+                      getOptionLabel={(option: Stylist) => option.name}
+                      value={stylists.find((s: Stylist) => s.id === service.stylistId) || null}
+                      onChange={(_, newValue: Stylist | null) => {
+                        if (newValue) {
+                          updateServiceStylist(clientEntries[0].id, serviceIndex, newValue);
+                        }
+                      }}
+                      renderInput={(params) => (
+                        <TextField
+                          {...params}
+                          label="Expert"
+                          variant="outlined"
+                          InputProps={{
+                            ...params.InputProps,
+                          }}
+                        />
+                      )}
+                    />
+                    <Button
+                      variant="outlined"
+                      size="small"
+                      startIcon={<AddIcon />}
+                      onClick={() => handleAddExpert(clientEntries[0].id, serviceIndex)}
+                      sx={{ minWidth: 'auto', whiteSpace: 'nowrap' }}
+                    >
+                      Add Expert
+                    </Button>
+                  </Box>
+
+                  {/* Additional experts */}
+                  {service.experts?.slice(1).map((expert, expertIndex) => (
+                    <Box key={expertIndex} sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+                      <Autocomplete<Stylist, false, false, false>
+                        fullWidth
+                        options={stylists.filter((stylist: Stylist) => stylist.available !== false).sort((a, b) => a.name.localeCompare(b.name))}
+                        getOptionLabel={(option: Stylist) => option.name}
+                        value={stylists.find((s: Stylist) => s.id === expert.id) || null}
+                        onChange={(_, newValue: Stylist | null) => {
+                          if (newValue && clientEntries[0]?.services) {
+                            const updatedServices = [...clientEntries[0].services];
+                            if (!updatedServices[serviceIndex].experts) updatedServices[serviceIndex].experts = [];
+                            (updatedServices[serviceIndex].experts!)[expertIndex + 1] = { id: newValue.id, name: newValue.name };
+                            updateEntry(clientEntries[0].id, { services: updatedServices });
+                          }
                         }}
-                        sx={{ mb: 2 }}
+                        renderInput={(params) => (
+                          <TextField
+                            {...params}
+                            label={`Expert ${expertIndex + 2}`}
+                            variant="outlined"
+                            InputProps={{
+                              ...params.InputProps,
+                            }}
+                          />
+                        )}
                       />
-                    )}
-                  />
-                  
-                  {/* From/To Time Selection */}
-                  <Grid container spacing={2}>
-                    <Grid item xs={6}>
-                      <FormControl fullWidth>
-                        <InputLabel>From Time</InputLabel>
-                        <Select
-                          value={service.fromTime}
-                          label="From Time"
-                          displayEmpty
-                          renderValue={(value) => convertTo12Hour(value)}
-                          onChange={(e) => updateServiceTime(clientEntries[0].id, serviceIndex, 'fromTime', e.target.value)}
-                        >
-                          {timeOptions.map(option => (
-                            <MenuItem key={`from-${option.value}`} value={option.value}>{option.label}</MenuItem>
-                          ))}
-                        </Select>
-                      </FormControl>
-                    </Grid>
-                    <Grid item xs={6}>
-                      <FormControl fullWidth>
-                        <InputLabel>To Time</InputLabel>
-                        <Select
-                          value={service.toTime}
-                          label="To Time"
-                          displayEmpty
-                          renderValue={(value) => convertTo12Hour(value)}
-                          onChange={(e) => updateServiceTime(clientEntries[0].id, serviceIndex, 'toTime', e.target.value)}
-                        >
-                          {timeOptions.map(option => (
-                            <MenuItem key={`to-${option.value}`} value={option.value}>{option.label}</MenuItem>
-                          ))}
-                        </Select>
-                      </FormControl>
-                    </Grid>
-                  </Grid>
+                      <IconButton
+                        size="small"
+                        onClick={() => {
+                          if (clientEntries[0]?.services) {
+                            const updatedServices = [...clientEntries[0].services];
+                            updatedServices[serviceIndex].experts?.splice(expertIndex + 1, 1);
+                            updateEntry(clientEntries[0].id, { services: updatedServices });
+                          }
+                        }}
+                      >
+                        <DeleteIcon />
+                      </IconButton>
+                    </Box>
+                  ))}
                 </Box>
+                
+                {/* From/To Time Selection */}
+                <Grid container spacing={2}>
+                  <Grid item xs={6}>
+                    <FormControl fullWidth>
+                      <InputLabel>From Time</InputLabel>
+                      <Select
+                        value={service.fromTime}
+                        label="From Time"
+                        displayEmpty
+                        renderValue={(value) => convertTo12Hour(value)}
+                        onChange={(e) => updateServiceTime(clientEntries[0].id, serviceIndex, 'fromTime', e.target.value)}
+                      >
+                        {timeOptions.map(option => (
+                          <MenuItem key={`from-${option.value}`} value={option.value}>{option.label}</MenuItem>
+                        ))}
+                      </Select>
+                    </FormControl>
+                  </Grid>
+                  <Grid item xs={6}>
+                    <FormControl fullWidth>
+                      <InputLabel>To Time</InputLabel>
+                      <Select
+                        value={service.toTime}
+                        label="To Time"
+                        displayEmpty
+                        renderValue={(value) => convertTo12Hour(value)}
+                        onChange={(e) => updateServiceTime(clientEntries[0].id, serviceIndex, 'toTime', e.target.value)}
+                      >
+                        {timeOptions.map(option => (
+                          <MenuItem key={`to-${option.value}`} value={option.value}>{option.label}</MenuItem>
+                        ))}
+                      </Select>
+                    </FormControl>
+                  </Grid>
+                </Grid>
               </Box>
             ))}
             
@@ -2802,7 +2922,7 @@ export default function Appointments() {
                   return;
                 }
 
-                // Map services with all necessary details
+                // Map services with all necessary details including experts
                 const servicesForPOS = clientEntries[0].services.map(s => ({ 
                   id: s.id, 
                   name: s.name, 
@@ -2811,14 +2931,26 @@ export default function Appointments() {
                   hsn_code: s.hsn_code,
                   gst_percentage: s.gst_percentage,
                   category: s.category || 'service',
-                  quantity: 1
+                  quantity: 1,
+                  experts: s.experts || [{ id: s.stylistId, name: s.stylistName }] // Include all experts
                 }));
 
+                // Collect all unique experts from all services
+                const allExperts = Array.from(
+                  new Map(
+                    clientEntries[0].services.flatMap(s => 
+                      s.experts || [{ id: s.stylistId, name: s.stylistName }]
+                    ).map(expert => [expert.id, expert])
+                  ).values()
+                ).filter(expert => expert.id); // Only include experts with valid IDs
+
                 console.log("[Create Bill] Mapped servicesForPOS:", JSON.stringify(servicesForPOS, null, 2));
+                console.log("[Create Bill] All unique experts:", JSON.stringify(allExperts, null, 2));
 
                 const appointmentDataForPOS = {
                   clientName: clientEntries[0].client.full_name,
                   stylistId: editingAppointment.stylist_id,
+                  allExperts: allExperts, // Pass all experts for multi-stylist UI
                   services: servicesForPOS,
                   id: editingAppointment.id,
                   type: servicesForPOS.length > 1 ? 'service_collection' : 'service',

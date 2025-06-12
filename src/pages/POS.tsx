@@ -443,6 +443,8 @@ export default function POS() {
 	// Persist selectedClient across navigations
 	const [selectedClient, setSelectedClient] = useLocalStorage<Client | null>('pos_selectedClient', null);
 	const [selectedStylist, setSelectedStylist] = useLocalStorage<Stylist | null>('pos_selectedStylist', null);
+	// Add state for multiple stylists (for multi-expert appointments)
+	const [selectedStylists, setSelectedStylists] = useState<(Stylist | null)[]>([]);
 	const [appointmentDate, setAppointmentDate] = useState<Date | null>(new Date());
 	const [appointmentTime, setAppointmentTime] = useState<Date | null>(new Date());
 	const [orderItems, setOrderItems] = useState<POSOrderItem[]>([]);
@@ -1209,13 +1211,29 @@ export default function POS() {
     console.warn('[POS useEffect] Client not found for name:', appointmentNavData.clientName);
   }
   
-  // Find and set stylist
+  // Find and set stylist(s)
   const matchingStylist = stylists?.find(s => s.id === appointmentNavData.stylistId);
   if (matchingStylist) {
     console.log('[POS useEffect] Setting selected stylist:', matchingStylist.name);
     setSelectedStylist(matchingStylist);
   } else {
     console.warn('[POS useEffect] Stylist not found for ID:', appointmentNavData.stylistId);
+  }
+
+  // Handle multiple experts if provided
+  if (appointmentNavData.allExperts && Array.isArray(appointmentNavData.allExperts) && appointmentNavData.allExperts.length > 1) {
+    console.log('[POS useEffect] Setting multiple stylists for multi-expert appointment:', appointmentNavData.allExperts);
+    const multipleStylists = appointmentNavData.allExperts.map((expert: any) => {
+      const stylistMatch = stylists?.find(s => s.id === expert.id);
+      if (!stylistMatch) {
+        console.warn('[POS useEffect] Stylist not found for expert ID:', expert.id);
+      }
+      return stylistMatch || null;
+    });
+    setSelectedStylists(multipleStylists);
+  } else {
+    // Reset to single stylist mode
+    setSelectedStylists([]);
   }
   
   // Track the appointment ID for handling order creation later
@@ -1697,94 +1715,158 @@ export default function POS() {
 			// Always use the full amount regardless of payment method
 			const totalAmount = subtotal + tax - walkInDiscount;
 			
-			// Create the order with the actual total amount, regardless of payment method
+					// Check if this is a multi-expert appointment
+		const isMultiExpert = selectedStylists && selectedStylists.length > 1 && selectedStylists.every(s => s !== null);
+		const expertsToProcess = isMultiExpert ? selectedStylists.filter(s => s !== null) : [staffInfo];
+		const numberOfExperts = expertsToProcess.length;
+		
+		console.log(`[Multi-Expert Order] Creating ${numberOfExperts} orders for ${numberOfExperts} experts:`, expertsToProcess.map(e => e?.name));
+		
+		// Create orders for each expert (split revenue among them)
+		const orderResults = [];
+		
+		for (let i = 0; i < expertsToProcess.length; i++) {
+			const expert = expertsToProcess[i];
+			if (!expert) continue;
+
+			// ---------- NEW: decide whether this expert gets products / memberships ----------
+			const includeProductsAndMemberships = !(isMultiExpert && i !== 0); // only the primary expert (index 0) gets these
+
+			// Calculate splits ----------------------------------------------------------
+			// Service portions (always split)
+			const splitServiceSubtotal = calculateServiceSubtotal() / numberOfExperts;
+			const splitServiceTax      = calculateServiceGstAmount(calculateServiceSubtotal()) / numberOfExperts;
+
+			// Product / membership portions (only primary gets them)
+			const productSubForExpert      = includeProductsAndMemberships ? calculateProductSubtotal()      : 0;
+			const membershipSubForExpert   = includeProductsAndMemberships ? calculateMembershipSubtotal()  : 0;
+			const productTaxForExpert      = includeProductsAndMemberships ? calculateProductGstAmount(calculateProductSubtotal())     : 0;
+			const membershipTaxForExpert   = includeProductsAndMemberships ? calculateMembershipGstAmount(calculateMembershipSubtotal()) : 0;
+
+			// Final totals for this expert --------------------------------------------
+			const expertSubtotal = productSubForExpert + membershipSubForExpert + splitServiceSubtotal;
+			const expertTax      = productTaxForExpert + membershipTaxForExpert + splitServiceTax;
+			const expertTotal    = expertSubtotal + expertTax - (isMultiExpert ? (walkInDiscount / numberOfExperts) : walkInDiscount);
+
+			// Build item arrays --------------------------------------------------------
+			const expertProducts      = includeProductsAndMemberships ? formattedProducts : [];
+			const expertMemberships   = includeProductsAndMemberships ? formattedMemberships : [];
+			const expertServices      = isMultiExpert ? 
+				formattedServices.map(service => ({
+					...service,
+					price: service.price / numberOfExperts, // already divided earlier
+					total: (service.price / numberOfExperts) * service.quantity,
+					split_revenue: true,
+					total_experts: numberOfExperts,
+					expert_index: i + 1
+			})) : formattedServices;
+
+			const itemsForOrder = [...expertProducts, ...expertServices, ...expertMemberships].map(item => ({
+				...item,
+				discount: item.discount || 0,
+				discount_percentage: item.discount_percentage || 0
+			})) as any[];
+
+			// -------------------------------------------------------------------------
 			const orderResult = await createWalkInOrderMutation.mutateAsync({
 				order_id: uuidv4(),
-				client_id: clientIdToUse || '', 
-				client_name: clientNameToUse,    
-				stylist_id: staffInfo?.id || '',
-				stylist_name: staffInfo?.name || '',
-				appointment_id: currentAppointmentId || undefined, // Add appointment_id to link order with appointment
+				client_id: clientIdToUse || '',
+				client_name: clientNameToUse,
+				stylist_id: expert.id || '',
+				stylist_name: expert.name || '',
+				appointment_id: currentAppointmentId || undefined,
 				items: [],
-				// Make sure to include individual item discounts in the services array
-				services: ([...formattedProducts, ...formattedServices, ...formattedMemberships].map(item => ({
-					...item,
-					// Ensure discount and discount_percentage are included
-					discount: item.discount || 0,
-					discount_percentage: item.discount_percentage || 0
-				})) as any[]),
-				
-				// Include breakdown of different discount types in the order
+				services: itemsForOrder,
 				payment_method: isSplitPayment ? 'split' : (useMembershipPayment ? 'membership' : walkInPaymentMethod),
 				split_payments: isSplitPayment ? splitPayments : undefined,
-				
-				discount: walkInDiscount,
+				discount: isMultiExpert ? (walkInDiscount / numberOfExperts) : walkInDiscount,
 				discount_percentage: walkInDiscountPercentage,
-				
-				subtotal: subtotal,
-				tax: tax,
-				total: totalAmount, // Always show the actual order amount
-				total_amount: totalAmount, // Always show the actual order amount
+				subtotal: expertSubtotal,
+				tax: expertTax,
+				total: expertTotal,
+				total_amount: expertTotal,
 				status: 'completed',
 				order_date: orderDate ? orderDate.toISOString() : new Date().toISOString(),
 				is_walk_in: true,
 				is_salon_consumption: false,
-				pending_amount: Math.max(0, totalAmount - amountPaid),
+				pending_amount: Math.max(0, expertTotal - (amountPaid / numberOfExperts)),
 				payments: isSplitPayment ? splitPayments : [{
 					id: uuidv4(),
-					amount: totalAmount, // Always store the full order amount
+					amount: expertTotal,
 					payment_method: useMembershipPayment ? 'membership' : walkInPaymentMethod,
 					payment_date: orderDate ? orderDate.toISOString() : new Date().toISOString()
-				}]
+				}],
+				...(isMultiExpert && {
+					multi_expert: true,
+					total_experts: numberOfExperts,
+					expert_index: i + 1
+				})
 			});
+
+			orderResults.push(orderResult);
+			
+			if (!orderResult.success) {
+				throw new Error(`Failed to create order for ${expert.name}: ${orderResult.error?.message || 'Unknown error'}`);
+			}
+			
+			console.log(`[Multi-Expert Order] Created order for ${expert.name}: ${orderResult.order?.id}`);
+		}
+		
+		// Use the first order result for the rest of the logic (they should all be successful)
+		const orderResult = orderResults[0];
 			
 			if (!orderResult.success) {
 				throw new Error(orderResult.error?.message || 'Failed to create order');
 			}
 
-			// --- Update Appointment Status if Applicable ---
-			if (currentAppointmentId && updateAppointment) {
-				try {
-					// Try to update the just-created order with the appointment_id if it wasn't included
-					if (orderResult.order && orderResult.order.id) {
-						console.log(`DEBUG: Updating order ${orderResult.order.id} with appointment_id ${currentAppointmentId}`);
+					// --- Update Appointment Status if Applicable ---
+		if (currentAppointmentId && updateAppointment) {
+			try {
+				// Update all created orders with the appointment_id if needed
+				for (const result of orderResults) {
+					if (result.order && result.order.id) {
+						console.log(`DEBUG: Updating order ${result.order.id} with appointment_id ${currentAppointmentId}`);
 						
 						// Update the order with the appointment ID
 						const { error: updateOrderError } = await supabase
 							.from('pos_orders')
 							.update({ appointment_id: currentAppointmentId })
-							.eq('id', orderResult.order.id);
+							.eq('id', result.order.id);
 							
 						if (updateOrderError) {
 							console.error('Error updating order with appointment_id:', updateOrderError);
 						} else {
-							console.log(`Successfully linked order ${orderResult.order.id} to appointment ${currentAppointmentId}`);
+							console.log(`Successfully linked order ${result.order.id} to appointment ${currentAppointmentId}`);
 						}
 					}
-					
-					// Update the appointment status
-					await updateAppointment({ 
-						id: currentAppointmentId, 
-						status: 'completed', 
-						paid: true, 
-						checked_in: false, // Auto check-out when completing order
-						clientDetails: [] 
-					});
-					console.log(`Appointment ${currentAppointmentId} marked as completed, paid, and checked out.`);
-				} catch (updateError) {
-					console.error(`Failed to update appointment status for ${currentAppointmentId}:`, updateError);
-					toast.error('Order created, but failed to update appointment status.');
 				}
+				
+				// Update the appointment status
+				await updateAppointment({ 
+					id: currentAppointmentId, 
+					status: 'completed', 
+					paid: true, 
+					checked_in: false, // Auto check-out when completing order
+					clientDetails: [] 
+				});
+				console.log(`Appointment ${currentAppointmentId} marked as completed, paid, and checked out.`);
+			} catch (updateError) {
+				console.error(`Failed to update appointment status for ${currentAppointmentId}:`, updateError);
+				toast.error('Order created, but failed to update appointment status.');
 			}
+		}
 
-			setSnackbarMessage("Order created successfully!");
-			setSnackbarOpen(true);
-			
-			// Store the created order for printing
-			if (orderResult.order) {
-				setLastCreatedOrder(orderResult.order);
-				setPrintDialogOpen(true);
-			}
+					const successMessage = isMultiExpert ? 
+			`${orderResults.length} orders created successfully for ${numberOfExperts} experts!` : 
+			"Order created successfully!";
+		setSnackbarMessage(successMessage);
+		setSnackbarOpen(true);
+		
+		// Store the created order for printing (use the first order)
+		if (orderResult.order) {
+			setLastCreatedOrder(orderResult.order);
+			setPrintDialogOpen(true);
+		}
 			
 			resetFormState();
 			
@@ -3423,43 +3505,95 @@ export default function POS() {
 										</Grid>
 									</>
 								)}
-								<Grid item xs={12} sm={selectedClient || !customerName.trim() ? 4 : 12} > {/* Adjust grid for stylist based on new client fields */} 
-									<FormControl
-										fullWidth
-										required
-										error={selectedStylist === null}
-										size="small"
-									>
-										<InputLabel id="stylist-select-label">
-											Select Stylist
-										</InputLabel>
-										<Select
-											labelId="stylist-select-label"
-											id="stylist-select"
-											value={selectedStylist?.id || ""}
-											label="Select Stylist"
-											onChange={(e) => {
-												const stylistId = e.target.value;
-												const stylist = stylists?.find(s => s.id === stylistId) || null;
-												setSelectedStylist(stylist);
-											}}
+								{/* Stylist Selection - Handle both single and multi-expert modes */}
+								{selectedStylists.length > 0 ? (
+									// Multi-expert mode: Show multiple stylist dropdowns
+									selectedStylists.map((stylist, index) => (
+										<Grid item xs={12} sm={selectedClient || !customerName.trim() ? 4 : 6} key={index}>
+											<FormControl
+												fullWidth
+												required
+												error={stylist === null}
+												size="small"
+											>
+												<InputLabel id={`stylist-select-label-${index}`}>
+													{index === 0 ? 'Primary Expert' : `Expert ${index + 1}`}
+												</InputLabel>
+												<Select
+													labelId={`stylist-select-label-${index}`}
+													id={`stylist-select-${index}`}
+													value={stylist?.id || ""}
+													label={index === 0 ? 'Primary Expert' : `Expert ${index + 1}`}
+													onChange={(e) => {
+														const stylistId = e.target.value;
+														const selectedStylist = stylists?.find(s => s.id === stylistId) || null;
+														const newStylists = [...selectedStylists];
+														newStylists[index] = selectedStylist;
+														setSelectedStylists(newStylists);
+														
+														// Update the primary stylist if this is the first dropdown
+														if (index === 0) {
+															setSelectedStylist(selectedStylist);
+														}
+													}}
+												>
+													<MenuItem value="">
+														<em>None</em>
+													</MenuItem>
+													{(stylists || [])?.map((stylistOption) => (
+														<MenuItem key={stylistOption.id} value={stylistOption.id}>
+															{stylistOption.name}
+														</MenuItem>
+													))}
+												</Select>
+												{stylist === null && (
+													<FormHelperText error>
+														Expert is required
+													</FormHelperText>
+												)}
+											</FormControl>
+										</Grid>
+									))
+								) : (
+									// Single stylist mode: Show original dropdown
+									<Grid item xs={12} sm={selectedClient || !customerName.trim() ? 4 : 12} >
+										<FormControl
+											fullWidth
+											required
+											error={selectedStylist === null}
+											size="small"
 										>
-											<MenuItem value="">
-												<em>None</em>
-											</MenuItem>
-											{(stylists || [])?.map((stylist) => (
-												<MenuItem key={stylist.id} value={stylist.id}>
-													{stylist.name}
+											<InputLabel id="stylist-select-label">
+												Select Stylist
+											</InputLabel>
+											<Select
+												labelId="stylist-select-label"
+												id="stylist-select"
+												value={selectedStylist?.id || ""}
+												label="Select Stylist"
+												onChange={(e) => {
+													const stylistId = e.target.value;
+													const stylist = stylists?.find(s => s.id === stylistId) || null;
+													setSelectedStylist(stylist);
+												}}
+											>
+												<MenuItem value="">
+													<em>None</em>
 												</MenuItem>
-											))}
-										</Select>
-										{selectedStylist === null && (
-											<FormHelperText error>
-												Stylist is required
-											</FormHelperText>
-										)}
-									</FormControl>
-								</Grid>
+												{(stylists || [])?.map((stylist) => (
+													<MenuItem key={stylist.id} value={stylist.id}>
+														{stylist.name}
+													</MenuItem>
+												))}
+											</Select>
+											{selectedStylist === null && (
+												<FormHelperText error>
+													Stylist is required
+												</FormHelperText>
+											)}
+										</FormControl>
+									</Grid>
+								)}
 							</Grid>
 						</Paper>
 					</Grid>
