@@ -1829,14 +1829,14 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
       const startTime = formatTime(appointment.start_time);
       const endTime = formatTime(appointment.end_time);
 
-      const clientName = getClientName(appointment);
+      const clientName = getAppointmentClientName(appointment, allClients || []);
       const clientPhone = (() => {
         // First try clientDetails array
         if (appointment.clientDetails && appointment.clientDetails.length > 0 && appointment.clientDetails[0]?.phone) {
           return appointment.clientDetails[0].phone;
         }
         if (appointment.phone) return appointment.phone;
-        if (appointment.client_id && allClients.length > 0) {
+        if (appointment.client_id && allClients && allClients.length > 0) {
           const client = allClients.find(c => c.id === appointment.client_id);
           if (client?.phone) return client.phone;
         }

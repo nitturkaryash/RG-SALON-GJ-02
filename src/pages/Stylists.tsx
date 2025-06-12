@@ -54,11 +54,13 @@ import { useStylistHolidays, StylistHoliday } from '../hooks/useStylistHolidays'
 import { useServices } from '../hooks/useServices'
 import { useServiceCollections } from '../hooks/useServiceCollections'
 import { toast } from 'react-toastify'
-import { format, isToday, isBefore, isAfter, isSameDay, startOfMonth, endOfMonth, eachDayOfInterval, getDay, parse, addMonths, subMonths } from 'date-fns'
+import { format, isToday, isBefore, isAfter, isSameDay, startOfMonth, endOfMonth, eachDayOfInterval, getDay, parse, addMonths, subMonths, isWithinInterval } from 'date-fns'
 import { LocalizationProvider, DatePicker } from '@mui/x-date-pickers'
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns'
 import { v4 as uuidv4 } from 'uuid'
 import { useQueryClient } from '@tanstack/react-query'
+import { useOrders } from '../hooks/useOrders'
+import { formatCurrency } from '../utils/format'
 
 // Default avatar image
 const DEFAULT_AVATAR = 'https://ui-avatars.com/api/?name=Stylist&background=6B8E23&color=fff&size=150'
@@ -72,6 +74,7 @@ interface HolidayReport {
   upcomingHolidays: number;
   pastHolidays: number;
   holidays: StylistHoliday[];
+  serviceRevenue: number;
 }
 
 const initialFormData: StylistFormData = {
@@ -100,6 +103,7 @@ export default function Stylists() {
   } = useStylistHolidays()
   const { services } = useServices()
   const { serviceCollections, isLoading: isLoadingServiceCollections } = useServiceCollections()
+  const { orders, isLoading: isLoadingOrders } = useOrders()
   const [open, setOpen] = useState(false)
   const [formData, setFormData] = useState<StylistFormData>(initialFormData)
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -154,7 +158,7 @@ export default function Stylists() {
 
   // Generate holiday reports whenever stylists or reportMonth changes
   useEffect(() => {
-    if (stylists?.length) {
+    if (stylists?.length && allHolidays && orders) {
       const monthStart = startOfMonth(reportMonth);
       const monthEnd = endOfMonth(reportMonth);
       const today = new Date();
@@ -165,7 +169,7 @@ export default function Stylists() {
         // Filter holidays for the selected month
         const holidaysInMonth = stylistHolidayList.filter(holiday => {
           const holidayDate = new Date(holiday.holiday_date);
-          return isAfter(holidayDate, monthStart) && isBefore(holidayDate, monthEnd);
+          return isWithinInterval(holidayDate, { start: monthStart, end: monthEnd });
         });
 
         // Count upcoming and past holidays
@@ -176,8 +180,34 @@ export default function Stylists() {
 
         const pastHolidays = stylistHolidayList.filter(holiday => {
           const holidayDate = new Date(holiday.holiday_date);
-          return isBefore(holidayDate, today);
+          return isBefore(holidayDate, today) && !isToday(holidayDate);
         }).length;
+        
+        // Calculate service revenue
+        const stylistOrders = orders.filter(order => {
+          const orderStylistId = order.stylist?.id;
+          const orderStylistName = order.stylist_name || order.stylist?.name;
+          return orderStylistId ? orderStylistId === stylist.id : orderStylistName === stylist.name;
+        });
+
+        const serviceRevenue = stylistOrders.reduce((total, order) => {
+          const orderDate = new Date(order.created_at);
+          if (isWithinInterval(orderDate, { start: monthStart, end: monthEnd })) {
+            if (order.status === 'completed' && order.services && Array.isArray(order.services)) {
+              const servicePriceInOrder = order.services
+                .filter(item => !item.type || item.type === 'service')
+                .reduce((sum, service) => sum + (service.price || 0), 0);
+
+              if (servicePriceInOrder > 0 && order.subtotal > 0 && order.tax > 0) {
+                const serviceTax = (servicePriceInOrder / order.subtotal) * order.tax;
+                return total + servicePriceInOrder + serviceTax;
+              }
+              
+              return total + servicePriceInOrder;
+            }
+          }
+          return total;
+        }, 0);
 
         return {
           stylistId: stylist.id,
@@ -187,13 +217,14 @@ export default function Stylists() {
           pastHolidays,
           holidays: holidaysInMonth.sort((a, b) => 
             new Date(a.holiday_date).getTime() - new Date(b.holiday_date).getTime()
-          )
+          ),
+          serviceRevenue
         };
       });
 
       setHolidayReports(reports);
     }
-  }, [stylists, reportMonth, stylistHolidays]);
+  }, [stylists, reportMonth, stylistHolidays, allHolidays, orders]);
 
   const handleOpen = () => setOpen(true)
   
@@ -386,7 +417,7 @@ export default function Stylists() {
     return stylistHolidays[stylist.id]?.some(h => h.holiday_date === today) || false;
   }) || [];
 
-  if (isLoading || isLoadingServiceCollections || isLoadingHolidays) {
+  if (isLoading || isLoadingServiceCollections || isLoadingHolidays || isLoadingOrders) {
     return (
       <Box display="flex" justifyContent="center" alignItems="center" height="100vh">
         <CircularProgress />
@@ -527,6 +558,7 @@ export default function Stylists() {
                   <TableCell>Stylist</TableCell>
                   <TableCell>Total Holidays</TableCell>
                   <TableCell>Holiday Dates</TableCell>
+                  <TableCell>Service Revenue</TableCell>
                   <TableCell>Actions</TableCell>
                 </TableRow>
               </TableHead>
@@ -616,6 +648,11 @@ export default function Stylists() {
                               );
                             })}
                           </Box>
+                        </TableCell>
+                        <TableCell>
+                          <Typography variant="subtitle2" color="primary">
+                            {formatCurrency(report.serviceRevenue)}
+                          </Typography>
                         </TableCell>
                         <TableCell>
                           <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
