@@ -373,6 +373,7 @@ interface HistoryItem {
 
 interface POSOrderItem extends OrderItem {
   benefitAmount?: number;
+  useMembershipPayment?: boolean; // Track if this item should use membership payment
 }
 
 export default function POS() {
@@ -488,6 +489,8 @@ export default function POS() {
 	const [clientMembershipTier, setClientMembershipTier] = useState<string | null>(null);
 	// Add state to toggle paying via membership
 	const [useMembershipPayment, setUseMembershipPayment] = useState(false);
+	// Add state for service-specific membership payment tracking
+	const [servicesMembershipPayment, setServicesMembershipPayment] = useState<Record<string, boolean>>({});
 	// Active membership fetched for selected client
 	const [activeClientMembership, setActiveClientMembership] = useState<ActiveMembershipDetails | null>(null);
 	// Add state for order date (used for all orders)
@@ -952,6 +955,64 @@ export default function POS() {
 		return splitPayments.reduce((sum, payment) => sum + payment.amount, 0);
 	}, [splitPayments]);
 
+	// NEW: Calculate amounts for services that will use membership payment (NO GST)
+	const calculateServicesMembershipTotal = useCallback(() => {
+		return orderItems
+			.filter(item => item.type === 'service' && servicesMembershipPayment[item.id])
+			.reduce((sum, item) => {
+				const itemTotal = item.price * item.quantity;
+				const gstPct = item.gst_percentage || serviceGstRate;
+				const discountIncl = item.discount || 0;
+				const discountExcl = discountIncl / (1 + gstPct / 100);
+				const subtotal = Math.max(0, itemTotal - discountExcl);
+				// NO GST for membership payments
+				return sum + subtotal;
+			}, 0);
+	}, [orderItems, servicesMembershipPayment, serviceGstRate]);
+
+	// NEW: Calculate amounts for services that will NOT use membership payment
+	const calculateServicesRegularTotal = useCallback(() => {
+		return orderItems
+			.filter(item => item.type === 'service' && !servicesMembershipPayment[item.id])
+			.reduce((sum, item) => {
+				const itemTotal = item.price * item.quantity;
+				const gstPct = item.gst_percentage || serviceGstRate;
+				const discountIncl = item.discount || 0;
+				const discountExcl = discountIncl / (1 + gstPct / 100);
+				const subtotal = Math.max(0, itemTotal - discountExcl);
+				const gstAmount = isServiceGstApplied ? (subtotal * gstPct) / 100 : 0;
+				return sum + subtotal + gstAmount;
+			}, 0);
+	}, [orderItems, servicesMembershipPayment, serviceGstRate, isServiceGstApplied]);
+
+	// NEW: Calculate amounts for all products (always regular payment)
+	const calculateProductsRegularTotal = useCallback(() => {
+		const productSubtotal = calculateProductSubtotal();
+		const productGstAmount = calculateProductGstAmount(productSubtotal);
+		return productSubtotal + productGstAmount;
+	}, [calculateProductSubtotal, calculateProductGstAmount]);
+
+	// NEW: Calculate amounts for memberships (always regular payment)
+	const calculateMembershipsRegularTotal = useCallback(() => {
+		const membershipSubtotal = calculateMembershipSubtotal();
+		const membershipGstAmount = calculateMembershipGstAmount(membershipSubtotal);
+		return membershipSubtotal + membershipGstAmount;
+	}, [calculateMembershipSubtotal, calculateMembershipGstAmount]);
+
+	// NEW: Get total amount that can be paid with membership balance
+	const getMembershipPayableAmount = useCallback(() => {
+		return calculateServicesMembershipTotal();
+	}, [calculateServicesMembershipTotal]);
+
+	// NEW: Get total amount that must be paid with regular methods
+	const getRegularPayableAmount = useCallback(() => {
+		const servicesRegular = calculateServicesRegularTotal();
+		const productsRegular = calculateProductsRegularTotal();
+		const membershipsRegular = calculateMembershipsRegularTotal();
+		const globalDiscount = walkInDiscount; // Apply global discount to regular payment only
+		return Math.max(0, servicesRegular + productsRegular + membershipsRegular - globalDiscount);
+	}, [calculateServicesRegularTotal, calculateProductsRegularTotal, calculateMembershipsRegularTotal, walkInDiscount]);
+
 	// Now define useMemo values that might depend on useCallback functions
 	const serviceItems = useMemo(() => {
 		return orderItems.filter(
@@ -994,9 +1055,18 @@ export default function POS() {
 
 	// Auto-update payment amounts when total changes or split payment is disabled
 	useEffect(() => {
-		const currentTotal = calculateTotalAmount();
+		const membershipAmount = getMembershipPayableAmount();
+		const regularAmount = getRegularPayableAmount();
+		const hasProductsOrNonMembershipServices = regularAmount > 0;
+		const hasMembershipServices = membershipAmount > 0;
+		
+		// Auto-enable split payment if both membership and regular payments are needed
+		if (hasProductsOrNonMembershipServices && hasMembershipServices && !isSplitPayment) {
+			setIsSplitPayment(true);
+		}
 		
 		if (!isSplitPayment) {
+			const currentTotal = calculateTotalAmount();
 			// When split payment is disabled, auto-fill with cash to match total
 			setPaymentAmounts({
 				cash: currentTotal,
@@ -1007,16 +1077,20 @@ export default function POS() {
 				membership: 0
 			});
 		} else {
-			// When split payment is enabled, only auto-adjust cash if needed
-			const currentSum = Object.values(paymentAmounts).reduce((a, b) => a + b, 0);
-			if (Math.abs(currentSum - currentTotal) > 0.01) {
-				// Auto-adjust cash to cover the difference
-				const sumOthers = (paymentAmounts.credit_card || 0) + (paymentAmounts.debit_card || 0) + (paymentAmounts.upi || 0) + (paymentAmounts.bnpl || 0) + (paymentAmounts.membership || 0);
-				const remainingAmount = Math.max(0, currentTotal - sumOthers);
-				setPaymentAmounts(prev => ({ ...prev, cash: remainingAmount }));
-			}
+			// When split payment is enabled, distribute amounts appropriately
+			const maxMembershipPayment = activeClientMembership ? Math.min(membershipAmount, activeClientMembership.currentBalance) : 0;
+			const remainingRegularAmount = regularAmount + Math.max(0, membershipAmount - maxMembershipPayment);
+			
+			setPaymentAmounts({
+				cash: remainingRegularAmount,
+				credit_card: 0,
+				debit_card: 0,
+				upi: 0,
+				bnpl: 0,
+				membership: maxMembershipPayment
+			});
 		}
-	}, [calculateTotalAmount, isSplitPayment, orderItems, walkInDiscount, walkInDiscountPercentage]);
+	}, [calculateTotalAmount, isSplitPayment, orderItems, walkInDiscount, walkInDiscountPercentage, getMembershipPayableAmount, getRegularPayableAmount, servicesMembershipPayment, activeClientMembership]);
 
 	// Separate useEffect to handle cash auto-adjustment in split payment mode
 	useEffect(() => {
@@ -1869,6 +1943,8 @@ export default function POS() {
 		setPaymentAmounts({ cash: 0, credit_card: 0, debit_card: 0, upi: 0, bnpl: 0, membership: 0 });
 		// Reset order date
 		setOrderDate(new Date());
+		// Reset service-specific membership payment tracking
+		setServicesMembershipPayment({});
 
 		// Clear persisted state from localStorage
 		try {
@@ -2092,11 +2168,12 @@ export default function POS() {
 			}
 
 			// Now create a record in pos_orders to track this consumption
+			// Declare variables outside try-catch block so they're accessible later
+			const orderId = uuidv4();
+			const orderDateToUse = orderDate ? orderDate.toISOString() : new Date().toISOString();
+			const orderTotal = salonProducts.reduce((sum, product) => sum + product.total, 0);
+			
 			try {
-				// Create order ID
-				const orderId = uuidv4();
-				const orderDateToUse = orderDate ? orderDate.toISOString() : new Date().toISOString();
-
 				// Format the products for order items - ENSURE CORRECT QUANTITIES
 				const orderItems = salonProducts.map((product, idx) => ({
 					id: uuidv4(),
@@ -2110,9 +2187,6 @@ export default function POS() {
 					created_at: orderDateToUse, // Use selected or current date
 					pos_order_id: orderId
 				}));
-
-				// Calculate order total
-				const orderTotal = salonProducts.reduce((sum, product) => sum + product.total, 0);
 
 				// Create order record with fields exactly matching the pos_orders table schema
 				const orderData: any = {
@@ -2254,10 +2328,19 @@ export default function POS() {
 			// Success message
 			toast.success('Salon consumption recorded successfully');
 			
-			// Save order for printing
+			// Save order for printing - create a simple order object for salon consumption
 			const orderForPrinting = {
-				...orderData,
-				services: orderData.services
+				id: `salon_${Date.now()}`,
+				order_id: `salon_${Date.now()}`,
+				client_name: 'Salon Consumption',
+				created_at: new Date().toISOString(),
+				total: salonProducts.reduce((sum, product) => sum + product.total, 0),
+				services: salonProducts.map(product => ({
+					name: product.item_name,
+					price: product.price,
+					quantity: product.quantity,
+					total: product.total
+					}))
 			};
 			setLastCreatedOrder(orderForPrinting);
 			setPrintDialogOpen(true);
@@ -2821,24 +2904,31 @@ export default function POS() {
 								</Box>
 								<Box sx={{ textAlign: 'right', minWidth: '100px' }}>
 									{(() => {
-										// Calculate display values with GST
+										// Calculate display values with or without GST based on payment method
 										const gstPercentage = item.gst_percentage || (item.type === 'product' ? productGstRate : serviceGstRate) || 18;
 										const isGstApplied = item.type === 'product' ? isProductGstApplied : (item.type === 'service' ? isServiceGstApplied : true);
 										const gstMultiplier = isGstApplied ? (1 + (gstPercentage / 100)) : 1;
-										const totalIncludingGst = (item.price * item.quantity * gstMultiplier);
-										const finalAmount = Math.max(0, totalIncludingGst - (item.discount || 0));
+										
+										// For services paid via membership, exclude GST
+										const isServicePaidViaMembership = item.type === 'service' && servicesMembershipPayment[item.id];
+										const finalMultiplier = isServicePaidViaMembership ? 1 : gstMultiplier;
+										const totalAmount = (item.price * item.quantity * finalMultiplier);
+										const finalAmount = Math.max(0, totalAmount - (item.discount || 0));
 										
 										return (
 											<>
 												<Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.75rem' }}>
-													Inc. GST ({gstPercentage}%)
+													{isServicePaidViaMembership ? 
+														'Ex. GST (Membership)' : 
+														`Inc. GST (${gstPercentage}%)`
+													}
 												</Typography>
 												<Typography variant="body1" sx={{ fontWeight: 500 }}>
 													{formatCurrency(finalAmount)}
 												</Typography>
 												{item.discount && item.discount > 0 && (
 													<Typography variant="body2" color="text.secondary" sx={{ textDecoration: 'line-through', fontSize: '0.75rem' }}>
-														{formatCurrency(totalIncludingGst)}
+														{formatCurrency(totalAmount)}
 													</Typography>
 												)}
 											</>
@@ -2876,6 +2966,54 @@ export default function POS() {
 														startAdornment: <InputAdornment position="start">₹</InputAdornment>,
 												}}
 										/>
+								</Box>
+							)}
+							{/* Add membership payment toggle for services */}
+							{item.type === 'service' && (
+								<Box sx={{ pl: 4, pb: 2, display: 'flex', justifyContent: 'flex-start', alignItems: 'center' }}>
+									<FormControlLabel
+										control={
+											<Switch
+												checked={servicesMembershipPayment[item.id] || false}
+												onChange={(e) => {
+													if (!activeClientMembership || !activeClientMembership.isActive) {
+														toast.error('No active membership found for this client');
+														return;
+													}
+													setServicesMembershipPayment(prev => ({
+														...prev,
+														[item.id]: e.target.checked
+													}));
+												}}
+												size="small"
+												color="primary"
+												disabled={!activeClientMembership || !activeClientMembership.isActive}
+											/>
+										}
+										label={
+											<Box sx={{ display: 'flex', alignItems: 'center' }}>
+												<AccountBalanceWalletIcon fontSize="small" sx={{ mr: 0.5 }} />
+												<Typography variant="body2">
+													Pay with Membership Balance
+												</Typography>
+												{!activeClientMembership && (
+													<Typography variant="caption" color="text.secondary" sx={{ ml: 1 }}>
+														(No membership)
+													</Typography>
+												)}
+											</Box>
+										}
+									/>
+									{servicesMembershipPayment[item.id] && activeClientMembership && (
+										<Chip
+											icon={<CheckIcon fontSize="small" />}
+											label={`Balance: ₹${activeClientMembership.currentBalance.toLocaleString()}`}
+											size="small"
+											color="primary"
+											variant="outlined"
+											sx={{ ml: 2 }}
+										/>
+									)}
 								</Box>
 							)}
 							</React.Fragment>
@@ -2921,7 +3059,7 @@ export default function POS() {
 
 				{/* GST Section */}
 				<Box sx={{ mb: 1, display: 'flex', justifyContent: 'space-between' }}>
-					<Typography>Subtotal (Excl. GST):</Typography> {/* Changed label for clarity */}
+					<Typography>Subtotal (Excl. GST):</Typography>
 					<Typography fontWeight="medium">{formatCurrency(combinedSubtotal)}</Typography>
 				</Box>
 				{/* GST Section for Services */}
@@ -3031,9 +3169,35 @@ export default function POS() {
 				)}
 
 				<Divider sx={{ my: 2 }} />
+				{/* Payment Breakdown - Show if there are services marked for membership payment */}
+				{Object.values(servicesMembershipPayment).some(Boolean) && activeClientMembership && (
+					<>
+						<Typography variant="body2" fontWeight="bold" gutterBottom>
+							Payment Breakdown:
+						</Typography>
+						<Box sx={{ mb: 1, display: 'flex', justifyContent: 'space-between', ml: 2 }}>
+							<Typography variant="body2" color="primary.main">Services via Membership (Ex. GST):</Typography>
+							<Typography variant="body2" fontWeight="500" color="primary.main">
+								{formatCurrency(getMembershipPayableAmount())}
+							</Typography>
+						</Box>
+						<Box sx={{ mb: 1, display: 'flex', justifyContent: 'space-between', ml: 2 }}>
+							<Typography variant="body2">Products & Regular Services (Incl. GST):</Typography>
+							<Typography variant="body2" fontWeight="500">
+								{formatCurrency(getRegularPayableAmount())}
+							</Typography>
+						</Box>
+						<Box sx={{ mb: 2, ml: 2, p: 1, bgcolor: 'info.lighter', borderRadius: 1 }}>
+							<Typography variant="caption" color="text.secondary">
+								<InfoIcon fontSize="inherit" sx={{ verticalAlign: 'middle', mr: 0.5 }} />
+								Membership payments exclude GST • Products cannot be paid with membership balance
+							</Typography>
+						</Box>
+					</>
+				)}
 				{/* Total Amount */}
 				<Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
-					<Typography variant="h6" fontWeight="bold">Total (Incl. GST):</Typography> {/* Clarified label */}
+					<Typography variant="h6" fontWeight="bold">Total (Incl. GST):</Typography>
 					<Typography variant="h6" fontWeight="bold">{formatCurrency(totalAmount)}</Typography>
 				</Box>
 				{/* Customer & Stylist Info */}
@@ -3068,12 +3232,12 @@ export default function POS() {
 	const handleAddMembershipToOrder = useCallback((membership: POSMembership) => {
 		const newItem: POSOrderItem = {
 			id: uuidv4(),
-			order_id: '',                          // no parent order yet
+			order_id: '',
 			item_id: membership.id,
 			item_name: membership.name,
 			price: membership.price,
 			quantity: 1,
-			total: membership.price * 1,         // price times quantity
+			total: membership.price * 1,
 			type: 'membership',
 			category: 'membership',
 			duration_months: membership.duration_months,
@@ -3085,135 +3249,9 @@ export default function POS() {
 	}, []);
 
 	// Change renderMembershipSelectionSection to return null to remove the membership cards section
-	// This keeps the membership dropdown at the top that's already in place
 	const renderMembershipSelectionSection = () => {
 		// Return null to hide the membership cards section as per user request
 		return null;
-		
-		/* Original membership cards section - kept for reference if needed later
-		return (
-			<Box sx={{ p: 2, mt: 2 }}>
-				<Typography variant="h6" gutterBottom>
-					Memberships
-				</Typography>
-
-				<TextField
-					fullWidth
-					placeholder="Search memberships..."
-					variant="outlined"
-					size="small"
-					margin="dense"
-					value={membershipSearchTerm}
-					onChange={(e) => setMembershipSearchTerm(e.target.value)}
-					InputProps={{
-						startAdornment: (
-							<InputAdornment position="start">
-								<Search fontSize="small" />
-							</InputAdornment>
-						),
-						sx: { borderRadius: '8px' }
-					}}
-					sx={{ mb: 2 }}
-				/>
-
-				{loadingMemberships ? (
-					<Box sx={{ display: 'flex', justifyContent: 'center', my: 2 }}>
-						<CircularProgress size={24} />
-					</Box>
-				) : filteredMemberships.length > 0 ? (
-					<Grid container spacing={2}>
-						{filteredMemberships.map((membership) => (
-							<Grid item xs={12} sm={6} md={4} key={membership.id}>
-								<Card sx={{
-									height: '100%',
-									display: 'flex',
-									flexDirection: 'column',
-									borderRadius: '8px',
-									boxShadow: '0 2px 4px rgba(0,0,0,0.08)',
-									'&:hover': {
-										boxShadow: '0 4px 8px rgba(0,0,0,0.15)'
-									}
-								}}>
-									<CardContent sx={{ flexGrow: 1 }}>
-										<Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-											<CardMembershipIcon sx={{ mr: 1, color: 'primary.main' }} />
-											<Typography variant="h6" sx={{ fontWeight: 600 }}>{membership.name}</Typography>
-										</Box>
-										<Typography color="text.secondary" sx={{ mb: 1 }}>
-											₹{membership.price} • {membership.duration_months} months
-										</Typography>
-										<Box sx={{ mb: 2 }}>
-											<Typography variant="body2" color="text.secondary">
-												{membership.description}
-											</Typography>
-											{membership.benefits && membership.benefits.length > 0 && (
-												<Box sx={{ mt: 1 }}>
-													{membership.benefits.slice(0, 3).map((benefit, index) => (
-														<Chip 
-															key={index} 
-															label={benefit} 
-															size="small" 
-															variant="outlined"
-															color="primary"
-															sx={{ mr: 0.5, mb: 0.5, borderRadius: '4px' }} 
-														/>
-													))}
-													{membership.benefits.length > 3 && (
-														<Chip 
-															label={`+${membership.benefits.length - 3} more`} 
-															size="small"
-															variant="outlined" 
-															sx={{ mr: 0.5, mb: 0.5, borderRadius: '4px' }} 
-														/>
-													)}
-												</Box>
-											)}
-										</Box>
-									</CardContent>
-									<CardActions sx={{ justifyContent: 'flex-end', pt: 0, pb: 2, px: 2 }}>
-										<Button
-											variant="contained"
-											size="small"
-											color="primary"
-											onClick={() => handleAddMembershipToOrder({
-												id: membership.id,
-												name: membership.name,
-												price: membership.price,
-												duration_months: membership.duration_months,
-												benefits: membership.benefits,
-												description: membership.description,
-												type: 'membership'
-											})}
-											sx={{
-												borderRadius: '6px',
-												textTransform: 'none',
-												fontWeight: 500
-											}}
-										>
-											Add
-										</Button>
-									</CardActions>
-								</Card>
-							</Grid>
-						))}
-					</Grid>
-				) : (
-					<Box sx={{
-						textAlign: 'center',
-						my: 2,
-						p: 2,
-						bgcolor: 'grey.50',
-						borderRadius: '8px',
-						border: '1px dashed rgba(0, 0, 0, 0.12)'
-					}}>
-						<Typography variant="body2" color="text.secondary">
-							No memberships found
-						</Typography>
-					</Box>
-				)}
-			</Box>
-		);
-		*/
 	};
 
 	// ====================================================
