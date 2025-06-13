@@ -510,201 +510,7 @@ export default function Dashboard() {
         ) : (
           <Fade in={!!analyticsSummary}>
             <Box width="100%">
-              {/* TODAY'S SUMMARY DASHBOARD & REAL-TIME METRICS */}
-              {(settings.visibleMetrics.todaysSummary || settings.visibleMetrics.realTimeMetrics) && (
-                <Grid container spacing={3} mb={4}>
-                  <SectionWrapper 
-                    title="Today's Overview & Real-Time Metrics" 
-                    icon={<AssessmentIcon sx={{ color: 'primary.main' }} />}
-                  >
-                    {/* Today's Summary Cards */}
-                    {settings.visibleMetrics.todaysSummary && (
-                      <>
-                        <Grid item xs={12} md={2.4}>
-                          <KPICard
-                            title="Today's Revenue"
-                            value={formatCurrency(analyticsSummary.todaysMetrics.revenue)}
-                            icon={<MoneyIcon />}
-                            color="success"
-                            subtitle="Current day total"
-                          />
-                        </Grid>
-                        <Grid item xs={12} md={2.4}>
-                          <KPICard
-                            title="Today's Appointments"
-                            value={analyticsSummary.todaysMetrics.appointments.toString()}
-                            icon={<CalendarIcon />}
-                            color="primary"
-                            subtitle="Scheduled today"
-                          />
-                        </Grid>
-                        <Grid item xs={12} md={2.4}>
-                          <KPICard
-                            title="Walk-ins"
-                            value={analyticsSummary.todaysMetrics.walkIns.toString()}
-                            icon={<PersonAddIcon />}
-                            color="info"
-                            subtitle="Unscheduled visits"
-                          />
-                        </Grid>
-                        <Grid item xs={12} md={2.4}>
-                          <KPICard
-                            title="Average Ticket"
-                            value={formatCurrency(analyticsSummary.todaysMetrics.averageTicket)}
-                            icon={<ReceiptIcon />}
-                            color="warning"
-                            subtitle="Today's average"
-                          />
-                        </Grid>
-                        <Grid item xs={12} md={2.4}>
-                          <KPICard
-                            title="Busiest Hour"
-                            value={analyticsSummary.todaysMetrics.busyHour || 'N/A'}
-                            icon={<AccessTimeIcon />}
-                            color="secondary"
-                            subtitle="Peak activity"
-                          />
-                        </Grid>
-                      </>
-                    )}
 
-                    {/* Real-Time Metrics */}
-                    {settings.visibleMetrics.realTimeMetrics && (
-                      <>
-                        <Grid item xs={12} md={3}>
-                          <CardWrapper>
-                            <DownloadableCard
-                              title="Today's Performance"
-                              subtitle="Current day metrics"
-                              data={[analyticsSummary.todaysMetrics]}
-                              downloadType="real-time"
-                              showDataCount={false}
-                              icon={<TrendingUpIcon color="success" />}
-                            >
-                              <Box textAlign="center">
-                                <Typography variant="h4" color="success.main" gutterBottom>
-                                  {formatCurrency(analyticsSummary.todaysMetrics.revenue)}
-                                </Typography>
-                                <Typography variant="body2" color="text.secondary" gutterBottom>
-                                  Today's Revenue
-                                </Typography>
-                                <Divider sx={{ my: 2 }} />
-                                <Typography variant="h6" color="primary.main">
-                                  {analyticsSummary.todaysMetrics.appointments}
-                                </Typography>
-                                <Typography variant="caption" color="text.secondary">
-                                  Appointments Today
-                                </Typography>
-                              </Box>
-                            </DownloadableCard>
-                          </CardWrapper>
-                        </Grid>
-                        <Grid item xs={12} md={3}>
-                          <CardWrapper>
-                            <DownloadableCard
-                              title="Revenue Goal Progress"
-                              subtitle="Daily target tracking"
-                              data={[{
-                                current: analyticsSummary.todaysMetrics.revenue,
-                                target: analyticsSummary.revenueAnalytics.dailyRevenueGoal,
-                                percentage: (analyticsSummary.todaysMetrics.revenue / Math.max(analyticsSummary.revenueAnalytics.dailyRevenueGoal, 1)) * 100
-                              }]}
-                              downloadType="real-time"
-                              showDataCount={false}
-                              icon={<TrendingUpIcon color="warning" />}
-                            >
-                              <Box textAlign="center">
-                                <Typography variant="h4" color="warning.main" gutterBottom>
-                                  {((analyticsSummary.todaysMetrics.revenue / Math.max(analyticsSummary.revenueAnalytics.dailyRevenueGoal, 1)) * 100).toFixed(1)}%
-                                </Typography>
-                                <Typography variant="body2" color="text.secondary" gutterBottom>
-                                  Goal Achievement
-                                </Typography>
-                                <LinearProgress 
-                                  variant="determinate" 
-                                  value={Math.min((analyticsSummary.todaysMetrics.revenue / Math.max(analyticsSummary.revenueAnalytics.dailyRevenueGoal, 1)) * 100, 100)} 
-                                  sx={{ my: 2 }}
-                                  color={
-                                    (analyticsSummary.todaysMetrics.revenue / Math.max(analyticsSummary.revenueAnalytics.dailyRevenueGoal, 1)) * 100 >= 100 ? "success" :
-                                    (analyticsSummary.todaysMetrics.revenue / Math.max(analyticsSummary.revenueAnalytics.dailyRevenueGoal, 1)) * 100 >= 75 ? "primary" : "warning"
-                                  }
-                                />
-                                <Typography variant="caption" color="text.secondary">
-                                  Target: {formatCurrency(analyticsSummary.revenueAnalytics.dailyRevenueGoal)}
-                                </Typography>
-                              </Box>
-                            </DownloadableCard>
-                          </CardWrapper>
-                        </Grid>
-                        <Grid item xs={12} md={3}>
-                          <CardWrapper>
-                            <DownloadableCard
-                              title="Monthly Projection"
-                              subtitle="Based on current trends"
-                              data={[{
-                                projection: analyticsSummary.revenueAnalytics.monthlyProjection,
-                                current: analyticsSummary.revenueAnalytics.totalRevenue
-                              }]}
-                              downloadType="real-time"
-                              showDataCount={false}
-                              icon={<TimelineIcon color="info" />}
-                            >
-                              <Box textAlign="center">
-                                <Typography variant="h4" color="info.main" gutterBottom>
-                                  {formatCurrency(analyticsSummary.revenueAnalytics.monthlyProjection)}
-                                </Typography>
-                                <Typography variant="body2" color="text.secondary" gutterBottom>
-                                  Projected Monthly Revenue
-                                </Typography>
-                                <Divider sx={{ my: 2 }} />
-                                <Typography variant="body2" color="text.secondary">
-                                  Growth Rate: {analyticsSummary.revenueAnalytics.revenueGrowthRate.toFixed(1)}%
-                                </Typography>
-                              </Box>
-                            </DownloadableCard>
-                          </CardWrapper>
-                        </Grid>
-                        <Grid item xs={12} md={3}>
-                          <CardWrapper>
-                            <DownloadableCard
-                              title="Live Activity"
-                              subtitle="Current business status"
-                              data={[{
-                                busyHour: analyticsSummary.todaysMetrics.busyHour,
-                                topService: analyticsSummary.todaysMetrics.topService,
-                                walkIns: analyticsSummary.todaysMetrics.walkIns
-                              }]}
-                              downloadType="real-time"
-                              showDataCount={false}
-                              icon={<AccessTimeIcon color="secondary" />}
-                            >
-                              <Box>
-                                <Typography variant="body2" color="text.secondary" gutterBottom>
-                                  Busiest Hour Today
-                                </Typography>
-                                <Typography variant="h6" color="secondary.main" gutterBottom>
-                                  {analyticsSummary.todaysMetrics.busyHour || 'N/A'}
-                                </Typography>
-                                
-                                <Typography variant="body2" color="text.secondary" gutterBottom>
-                                  Top Service Today
-                                </Typography>
-                                <Typography variant="body1" gutterBottom>
-                                  {analyticsSummary.todaysMetrics.topService || 'N/A'}
-                                </Typography>
-                                
-                                <Typography variant="body2" color="text.secondary">
-                                  Walk-ins: {analyticsSummary.todaysMetrics.walkIns}
-                                </Typography>
-                              </Box>
-                            </DownloadableCard>
-                          </CardWrapper>
-                        </Grid>
-                      </>
-                    )}
-                  </SectionWrapper>
-                </Grid>
-              )}
 
               {/* CORE METRICS & REVENUE */}
               {(settings.visibleMetrics.dailySales || settings.visibleMetrics.appointments || 
@@ -763,34 +569,47 @@ export default function Dashboard() {
                       </Grid>
                     )}
 
-                    {/* Revenue Charts */}
+                    {/* Sales Trend Chart */}
                     {settings.visibleMetrics.revenueBreakdown && (
-                      <>
-                        <Grid item xs={12} md={8}>
-                          <CardWrapper>
-                            <DownloadableCard
-                              title="Sales Trend"
-                              subtitle={`${startDate ? format(new Date(startDate), 'MMM d') : '...'} - ${endDate ? format(new Date(endDate), 'MMM d, yyyy') : '...'}`}
-                              data={analyticsSummary.dailySalesTrend}
-                              downloadType="sales-trend"
-                              icon={<ShowChartIcon color="primary" />}
-                            >
-                              {renderChart(settings.chartTypes.salesTrend, salesTrendData)}
-                            </DownloadableCard>
-                          </CardWrapper>
-                        </Grid>
-                        <Grid item xs={12} md={4}>
-                          <CardWrapper>
-                            <DownloadableCard
-                              title="Revenue Breakdown"
-                              subtitle={`Total: ${formatCurrency(analyticsSummary.revenueAnalytics.totalRevenue)}`}
-                              data={[
-                                { category: 'Services', amount: analyticsSummary.revenueAnalytics.serviceRevenue },
-                                { category: 'Products', amount: analyticsSummary.revenueAnalytics.productRevenue }
-                              ]}
-                              downloadType="sales-trend"
-                              icon={<AccountBalanceIcon color="primary" />}
-                            >
+                      <Grid item xs={12}>
+                        <CardWrapper>
+                          <DownloadableCard
+                            title="Sales Trend"
+                            subtitle={`${startDate ? format(new Date(startDate), 'MMM d') : '...'} - ${endDate ? format(new Date(endDate), 'MMM d, yyyy') : '...'}`}
+                            data={analyticsSummary.dailySalesTrend}
+                            downloadType="sales-trend"
+                            icon={<ShowChartIcon color="primary" />}
+                          >
+                            {renderChart(settings.chartTypes.salesTrend, salesTrendData)}
+                          </DownloadableCard>
+                        </CardWrapper>
+                      </Grid>
+                    )}
+
+                    {/* Revenue Breakdown - Half Width, Left Aligned */}
+                    {settings.visibleMetrics.revenueBreakdown && (
+                      <Grid item xs={12} md={6}>
+                        <CardWrapper>
+                          <DownloadableCard
+                            title="Revenue Breakdown"
+                            subtitle={`Total: ${formatCurrency(analyticsSummary.revenueAnalytics.totalRevenue)}`}
+                            data={[
+                              { category: 'Services', amount: analyticsSummary.revenueAnalytics.serviceRevenue },
+                              { category: 'Products', amount: analyticsSummary.revenueAnalytics.productRevenue }
+                            ]}
+                            downloadType="sales-trend"
+                            icon={<AccountBalanceIcon color="primary" />}
+                          >
+                            <Box sx={{ 
+                              display: 'flex', 
+                              flexDirection: 'column',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              height: 320,
+                              px: 2,
+                              py: 1,
+                              gap: 1
+                            }}>
                               <OrdersVsProductsChart
                                 serviceRevenue={analyticsSummary.revenueAnalytics.serviceRevenue}
                                 productRevenue={analyticsSummary.revenueAnalytics.productRevenue}
@@ -800,12 +619,262 @@ export default function Dashboard() {
                                 productGrowth={analyticsSummary.revenueAnalytics.revenueGrowthRate}
                                 period={`${format(new Date(startDate), 'MMM d')} - ${format(new Date(endDate), 'MMM d, yyyy')}`}
                                 chartType="doughnut"
-                                height={220}
+                                height={280}
                               />
-                            </DownloadableCard>
-                          </CardWrapper>
-                        </Grid>
-                      </>
+                            </Box>
+                          </DownloadableCard>
+                        </CardWrapper>
+                      </Grid>
+                    )}
+
+                    {/* Staff Utilization Meter - Half Width, Right Aligned */}
+                    {settings.visibleMetrics.revenueBreakdown && (
+                      <Grid item xs={12} md={6}>
+                        <CardWrapper>
+                          <DownloadableCard
+                            title="Staff Utilization"
+                            subtitle={`${analyticsSummary.staffPerformance.topPerformers.length} active stylists`}
+                            data={analyticsSummary.staffPerformance.topPerformers}
+                            downloadType="staff-revenue"
+                            icon={<PeopleIcon color="primary" />}
+                          >
+                            <Box sx={{ 
+                              display: 'flex', 
+                              flexDirection: 'column',
+                              height: 320,
+                              px: 2,
+                              py: 1,
+                              gap: 1
+                            }}>
+                              {/* Staff Occupancy Speedometer with Needle */}
+                              <Box textAlign="center" mb={1}>
+                                <Box sx={{ position: 'relative', display: 'inline-block' }}>
+                                  <svg width="160" height="110" viewBox="0 0 160 110">
+                                    {/* Outer Ring */}
+                                    <circle
+                                      cx="80"
+                                      cy="80"
+                                      r="60"
+                                      fill="none"
+                                      stroke="#f5f5f5"
+                                      strokeWidth="2"
+                                    />
+                                    
+                                    {/* Background Arc - Semi Circle */}
+                                    <path
+                                      d="M 20 80 A 60 60 0 0 1 140 80"
+                                      fill="none"
+                                      stroke="#e0e0e0"
+                                      strokeWidth="12"
+                                      strokeLinecap="round"
+                                    />
+                                    
+                                    {/* Color Segments */}
+                                    {/* Red Zone (0-40%) */}
+                                    <path
+                                      d="M 20 80 A 60 60 0 0 1 56 44"
+                                      fill="none"
+                                      stroke="#ffebee"
+                                      strokeWidth="12"
+                                      strokeLinecap="round"
+                                    />
+                                    
+                                    {/* Orange Zone (40-70%) */}
+                                    <path
+                                      d="M 56 44 A 60 60 0 0 1 104 44"
+                                      fill="none"
+                                      stroke="#fff3e0"
+                                      strokeWidth="12"
+                                      strokeLinecap="round"
+                                    />
+                                    
+                                    {/* Green Zone (70-100%) */}
+                                    <path
+                                      d="M 104 44 A 60 60 0 0 1 140 80"
+                                      fill="none"
+                                      stroke="#e8f5e8"
+                                      strokeWidth="12"
+                                      strokeLinecap="round"
+                                    />
+                                    
+                                    {/* Tick Marks */}
+                                    {[0, 20, 40, 60, 80, 100].map((tick, index) => {
+                                      const angle = (tick / 100) * Math.PI; // 0 to π for semicircle
+                                      const x1 = 80 + Math.cos(Math.PI - angle) * 50;
+                                      const y1 = 80 - Math.sin(Math.PI - angle) * 50;
+                                      const x2 = 80 + Math.cos(Math.PI - angle) * 45;
+                                      const y2 = 80 - Math.sin(Math.PI - angle) * 45;
+                                      
+                                      return (
+                                        <g key={index}>
+                                          <line
+                                            x1={x1}
+                                            y1={y1}
+                                            x2={x2}
+                                            y2={y2}
+                                            stroke="#666"
+                                            strokeWidth="2"
+                                          />
+                                          <text
+                                            x={80 + Math.cos(Math.PI - angle) * 38}
+                                            y={80 - Math.sin(Math.PI - angle) * 38 + 3}
+                                            textAnchor="middle"
+                                            fontSize="8"
+                                            fill="#666"
+                                          >
+                                            {tick}
+                                          </text>
+                                        </g>
+                                      );
+                                    })}
+                                    
+                                    {/* Needle */}
+                                    {(() => {
+                                      const occupancyRate = analyticsSummary.staffPerformance.topPerformers.length > 0 
+                                        ? Math.min((analyticsSummary.staffPerformance.topPerformers.reduce((sum, staff) => sum + staff.revenue, 0) / Math.max(analyticsSummary.staffPerformance.topPerformers.length * 15000, 1)) * 100, 100)
+                                        : 0;
+                                      const needleAngle = (occupancyRate / 100) * Math.PI; // 0 to π
+                                      const needleLength = 35;
+                                      const needleX = 80 + Math.cos(Math.PI - needleAngle) * needleLength;
+                                      const needleY = 80 - Math.sin(Math.PI - needleAngle) * needleLength;
+                                      
+                                      return (
+                                        <g>
+                                          {/* Needle Shadow */}
+                                          <line
+                                            x1="81"
+                                            y1="81"
+                                            x2={needleX + 1}
+                                            y2={needleY + 1}
+                                            stroke="rgba(0,0,0,0.3)"
+                                            strokeWidth="3"
+                                            strokeLinecap="round"
+                                          />
+                                          {/* Needle */}
+                                          <line
+                                            x1="80"
+                                            y1="80"
+                                            x2={needleX}
+                                            y2={needleY}
+                                            stroke="#d32f2f"
+                                            strokeWidth="3"
+                                            strokeLinecap="round"
+                                          />
+                                          {/* Center Dot Shadow */}
+                                          <circle
+                                            cx="81"
+                                            cy="81"
+                                            r="4"
+                                            fill="rgba(0,0,0,0.3)"
+                                          />
+                                          {/* Center Dot */}
+                                          <circle
+                                            cx="80"
+                                            cy="80"
+                                            r="4"
+                                            fill="#d32f2f"
+                                          />
+                                        </g>
+                                      );
+                                    })()}
+                                    
+                                    {/* Center Display */}
+                                    <text
+                                      x="80"
+                                      y="100"
+                                      textAnchor="middle"
+                                      fontSize="16"
+                                      fontWeight="bold"
+                                      fill="#1976d2"
+                                    >
+                                      {analyticsSummary.staffPerformance.topPerformers.length > 0 
+                                        ? `${Math.min((analyticsSummary.staffPerformance.topPerformers.reduce((sum, staff) => sum + staff.revenue, 0) / Math.max(analyticsSummary.staffPerformance.topPerformers.length * 15000, 1)) * 100, 100).toFixed(1)}%`
+                                        : '0%'
+                                      }
+                                    </text>
+                                  </svg>
+                                </Box>
+                                <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                                  Staff Occupancy Rate ({format(new Date(startDate), 'MMM d')} - {format(new Date(endDate), 'MMM d')})
+                                </Typography>
+                              </Box>
+
+                              {/* Individual Staff Performance with Mini Speedometers */}
+                              <Box sx={{ flex: 1, overflowY: 'auto' }}>
+                                <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                                  Individual Performance
+                                </Typography>
+                                <Grid container spacing={1}>
+                                  {analyticsSummary.staffPerformance.topPerformers.slice(0, 4).map((staff, index) => {
+                                    const totalRevenue = analyticsSummary.staffPerformance.topPerformers.reduce((sum, s) => sum + s.revenue, 0);
+                                    const averageRevenue = totalRevenue / Math.max(analyticsSummary.staffPerformance.topPerformers.length, 1);
+                                    const utilizationRate = (staff.revenue / Math.max(averageRevenue, 1)) * 100;
+                                    const gaugeColor = utilizationRate >= 100 ? '#4caf50' :
+                                                      utilizationRate >= 80 ? '#1976d2' :
+                                                      utilizationRate >= 60 ? '#ff9800' : '#f44336';
+                                    
+                                    return (
+                                      <Grid item xs={6} key={index}>
+                                        <Box sx={{ 
+                                          textAlign: 'center', 
+                                          p: 1, 
+                                          border: '1px solid #e0e0e0', 
+                                          borderRadius: 2,
+                                          backgroundColor: 'grey.50'
+                                        }}>
+                                          {/* Mini Speedometer */}
+                                          <Box sx={{ position: 'relative', display: 'inline-block', mb: 0.5 }}>
+                                            <svg width="60" height="40" viewBox="0 0 60 40">
+                                              {/* Background Arc */}
+                                              <path
+                                                d="M 10 30 A 20 20 0 0 1 50 30"
+                                                fill="none"
+                                                stroke="#e0e0e0"
+                                                strokeWidth="4"
+                                                strokeLinecap="round"
+                                              />
+                                              {/* Progress Arc */}
+                                              <path
+                                                d="M 10 30 A 20 20 0 0 1 50 30"
+                                                fill="none"
+                                                stroke={gaugeColor}
+                                                strokeWidth="4"
+                                                strokeLinecap="round"
+                                                strokeDasharray={`${Math.PI * 20 * (Math.min(utilizationRate, 100) / 100)} ${Math.PI * 20}`}
+                                              />
+                                              {/* Center Text */}
+                                              <text
+                                                x="30"
+                                                y="28"
+                                                textAnchor="middle"
+                                                fontSize="8"
+                                                fontWeight="bold"
+                                                fill={gaugeColor}
+                                              >
+                                                {utilizationRate.toFixed(0)}%
+                                              </text>
+                                            </svg>
+                                          </Box>
+                                          
+                                          <Typography variant="caption" fontWeight="medium" display="block">
+                                            {staff.stylistName}
+                                          </Typography>
+                                          <Typography variant="caption" color="text.secondary" display="block">
+                                            {formatCurrency(staff.revenue)}
+                                          </Typography>
+                                          <Typography variant="caption" color="text.secondary" display="block">
+                                            {staff.appointmentCount} appointments
+                                          </Typography>
+                                        </Box>
+                                      </Grid>
+                                    );
+                                  })}
+                                </Grid>
+                              </Box>
+                            </Box>
+                          </DownloadableCard>
+                        </CardWrapper>
+                      </Grid>
                     )}
                   </SectionWrapper>
                 </Grid>
@@ -1014,491 +1083,6 @@ export default function Dashboard() {
                                   </ListItem>
                                 ))}
                               </List>
-                            </Box>
-                          </DownloadableCard>
-                        </CardWrapper>
-                      </Grid>
-                    )}
-                  </SectionWrapper>
-                </Grid>
-              )}
-
-              {/* STAFF ANALYTICS */}
-              {(settings.visibleMetrics.revenuePerStaff || 
-                settings.visibleMetrics.staffEfficiency || settings.visibleMetrics.stylistRevenue) && (
-                <Grid container spacing={3} mb={4}>
-                  <SectionWrapper 
-                    title="Staff Performance & Utilization" 
-                    icon={<BusinessIcon sx={{ color: 'primary.main' }} />}
-                  >
-                    {settings.visibleMetrics.stylistRevenue && (
-                      <Grid item xs={12} md={6}>
-                        <CardWrapper>
-                          <DownloadableCard
-                            title="Individual Stylist Revenue"
-                            subtitle="Revenue breakdown by stylist"
-                            data={analyticsSummary.stylistRevenue}
-                            downloadType="staff-revenue"
-                            icon={<MoneyIcon color="success" />}
-                            height={350}
-                          >
-                            <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-                              <Box sx={{ height: '60%', mb: 2 }}>
-                                {renderChart(settings.chartTypes.stylistRevenue, {
-                                  labels: analyticsSummary.stylistRevenue.slice(0, 5).map(s => s.stylistName.split(' ')[0]),
-                                  datasets: [{
-                                    label: 'Revenue',
-                                    data: analyticsSummary.stylistRevenue.slice(0, 5).map(s => s.revenue),
-                                    backgroundColor: ['#4caf50', '#2196f3', '#ff9800', '#9c27b0', '#f44336'],
-                                  }]
-                                })}
-                              </Box>
-                              <Box sx={{ height: '40%', overflowY: 'auto', pr: 1 }}>
-                                <List dense>
-                                  {analyticsSummary.stylistRevenue.map((stylist, index) => (
-                                    <ListItem 
-                                      key={stylist.stylistId} 
-                                      divider
-                                      sx={{ 
-                                        py: 0.5,
-                                        px: 1,
-                                        backgroundColor: index < 3 ? 'rgba(107, 142, 35, 0.05)' : 'transparent'
-                                      }}
-                                    >
-                                      <ListItemText
-                                        primary={
-                                          <Box display="flex" justifyContent="space-between" alignItems="center">
-                                            <Box display="flex" alignItems="center">
-                                              <Typography 
-                                                variant="body2" 
-                                                fontWeight="medium" 
-                                                sx={{ 
-                                                  maxWidth: '150px',
-                                                  overflow: 'hidden',
-                                                  textOverflow: 'ellipsis',
-                                                  whiteSpace: 'nowrap'
-                                                }}
-                                              >
-                                                {index + 1}. {stylist.stylistName}
-                                              </Typography>
-                                            </Box>
-                                            <Typography variant="body2" fontWeight="bold" color="success.main">
-                                              {formatCurrency(stylist.revenue)}
-                                            </Typography>
-                                          </Box>
-                                        }
-                                        secondary={
-                                          <Box display="flex" justifyContent="space-between" alignItems="center">
-                                            <Typography variant="caption" color="text.secondary">
-                                              {stylist.appointmentCount || 0} appointments
-                                            </Typography>
-                                            <Typography variant="caption" color="text.secondary">
-                                              Avg: {formatCurrency(stylist.revenue / Math.max(stylist.appointmentCount || 1, 1))}
-                                            </Typography>
-                                          </Box>
-                                        }
-                                      />
-                                    </ListItem>
-                                  ))}
-                                </List>
-                              </Box>
-                            </Box>
-                          </DownloadableCard>
-                        </CardWrapper>
-                      </Grid>
-                    )}
-
-                    {/* REVENUE PER STAFF - NEW */}
-                    {settings.visibleMetrics.revenuePerStaff && (
-                      <Grid item xs={12} md={6}>
-                        <CardWrapper>
-                          <DownloadableCard
-                            title="Revenue per Staff Member"
-                            subtitle={`Average: ${formatCurrency(analyticsSummary.staffPerformance.averageRevenue)} per staff`}
-                            data={analyticsSummary.staffPerformance.topPerformers}
-                            downloadType="staff-revenue"
-                            icon={<AccountBalanceIcon color="success" />}
-                          >
-                            <Box sx={{ height: 330, overflowY: 'auto' }}>
-                              <List>
-                                {analyticsSummary.staffPerformance.topPerformers.map((staff, index) => (
-                                  <ListItem key={staff.stylistId} divider>
-                                    <ListItemText
-                                      primary={
-                                        <Box display="flex" justifyContent="space-between" alignItems="center">
-                                          <Typography variant="subtitle2">{staff.stylistName}</Typography>
-                                          <Typography variant="h6" color="success.main">
-                                            {formatCurrency(staff.revenue)}
-                                          </Typography>
-                                        </Box>
-                                      }
-                                      secondary={
-                                        <Box>
-                                          <Typography variant="caption" display="block">
-                                            Appointments: {staff.appointmentCount} | Services: {staff.serviceCount}
-                                          </Typography>
-                                          <Typography variant="caption" display="block">
-                                            Avg per Appointment: {formatCurrency(staff.revenue / Math.max(staff.appointmentCount, 1))}
-                                          </Typography>
-                                          <Typography variant="caption" display="block">
-                                            Efficiency: {staff.efficiency.toFixed(1)}%
-                                          </Typography>
-                                        </Box>
-                                      }
-                                    />
-                                  </ListItem>
-                                ))}
-                              </List>
-                            </Box>
-                          </DownloadableCard>
-                        </CardWrapper>
-                      </Grid>
-                    )}
-
-                    {/* STAFF EFFICIENCY - NEW */}
-                    {settings.visibleMetrics.staffEfficiency && (
-                      <Grid item xs={12} md={6}>
-                        <CardWrapper>
-                          <DownloadableCard
-                            title="Staff Efficiency Metrics"
-                            subtitle="Performance efficiency analysis"
-                            data={analyticsSummary.staffPerformance.topPerformers}
-                            downloadType="staff-efficiency"
-                            icon={<AssessmentIcon color="info" />}
-                          >
-                            <Box sx={{ height: 330, overflowY: 'auto' }}>
-                              <List>
-                                {analyticsSummary.staffPerformance.topPerformers
-                                  .sort((a, b) => b.efficiency - a.efficiency)
-                                  .map((staff, index) => (
-                                  <ListItem key={staff.stylistId} divider>
-                                    <ListItemText
-                                      primary={
-                                        <Box display="flex" justifyContent="space-between" alignItems="center">
-                                          <Typography variant="subtitle2">{staff.stylistName}</Typography>
-                                          <Chip 
-                                            label={`${staff.efficiency.toFixed(1)}%`}
-                                            size="small"
-                                            color={staff.efficiency >= 90 ? "success" : staff.efficiency >= 75 ? "primary" : staff.efficiency >= 60 ? "warning" : "error"}
-                                          />
-                                        </Box>
-                                      }
-                                      secondary={
-                                        <Box>
-                                          <LinearProgress 
-                                            variant="determinate" 
-                                            value={Math.min(staff.efficiency, 100)} 
-                                            sx={{ mt: 1, mb: 1 }}
-                                            color={staff.efficiency >= 90 ? "success" : staff.efficiency >= 75 ? "primary" : staff.efficiency >= 60 ? "warning" : "error"}
-                                          />
-                                          <Typography variant="caption" display="block">
-                                            Performance Score: {staff.performanceScore}/100
-                                          </Typography>
-                                          <Typography variant="caption" display="block">
-                                            Rating: {staff.performanceRating}
-                                          </Typography>
-                                        </Box>
-                                      }
-                                    />
-                                  </ListItem>
-                                ))}
-                              </List>
-                            </Box>
-                          </DownloadableCard>
-                        </CardWrapper>
-                      </Grid>
-                    )}
-                  </SectionWrapper>
-                </Grid>
-              )}
-
-              {/* INVENTORY ANALYTICS */}
-              {settings.visibleMetrics.stockLevels && (
-                <Grid container spacing={3} mb={4}>
-                  <SectionWrapper 
-                    title="Inventory Management" 
-                    icon={<InventoryIcon sx={{ color: 'primary.main' }} />}
-                  >
-                    {/* Stock Levels */}
-                    <Grid item xs={12} md={8}>
-                      <CardWrapper>
-                        <DownloadableCard
-                          title="Stock Level Overview"
-                          data={analyticsSummary.stockAnalytics.criticalItems}
-                          downloadType="inventory"
-                          icon={<InventoryIcon color="primary" />}
-                        >
-                          <Grid container spacing={3}>
-                            <Grid item xs={3}>
-                              <Box textAlign="center">
-                                <Typography variant="h3" color="success.main">
-                                  {analyticsSummary.stockAnalytics.inStock}
-                                </Typography>
-                                <Typography variant="body2" color="text.secondary">
-                                  In Stock
-                                </Typography>
-                              </Box>
-                            </Grid>
-                            <Grid item xs={3}>
-                              <Box textAlign="center">
-                                <Typography variant="h3" color="warning.main">
-                                  {analyticsSummary.stockAnalytics.lowStock}
-                                </Typography>
-                                <Typography variant="body2" color="text.secondary">
-                                  Low Stock
-                                </Typography>
-                              </Box>
-                            </Grid>
-                            <Grid item xs={3}>
-                              <Box textAlign="center">
-                                <Typography variant="h3" color="error.main">
-                                  {analyticsSummary.stockAnalytics.outOfStock}
-                                </Typography>
-                                <Typography variant="body2" color="text.secondary">
-                                  Out of Stock
-                                </Typography>
-                              </Box>
-                            </Grid>
-                            <Grid item xs={3}>
-                              <Box textAlign="center">
-                                <Typography variant="h3" color="primary.main">
-                                  {analyticsSummary.stockAnalytics.totalProducts}
-                                </Typography>
-                                <Typography variant="body2" color="text.secondary">
-                                  Total Products
-                                </Typography>
-                              </Box>
-                            </Grid>
-                          </Grid>
-                          <Box mt={3}>
-                            {renderChart(settings.chartTypes.stockLevels, stockLevelsData, 180)}
-                          </Box>
-                        </DownloadableCard>
-                      </CardWrapper>
-                    </Grid>
-
-                    {/* INVENTORY VALUE - NEW */}
-                    {settings.visibleMetrics.inventoryValue && (
-                      <Grid item xs={12} md={4}>
-                        <CardWrapper>
-                          <DownloadableCard
-                            title="Inventory Value Analysis"
-                            subtitle={`Total inventory worth ${formatCurrency(analyticsSummary.stockAnalytics.inventoryValue)}`}
-                            data={[
-                              { category: 'In Stock Value', value: analyticsSummary.stockAnalytics.inventoryValue },
-                              { category: 'Products', value: analyticsSummary.stockAnalytics.totalProducts }
-                            ]}
-                            downloadType="inventory"
-                            showDataCount={false}
-                            icon={<MoneyIcon color="success" />}
-                          >
-                            <Box textAlign="center" mb={2}>
-                              <Typography variant="h3" color="success.main">
-                                {formatCurrency(analyticsSummary.stockAnalytics.inventoryValue)}
-                              </Typography>
-                              <Typography variant="body2" color="text.secondary">
-                                Total Inventory Value
-                              </Typography>
-                            </Box>
-                            <Box>
-                              <Typography variant="caption" display="block" color="text.secondary">
-                                Average Product Value: {formatCurrency(analyticsSummary.stockAnalytics.inventoryValue / Math.max(analyticsSummary.stockAnalytics.totalProducts, 1))}
-                              </Typography>
-                              <Typography variant="caption" display="block" color="text.secondary">
-                                In Stock: {analyticsSummary.stockAnalytics.inStock} items
-                              </Typography>
-                              <Typography variant="caption" display="block" color="text.secondary">
-                                Need Attention: {analyticsSummary.stockAnalytics.lowStock + analyticsSummary.stockAnalytics.outOfStock} items
-                              </Typography>
-                            </Box>
-                          </DownloadableCard>
-                        </CardWrapper>
-                      </Grid>
-                    )}
-
-                    {/* Regular Critical Stock Items or Inventory Value */}
-                    {!settings.visibleMetrics.inventoryValue && (
-                      <Grid item xs={12} md={4}>
-                        <CardWrapper>
-                          <DownloadableCard
-                            title="Critical Stock Items"
-                            data={analyticsSummary.stockAnalytics.criticalItems}
-                            downloadType="inventory"
-                            showDataCount={false}
-                            icon={<WarningIcon color="warning" />}
-                          >
-                            <Box sx={{ height: 330, overflowY: 'auto' }}>
-                              {analyticsSummary.stockAnalytics.criticalItems.length > 0 ? (
-                                <List>
-                                  {analyticsSummary.stockAnalytics.criticalItems
-                                    .sort((a, b) => a.currentStock - b.currentStock) // Show most critical first
-                                    .map((item, index) => (
-                                    <ListItem key={index} divider>
-                                      <ListItemIcon>
-                                        {item.status === 'out_of_stock' || item.currentStock < 0 ? (
-                                          <ErrorIcon color="error" />
-                                        ) : (
-                                          <WarningIcon color="warning" />
-                                        )}
-                                      </ListItemIcon>
-                                      <ListItemText
-                                        primary={
-                                          <Box display="flex" justifyContent="space-between" alignItems="center">
-                                            <Box>
-                                              <Typography variant="subtitle2">{item.productName}</Typography>
-                                              {item.category && item.category !== 'Uncategorized' && (
-                                                <Typography variant="caption" color="text.secondary">
-                                                  {item.category}
-                                                </Typography>
-                                              )}
-                                            </Box>
-                                            <Box display="flex" flexDirection="column" alignItems="flex-end" gap={0.5}>
-                                              <Chip 
-                                                label={item.currentStock < 0 ? "NEGATIVE" : item.currentStock === 0 ? "OUT" : "LOW"}
-                                                size="small"
-                                                color={item.currentStock < 0 ? "error" : item.currentStock === 0 ? "error" : "warning"}
-                                              />
-                                              {item.value > 0 && (
-                                                <Typography variant="caption" color="primary.main">
-                                                  Value: {formatCurrency(item.value)}
-                                                </Typography>
-                                              )}
-                                            </Box>
-                                          </Box>
-                                        }
-                                        secondary={
-                                          <Box>
-                                            <Typography variant="caption" display="block">
-                                              Current: {item.currentStock} | Reorder at: {item.reorderLevel}
-                                            </Typography>
-                                            {item.description && (
-                                              <Typography variant="caption" display="block" color="text.secondary">
-                                                {item.description.substring(0, 60)}{item.description.length > 60 ? '...' : ''}
-                                              </Typography>
-                                            )}
-                                            {item.mrp > 0 && (
-                                              <Typography variant="caption" display="block">
-                                                MRP: {formatCurrency(item.mrp)} | ID: {item.productId}
-                                              </Typography>
-                                            )}
-                                            {item.currentStock < 0 && (
-                                              <Typography variant="caption" color="error.main" fontWeight="bold">
-                                                ⚠️ NEGATIVE STOCK - IMMEDIATE ACTION REQUIRED
-                                              </Typography>
-                                            )}
-                                          </Box>
-                                        }
-                                      />
-                                    </ListItem>
-                                  ))}
-                                </List>
-                              ) : (
-                                <Box display="flex" flexDirection="column" alignItems="center" justifyContent="center" height="100%">
-                                  <CheckCircleIcon color="success" sx={{ fontSize: 60, mb: 2 }} />
-                                  <Typography variant="h6" color="success.main">
-                                    All Stock Levels Good!
-                                  </Typography>
-                                </Box>
-                              )}
-                            </Box>
-                          </DownloadableCard>
-                        </CardWrapper>
-                      </Grid>
-                    )}
-
-                    {/* TOP SELLING PRODUCTS - NEW */}
-                    {settings.visibleMetrics.topSellingProducts && analyticsSummary.stockAnalytics.topSellingProducts.length > 0 && (
-                      <Grid item xs={12} md={6}>
-                        <CardWrapper>
-                          <DownloadableCard
-                            title="Top Selling Products"
-                            subtitle={`${analyticsSummary.stockAnalytics.topSellingProducts.length} products analyzed`}
-                            data={analyticsSummary.stockAnalytics.topSellingProducts}
-                            downloadType="inventory"
-                            icon={<TrendingUpIcon color="success" />}
-                          >
-                            <Box sx={{ height: 330, overflowY: 'auto' }}>
-                              <List>
-                                {analyticsSummary.stockAnalytics.topSellingProducts.map((product, index) => (
-                                  <ListItem key={index} divider>
-                                    <ListItemText
-                                      primary={
-                                        <Box display="flex" justifyContent="space-between" alignItems="center">
-                                          <Typography variant="subtitle2">{product.productName}</Typography>
-                                          <Chip 
-                                            label={`#${index + 1}`}
-                                            size="small"
-                                            color={index < 3 ? "success" : "primary"}
-                                          />
-                                        </Box>
-                                      }
-                                      secondary={
-                                        <Box>
-                                          <Typography variant="caption" display="block">
-                                            Revenue: {formatCurrency(product.revenue)}
-                                          </Typography>
-                                          <Typography variant="caption" display="block">
-                                            Quantity Sold: {product.quantitySold} | Avg Price: {formatCurrency(product.revenue / product.quantitySold)}
-                                          </Typography>
-                                        </Box>
-                                      }
-                                    />
-                                  </ListItem>
-                                ))}
-                              </List>
-                            </Box>
-                          </DownloadableCard>
-                        </CardWrapper>
-                      </Grid>
-                    )}
-
-                    {/* LOW STOCK ALERTS - NEW */}
-                    {settings.visibleMetrics.lowStockAlerts && (
-                      <Grid item xs={12} md={6}>
-                        <CardWrapper>
-                          <DownloadableCard
-                            title="Low Stock Alerts"
-                            subtitle="Products requiring immediate attention"
-                            data={analyticsSummary.stockAnalytics.criticalItems.filter(item => item.status === 'low_stock')}
-                            downloadType="inventory"
-                            showDataCount={false}
-                            icon={<WarningIcon color="warning" />}
-                          >
-                            <Box sx={{ height: 330, overflowY: 'auto' }}>
-                              {analyticsSummary.stockAnalytics.criticalItems.filter(item => item.status === 'low_stock').length > 0 ? (
-                                <List>
-                                  {analyticsSummary.stockAnalytics.criticalItems
-                                    .filter(item => item.status === 'low_stock')
-                                    .slice(0, 10)
-                                    .map((item, index) => (
-                                    <ListItem key={index} divider>
-                                      <ListItemIcon>
-                                        <WarningIcon color="warning" />
-                                      </ListItemIcon>
-                                      <ListItemText
-                                        primary={item.productName}
-                                        secondary={
-                                          <Box>
-                                            <Typography variant="caption" display="block">
-                                              Stock: {item.currentStock} (Reorder at: {item.reorderLevel})
-                                            </Typography>
-                                            <Typography variant="caption" display="block" color="warning.main">
-                                              Action Required: Order more stock soon
-                                            </Typography>
-                                          </Box>
-                                        }
-                                      />
-                                    </ListItem>
-                                  ))}
-                                </List>
-                              ) : (
-                                <Box display="flex" flexDirection="column" alignItems="center" justifyContent="center" height="100%">
-                                  <CheckCircleIcon color="success" sx={{ fontSize: 60, mb: 2 }} />
-                                  <Typography variant="h6" color="success.main">
-                                    No Low Stock Issues!
-                                  </Typography>
-                                </Box>
-                              )}
                             </Box>
                           </DownloadableCard>
                         </CardWrapper>

@@ -211,33 +211,82 @@ export default function Orders() {
         // This is a multi-expert appointment - aggregate the orders
         console.log('[Orders Aggregation] Aggregating multi-expert orders for appointment:', appointmentId, 'orders:', appointmentOrders.length);
         
-        // Use the first order as the base and preserve original amounts
+        // Use the first order as the base
         const baseOrder = appointmentOrders[0];
+        
+        // Check if we have split orders (partial amounts) or if there's an original order with full amounts
+        // If all orders have the same total, they might be individual split orders
+        // If one order has a much larger total, it's likely the original
+        const totals = appointmentOrders.map(order => order.total || order.total_amount || 0);
+        const maxTotal = Math.max(...totals);
+        const minTotal = Math.min(...totals);
+        const totalSum = totals.reduce((sum, total) => sum + total, 0);
+        
+        // If all totals are similar (split orders), sum them up
+        // If there's a significant difference, use the largest (original order)
+        const isAllSplitOrders = (maxTotal - minTotal) < (maxTotal * 0.1); // Less than 10% difference means likely all split
+        
+        let finalTotal, finalSubtotal, finalTax;
+        
+        if (isAllSplitOrders) {
+          // All orders are split orders - sum them up to get the original amount
+          finalTotal = totalSum;
+          finalSubtotal = appointmentOrders.reduce((sum, order) => sum + (order.subtotal || 0), 0);
+          finalTax = appointmentOrders.reduce((sum, order) => sum + (order.tax || 0), 0);
+          console.log('[Orders Aggregation] Detected split orders, summing amounts. Total:', finalTotal);
+        } else {
+          // There's likely an original order with full amounts - use the largest
+          const originalOrder = appointmentOrders.find(order => (order.total || order.total_amount || 0) === maxTotal) || baseOrder;
+          finalTotal = originalOrder.total || originalOrder.total_amount || 0;
+          finalSubtotal = originalOrder.subtotal || 0;
+          finalTax = originalOrder.tax || 0;
+          console.log('[Orders Aggregation] Detected original order with full amounts. Total:', finalTotal);
+        }
+        
         const aggregatedOrder: ExtendedOrder & { stylist_names: string[] } = {
           ...baseOrder,
-          // Keep original amounts from base order - don't sum split amounts
-          total: baseOrder.total || 0,
-          total_amount: baseOrder.total_amount || 0,
-          subtotal: baseOrder.subtotal || 0,
-          tax: baseOrder.tax || 0,
+          // Use calculated amounts based on whether we have split orders or original order
+          total: finalTotal,
+          total_amount: finalTotal,
+          subtotal: finalSubtotal,
+          tax: finalTax,
           // Keep original payment method from base order
           payment_method: baseOrder.payment_method,
           stylist_names: [],
           // Keep original payments from base order - don't duplicate split payments
           payments: baseOrder.payments || [],
-          // Keep services from the base order only - don't duplicate items
-          services: baseOrder.services || [],
+          // For multi-expert orders, we need to aggregate services properly
+          // If all orders are split, combine unique services; otherwise use base order services
+          services: isAllSplitOrders ? 
+            // Combine all unique services from all orders
+            appointmentOrders.reduce((allServices: any[], order) => {
+              if (order.services && Array.isArray(order.services)) {
+                order.services.forEach(service => {
+                  // Check if service already exists (by name or id)
+                  const existingService = allServices.find(s => 
+                    s.service_name === service.service_name || s.id === service.id
+                  );
+                  if (!existingService) {
+                    // For split orders, restore original price by multiplying by number of experts
+                    const originalPrice = service.price * appointmentOrders.length;
+                    allServices.push({
+                      ...service,
+                      price: originalPrice
+                    });
+                  }
+                });
+              }
+              return allServices;
+            }, []) :
+            baseOrder.services || [],
           aggregated_multi_expert: true as any
         };
 
-        // Only aggregate stylist names, keep original financial data
+        // Aggregate stylist names from all orders
         appointmentOrders.forEach(order => {
           if (order.stylist_name && !aggregatedOrder.stylist_names.includes(order.stylist_name)) {
             aggregatedOrder.stylist_names.push(order.stylist_name);
           }
-          
-          // Don't aggregate payments or amounts - the split is only for commission tracking
-          // The customer should see the original order amounts, not the stylist split amounts
         });
 
         // Update stylist_name to show all stylists
@@ -881,6 +930,9 @@ export default function Orders() {
 
   // Add this function before the return statement
   const renderPaymentMethods = (order: ExtendedOrder) => {
+    // Check if this is an aggregated multi-expert order
+    const isAggregatedOrder = (order as any).aggregated_multi_expert;
+    
     if (order.payments && order.payments.length > 0) {
       // Group payments by method and sum up the amounts
       const paymentSummary: Record<string, number> = {};
@@ -891,15 +943,20 @@ export default function Orders() {
 
       return (
         <Box>
-          {Object.entries(paymentSummary).map(([method, amount], index) => (
-            <Box key={index} sx={{ mb: 0.5 }}>
-              <Chip
-                size="small"
-                label={`${PAYMENT_METHOD_LABELS[method as PaymentMethod] || method}: ${formatCurrency(amount)}`}
-                sx={{ mr: 0.5 }}
-              />
-            </Box>
-          ))}
+          {Object.entries(paymentSummary).map(([method, amount], index) => {
+            // For aggregated multi-expert orders, show the full order amount instead of split amount
+            const displayAmount = isAggregatedOrder ? (order.total || order.total_amount || 0) : amount;
+            
+            return (
+              <Box key={index} sx={{ mb: 0.5 }}>
+                <Chip
+                  size="small"
+                  label={`${PAYMENT_METHOD_LABELS[method as PaymentMethod] || method}: ${formatCurrency(displayAmount)}`}
+                  sx={{ mr: 0.5 }}
+                />
+              </Box>
+            );
+          })}
           {(order.pending_amount || 0) > 0 && (
             <Box sx={{ mb: 0.5 }}>
               <Chip
@@ -1557,7 +1614,7 @@ export default function Orders() {
                         p.payment_method.replace('_', ' ').replace(/\b\w/g, (l: string) => l.toUpperCase())
                       ).join(', ')
                     : PAYMENT_METHOD_LABELS[selectedOrder.payment_method as PaymentMethod] ||
-                      selectedOrder.payment_method.replace('_', ' ').replace(/\b\w/g, (l: string) => l.toUpperCase())}
+                      selectedOrder.payment_method?.replace('_', ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()) || 'Cash'}
                 </Typography>
                 {selectedOrder.appointment_time && (
                   <Typography variant="body2">
@@ -1591,7 +1648,7 @@ export default function Orders() {
                 </Box>
                 
                 {/* Show payment details for split payments */}
-                {selectedOrder.is_split_payment && selectedOrder.payments && selectedOrder.payments.length > 0 && (
+                {(selectedOrder.is_split_payment || (selectedOrder as any).aggregated_multi_expert) && selectedOrder.payments && selectedOrder.payments.length > 0 && (
                   <Box sx={{ mt: 2 }}>
                     <Typography variant="subtitle2" gutterBottom>Payment Details</Typography>
                     <TableContainer component={Paper} variant="outlined">
@@ -1603,12 +1660,18 @@ export default function Orders() {
                           </TableRow>
                         </TableHead>
                         <TableBody>
-                          {selectedOrder.payments.map((payment: PaymentDetail) => (
-                            <TableRow key={payment.id}>
-                              <TableCell>{PAYMENT_METHOD_LABELS[payment.payment_method as PaymentMethod]}</TableCell>
-                              <TableCell align="right">{formatCurrency(payment.amount)}</TableCell>
-                            </TableRow>
-                          ))}
+                          {selectedOrder.payments.map((payment: PaymentDetail) => {
+                            // For aggregated multi-expert orders, show the full order amount instead of split amount
+                            const isAggregatedOrder = (selectedOrder as any).aggregated_multi_expert;
+                            const displayAmount = isAggregatedOrder ? (selectedOrder.total || selectedOrder.total_amount || 0) : payment.amount;
+                            
+                            return (
+                              <TableRow key={payment.id}>
+                                <TableCell>{PAYMENT_METHOD_LABELS[payment.payment_method as PaymentMethod]}</TableCell>
+                                <TableCell align="right">{formatCurrency(displayAmount)}</TableCell>
+                              </TableRow>
+                            );
+                          })}
                           {selectedOrder.pending_amount > 0 && (
                             <TableRow>
                               <TableCell>

@@ -292,7 +292,6 @@ export interface DashboardSettings {
     appointments: boolean;
     retentionRate: boolean;
     averageTicket: boolean;
-    stylistRevenue: boolean;
     
     // Payment analytics
     paymentMethods: boolean;
@@ -305,23 +304,11 @@ export interface DashboardSettings {
     serviceCategories: boolean;
     monthlyComparison: boolean;
     
-    // Inventory analytics
-    stockLevels: boolean;
-    lowStockAlerts: boolean;
-    inventoryValue: boolean;
-    topSellingProducts: boolean;
-    
     // Customer analytics
     customerBehavior: boolean;
     customerRetention: boolean;
     customerLifetimeValue: boolean;
     visitFrequency: boolean;
-    
-    // Staff analytics
-    staffPerformance: boolean;
-    revenuePerStaff: boolean;
-    staffEfficiency: boolean;
-    staffUtilization: boolean;
     
     // Advanced analytics
     revenueBreakdown: boolean;
@@ -333,45 +320,22 @@ export interface DashboardSettings {
     upcomingAppointments: boolean;
     criticalAlerts: boolean;
     appointmentReminders: boolean;
-    stockShortageAnalysis: boolean;
-    negativeStockPrevention: boolean;
   };
   chartTypes: {
     salesTrend: 'line' | 'bar';
     topServices: 'bar' | 'pie' | 'doughnut';
     customerRetention: 'pie' | 'doughnut' | 'bar';
-    stylistRevenue: 'bar' | 'pie' | 'line';
     paymentMethods: 'pie' | 'doughnut' | 'bar';
     peakHours: 'line' | 'bar';
     appointmentStatus: 'pie' | 'doughnut' | 'bar';
     serviceCategories: 'pie' | 'doughnut' | 'bar';
-    stockLevels: 'bar' | 'pie' | 'line';
     customerBehavior: 'line' | 'bar' | 'area';
-    staffPerformance: 'bar' | 'radar' | 'line';
     revenueBreakdown: 'pie' | 'doughnut' | 'bar';
   };
   refreshInterval: number;
   alertThresholds: {
-    lowStock: number;
     lowRevenue: number;
     highCancellation: number;
-    lowUtilization: number;
-  };
-  incentiveSettings: {
-    enabled: boolean;
-    minimumRevenue: number;
-    incentiveRate: number; // percentage
-    evaluationPeriod: 'weekly' | 'monthly' | 'quarterly';
-    performanceMetrics: {
-      revenueWeight: number;
-      appointmentWeight: number;
-      efficiencyWeight: number;
-    };
-    industryStandards: {
-      excellent: number;
-      good: number;
-      average: number;
-    };
   };
 }
 
@@ -397,7 +361,6 @@ export function useDashboardAnalytics({ startDate, endDate }: UseDashboardAnalyt
       appointments: true,
       retentionRate: true,
       averageTicket: true,
-      stylistRevenue: true,
       
       // Payment analytics
       paymentMethods: true,
@@ -410,23 +373,11 @@ export function useDashboardAnalytics({ startDate, endDate }: UseDashboardAnalyt
       serviceCategories: true,
       monthlyComparison: false,
       
-      // Inventory analytics
-      stockLevels: true,
-      lowStockAlerts: true,
-      inventoryValue: false,
-      topSellingProducts: true,
-      
       // Customer analytics
       customerBehavior: true,
       customerRetention: true,
       customerLifetimeValue: false,
       visitFrequency: false,
-      
-      // Staff analytics
-      staffPerformance: true,
-      revenuePerStaff: true,
-      staffEfficiency: false,
-      staffUtilization: true,
       
       // Advanced analytics
       revenueBreakdown: true,
@@ -438,45 +389,22 @@ export function useDashboardAnalytics({ startDate, endDate }: UseDashboardAnalyt
       upcomingAppointments: true,
       criticalAlerts: true,
       appointmentReminders: true,
-      stockShortageAnalysis: true,
-      negativeStockPrevention: true,
     },
     chartTypes: {
       salesTrend: 'line',
       topServices: 'bar',
       customerRetention: 'pie',
-      stylistRevenue: 'bar',
       paymentMethods: 'pie',
       peakHours: 'bar',
       appointmentStatus: 'doughnut',
       serviceCategories: 'pie',
-      stockLevels: 'bar',
       customerBehavior: 'line',
-      staffPerformance: 'bar',
       revenueBreakdown: 'doughnut',
     },
     refreshInterval: 30000,
     alertThresholds: {
-      lowStock: 5,
       lowRevenue: 1000,
       highCancellation: 20,
-      lowUtilization: 60,
-    },
-    incentiveSettings: {
-      enabled: true,
-      minimumRevenue: 10000,
-      incentiveRate: 10,
-      evaluationPeriod: 'monthly',
-      performanceMetrics: {
-        revenueWeight: 0.6,
-        appointmentWeight: 0.3,
-        efficiencyWeight: 0.1,
-      },
-      industryStandards: {
-        excellent: 90,
-        good: 75,
-        average: 50,
-      },
     },
   });
 
@@ -734,10 +662,10 @@ export function useDashboardAnalytics({ startDate, endDate }: UseDashboardAnalyt
           const outOfStockItems = inventoryData.filter(item => (item.balance_qty || 0) <= 0);
           const lowStockItems = inventoryData.filter(item => 
             (item.balance_qty || 0) > 0 && 
-            (item.balance_qty || 0) <= settings.alertThresholds.lowStock
+            (item.balance_qty || 0) <= settings.alertThresholds.lowRevenue
           );
           const inStockItems = inventoryData.filter(item => 
-            (item.balance_qty || 0) > settings.alertThresholds.lowStock
+            (item.balance_qty || 0) > settings.alertThresholds.lowRevenue
           );
 
           // Get critical items with enhanced product details
@@ -755,7 +683,7 @@ export function useDashboardAnalytics({ startDate, endDate }: UseDashboardAnalyt
                 productId,
                 productName,
                 currentStock,
-                reorderLevel: settings.alertThresholds.lowStock,
+                reorderLevel: settings.alertThresholds.lowRevenue,
                 status: (currentStock <= 0 ? 'out_of_stock' : 'low_stock') as 'out_of_stock' | 'low_stock' | 'critical',
                 category,
                 description: description.length > 60 ? description.substring(0, 60) + '...' : description,
@@ -857,7 +785,7 @@ export function useDashboardAnalytics({ startDate, endDate }: UseDashboardAnalyt
         ],
       };
 
-      // **4. STAFF PERFORMANCE ANALYTICS WITH INCENTIVE CALCULATION**
+      // **4. STAFF PERFORMANCE ANALYTICS**
       const stylistRevenueMap = new Map<string, { revenue: number; appointmentCount: number; serviceCount: number }>();
       
       periodOrders.forEach(order => {
@@ -879,23 +807,15 @@ export function useDashboardAnalytics({ startDate, endDate }: UseDashboardAnalyt
         }
       });
 
-      // Calculate performance scores and incentives based on settings
+      // Calculate performance scores
       const calculatePerformanceScore = (revenue: number, appointments: number, efficiency: number) => {
-        const revenueScore = Math.min((revenue / settings.incentiveSettings.minimumRevenue) * 100, 100);
-        const appointmentScore = Math.min((appointments / 20) * 100, 100); // Assume 20 appointments as max
-        const efficiencyScore = Math.min(efficiency, 100);
-        
-        return (
-          revenueScore * settings.incentiveSettings.performanceMetrics.revenueWeight +
-          appointmentScore * settings.incentiveSettings.performanceMetrics.appointmentWeight +
-          efficiencyScore * settings.incentiveSettings.performanceMetrics.efficiencyWeight
-        );
+        return Math.min((revenue / 10000) * 100, 100); // Use fixed minimum revenue of 10000
       };
 
       const getPerformanceRating = (score: number) => {
-        if (score >= settings.incentiveSettings.industryStandards.excellent) return 'Excellent';
-        if (score >= settings.incentiveSettings.industryStandards.good) return 'Good';
-        if (score >= settings.incentiveSettings.industryStandards.average) return 'Average';
+        if (score >= 90) return 'Excellent';
+        if (score >= 75) return 'Good';
+        if (score >= 50) return 'Average';
         return 'Needs Improvement';
       };
 
@@ -907,15 +827,6 @@ export function useDashboardAnalytics({ startDate, endDate }: UseDashboardAnalyt
           const efficiency = perfData.appointmentCount > 0 ? perfData.revenue / perfData.appointmentCount : 0;
           const performanceScore = calculatePerformanceScore(perfData.revenue, perfData.appointmentCount, efficiency);
           const performanceRating = getPerformanceRating(performanceScore);
-          
-          const incentiveEligible = settings.incentiveSettings.enabled && 
-            perfData.revenue >= settings.incentiveSettings.minimumRevenue &&
-            performanceScore >= settings.incentiveSettings.industryStandards.average;
-          
-          const suggestedIncentive = incentiveEligible ? 
-            Math.round(perfData.revenue * (settings.incentiveSettings.incentiveRate / 100)) : 0;
-          
-          const industryStandardMet = performanceScore >= settings.incentiveSettings.industryStandards.good;
 
           return {
             stylistId: stylist.id,
@@ -926,9 +837,9 @@ export function useDashboardAnalytics({ startDate, endDate }: UseDashboardAnalyt
             efficiency: efficiency,
             performanceScore: Math.round(performanceScore),
             performanceRating,
-            incentiveEligible,
-            suggestedIncentive,
-            industryStandardMet,
+            incentiveEligible: false,
+            suggestedIncentive: 0,
+            industryStandardMet: false,
           };
         }).sort((a, b) => b.revenue - a.revenue),
         staffUtilization: {
@@ -1173,20 +1084,6 @@ export function useDashboardAnalytics({ startDate, endDate }: UseDashboardAnalyt
           message: `Appointment cancellation rate is ${cancellationRate.toFixed(1)}%`,
           action: 'Review booking policies and customer communication',
           data: { cancellationRate },
-          timestamp: new Date().toISOString(),
-        });
-      }
-
-      // Check for low staff utilization
-      if (staffPerformance.averageRevenue < settings.alertThresholds.lowUtilization * 100) {
-        criticalAlerts.push({
-          id: 'low-staff-utilization',
-          type: 'staff_utilization',
-          severity: 'medium',
-          title: 'LOW STAFF UTILIZATION',
-          message: 'Staff utilization is below optimal levels',
-          action: 'Review staff scheduling and workload distribution',
-          data: { averageRevenue: staffPerformance.averageRevenue },
           timestamp: new Date().toISOString(),
         });
       }

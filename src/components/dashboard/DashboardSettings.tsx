@@ -32,8 +32,6 @@ import {
   ExpandMore as ExpandMoreIcon,
   Assessment as AssessmentIcon,
   Payment as PaymentIcon,
-  Inventory as InventoryIcon,
-  People as PeopleIcon,
   Business as BusinessIcon,
   Timeline as TimelineIcon,
   Info as InfoIcon,
@@ -164,144 +162,85 @@ export default function DashboardSettings({
     });
     setHasUnsavedChanges(true);
     
-    const thresholdName = threshold.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
+    const thresholdName = threshold.toString().split(/(?=[A-Z])/).join(' ');
     showNotification(`${thresholdName} threshold updated`, 'info');
   };
 
-  const handleIncentiveSettingChange = (
-    field: keyof typeof settings.incentiveSettings,
-    value: any
-  ) => {
-    onSettingsChange({
-      incentiveSettings: {
-        ...settings.incentiveSettings,
-        [field]: value,
-      },
-    });
-    setHasUnsavedChanges(true);
-    
-    const fieldName = field.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
-    showNotification(`${fieldName} updated`, 'info');
-  };
-
-  const handleIncentiveMetricChange = (
-    metric: keyof typeof settings.incentiveSettings.performanceMetrics,
-    value: number
-  ) => {
-    onSettingsChange({
-      incentiveSettings: {
-        ...settings.incentiveSettings,
-        performanceMetrics: {
-          ...settings.incentiveSettings.performanceMetrics,
-          [metric]: value,
-        },
-      },
-    });
-    setHasUnsavedChanges(true);
-    showNotification(`Performance metric updated`, 'info');
-  };
-
-  const handleIncentiveStandardChange = (
-    standard: keyof typeof settings.incentiveSettings.industryStandards,
-    value: number
-  ) => {
-    onSettingsChange({
-      incentiveSettings: {
-        ...settings.incentiveSettings,
-        industryStandards: {
-          ...settings.incentiveSettings.industryStandards,
-          [standard]: value,
-        },
-      },
-    });
-    setHasUnsavedChanges(true);
-    showNotification(`Industry standard updated`, 'info');
-  };
-
   const enableAllMetrics = () => {
-    const allEnabled = Object.keys(settings.visibleMetrics).reduce((acc, key) => {
-      acc[key as keyof typeof settings.visibleMetrics] = true;
-      return acc;
-    }, {} as typeof settings.visibleMetrics);
-    
+    const allEnabled = Object.keys(settings.visibleMetrics).reduce((acc, key) => ({
+      ...acc,
+      [key]: true,
+    }), {} as typeof settings.visibleMetrics);
     onSettingsChange({ visibleMetrics: allEnabled });
     setHasUnsavedChanges(true);
     showNotification('All metrics enabled', 'success');
   };
 
   const disableAllMetrics = () => {
-    const allDisabled = Object.keys(settings.visibleMetrics).reduce((acc, key) => {
-      acc[key as keyof typeof settings.visibleMetrics] = false;
-      return acc;
-    }, {} as typeof settings.visibleMetrics);
-    
+    const allDisabled = Object.keys(settings.visibleMetrics).reduce((acc, key) => ({
+      ...acc,
+      [key]: false,
+    }), {} as typeof settings.visibleMetrics);
     onSettingsChange({ visibleMetrics: allDisabled });
     setHasUnsavedChanges(true);
-    showNotification('All metrics disabled', 'warning');
+    showNotification('All metrics disabled', 'success');
   };
 
   const resetToDefaults = () => {
-    const defaultSettings: DashboardSettingsType = {
+    onSettingsChange({
       visibleMetrics: {
+        // Core metrics
         dailySales: true,
         topServices: true,
         appointments: true,
         retentionRate: true,
         averageTicket: true,
-        staffUtilization: true,
-        stylistRevenue: true,
+        
+        // Payment analytics
         paymentMethods: true,
         splitPayments: true,
         paymentTrends: false,
+        
+        // Operational analytics
         peakHours: true,
         appointmentStatus: true,
         serviceCategories: true,
         monthlyComparison: false,
-        stockLevels: true,
-        lowStockAlerts: true,
-        inventoryValue: false,
-        topSellingProducts: true,
+        
+        // Customer analytics
         customerBehavior: true,
         customerRetention: true,
         customerLifetimeValue: false,
         visitFrequency: false,
-        staffPerformance: true,
-        revenuePerStaff: true,
-        staffEfficiency: false,
+        
+        // Advanced analytics
         revenueBreakdown: true,
         operationalInsights: true,
         realTimeMetrics: true,
         todaysSummary: true,
+
+        // New enhanced features
         upcomingAppointments: true,
-        appointmentReminders: true,
         criticalAlerts: true,
-        stockShortageAnalysis: true,
-        negativeStockPrevention: true,
+        appointmentReminders: true,
       },
       chartTypes: {
         salesTrend: 'line',
         topServices: 'bar',
         customerRetention: 'pie',
-        stylistRevenue: 'bar',
         paymentMethods: 'pie',
         peakHours: 'bar',
         appointmentStatus: 'doughnut',
         serviceCategories: 'pie',
-        stockLevels: 'bar',
         customerBehavior: 'line',
-        staffPerformance: 'bar',
         revenueBreakdown: 'doughnut',
       },
       refreshInterval: 30000,
       alertThresholds: {
-        lowStock: 5,
         lowRevenue: 1000,
         highCancellation: 20,
-        lowUtilization: 60,
       },
-    };
-    
-    onSettingsChange(defaultSettings);
+    });
     setHasUnsavedChanges(true);
     showNotification('Settings reset to defaults', 'success');
   };
@@ -321,34 +260,22 @@ export default function DashboardSettings({
   const getAvailableChartTypes = (chartKey: keyof typeof settings.chartTypes) => {
     switch (chartKey) {
       case 'salesTrend':
-      case 'peakHours':
-      case 'customerBehavior':
-        return CHART_TYPE_OPTIONS.filter(option => 
-          ['line', 'bar', 'area'].includes(option.value)
-        );
+        return ['line', 'bar'];
       case 'topServices':
       case 'paymentMethods':
       case 'serviceCategories':
       case 'revenueBreakdown':
-      case 'appointmentStatus':
-        return CHART_TYPE_OPTIONS.filter(option => 
-          ['bar', 'pie', 'doughnut'].includes(option.value)
-        );
-      case 'stockLevels':
-        return CHART_TYPE_OPTIONS.filter(option => 
-          ['bar', 'pie', 'line'].includes(option.value)
-        );
-      case 'staffPerformance':
-        return CHART_TYPE_OPTIONS.filter(option => 
-          ['bar', 'radar', 'line'].includes(option.value)
-        );
+        return ['bar', 'pie', 'doughnut'];
       case 'customerRetention':
-      case 'stylistRevenue':
-        return CHART_TYPE_OPTIONS.filter(option => 
-          ['pie', 'doughnut', 'bar', 'line'].includes(option.value)
-        );
+        return ['pie', 'doughnut', 'bar'];
+      case 'peakHours':
+        return ['line', 'bar'];
+      case 'appointmentStatus':
+        return ['pie', 'doughnut', 'bar'];
+      case 'customerBehavior':
+        return ['line', 'bar', 'area'];
       default:
-        return CHART_TYPE_OPTIONS;
+        return CHART_TYPE_OPTIONS.map(opt => opt.value);
     }
   };
 
@@ -535,18 +462,6 @@ export default function DashboardSettings({
               <AccordionDetails>
                 <Stack spacing={3}>
                   <Box>
-                    <Typography gutterBottom>Low Stock Alert</Typography>
-                    <TextField
-                      type="number"
-                      size="small"
-                      fullWidth
-                      value={settings.alertThresholds.lowStock}
-                      onChange={(e) => handleThresholdChange('lowStock', Number(e.target.value))}
-                      inputProps={{ min: 0, max: 100 }}
-                      helperText="Alert when stock falls below this number"
-                    />
-                  </Box>
-                  <Box>
                     <Typography gutterBottom>Low Revenue Alert (₹)</Typography>
                     <TextField
                       type="number"
@@ -570,18 +485,6 @@ export default function DashboardSettings({
                       helperText="Alert when cancellation rate exceeds this percentage"
                     />
                   </Box>
-                  <Box>
-                    <Typography gutterBottom>Low Staff Utilization (%)</Typography>
-                    <TextField
-                      type="number"
-                      size="small"
-                      fullWidth
-                      value={settings.alertThresholds.lowUtilization}
-                      onChange={(e) => handleThresholdChange('lowUtilization', Number(e.target.value))}
-                      inputProps={{ min: 0, max: 100 }}
-                      helperText="Alert when staff utilization falls below this percentage"
-                    />
-                  </Box>
                 </Stack>
               </AccordionDetails>
             </Accordion>
@@ -593,38 +496,38 @@ export default function DashboardSettings({
                   <AssessmentIcon sx={{ mr: 1, color: 'primary.main' }} />
                   <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
                     Core Business Metrics
-            </Typography>
+                  </Typography>
                 </Box>
               </AccordionSummary>
               <AccordionDetails>
-            <FormGroup>
-              <FormControlLabel
-                control={
-                  <Switch
-                    checked={settings.visibleMetrics.dailySales}
+                <FormGroup>
+                  <FormControlLabel
+                    control={
+                      <Switch
+                        checked={settings.visibleMetrics.dailySales}
                         onChange={() => handleMetricToggle('dailySales')}
+                      />
+                    }
+                    label="Daily Sales"
                   />
-                }
-                label="Daily Sales"
-              />
-              <FormControlLabel
-                control={
-                  <Switch
-                    checked={settings.visibleMetrics.topServices}
+                  <FormControlLabel
+                    control={
+                      <Switch
+                        checked={settings.visibleMetrics.topServices}
                         onChange={() => handleMetricToggle('topServices')}
+                      />
+                    }
+                    label="Top Services"
                   />
-                }
-                label="Top Services"
-              />
-              <FormControlLabel
-                control={
-                  <Switch
-                    checked={settings.visibleMetrics.appointments}
+                  <FormControlLabel
+                    control={
+                      <Switch
+                        checked={settings.visibleMetrics.appointments}
                         onChange={() => handleMetricToggle('appointments')}
+                      />
+                    }
+                    label="Appointments"
                   />
-                }
-                label="Appointments"
-              />
                   <FormControlLabel
                     control={
                       <Switch
@@ -633,11 +536,11 @@ export default function DashboardSettings({
                       />
                     }
                     label="Average Ticket"
-              />
-              <FormControlLabel
-                control={
-                  <Switch
-                    checked={settings.visibleMetrics.retentionRate}
+                  />
+                  <FormControlLabel
+                    control={
+                      <Switch
+                        checked={settings.visibleMetrics.retentionRate}
                         onChange={() => handleMetricToggle('retentionRate')}
                       />
                     }
@@ -717,63 +620,11 @@ export default function DashboardSettings({
               </AccordionDetails>
             </Accordion>
 
-            {/* Inventory Analytics */}
-            <Accordion>
-              <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                  <InventoryIcon sx={{ mr: 1, color: 'warning.main' }} />
-                  <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
-                    Inventory Analytics
-                  </Typography>
-                </Box>
-              </AccordionSummary>
-              <AccordionDetails>
-                <FormGroup>
-                  <FormControlLabel
-                    control={
-                      <Switch
-                        checked={settings.visibleMetrics.stockLevels}
-                        onChange={() => handleMetricToggle('stockLevels')}
-                      />
-                    }
-                    label="Stock Levels"
-                  />
-                  <FormControlLabel
-                    control={
-                      <Switch
-                        checked={settings.visibleMetrics.lowStockAlerts}
-                        onChange={() => handleMetricToggle('lowStockAlerts')}
-                      />
-                    }
-                    label="Low Stock Alerts"
-                  />
-                  <FormControlLabel
-                    control={
-                      <Switch
-                        checked={settings.visibleMetrics.inventoryValue}
-                        onChange={() => handleMetricToggle('inventoryValue')}
-                      />
-                    }
-                    label="Inventory Value"
-                  />
-                  <FormControlLabel
-                    control={
-                      <Switch
-                        checked={settings.visibleMetrics.topSellingProducts}
-                        onChange={() => handleMetricToggle('topSellingProducts')}
-                      />
-                    }
-                    label="Top Selling Products"
-                  />
-                </FormGroup>
-              </AccordionDetails>
-            </Accordion>
-
             {/* Customer Analytics */}
             <Accordion>
               <AccordionSummary expandIcon={<ExpandMoreIcon />}>
                 <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                  <PeopleIcon sx={{ mr: 1, color: 'success.main' }} />
+                  <InfoIcon sx={{ mr: 1, color: 'success.main' }} />
                   <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
                     Customer Analytics
                   </Typography>
@@ -816,67 +667,6 @@ export default function DashboardSettings({
                       />
                     }
                     label="Visit Frequency"
-                  />
-                </FormGroup>
-              </AccordionDetails>
-            </Accordion>
-
-            {/* Staff Analytics */}
-            <Accordion>
-              <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                  <BusinessIcon sx={{ mr: 1, color: 'secondary.main' }} />
-                  <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
-                    Staff Analytics
-                  </Typography>
-                </Box>
-              </AccordionSummary>
-              <AccordionDetails>
-                <FormGroup>
-                  <FormControlLabel
-                    control={
-                      <Switch
-                        checked={settings.visibleMetrics.staffPerformance}
-                        onChange={() => handleMetricToggle('staffPerformance')}
-                  />
-                }
-                    label="Staff Performance"
-                  />
-                  <FormControlLabel
-                    control={
-                      <Switch
-                        checked={settings.visibleMetrics.revenuePerStaff}
-                        onChange={() => handleMetricToggle('revenuePerStaff')}
-                      />
-                    }
-                    label="Revenue per Staff"
-              />
-              <FormControlLabel
-                control={
-                  <Switch
-                    checked={settings.visibleMetrics.staffUtilization}
-                        onChange={() => handleMetricToggle('staffUtilization')}
-                  />
-                }
-                label="Staff Utilization"
-              />
-                  <FormControlLabel
-                    control={
-                      <Switch
-                        checked={settings.visibleMetrics.staffEfficiency}
-                        onChange={() => handleMetricToggle('staffEfficiency')}
-                      />
-                    }
-                    label="Staff Efficiency"
-              />
-              <FormControlLabel
-                control={
-                  <Switch
-                    checked={settings.visibleMetrics.stylistRevenue}
-                        onChange={() => handleMetricToggle('stylistRevenue')}
-                      />
-                    }
-                    label="Stylist Revenue"
                   />
                 </FormGroup>
               </AccordionDetails>
@@ -947,7 +737,7 @@ export default function DashboardSettings({
             <Accordion>
               <AccordionSummary expandIcon={<ExpandMoreIcon />}>
                 <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                  <BusinessIcon sx={{ mr: 1, color: 'secondary.main' }} />
+                  <InfoIcon sx={{ mr: 1, color: 'info.main' }} />
                   <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
                     Enhanced Features
                   </Typography>
@@ -960,9 +750,18 @@ export default function DashboardSettings({
                       <Switch
                         checked={settings.visibleMetrics.upcomingAppointments}
                         onChange={() => handleMetricToggle('upcomingAppointments')}
-                  />
-                }
+                      />
+                    }
                     label="Upcoming Appointments"
+                  />
+                  <FormControlLabel
+                    control={
+                      <Switch
+                        checked={settings.visibleMetrics.criticalAlerts}
+                        onChange={() => handleMetricToggle('criticalAlerts')}
+                      />
+                    }
+                    label="Critical Alerts"
                   />
                   <FormControlLabel
                     control={
@@ -973,246 +772,7 @@ export default function DashboardSettings({
                     }
                     label="Appointment Reminders"
                   />
-                  <FormControlLabel
-                    control={
-                      <Switch
-                        checked={settings.visibleMetrics.criticalAlerts}
-                        onChange={() => handleMetricToggle('criticalAlerts')}
-                      />
-                    }
-                    label="Critical Business Alerts"
-                  />
-                  <FormControlLabel
-                    control={
-                      <Switch
-                        checked={settings.visibleMetrics.stockShortageAnalysis}
-                        onChange={() => handleMetricToggle('stockShortageAnalysis')}
-                      />
-                    }
-                    label="Stock Shortage Analysis"
-                  />
-                  <FormControlLabel
-                    control={
-                      <Switch
-                        checked={settings.visibleMetrics.negativeStockPrevention}
-                        onChange={() => handleMetricToggle('negativeStockPrevention')}
-                      />
-                    }
-                    label="Negative Stock Prevention"
-              />
-            </FormGroup>
-              </AccordionDetails>
-            </Accordion>
-
-            {/* Incentive Settings */}
-            <Accordion>
-              <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                  <PaymentIcon sx={{ mr: 1, color: 'success.main' }} />
-                  <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
-                    Staff Incentive Settings
-                  </Typography>
-                  <Chip
-                    label={settings.incentiveSettings.enabled ? 'Enabled' : 'Disabled'}
-                    size="small"
-                    color={settings.incentiveSettings.enabled ? 'success' : 'default'}
-                    sx={{ ml: 2, height: 20, fontSize: '0.7rem' }}
-                  />
-                </Box>
-              </AccordionSummary>
-              <AccordionDetails>
-                <Stack spacing={3}>
-                  {/* Enable/Disable Toggle */}
-                  <FormControlLabel
-                    control={
-                      <Switch
-                        checked={settings.incentiveSettings.enabled}
-                        onChange={(e) => handleIncentiveSettingChange('enabled', e.target.checked)}
-                        color="success"
-                      />
-                    }
-                    label="Enable Staff Incentive System"
-                  />
-
-                  {settings.incentiveSettings.enabled && (
-                    <>
-                      {/* Basic Settings */}
-                      <Box>
-                        <Typography variant="subtitle2" gutterBottom sx={{ fontWeight: 600 }}>
-                          Basic Settings
-                        </Typography>
-                        
-                        <Stack spacing={2}>
-                          <TextField
-                            label="Minimum Revenue Threshold (₹)"
-                            type="number"
-                            value={settings.incentiveSettings.minimumRevenue}
-                            onChange={(e) => handleIncentiveSettingChange('minimumRevenue', Number(e.target.value))}
-                            size="small"
-                            fullWidth
-                            helperText="Minimum monthly revenue required for incentive eligibility"
-                            InputProps={{
-                              startAdornment: '₹',
-                            }}
-                          />
-                          
-                          <TextField
-                            label="Incentive Rate (%)"
-                            type="number"
-                            value={settings.incentiveSettings.incentiveRate}
-                            onChange={(e) => handleIncentiveSettingChange('incentiveRate', Number(e.target.value))}
-                            size="small"
-                            fullWidth
-                            helperText="Percentage of revenue as incentive"
-                            InputProps={{
-                              endAdornment: '%',
-                              inputProps: { min: 0, max: 50, step: 0.5 }
-                            }}
-                          />
-                          
-                          <FormControl fullWidth size="small">
-                            <InputLabel>Evaluation Period</InputLabel>
-              <Select
-                              value={settings.incentiveSettings.evaluationPeriod}
-                              label="Evaluation Period"
-                              onChange={(e) => handleIncentiveSettingChange('evaluationPeriod', e.target.value)}
-                            >
-                              <MenuItem value="weekly">Weekly</MenuItem>
-                              <MenuItem value="monthly">Monthly</MenuItem>
-                              <MenuItem value="quarterly">Quarterly</MenuItem>
-              </Select>
-            </FormControl>
-                        </Stack>
-                      </Box>
-
-                      {/* Performance Metrics Weights */}
-                      <Box>
-                        <Typography variant="subtitle2" gutterBottom sx={{ fontWeight: 600 }}>
-                          Performance Metrics Weights
-                        </Typography>
-                        <Typography variant="caption" color="text.secondary" display="block" mb={2}>
-                          Adjust how different metrics contribute to performance score (total should equal 1.0)
-                        </Typography>
-                        
-                        <Stack spacing={2}>
-                          <Box>
-                            <TextField
-                              label="Revenue Weight"
-                              type="number"
-                              value={settings.incentiveSettings.performanceMetrics.revenueWeight}
-                              onChange={(e) => handleIncentiveMetricChange('revenueWeight', Number(e.target.value))}
-                              size="small"
-                              fullWidth
-                              InputProps={{
-                                inputProps: { min: 0, max: 1, step: 0.1 }
-                              }}
-                            />
-                            <Typography variant="caption" color="text.secondary">
-                              Currently: {(settings.incentiveSettings.performanceMetrics.revenueWeight * 100).toFixed(0)}%
-            </Typography>
-                          </Box>
-                          
-                          <Box>
-                            <TextField
-                              label="Appointment Weight"
-                              type="number"
-                              value={settings.incentiveSettings.performanceMetrics.appointmentWeight}
-                              onChange={(e) => handleIncentiveMetricChange('appointmentWeight', Number(e.target.value))}
-                              size="small"
-                              fullWidth
-                              InputProps={{
-                                inputProps: { min: 0, max: 1, step: 0.1 }
-                              }}
-              />
-                            <Typography variant="caption" color="text.secondary">
-                              Currently: {(settings.incentiveSettings.performanceMetrics.appointmentWeight * 100).toFixed(0)}%
-              </Typography>
-            </Box>
-
-                          <Box>
-                            <TextField
-                              label="Efficiency Weight"
-                              type="number"
-                              value={settings.incentiveSettings.performanceMetrics.efficiencyWeight}
-                              onChange={(e) => handleIncentiveMetricChange('efficiencyWeight', Number(e.target.value))}
-                              size="small"
-                              fullWidth
-                              InputProps={{
-                                inputProps: { min: 0, max: 1, step: 0.1 }
-                              }}
-                            />
-                            <Typography variant="caption" color="text.secondary">
-                              Currently: {(settings.incentiveSettings.performanceMetrics.efficiencyWeight * 100).toFixed(0)}%
-                            </Typography>
-                          </Box>
-                        </Stack>
-                      </Box>
-
-                      {/* Industry Standards */}
-                      <Box>
-                        <Typography variant="subtitle2" gutterBottom sx={{ fontWeight: 600 }}>
-                          Industry Performance Standards
-                        </Typography>
-                        <Typography variant="caption" color="text.secondary" display="block" mb={2}>
-                          Set performance score thresholds based on industry standards
-                        </Typography>
-                        
-                        <Stack spacing={2}>
-                          <TextField
-                            label="Excellent Performance Threshold"
-                            type="number"
-                            value={settings.incentiveSettings.industryStandards.excellent}
-                            onChange={(e) => handleIncentiveStandardChange('excellent', Number(e.target.value))}
-                            size="small"
-                            fullWidth
-                            InputProps={{
-                              inputProps: { min: 0, max: 100 }
-                            }}
-                            helperText="Score above this = Excellent rating"
-                          />
-                          
-                          <TextField
-                            label="Good Performance Threshold"
-                            type="number"
-                            value={settings.incentiveSettings.industryStandards.good}
-                            onChange={(e) => handleIncentiveStandardChange('good', Number(e.target.value))}
-                            size="small"
-                fullWidth
-                            InputProps={{
-                              inputProps: { min: 0, max: 100 }
-                            }}
-                            helperText="Score above this = Good rating"
-                          />
-                          
-                          <TextField
-                            label="Average Performance Threshold"
-                            type="number"
-                            value={settings.incentiveSettings.industryStandards.average}
-                            onChange={(e) => handleIncentiveStandardChange('average', Number(e.target.value))}
-                            size="small"
-                fullWidth
-                            InputProps={{
-                              inputProps: { min: 0, max: 100 }
-                            }}
-                            helperText="Minimum score for incentive eligibility"
-                          />
-                        </Stack>
-                      </Box>
-
-                      {/* Incentive Preview */}
-                      <Box>
-                        <Alert severity="info" sx={{ fontSize: '0.875rem' }}>
-                          <Typography variant="body2">
-                            <strong>Current Settings Preview:</strong><br/>
-                            • Minimum Revenue: ₹{settings.incentiveSettings.minimumRevenue.toLocaleString()}<br/>
-                            • Incentive Rate: {settings.incentiveSettings.incentiveRate}% of revenue<br/>
-                            • Example: ₹50,000 revenue = ₹{(50000 * settings.incentiveSettings.incentiveRate / 100).toLocaleString()} incentive
-                          </Typography>
-                        </Alert>
-                      </Box>
-                    </>
-                  )}
-                </Stack>
+                </FormGroup>
               </AccordionDetails>
             </Accordion>
 
@@ -1239,8 +799,8 @@ export default function DashboardSettings({
                         onChange={(e) => handleChartTypeChange(chartKey as keyof typeof settings.chartTypes, e)}
                       >
                         {getAvailableChartTypes(chartKey as keyof typeof settings.chartTypes).map((option) => (
-                          <MenuItem key={option.value} value={option.value}>
-                            {option.label}
+                          <MenuItem key={option} value={option}>
+                            {option}
                           </MenuItem>
                         ))}
                       </Select>

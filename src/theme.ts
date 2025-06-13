@@ -10,6 +10,16 @@ declare module '@mui/material/styles' {
       cream: string;
       accent: string;
     };
+    datePicker: {
+      selectedBackground: string;
+      selectedBackgroundHover: string;
+      rangeBackground: string;
+      rangeEndBackground: string;
+      hoverBackground: string;
+      todayBorder: string;
+      selectedText: string;
+      todayText: string;
+    };
   }
   interface PaletteOptions {
     salon?: {
@@ -19,6 +29,16 @@ declare module '@mui/material/styles' {
       offWhite: string;
       cream: string;
       accent: string;
+    };
+    datePicker?: {
+      selectedBackground: string;
+      selectedBackgroundHover: string;
+      rangeBackground: string;
+      rangeEndBackground: string;
+      hoverBackground: string;
+      todayBorder: string;
+      selectedText: string;
+      todayText: string;
     };
   }
 }
@@ -58,6 +78,17 @@ export const theme = createTheme({
       offWhite: '#F5F5F0',   // Background off-white
       cream: '#FFF8E7',      // Cream color for accents
       accent: '#D2B48C',     // Tan accent
+    },
+    // Enhanced date picker colors for elegant highlighting
+    datePicker: {
+      selectedBackground: 'rgba(107, 142, 35, 0.15)',
+      selectedBackgroundHover: 'rgba(107, 142, 35, 0.25)',
+      rangeBackground: 'rgba(107, 142, 35, 0.08)',
+      rangeEndBackground: 'rgba(107, 142, 35, 0.2)',
+      hoverBackground: 'rgba(107, 142, 35, 0.08)',
+      todayBorder: 'rgba(107, 142, 35, 0.4)',
+      selectedText: '#566E1C',
+      todayText: '#6B8E23',
     },
     divider: 'rgba(0, 0, 0, 0.12)',
   },
@@ -326,6 +357,105 @@ export const theme = createTheme({
           borderRadius: 12,
           padding: '8px 12px',
           fontSize: '0.75rem',
+        },
+      },
+    },
+    // Custom Date Picker styles for elegant, soft highlighting
+    MuiDateCalendar: {
+      styleOverrides: {
+        root: {
+          '& .MuiPickersDay-root': {
+            borderRadius: '8px',
+            transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+            fontWeight: 500,
+            '&:hover': {
+              backgroundColor: 'rgba(107, 142, 35, 0.08)',
+              transform: 'scale(1.05)',
+            },
+            '&.Mui-selected': {
+              backgroundColor: 'rgba(107, 142, 35, 0.15)',
+              color: '#566E1C',
+              fontWeight: 600,
+              '&:hover': {
+                backgroundColor: 'rgba(107, 142, 35, 0.25)',
+              },
+            },
+            '&.MuiPickersDay-today': {
+              border: '1px solid rgba(107, 142, 35, 0.4)',
+              backgroundColor: 'transparent',
+              '&:not(.Mui-selected)': {
+                color: '#6B8E23',
+                fontWeight: 600,
+              },
+            },
+          },
+          '& .MuiPickersCalendarHeader-root': {
+            paddingLeft: 12,
+            paddingRight: 12,
+            marginBottom: 8,
+          },
+          '& .MuiPickersCalendarHeader-label': {
+            color: '#566E1C',
+            fontWeight: 600,
+          },
+          '& .MuiPickersArrowSwitcher-root': {
+            '& .MuiIconButton-root': {
+              color: '#6B8E23',
+              '&:hover': {
+                backgroundColor: 'rgba(107, 142, 35, 0.08)',
+              },
+            },
+          },
+          '& .MuiDayCalendar-weekDayLabel': {
+            color: 'rgba(107, 142, 35, 0.7)',
+            fontWeight: 500,
+          },
+        },
+      },
+    },
+    // Custom styles for date range pickers (community and pro versions)
+    MuiDateRangeCalendar: {
+      styleOverrides: {
+        root: {
+          '& .MuiPickersDay-root': {
+            borderRadius: '8px',
+            transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+            fontWeight: 500,
+            '&:hover': {
+              backgroundColor: 'rgba(107, 142, 35, 0.08)',
+              transform: 'scale(1.05)',
+            },
+            '&.Mui-selected': {
+              backgroundColor: 'rgba(107, 142, 35, 0.2)',
+              color: '#566E1C',
+              fontWeight: 600,
+              '&:hover': {
+                backgroundColor: 'rgba(107, 142, 35, 0.3)',
+              },
+            },
+            '&.MuiDateRangePickerDay-rangeIntervalDayHighlight': {
+              backgroundColor: 'rgba(107, 142, 35, 0.08)',
+              color: '#566E1C',
+            },
+            '&.MuiDateRangePickerDay-rangeIntervalDayHighlightStart': {
+              backgroundColor: 'rgba(107, 142, 35, 0.2)',
+              color: '#566E1C',
+              fontWeight: 600,
+            },
+            '&.MuiDateRangePickerDay-rangeIntervalDayHighlightEnd': {
+              backgroundColor: 'rgba(107, 142, 35, 0.2)',
+              color: '#566E1C',
+              fontWeight: 600,
+            },
+            '&.MuiPickersDay-today': {
+              border: '1px solid rgba(107, 142, 35, 0.4)',
+              backgroundColor: 'transparent',
+              '&:not(.Mui-selected)': {
+                color: '#6B8E23',
+                fontWeight: 600,
+              },
+            },
+          },
         },
       },
     },

@@ -61,6 +61,7 @@ import { v4 as uuidv4 } from 'uuid'
 import { useQueryClient } from '@tanstack/react-query'
 import { useOrders } from '../hooks/useOrders'
 import { formatCurrency } from '../utils/format'
+import DateRangePicker from '../components/dashboard/DateRangePicker'
 
 // Default avatar image
 const DEFAULT_AVATAR = 'https://ui-avatars.com/api/?name=Stylist&background=6B8E23&color=fff&size=150'
@@ -114,11 +115,22 @@ export default function Stylists() {
   const [holidayDialogOpen, setHolidayDialogOpen] = useState<boolean>(false)
   const [selectedStylistForHoliday, setSelectedStylistForHoliday] = useState<Stylist | null>(null)
   const [editingHoliday, setEditingHoliday] = useState<StylistHoliday | null>(null)
-  const [reportMonth, setReportMonth] = useState<Date>(new Date())
+  const [endDate, setEndDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [startDate, setStartDate] = useState<string>(() => {
+    const date = new Date();
+    date.setDate(date.getDate() - 30); // Default to last 30 days
+    return date.toISOString().split('T')[0];
+  });
   const [holidayReports, setHolidayReports] = useState<HolidayReport[]>([])
   const [stylistHolidays, setStylistHolidays] = useState<Record<string, StylistHoliday[]>>({})
 
   const queryClient = useQueryClient()
+
+  // Handle date range changes
+  const handleDateRangeChange = (newStartDate: Date, newEndDate: Date) => {
+    setStartDate(newStartDate.toISOString().split('T')[0]);
+    setEndDate(newEndDate.toISOString().split('T')[0]);
+  };
 
   // Extract unique service names from service collections
   useEffect(() => {
@@ -156,20 +168,20 @@ export default function Stylists() {
     }
   }, [stylists, allHolidays]);
 
-  // Generate holiday reports whenever stylists or reportMonth changes
+  // Generate holiday reports whenever stylists or date range changes
   useEffect(() => {
     if (stylists?.length && allHolidays && orders) {
-      const monthStart = startOfMonth(reportMonth);
-      const monthEnd = endOfMonth(reportMonth);
+      const rangeStart = new Date(startDate);
+      const rangeEnd = new Date(endDate);
       const today = new Date();
 
       const reports: HolidayReport[] = stylists.map(stylist => {
         const stylistHolidayList = stylistHolidays[stylist.id] || [];
         
-        // Filter holidays for the selected month
-        const holidaysInMonth = stylistHolidayList.filter(holiday => {
+        // Filter holidays for the selected date range
+        const holidaysInRange = stylistHolidayList.filter(holiday => {
           const holidayDate = new Date(holiday.holiday_date);
-          return isWithinInterval(holidayDate, { start: monthStart, end: monthEnd });
+          return isWithinInterval(holidayDate, { start: rangeStart, end: rangeEnd });
         });
 
         // Count upcoming and past holidays
@@ -187,28 +199,28 @@ export default function Stylists() {
         // Since POS now creates separate orders for each expert with split amounts, 
         // we can simply sum up the revenue from orders assigned to this stylist
         const stylistOrders = orders.filter(order => {
-          const orderStylistId = order.stylist?.id;
-          const orderStylistName = order.stylist_name || order.stylist?.name;
+          const orderStylistId = (order as any).stylist?.id;
+          const orderStylistName = (order as any).stylist_name || (order as any).stylist?.name;
           return orderStylistId ? orderStylistId === stylist.id : orderStylistName === stylist.name;
         });
 
         const serviceRevenue = stylistOrders.reduce((total, order) => {
-          const orderDate = new Date(order.created_at);
-          if (isWithinInterval(orderDate, { start: monthStart, end: monthEnd })) {
-            if (order.status === 'completed' && order.services && Array.isArray(order.services)) {
-              const servicePriceInOrder = order.services
-                .filter(item => !item.type || item.type === 'service')
-                .reduce((sum, service) => sum + ((service.price || 0) * (service.quantity || 1)), 0);
+          const orderDate = new Date((order as any).created_at || order.created_at);
+          if (isWithinInterval(orderDate, { start: rangeStart, end: rangeEnd })) {
+            if (order.status === 'completed' && (order as any).services && Array.isArray((order as any).services)) {
+              const servicePriceInOrder = (order as any).services
+                .filter((item: any) => !item.type || item.type === 'service')
+                .reduce((sum: number, service: any) => sum + ((service.price || 0) * (service.quantity || 1)), 0);
 
               let revenueToAdd = servicePriceInOrder;
               
               // Add proportional tax if applicable
-              if (servicePriceInOrder > 0 && order.subtotal > 0 && order.tax > 0) {
-                const serviceTax = (servicePriceInOrder / order.subtotal) * order.tax;
+              if (servicePriceInOrder > 0 && (order as any).subtotal > 0 && (order as any).tax > 0) {
+                const serviceTax = (servicePriceInOrder / (order as any).subtotal) * (order as any).tax;
                 revenueToAdd += serviceTax;
               }
               
-              console.log(`[Revenue Calculation] ${stylist.name}: Order ${order.id} contributes ${revenueToAdd} (Service: ${servicePriceInOrder}, Tax: ${servicePriceInOrder > 0 && order.subtotal > 0 && order.tax > 0 ? (servicePriceInOrder / order.subtotal) * order.tax : 0})`);
+              console.log(`[Revenue Calculation] ${stylist.name}: Order ${order.id} contributes ${revenueToAdd} (Service: ${servicePriceInOrder}, Tax: ${servicePriceInOrder > 0 && (order as any).subtotal > 0 && (order as any).tax > 0 ? (servicePriceInOrder / (order as any).subtotal) * (order as any).tax : 0})`);
               
               return total + revenueToAdd;
             }
@@ -219,10 +231,10 @@ export default function Stylists() {
         return {
           stylistId: stylist.id,
           stylistName: stylist.name,
-          totalHolidays: holidaysInMonth.length,
+          totalHolidays: holidaysInRange.length,
           upcomingHolidays,
           pastHolidays,
-          holidays: holidaysInMonth.sort((a, b) => 
+          holidays: holidaysInRange.sort((a: StylistHoliday, b: StylistHoliday) => 
             new Date(a.holiday_date).getTime() - new Date(b.holiday_date).getTime()
           ),
           serviceRevenue
@@ -231,7 +243,7 @@ export default function Stylists() {
 
       setHolidayReports(reports);
     }
-  }, [stylists, reportMonth, stylistHolidays, allHolidays, orders]);
+  }, [stylists, startDate, endDate, stylistHolidays, allHolidays, orders]);
 
   const handleOpen = () => setOpen(true)
   
@@ -444,7 +456,7 @@ export default function Stylists() {
       {/* Add notification for stylists on holiday today */}
       {stylistsOnHolidayToday.length > 0 && (
         <Alert 
-          severity="warning" 
+          severity="success" 
           sx={{ mb: 3 }}
         >
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
@@ -484,30 +496,18 @@ export default function Stylists() {
       {stylists?.length ? (
         <Paper sx={{ p: 3, width: '100%', borderRadius: 2 }}>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-            <Typography variant="h5">
-              Holiday Report: {format(reportMonth, 'MMMM')}
-            </Typography>
-            <LocalizationProvider dateAdapter={AdapterDateFns}>
-              <DatePicker
-                views={[ 'month' ]}
-                value={reportMonth}
-                onChange={(newValue) => newValue && setReportMonth(newValue)}
-                format="MMMM"
-                slotProps={{
-                  textField: {
-                    size: 'small',
-                    variant: 'outlined',
-                    sx: { width: 120 }
-                  }
-                }}
-              />
-            </LocalizationProvider>
+            <DateRangePicker
+              startDate={new Date(startDate)}
+              endDate={new Date(endDate)}
+              onDateRangeChange={handleDateRangeChange}
+            />
           </Box>
 
           {/* Summary section */}
           <Box sx={{ mb: 3 }}>
             <Typography variant="subtitle1" sx={{ mb: 1 }}>
-              Summary for {format(reportMonth, 'MMMM')}
+
+
             </Typography>
             <Grid container spacing={2}>
               <Grid item xs={12} sm={4}>
@@ -582,36 +582,24 @@ export default function Stylists() {
                     const isOnHolidayToday = !!todayHoliday;
                     
                     return (
-                      <TableRow 
+                                              <TableRow 
                         key={report.stylistId}
                         sx={{ 
-                          bgcolor: isOnHolidayToday ? 'warning.lighter' : 'inherit',
+                          bgcolor: isOnHolidayToday ? 'rgba(76, 175, 80, 0.1)' : 'inherit',
                           '&:hover': { backgroundColor: 'action.hover' }
                         }}
                       >
                         <TableCell>
-                          <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                            <Badge
-                              overlap="circular"
-                              anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-                              badgeContent={
-                                isOnHolidayToday ? (
-                                  <Tooltip title="On holiday today">
-                                    <HolidayIcon color="warning" />
-                                  </Tooltip>
-                                ) : null
-                              }
-                            >
-                              <Avatar 
-                                src={stylist.imageUrl || DEFAULT_AVATAR} 
-                                sx={{ width: 40, height: 40, mr: 2 }}
-                              />
-                            </Badge>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                            <Avatar 
+                              src={stylist.imageUrl || DEFAULT_AVATAR} 
+                              sx={{ width: 40, height: 40 }}
+                            />
                             <Box>
                               <Typography variant="subtitle2">
                                 {report.stylistName}
                               </Typography>
-                              <Typography variant="caption" color={isOnHolidayToday ? 'warning.main' : 'text.secondary'}>
+                              <Typography variant="caption" color={isOnHolidayToday ? 'success.main' : 'text.secondary'}>
                                 {isOnHolidayToday ? 'On Holiday Today' : stylist.available ? 'Available' : 'Not Available'}
                               </Typography>
                             </Box>
@@ -621,37 +609,46 @@ export default function Stylists() {
                           {report.totalHolidays > 0 ? (
                             <Chip 
                               label={`${report.totalHolidays} holiday(s)`} 
-                              color={isOnHolidayToday ? "warning" : "primary"} 
+                              color="success" 
                               size="small" 
                             />
                           ) : 'No holidays this month'}
                         </TableCell>
                         <TableCell>
-                          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, alignItems: 'center' }}>
                             {report.holidays.map(holiday => {
                               const holidayDate = new Date(holiday.holiday_date);
                               const isToday = isSameDay(holidayDate, new Date());
                               const isPast = isBefore(holidayDate, new Date()) && !isToday;
                               
                               return (
-                                <Tooltip 
-                                  key={holiday.id} 
-                                  title={holiday.reason || 'No reason provided'}
-                                >
-                                  <Chip
-                                    icon={<EventBusyIcon />}
-                                    label={format(holidayDate, 'MMM dd (EEE)')}
+                                <Box key={holiday.id} sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                  <Tooltip title={holiday.reason || 'No reason provided'}>
+                                    <Chip
+                                      icon={<EventBusyIcon />}
+                                      label={format(holidayDate, 'MMM dd (EEE)')}
+                                      size="small"
+                                      color="success"
+                                      variant={isPast ? 'outlined' : 'filled'}
+                                      sx={{ 
+                                        textDecoration: isPast ? 'line-through' : 'none',
+                                        opacity: isPast ? 0.7 : 1
+                                      }}
+                                    />
+                                  </Tooltip>
+                                  <IconButton
                                     size="small"
-                                    color={isToday ? 'warning' : isPast ? 'default' : 'primary'}
-                                    onDelete={() => stylist && removeHoliday(stylist, holiday.id)}
-                                    deleteIcon={<DeleteIcon fontSize="small" />}
+                                    color="error"
+                                    onClick={() => stylist && removeHoliday(stylist, holiday.id)}
                                     sx={{ 
-                                      m: 0.5,
-                                      textDecoration: isPast ? 'line-through' : 'none',
-                                      opacity: isPast ? 0.7 : 1
+                                      width: 24, 
+                                      height: 24,
+                                      ml: 0.5
                                     }}
-                                  />
-                                </Tooltip>
+                                  >
+                                    <DeleteIcon fontSize="small" />
+                                  </IconButton>
+                                </Box>
                               );
                             })}
                           </Box>
@@ -660,18 +657,18 @@ export default function Stylists() {
                           <Typography variant="subtitle2" color="primary">
                             {formatCurrency(report.serviceRevenue)}
                           </Typography>
-                          {/* Show indicator if this stylist has any multi-expert orders in the current month */}
+                          {/* Show indicator if this stylist has any multi-expert orders in the current date range */}
                           {orders && orders.some(order => {
-                            const orderDate = new Date(order.created_at);
-                            const isInMonth = isWithinInterval(orderDate, { start: startOfMonth(reportMonth), end: endOfMonth(reportMonth) });
-                            const orderStylistId = order.stylist?.id;
-                            const orderStylistName = order.stylist_name || order.stylist?.name;
+                            const orderDate = new Date((order as any).created_at || order.created_at);
+                            const isInRange = isWithinInterval(orderDate, { start: new Date(startDate), end: new Date(endDate) });
+                            const orderStylistId = (order as any).stylist?.id;
+                            const orderStylistName = (order as any).stylist_name || (order as any).stylist?.name;
                             const isStylistOrder = orderStylistId ? orderStylistId === stylist.id : orderStylistName === stylist.name;
                             
                             // Check if this order is part of a multi-expert appointment
-                            if (isInMonth && isStylistOrder && order.appointment_id) {
+                            if (isInRange && isStylistOrder && (order as any).appointment_id) {
                               const relatedOrders = orders.filter(relOrder => 
-                                relOrder.appointment_id === order.appointment_id && 
+                                (relOrder as any).appointment_id === (order as any).appointment_id && 
                                 relOrder.status === 'completed' &&
                                 relOrder.id !== order.id // Exclude the current order
                               );
@@ -689,8 +686,12 @@ export default function Stylists() {
                             <Tooltip title="Add Holiday">
                               <IconButton
                                 size="small"
-                                color="primary"
+                                color="success"
                                 onClick={() => openHolidayDialog(stylist)}
+                                sx={{ 
+                                  bgcolor: 'rgba(76, 175, 80, 0.1)',
+                                  '&:hover': { bgcolor: 'rgba(76, 175, 80, 0.2)' }
+                                }}
                               >
                                 <HolidayIcon />
                               </IconButton>
@@ -699,11 +700,15 @@ export default function Stylists() {
                               <Tooltip title="Edit Holidays">
                                 <IconButton
                                   size="small"
-                                  color="warning"
+                                  color="primary"
                                   onClick={() => {
                                     // edit the first holiday in the list
                                     const firstHoliday = report.holidays[0];
                                     openHolidayDialog(stylist, firstHoliday);
+                                  }}
+                                  sx={{ 
+                                    bgcolor: 'rgba(25, 118, 210, 0.1)',
+                                    '&:hover': { bgcolor: 'rgba(25, 118, 210, 0.2)' }
                                   }}
                                 >
                                   <EditIcon />
@@ -854,10 +859,10 @@ export default function Stylists() {
                         {formData.holidays
                           .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
                           .map((holiday) => (
-                            <TableRow 
+                                                          <TableRow 
                               key={holiday.id}
                               sx={{
-                                bgcolor: isToday(new Date(holiday.date)) ? 'warning.light' : 'inherit'
+                                bgcolor: isToday(new Date(holiday.date)) ? 'rgba(76, 175, 80, 0.1)' : 'inherit'
                               }}
                             >
                               <TableCell>{format(new Date(holiday.date), 'MMM dd, yyyy')}</TableCell>
@@ -980,19 +985,32 @@ export default function Stylists() {
                     const isTodayChip = isSameDay(hDate, new Date());
                     const isPastChip = isBefore(hDate, new Date()) && !isTodayChip;
                     return (
-                      <Tooltip key={holiday.id} title={holiday.reason || 'No reason provided'}>
-                        <Chip
-                          clickable
-                          onClick={() => openHolidayDialog(selectedStylistForHoliday, holiday)}
-                          icon={<EventBusyIcon />}
-                          label={format(hDate, 'MMM dd (EEE)')}
+                      <Box key={holiday.id} sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, m: 0.5 }}>
+                        <Tooltip title={holiday.reason || 'No reason provided'}>
+                          <Chip
+                            clickable
+                            onClick={() => openHolidayDialog(selectedStylistForHoliday, holiday)}
+                            icon={<EventBusyIcon />}
+                            label={format(hDate, 'MMM dd (EEE)')}
+                            size="small"
+                            color="success"
+                            variant={isPastChip ? 'outlined' : 'filled'}
+                            sx={{ 
+                              cursor: 'pointer', 
+                              textDecoration: isPastChip ? 'line-through' : 'none', 
+                              opacity: isPastChip ? 0.7 : 1 
+                            }}
+                          />
+                        </Tooltip>
+                        <IconButton
                           size="small"
-                          color={isTodayChip ? 'warning' : isPastChip ? 'default' : 'primary'}
-                          onDelete={() => removeHoliday(selectedStylistForHoliday, holiday.id)}
-                          deleteIcon={<DeleteIcon fontSize="small" />}
-                          sx={{ cursor: 'pointer', m: 0.5, textDecoration: isPastChip ? 'line-through' : 'none', opacity: isPastChip ? 0.7 : 1 }}
-                        />
-                      </Tooltip>
+                          color="error"
+                          onClick={() => removeHoliday(selectedStylistForHoliday, holiday.id)}
+                          sx={{ width: 20, height: 20 }}
+                        >
+                          <DeleteIcon fontSize="small" />
+                        </IconButton>
+                      </Box>
                     );
                   })}
                 </Box>

@@ -12,7 +12,8 @@ import {
   ListItemText,
   Divider,
   IconButton,
-  ListItemIcon
+  ListItemIcon,
+  useTheme
 } from '@mui/material';
 import { 
   ChevronLeft as ChevronLeftIcon,
@@ -63,6 +64,7 @@ export default function DateRangeCalendar({
   onClose,
   anchorEl 
 }: DateRangeCalendarProps) {
+  const theme = useTheme();
   const [leftMonth, setLeftMonth] = useState(new Date());
   const [rightMonth, setRightMonth] = useState(addMonths(new Date(), 1));
   const [selectionStart, setSelectionStart] = useState<Date | null>(null);
@@ -303,42 +305,44 @@ export default function DateRangeCalendar({
                     alignItems: 'center',
                     justifyContent: 'center',
                     cursor: day.isCurrentMonth ? 'pointer' : 'default',
-                    borderRadius: day.isStartDate || day.isEndDate ? '50%' : 
-                              day.isInRange ? '4px' : 'none',
+                    borderRadius: day.isStartDate || day.isEndDate ? '8px' : 
+                              day.isInRange ? '6px' : '6px',
                     backgroundColor: day.isStartDate || day.isEndDate
-                      ? 'primary.main' 
+                      ? theme.palette.datePicker.rangeEndBackground
                       : day.isInRange 
-                        ? 'primary.light' 
+                        ? theme.palette.datePicker.rangeBackground
                         : 'transparent',
                     color: day.isStartDate || day.isEndDate
-                      ? 'primary.contrastText' 
+                      ? theme.palette.datePicker.selectedText
                       : day.isInRange 
-                        ? 'primary.main' 
+                        ? theme.palette.datePicker.selectedText
                         : day.isCurrentMonth 
                           ? day.isToday 
-                            ? 'primary.main'
+                            ? theme.palette.datePicker.todayText
                             : 'text.primary' 
                           : 'text.disabled',
-                    fontWeight: day.isToday || day.isSelected ? 'bold' : 'normal',
+                    fontWeight: day.isToday || day.isSelected ? '600' : '500',
                     position: 'relative',
+                    transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
                     '&:hover': {
                       backgroundColor: day.isCurrentMonth && !day.isSelected 
-                        ? 'action.hover' 
-                        : undefined
+                        ? theme.palette.datePicker.hoverBackground
+                        : day.isStartDate || day.isEndDate
+                          ? theme.palette.datePicker.selectedBackgroundHover
+                          : undefined,
+                      transform: day.isCurrentMonth ? 'scale(1.05)' : undefined,
                     },
                     border: day.isToday && !day.isSelected ? '1px solid' : 'none',
-                    borderColor: day.isToday && !day.isSelected ? 'primary.main' : undefined,
-                    // Add left and right borders for range styling
-                    borderLeft: day.isInRange && !day.isStartDate ? '0px' : undefined,
-                    borderRight: day.isInRange && !day.isEndDate ? '0px' : undefined,
-                    // Special styling for start and end dates
+                    borderColor: day.isToday && !day.isSelected ? theme.palette.datePicker.todayBorder : undefined,
+                    // Special styling for start and end dates - softer transitions
                     '&::before': day.isStartDate && selectionEnd ? {
                       content: '""',
                       position: 'absolute',
                       right: 0,
                       width: '50%',
-                      height: '100%',
-                      backgroundColor: 'primary.light',
+                      height: '80%',
+                      backgroundColor: theme.palette.datePicker.rangeBackground,
+                      borderRadius: '0 4px 4px 0',
                       zIndex: -1,
                     } : undefined,
                     '&::after': day.isEndDate && selectionStart && selectionStart !== selectionEnd ? {
@@ -346,12 +350,15 @@ export default function DateRangeCalendar({
                       position: 'absolute',
                       left: 0,
                       width: '50%',
-                      height: '100%',
-                      backgroundColor: 'primary.light',
+                      height: '80%',
+                      backgroundColor: theme.palette.datePicker.rangeBackground,
+                      borderRadius: '4px 0 0 4px',
                       zIndex: -1,
                     } : undefined,
-                    // Circle indicator for selected dates
-                    boxShadow: day.isStartDate || day.isEndDate ? '0 0 0 2px #fff, 0 0 0 4px #6B8E23' : 'none',
+                    // Elegant subtle shadow for selected dates
+                    boxShadow: day.isStartDate || day.isEndDate 
+                      ? `0 2px 8px ${theme.palette.datePicker.rangeEndBackground}, 0 1px 4px rgba(107, 142, 35, 0.1)` 
+                      : 'none',
                   }}
                 >
                   <Typography 
@@ -407,9 +414,13 @@ export default function DateRangeCalendar({
                 dense
                 selected={selectedPreset === option.label}
                 sx={{
-                  borderRadius: 1,
+                  borderRadius: 2,
                   py: 0.5,
-                  backgroundColor: selectedPreset === option.label ? 'rgba(107, 142, 35, 0.1)' : 'transparent',
+                  backgroundColor: selectedPreset === option.label ? theme.palette.datePicker.selectedBackground : 'transparent',
+                  '&:hover': {
+                    backgroundColor: theme.palette.datePicker.hoverBackground,
+                  },
+                  transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
                 }}
               >
                 {selectedPreset === option.label && (
@@ -442,10 +453,11 @@ export default function DateRangeCalendar({
             display: 'flex', 
             gap: 2, 
             alignItems: 'center',
-            backgroundColor: 'primary.light',
+            backgroundColor: theme.palette.datePicker.selectedBackground,
             px: 2,
             py: 0.5,
             borderRadius: 2,
+            border: `1px solid ${theme.palette.datePicker.todayBorder}`,
           }}>
             <Typography variant="body1" fontWeight="medium">
               {format(tempStartDate, 'd MMM yyyy')}
