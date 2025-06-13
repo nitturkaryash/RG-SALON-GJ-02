@@ -60,6 +60,8 @@ import {
   ContentCut as ContentCutIcon,
   Delete as DeleteIcon,
   CardMembership as CardMembershipIcon,
+  Info as InfoIcon,
+  Edit as EditIcon,
 } from '@mui/icons-material'
 import { useOrders } from '../hooks/useOrders'
 import { formatCurrency } from '../utils/format'
@@ -121,6 +123,7 @@ interface DateRange {
 
 export default function Orders() {
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
   const { orders, isLoading, refreshOrders, deleteOrderById, deleteAllOrders } = useOrders()
   const { updateOrderPayment } = usePOS()
   const [selectedOrder, setSelectedOrder] = useState<any | null>(null)
@@ -997,7 +1000,31 @@ export default function Orders() {
     );
   };
 
-
+  const handleEditOrder = (order: ExtendedOrder) => {
+    // Navigate to POS with order data for editing
+    navigate('/pos', {
+      state: {
+        editOrderData: {
+          orderId: order.id,
+          clientName: order.client_name || order.customer_name,
+          clientId: order.client_id,
+          stylistId: order.stylist?.id || order.stylist_id,
+          services: order.services || [],
+          subtotal: order.subtotal || 0,
+          tax: order.tax || 0,
+          discount: order.discount || 0,
+          total: order.total || order.total_amount || 0,
+          paymentMethod: order.payment_method,
+          payments: order.payments || [],
+          status: order.status,
+          isSalonConsumption: isSalonConsumptionOrder(order),
+          consumptionPurpose: order.consumption_purpose,
+          notes: order.notes,
+          created_at: order.created_at
+        }
+      }
+    });
+  };
 
   if (isLoading) {
     return (
@@ -1025,792 +1052,912 @@ export default function Orders() {
           </Box>
         </Box>
         
-        {orders && orders.length > 0 && (
-          <ButtonGroup variant="outlined" size="small">
-            <Tooltip title="Export to CSV">
-              <Button
-                onClick={handleExportCSV}
-                startIcon={<CsvIcon />}
-                aria-label="Export to CSV"
-              >
-                CSV
-              </Button>
-            </Tooltip>
-            <Tooltip title="Export to PDF">
-              <Button
-                onClick={handleExportPDF}
-                startIcon={<PdfIcon />}
-                aria-label="Export to PDF"
-              >
-                PDF
-              </Button>
-            </Tooltip>
-          </ButtonGroup>
-        )}
-      </Box>
-      
-      {/* Order Analytics */}
-      <Grid container spacing={2} sx={{ mb: 3 }}>
-        {/* Total Orders */}
-        <Grid item xs={12} sm={6} md={3}>
-          <Card raised={false} variant="outlined" sx={{ p: 2 }}>
-            <CardContent sx={{ p: 0 }}>
-              <Typography color="text.secondary" variant="subtitle2" gutterBottom>
-                Total Orders
-              </Typography>
-              <Typography variant="h4" sx={{ mt: 1, mb: 2 }}>
-                {orderStats.total}
-              </Typography>
-              <LinearProgress 
-                variant="determinate" 
-                value={100} 
-                sx={{ height: 6, borderRadius: 3 }} 
-              />
-            </CardContent>
-          </Card>
-        </Grid>
-        
-        {/* Salon Consumption Orders - Highlighted specialty stat */}
-        <Grid item xs={12} sm={6} md={3}>
-          <Card
-            raised={false}
-            variant="outlined"
-            sx={{
-              p: 2,
-            }}
-          >
-            <CardContent sx={{ p: 0 }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                <InventoryIcon sx={{ mr: 1 }} />
-                <Typography color="text.secondary" variant="subtitle2">
-                  Salon Consumption
+        {/* Order Analytics */}
+        <Grid container spacing={2} sx={{ mb: 3 }}>
+          {/* Total Orders */}
+          <Grid item xs={12} sm={6} md={3}>
+            <Card raised={false} variant="outlined" sx={{ p: 2 }}>
+              <CardContent sx={{ p: 0 }}>
+                <Typography color="text.secondary" variant="subtitle2" gutterBottom>
+                  Total Orders
                 </Typography>
-              </Box>
-              <Typography variant="h4" sx={{ mt: 1, mb: 2 }}>
-                {orderStats.salonPurchases}
-              </Typography>
-              <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                <LinearProgress
-                  variant="determinate"
-                  value={orderStats.total ? (orderStats.salonPurchases / orderStats.total) * 100 : 0}
-                  color="info"
-                  sx={{
-                    height: 6,
-                    borderRadius: 3,
-                    flexGrow: 1,
-                  }}
-                />
-                <Typography variant="caption" sx={{ ml: 1 }} color="text.secondary">
-                  {orderStats.total ? Math.round((orderStats.salonPurchases / orderStats.total) * 100) : 0}%
+                <Typography variant="h4" sx={{ mt: 1, mb: 2 }}>
+                  {orderStats.total}
                 </Typography>
-              </Box>
-            </CardContent>
-          </Card>
-        </Grid>
-
-        {/* Completed Orders */}
-        <Grid item xs={12} sm={6} md={3}>
-          <Card raised={false} variant="outlined" sx={{ p: 2 }}>
-            <CardContent sx={{ p: 0 }}>
-              <Typography color="text.secondary" variant="subtitle2" gutterBottom>
-                Completed
-              </Typography>
-              <Typography variant="h4" sx={{ mt: 1, mb: 2 }}>
-                {orderStats.completed}
-              </Typography>
-              <Box sx={{ display: 'flex', alignItems: 'center' }}>
                 <LinearProgress 
                   variant="determinate" 
-                  value={orderStats.total ? (orderStats.completed / orderStats.total) * 100 : 0} 
-                  color="success"
-                  sx={{ height: 6, borderRadius: 3, flexGrow: 1 }} 
+                  value={100} 
+                  sx={{ height: 6, borderRadius: 3 }} 
                 />
-                <Typography variant="caption" sx={{ ml: 1 }} color="text.secondary">
-                  {orderStats.total ? Math.round((orderStats.completed / orderStats.total) * 100) : 0}%
+              </CardContent>
+            </Card>
+          </Grid>
+          
+          {/* Salon Consumption Orders - Highlighted specialty stat */}
+          <Grid item xs={12} sm={6} md={3}>
+            <Card
+              raised={false}
+              variant="outlined"
+              sx={{
+                p: 2,
+              }}
+            >
+              <CardContent sx={{ p: 0 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                  <InventoryIcon sx={{ mr: 1 }} />
+                  <Typography color="text.secondary" variant="subtitle2">
+                    Salon Consumption
+                  </Typography>
+                </Box>
+                <Typography variant="h4" sx={{ mt: 1, mb: 2 }}>
+                  {orderStats.salonPurchases}
                 </Typography>
-              </Box>
-            </CardContent>
-          </Card>
+                <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                  <LinearProgress
+                    variant="determinate"
+                    value={orderStats.total ? (orderStats.salonPurchases / orderStats.total) * 100 : 0}
+                    color="info"
+                    sx={{
+                      height: 6,
+                      borderRadius: 3,
+                      flexGrow: 1,
+                    }}
+                  />
+                  <Typography variant="caption" sx={{ ml: 1 }} color="text.secondary">
+                    {orderStats.total ? Math.round((orderStats.salonPurchases / orderStats.total) * 100) : 0}%
+                  </Typography>
+                </Box>
+              </CardContent>
+            </Card>
+          </Grid>
+
+          {/* Completed Orders */}
+          <Grid item xs={12} sm={6} md={3}>
+            <Card raised={false} variant="outlined" sx={{ p: 2 }}>
+              <CardContent sx={{ p: 0 }}>
+                <Typography color="text.secondary" variant="subtitle2" gutterBottom>
+                  Completed
+                </Typography>
+                <Typography variant="h4" sx={{ mt: 1, mb: 2 }}>
+                  {orderStats.completed}
+                </Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                  <LinearProgress 
+                    variant="determinate" 
+                    value={orderStats.total ? (orderStats.completed / orderStats.total) * 100 : 0} 
+                    color="success"
+                    sx={{ height: 6, borderRadius: 3, flexGrow: 1 }} 
+                  />
+                  <Typography variant="caption" sx={{ ml: 1 }} color="text.secondary">
+                    {orderStats.total ? Math.round((orderStats.completed / orderStats.total) * 100) : 0}%
+                  </Typography>
+                </Box>
+              </CardContent>
+            </Card>
+          </Grid>
+          
+          {/* Revenue */}
+          <Grid item xs={12} sm={6} md={3}>
+            <Card raised={false} variant="outlined" sx={{ p: 2 }}>
+              <CardContent sx={{ p: 0 }}>
+                <Typography color="text.secondary" variant="subtitle2" gutterBottom>
+                  Total Revenue
+                </Typography>
+                <Typography variant="h4" sx={{ mt: 1, mb: 2 }}>
+                  {formatCurrency(orderStats.totalRevenue)}
+                </Typography>
+                <LinearProgress 
+                  variant="determinate" 
+                  value={100} 
+                  color="primary"
+                  sx={{ height: 6, borderRadius: 3 }} 
+                />
+              </CardContent>
+            </Card>
+          </Grid>
         </Grid>
         
-        {/* Revenue */}
-        <Grid item xs={12} sm={6} md={3}>
-          <Card raised={false} variant="outlined" sx={{ p: 2 }}>
-            <CardContent sx={{ p: 0 }}>
-              <Typography color="text.secondary" variant="subtitle2" gutterBottom>
-                Total Revenue
-              </Typography>
-              <Typography variant="h4" sx={{ mt: 1, mb: 2 }}>
-                {formatCurrency(orderStats.totalRevenue)}
-              </Typography>
-              <LinearProgress 
-                variant="determinate" 
-                value={100} 
-                color="primary"
-                sx={{ height: 6, borderRadius: 3 }} 
-              />
-            </CardContent>
-          </Card>
-        </Grid>
-      </Grid>
-      
-      {/* Order Tabs */}
-      <Paper sx={{ borderBottom: 1, borderColor: 'divider', mb: 3 }}>
-        <Tabs
-          value={activeTab}
-          onChange={handleTabChange}
-          indicatorColor="primary"
-          textColor="primary"
-          variant="scrollable"
-          scrollButtons="auto"
-          aria-label="order filter tabs"
-        >
-          <Tab 
-            icon={<ShoppingCartIcon sx={{ fontSize: 22 }} />}
-            iconPosition="start"
-            label={`All (${orderStats.total})`} 
-            value={OrderTab.ALL}
-          />
-          <Tab 
-            icon={<CheckIcon sx={{ fontSize: 22 }} />} 
-            iconPosition="start"
-            label={`Completed (${orderStats.completed})`} 
-            value={OrderTab.COMPLETED}
-          />
-          <Tab 
-            icon={<PaymentIcon sx={{ fontSize: 22 }} />}
-            iconPosition="start"
-            label={`Pending (${orderStats.pending})`} 
-            value={OrderTab.PENDING}
-          />
-          <Tab 
-            icon={<InventoryIcon sx={{ fontSize: 22 }} color="secondary" />}
-            iconPosition="start"
-            label={`Salon Consumption (${orderStats.salonPurchases})`} 
-            value={OrderTab.SALON_CONSUMPTION}
-            sx={{ 
-              "& .MuiTab-iconWrapper": { color: "secondary.main" },
-              fontWeight: activeTab === OrderTab.SALON_CONSUMPTION ? 600 : 400
-            }} 
-          />
-          <Tab 
-            icon={<ContentCutIcon sx={{ fontSize: 22 }} />}
-            iconPosition="start"
-            label={`Services (${orderStats.services})`} 
-            value={OrderTab.SERVICES}
-          />
-          <Tab 
-            icon={<LocalMallIcon sx={{ fontSize: 22 }} />}
-            iconPosition="start"
-            label={`Products (${orderStats.products})`} 
-            value={OrderTab.PRODUCTS}
-          />
-          <Tab 
-            icon={<CardMembershipIcon sx={{ fontSize: 22 }} />}
-            iconPosition="start"
-            label={`Memberships`} 
-            value={OrderTab.MEMBERSHIPS}
-          />
-        </Tabs>
-      </Paper>
-      
-      {/* Search and filter controls */}
-      {orders && orders.length > 0 && (
-        <Box mb={3}>
-          <Grid container spacing={2}>
-            <Grid item xs={12} md={4}>
-              <TextField
-                placeholder="Search orders..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                variant="outlined"
-                size="small"
-                fullWidth
-                InputProps={{
-                  startAdornment: (
-                    <InputAdornment position="start">
-                      <SearchIcon fontSize="small" />
-                    </InputAdornment>
-                  ),
-                }}
-              />
-            </Grid>
-            
-            <Grid item xs={12} md={8}>
-              <Grid container spacing={2}>
-                <Grid item xs={12} sm={6} md={4}>
-                  <FormControl fullWidth size="small">
-                    <InputLabel id="payment-filter-label">Payment Method</InputLabel>
-                    <Select
-                      labelId="payment-filter-label"
-                      value={paymentFilter}
-                      onChange={(e) => setPaymentFilter(e.target.value)}
-                      label="Payment Method"
-                    >
-                      <MenuItem value="all">All Payment Methods</MenuItem>
-                      {PAYMENT_METHODS.map((method) => (
-                        <MenuItem key={method} value={method}>
-                          {PAYMENT_METHOD_LABELS[method]}
-                        </MenuItem>
-                      ))}
-                    </Select>
-                  </FormControl>
+        {/* Order Tabs */}
+        <Paper sx={{ borderBottom: 1, borderColor: 'divider', mb: 3 }}>
+          <Tabs
+            value={activeTab}
+            onChange={handleTabChange}
+            indicatorColor="primary"
+            textColor="primary"
+            variant="scrollable"
+            scrollButtons="auto"
+            aria-label="order filter tabs"
+          >
+            <Tab 
+              icon={<ShoppingCartIcon sx={{ fontSize: 22 }} />}
+              iconPosition="start"
+              label={`All (${orderStats.total})`} 
+              value={OrderTab.ALL}
+            />
+            <Tab 
+              icon={<CheckIcon sx={{ fontSize: 22 }} />} 
+              iconPosition="start"
+              label={`Completed (${orderStats.completed})`} 
+              value={OrderTab.COMPLETED}
+            />
+            <Tab 
+              icon={<PaymentIcon sx={{ fontSize: 22 }} />}
+              iconPosition="start"
+              label={`Pending (${orderStats.pending})`} 
+              value={OrderTab.PENDING}
+            />
+            <Tab 
+              icon={<InventoryIcon sx={{ fontSize: 22 }} color="secondary" />}
+              iconPosition="start"
+              label={`Salon Consumption (${orderStats.salonPurchases})`} 
+              value={OrderTab.SALON_CONSUMPTION}
+              sx={{ 
+                "& .MuiTab-iconWrapper": { color: "secondary.main" },
+                fontWeight: activeTab === OrderTab.SALON_CONSUMPTION ? 600 : 400
+              }} 
+            />
+            <Tab 
+              icon={<ContentCutIcon sx={{ fontSize: 22 }} />}
+              iconPosition="start"
+              label={`Services (${orderStats.services})`} 
+              value={OrderTab.SERVICES}
+            />
+            <Tab 
+              icon={<LocalMallIcon sx={{ fontSize: 22 }} />}
+              iconPosition="start"
+              label={`Products (${orderStats.products})`} 
+              value={OrderTab.PRODUCTS}
+            />
+            <Tab 
+              icon={<CardMembershipIcon sx={{ fontSize: 22 }} />}
+              iconPosition="start"
+              label={`Memberships`} 
+              value={OrderTab.MEMBERSHIPS}
+            />
+          </Tabs>
+        </Paper>
+        
+        {/* Search and filter controls */}
+        {orders && orders.length > 0 && (
+          <Box mb={3}>
+            <Grid container spacing={2}>
+              <Grid item xs={12} md={4}>
+                <TextField
+                  placeholder="Search orders..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  variant="outlined"
+                  size="small"
+                  fullWidth
+                  InputProps={{
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <SearchIcon fontSize="small" />
+                      </InputAdornment>
+                    ),
+                  }}
+                />
+              </Grid>
+              
+              <Grid item xs={12} md={8}>
+                <Grid container spacing={2}>
+                  <Grid item xs={12} sm={6} md={4}>
+                    <FormControl fullWidth size="small">
+                      <InputLabel id="payment-filter-label">Payment Method</InputLabel>
+                      <Select
+                        labelId="payment-filter-label"
+                        value={paymentFilter}
+                        onChange={(e) => setPaymentFilter(e.target.value)}
+                        label="Payment Method"
+                      >
+                        <MenuItem value="all">All Payment Methods</MenuItem>
+                        {PAYMENT_METHODS.map((method) => (
+                          <MenuItem key={method} value={method}>
+                            {PAYMENT_METHOD_LABELS[method]}
+                          </MenuItem>
+                        ))}
+                      </Select>
+                    </FormControl>
+                  </Grid>
+                  
+                  <Grid item xs={12} sm={6} md={4}>
+                    <FormControl fullWidth size="small">
+                      <InputLabel id="purchase-type-filter-label">Purchase Type</InputLabel>
+                      <Select
+                        labelId="purchase-type-filter-label"
+                        value={purchaseTypeFilter}
+                        onChange={(e) => setPurchaseTypeFilter(e.target.value)}
+                        label="Purchase Type"
+                      >
+                        <MenuItem value="all">All Types</MenuItem>
+                        <MenuItem value="service">Services Only</MenuItem>
+                        <MenuItem value="product">Products Only</MenuItem>
+                        <MenuItem value="both">Services & Products</MenuItem>
+                        <Divider sx={{ my: 1 }} />
+                        <Typography variant="caption" sx={{ px: 2, py: 1, display: 'block', color: 'text.secondary' }}>
+                          Product Categories
+                        </Typography>
+                        <MenuItem value="product:retail">Retail Products</MenuItem>
+                        <MenuItem value="product:salon">Salon Products</MenuItem>
+                        <Divider sx={{ my: 1 }} />
+                        <Typography variant="caption" sx={{ px: 2, py: 1, display: 'block', color: 'text.secondary' }}>
+                          Service Categories
+                        </Typography>
+                        {serviceCollections?.map(collection => (
+                          <MenuItem 
+                            key={collection.id} 
+                            value={`service:${collection.id}`}
+                          >
+                            {collection.name}
+                          </MenuItem>
+                        ))}
+                      </Select>
+                    </FormControl>
+                  </Grid>
+                  
+                  <Grid item xs={12} sm={6} md={4}>
+                    <FormControl fullWidth size="small">
+                      <InputLabel id="salon-purchase-filter-label">Salon Consumption</InputLabel>
+                      <Select
+                        labelId="salon-purchase-filter-label"
+                        value={isSalonPurchaseFilter}
+                        onChange={(e) => setIsSalonPurchaseFilter(e.target.value)}
+                        label="Salon Consumption"
+                      >
+                        <MenuItem value="all">All</MenuItem>
+                        <MenuItem value="true">Salon Consumption</MenuItem>
+                        <MenuItem value="false">Customer Purchases</MenuItem>
+                      </Select>
+                    </FormControl>
+                  </Grid>
                 </Grid>
-                
-                <Grid item xs={12} sm={6} md={4}>
-                  <FormControl fullWidth size="small">
-                    <InputLabel id="purchase-type-filter-label">Purchase Type</InputLabel>
-                    <Select
-                      labelId="purchase-type-filter-label"
-                      value={purchaseTypeFilter}
-                      onChange={(e) => setPurchaseTypeFilter(e.target.value)}
-                      label="Purchase Type"
+              </Grid>
+              
+              {/* Date Range Filter */}
+              <Grid item xs={12}>
+                <Grid container spacing={2}>
+                  <Grid item xs={12} sm={6} md={3}>
+                    <ErrorBoundary>
+                      <LocalizationProvider dateAdapter={AdapterDateFns}>
+                        <DatePicker
+                          label="Start Date"
+                          value={dateRange.startDate}
+                          onChange={(newValue) => handleDateRangeChange('startDate', newValue)}
+                          slotProps={{
+                            textField: {
+                              size: "small",
+                              fullWidth: true,
+                            },
+                          }}
+                        />
+                      </LocalizationProvider>
+                    </ErrorBoundary>
+                  </Grid>
+                  
+                  <Grid item xs={12} sm={6} md={3}>
+                    <ErrorBoundary>
+                      <LocalizationProvider dateAdapter={AdapterDateFns}>
+                        <DatePicker
+                          label="End Date"
+                          value={dateRange.endDate}
+                          onChange={(newValue) => handleDateRangeChange('endDate', newValue)}
+                          slotProps={{
+                            textField: {
+                              size: "small",
+                              fullWidth: true,
+                            },
+                          }}
+                          minDate={dateRange.startDate || undefined}
+                        />
+                      </LocalizationProvider>
+                    </ErrorBoundary>
+                  </Grid>
+                  
+                  <Grid item xs={12} md={6} display="flex" alignItems="center">
+                    <Button
+                      variant="outlined"
+                      size="small"
+                      onClick={() => setDateRange({ startDate: null, endDate: null })}
+                      disabled={!dateRange.startDate && !dateRange.endDate}
                     >
-                      <MenuItem value="all">All Types</MenuItem>
-                      <MenuItem value="service">Services Only</MenuItem>
-                      <MenuItem value="product">Products Only</MenuItem>
-                      <MenuItem value="both">Services & Products</MenuItem>
-                      <Divider sx={{ my: 1 }} />
-                      <Typography variant="caption" sx={{ px: 2, py: 1, display: 'block', color: 'text.secondary' }}>
-                        Product Categories
+                      Clear Dates
+                    </Button>
+                    
+                    {filteredOrders.length > 0 && (
+                      <Typography variant="body2" color="text.secondary" sx={{ ml: 2 }}>
+                        Showing {filteredOrders.length} orders
                       </Typography>
-                      <MenuItem value="product:retail">Retail Products</MenuItem>
-                      <MenuItem value="product:salon">Salon Products</MenuItem>
-                      <Divider sx={{ my: 1 }} />
-                      <Typography variant="caption" sx={{ px: 2, py: 1, display: 'block', color: 'text.secondary' }}>
-                        Service Categories
-                      </Typography>
-                      {serviceCollections?.map(collection => (
-                        <MenuItem 
-                          key={collection.id} 
-                          value={`service:${collection.id}`}
-                        >
-                          {collection.name}
-                        </MenuItem>
-                      ))}
-                    </Select>
-                  </FormControl>
-                </Grid>
-                
-                <Grid item xs={12} sm={6} md={4}>
-                  <FormControl fullWidth size="small">
-                    <InputLabel id="salon-purchase-filter-label">Salon Consumption</InputLabel>
-                    <Select
-                      labelId="salon-purchase-filter-label"
-                      value={isSalonPurchaseFilter}
-                      onChange={(e) => setIsSalonPurchaseFilter(e.target.value)}
-                      label="Salon Consumption"
-                    >
-                      <MenuItem value="all">All</MenuItem>
-                      <MenuItem value="true">Salon Consumption</MenuItem>
-                      <MenuItem value="false">Customer Purchases</MenuItem>
-                    </Select>
-                  </FormControl>
+                    )}
+                  </Grid>
                 </Grid>
               </Grid>
             </Grid>
-            
-            {/* Date Range Filter */}
-            <Grid item xs={12}>
-              <Grid container spacing={2}>
-                <Grid item xs={12} sm={6} md={3}>
-                  <ErrorBoundary>
-                    <LocalizationProvider dateAdapter={AdapterDateFns}>
-                      <DatePicker
-                        label="Start Date"
-                        value={dateRange.startDate}
-                        onChange={(newValue) => handleDateRangeChange('startDate', newValue)}
-                        slotProps={{
-                          textField: {
-                            size: "small",
-                            fullWidth: true,
-                          },
-                        }}
-                      />
-                    </LocalizationProvider>
-                  </ErrorBoundary>
-                </Grid>
-                
-                <Grid item xs={12} sm={6} md={3}>
-                  <ErrorBoundary>
-                    <LocalizationProvider dateAdapter={AdapterDateFns}>
-                      <DatePicker
-                        label="End Date"
-                        value={dateRange.endDate}
-                        onChange={(newValue) => handleDateRangeChange('endDate', newValue)}
-                        slotProps={{
-                          textField: {
-                            size: "small",
-                            fullWidth: true,
-                          },
-                        }}
-                        minDate={dateRange.startDate || undefined}
-                      />
-                    </LocalizationProvider>
-                  </ErrorBoundary>
-                </Grid>
-                
-                <Grid item xs={12} md={6} display="flex" alignItems="center">
-                  <Button
-                    variant="outlined"
-                    size="small"
-                    onClick={() => setDateRange({ startDate: null, endDate: null })}
-                    disabled={!dateRange.startDate && !dateRange.endDate}
-                  >
-                    Clear Dates
-                  </Button>
-                  
-                  {filteredOrders.length > 0 && (
-                    <Typography variant="body2" color="text.secondary" sx={{ ml: 2 }}>
-                      Showing {filteredOrders.length} orders
-                    </Typography>
-                  )}
-                </Grid>
-              </Grid>
-            </Grid>
-          </Grid>
-        </Box>
-      )}
-      
-      {/* Render active filters */}
-      {renderActiveFilters()}
-      
-      {filteredOrders.length > 0 ? (
-        <>
-          <TableContainer component={Paper}>
-            <Table>
-              <TableHead>
-                <TableRow>
-                  <TableCell>Order ID</TableCell>
-                  <TableCell>Date</TableCell>
-                  <TableCell>Customer</TableCell>
-                  <TableCell>Stylist</TableCell>
-                  <TableCell>Items</TableCell>
-                  <TableCell>Type</TableCell>
-                  <TableCell>Payment</TableCell>
-                  <TableCell>Status</TableCell>
-                  <TableCell>Total</TableCell>
-                  <TableCell align="right">Actions</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {paginatedOrders.map((order) => {
-                  // Check if this is a salon consumption order
-                  const isSalonOrder = isSalonConsumptionOrder(order);
-                  // Check if this is an aggregated multi-expert order
-                  const isAggregatedOrder = (order as any).aggregated_multi_expert;
-                  
-                  return (
-                  <TableRow 
-                    key={order.id}
-                    sx={{
-                      backgroundColor: isSalonOrder ? 'rgba(237, 108, 2, 0.05)' : 
-                                      isAggregatedOrder ? 'rgba(156, 39, 176, 0.05)' : 'inherit',
-                      '&:hover': {
-                        backgroundColor: isSalonOrder ? 'rgba(237, 108, 2, 0.12)' : 
-                                        isAggregatedOrder ? 'rgba(156, 39, 176, 0.12)' : 'rgba(0, 0, 0, 0.04)',
-                      },
-                      borderLeft: isAggregatedOrder ? '3px solid #9c27b0' : 'none'
-                    }}
-                  >
-                    <TableCell>
-                      <Typography variant="body2" fontFamily="monospace">
-                        {formatOrderId(order)}
-                        {isAggregatedOrder && (
+          </Box>
+        )}
+        
+        {/* Render active filters */}
+        {renderActiveFilters()}
+        
+        {filteredOrders.length > 0 ? (
+          <>
+            <TableContainer component={Paper}>
+              <Table>
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Order ID</TableCell>
+                    <TableCell>Date</TableCell>
+                    <TableCell>Customer</TableCell>
+                    <TableCell>Stylist</TableCell>
+                    <TableCell>Items</TableCell>
+                    <TableCell>Type</TableCell>
+                    <TableCell>Payment</TableCell>
+                    <TableCell>Status</TableCell>
+                    <TableCell>Total</TableCell>
+                    <TableCell align="right">Actions</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {paginatedOrders.map((order) => {
+                    // Check if this is a salon consumption order
+                    const isSalonOrder = isSalonConsumptionOrder(order);
+                    // Check if this is an aggregated multi-expert order
+                    const isAggregatedOrder = (order as any).aggregated_multi_expert;
+                    
+                    return (
+                    <TableRow 
+                      key={order.id}
+                      sx={{
+                        backgroundColor: isSalonOrder ? 'rgba(237, 108, 2, 0.05)' : 
+                                        isAggregatedOrder ? 'rgba(156, 39, 176, 0.05)' : 'inherit',
+                        '&:hover': {
+                          backgroundColor: isSalonOrder ? 'rgba(237, 108, 2, 0.12)' : 
+                                          isAggregatedOrder ? 'rgba(156, 39, 176, 0.12)' : 'rgba(0, 0, 0, 0.04)',
+                        },
+                        borderLeft: isAggregatedOrder ? '3px solid #9c27b0' : 'none'
+                      }}
+                    >
+                      <TableCell>
+                        <Typography variant="body2" fontFamily="monospace">
+                          {formatOrderId(order)}
+                          {isAggregatedOrder && (
+                            <Chip 
+                              size="small" 
+                              label="Multi-Expert" 
+                              color="secondary" 
+                              sx={{ ml: 1, fontSize: '0.7rem' }} 
+                            />
+                          )}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        {order.created_at ? new Date(order.created_at).toLocaleDateString() : 'Unknown date'}
+                      </TableCell>
+                      <TableCell>
+                        {order.client_name || 'Unknown client'}
+                        {isSalonOrder && (
                           <Chip 
                             size="small" 
-                            label="Multi-Expert" 
-                            color="secondary" 
-                            sx={{ ml: 1, fontSize: '0.7rem' }} 
+                            label="Salon Use" 
+                            color="warning" 
+                            sx={{ ml: 1, backgroundColor: '#FF6B00', color: 'white' }} 
                           />
                         )}
-                      </Typography>
-                    </TableCell>
-                    <TableCell>
-                      {order.created_at ? new Date(order.created_at).toLocaleDateString() : 'Unknown date'}
-                    </TableCell>
-                    <TableCell>
-                      {order.client_name || 'Unknown client'}
-                      {isSalonOrder && (
-                        <Chip 
-                          size="small" 
-                          label="Salon Use" 
-                          color="warning" 
-                          sx={{ ml: 1, backgroundColor: '#FF6B00', color: 'white' }} 
-                        />
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      {order.stylist_name || 'No stylist'}
-                    </TableCell>
-                    <TableCell>{order.services?.length || 0}</TableCell>
-                    <TableCell>
-                      {renderPurchaseTypeChip(getPurchaseType(order), order)}
-                    </TableCell>
-                    <TableCell>{renderPaymentMethods(order)}</TableCell>
-                    <TableCell>
-                      <Chip
-                        size="small"
-                        label={order.status || 'unknown'}
-                        color={
-                          order.status === 'completed'
-                            ? 'success'
-                            : order.status === 'pending'
-                            ? 'warning'
-                            : 'default'
-                        }
-                      />
-                    </TableCell>
-                    <TableCell>
-                      {(() => {
-                        // Calculate total from actual payments for accuracy
-                        let displayTotal = order.total_amount || order.total || 0;
-                        if (order.payments && order.payments.length > 0) {
-                          const paymentTotal = order.payments.reduce((sum: number, payment: any) => sum + (payment.amount || 0), 0);
-                          if (paymentTotal > 0) {
-                            displayTotal = paymentTotal;
+                      </TableCell>
+                      <TableCell>
+                        {order.stylist_name || 'No stylist'}
+                      </TableCell>
+                      <TableCell>{order.services?.length || 0}</TableCell>
+                      <TableCell>
+                        {renderPurchaseTypeChip(getPurchaseType(order), order)}
+                      </TableCell>
+                      <TableCell>{renderPaymentMethods(order)}</TableCell>
+                      <TableCell>
+                        <Chip
+                          size="small"
+                          label={order.status || 'unknown'}
+                          color={
+                            order.status === 'completed'
+                              ? 'success'
+                              : order.status === 'pending'
+                              ? 'warning'
+                              : 'default'
                           }
-                        }
-                        return (
-                          <Typography 
-                            fontWeight="medium" 
-                            color={isSalonOrder ? '#FF6B00' : 'text.primary'}
-                          >
-                            ₹{Math.round(displayTotal)}
-                          </Typography>
-                        );
-                      })()}
-                    </TableCell>
-                    <TableCell align="right">
-                      <ButtonGroup size="small" variant="outlined">
-                        <Tooltip title="View Details">
-                          <Button
-                            color="primary"
-                            onClick={() => handleViewDetails(order)}
-                            startIcon={<VisibilityIcon />}
-                          >
-                            View
-                          </Button>
-                        </Tooltip>
-                        <Tooltip title="Print Bill">
-                          <Button
-                            color="secondary"
-                            onClick={() => handlePrintBill(order)}
-                            startIcon={<PrintIcon />}
-                          >
-                            Print
-                          </Button>
-                        </Tooltip>
-                        <Tooltip title="Delete Order">
-                          <Button
-                            color="error"
-                            onClick={() => handleDeleteOrder(order)}
-                            startIcon={<DeleteIcon />}
-                          >
-                            Delete
-                          </Button>
-                        </Tooltip>
-                      </ButtonGroup>
-                    </TableCell>
-                  </TableRow>
-                )})}
-              </TableBody>
-            </Table>
-          </TableContainer>
-          
-          {/* Pagination */}
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 2 }}>
-            <TablePagination
-              component="div"
-              count={filteredOrders.length}
-              page={page}
-              onPageChange={handleChangePage}
-              rowsPerPage={rowsPerPage}
-              onRowsPerPageChange={handleChangeRowsPerPage}
-              rowsPerPageOptions={[5, 10, 25, 50, 100]}
-            />
-          </Box>
-        </>
-      ) : (
-        <Paper sx={{ p: 3 }}>
-          <Typography variant="body1" color="text.secondary">
-            {orders && orders.length > 0 
-              ? 'No orders match your search criteria. Try adjusting your filters.'
-              : 'No orders found. Orders from the POS system will appear here.'}
-          </Typography>
-        </Paper>
-      )}
-
-      {/* Order Details Dialog - Using the accessible dialog component */}
-      {selectedOrder && (
-        <AccessibleDialog
-          open={detailsOpen}
-          onClose={handleCloseDetails}
-          maxWidth="md"
-          fullWidth
-          title={(
-            <Box sx={{ display: 'flex', alignItems: 'center' }}>
-              <ReceiptIcon sx={{ mr: 1 }} />
-              <span>Order Details</span>
+                        />
+                      </TableCell>
+                      <TableCell>
+                        {(() => {
+                          // Calculate total from actual payments for accuracy
+                          let displayTotal = order.total_amount || order.total || 0;
+                          if (order.payments && order.payments.length > 0) {
+                            // Calculate total payments excluding membership payments
+                            const regularPaymentTotal = order.payments
+                              .filter((payment: any) => payment.payment_method !== 'membership')
+                              .reduce((sum: number, payment: any) => sum + (payment.amount || 0), 0);
+                            
+                            // If there are any regular payments, use that as the display total
+                            // Otherwise, fall back to the original total amount
+                            if (regularPaymentTotal > 0) {
+                              displayTotal = regularPaymentTotal;
+                            }
+                          }
+                          return (
+                            <Typography 
+                              fontWeight="medium" 
+                              color={isSalonOrder ? '#FF6B00' : 'text.primary'}
+                            >
+                              ₹{Math.round(displayTotal)}
+                            </Typography>
+                          );
+                        })()}
+                      </TableCell>
+                      <TableCell align="right">
+                        <ButtonGroup size="small" variant="outlined">
+                          <Tooltip title="View Details">
+                            <Button
+                              color="primary"
+                              onClick={() => handleViewDetails(order)}
+                              startIcon={<VisibilityIcon />}
+                            >
+                              View
+                            </Button>
+                          </Tooltip>
+                          <Tooltip title="Edit Order">
+                            <Button
+                              color="info"
+                              onClick={() => handleEditOrder(order)}
+                              startIcon={<EditIcon />}
+                            >
+                              Edit
+                            </Button>
+                          </Tooltip>
+                          <Tooltip title="Print Bill">
+                            <Button
+                              color="secondary"
+                              onClick={() => handlePrintBill(order)}
+                              startIcon={<PrintIcon />}
+                            >
+                              Print
+                            </Button>
+                          </Tooltip>
+                          <Tooltip title="Delete Order">
+                            <Button
+                              color="error"
+                              onClick={() => handleDeleteOrder(order)}
+                              startIcon={<DeleteIcon />}
+                            >
+                              Delete
+                            </Button>
+                          </Tooltip>
+                        </ButtonGroup>
+                      </TableCell>
+                    </TableRow>
+                  )})}
+                </TableBody>
+              </Table>
+            </TableContainer>
+            
+            {/* Pagination */}
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 2 }}>
+              <TablePagination
+                component="div"
+                count={filteredOrders.length}
+                page={page}
+                onPageChange={handleChangePage}
+                rowsPerPage={rowsPerPage}
+                onRowsPerPageChange={handleChangeRowsPerPage}
+                rowsPerPageOptions={[5, 10, 25, 50, 100]}
+              />
             </Box>
-          )}
-          actions={
-            <>
-              <Button 
-                onClick={() => selectedOrder && handlePrintBill(selectedOrder)}
-                variant="contained"
-                color="secondary"
-                startIcon={<ReceiptIcon />}
-                sx={{ mr: 1 }}
-              >
-                Print Bill
-              </Button>
-              <Button 
-                onClick={handleCloseDetails} 
-                color="primary" 
-                variant="contained"
-              >
-                Close
-              </Button>
-            </>
-          }
-        >
-          <Grid container spacing={2}>
-            <Grid item xs={12} md={6}>
-              <Typography variant="subtitle1" gutterBottom>Order Information</Typography>
-              <Box sx={{ mb: 2 }}>
-                <Typography variant="body2">
-                  <strong>Order ID:</strong> {formatOrderId(selectedOrder)}
-                  {(selectedOrder as any).aggregated_multi_expert && (
-                    <Chip 
-                      size="small" 
-                      label="Multi-Expert Order" 
-                      color="secondary" 
-                      sx={{ ml: 1 }} 
-                    />
-                  )}
-                </Typography>
-                <Typography variant="body2">
-                  <strong>Date:</strong> {new Date(selectedOrder.created_at).toLocaleString()}
-                </Typography>
-                <Typography variant="body2">
-                  <strong>Customer:</strong> {selectedOrder.client_name}
-                  {isSalonConsumptionOrder(selectedOrder) && (
-                    <Chip 
-                      size="small" 
-                      label="Salon Consumption" 
-                      color="warning" 
-                      sx={{ ml: 1 }} 
-                    />
-                  )}
-                </Typography>
-                <Typography variant="body2">
-                  <strong>Stylist{(selectedOrder as any).aggregated_multi_expert ? 's' : ''}:</strong> {selectedOrder.stylist_name}
-                  {(selectedOrder as any).aggregated_multi_expert && (
-                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
-                      Revenue split among all experts
+          </>
+        ) : (
+          <Paper sx={{ p: 3 }}>
+            <Typography variant="body1" color="text.secondary">
+              {orders && orders.length > 0 
+                ? 'No orders match your search criteria. Try adjusting your filters.'
+                : 'No orders found. Orders from the POS system will appear here.'}
+            </Typography>
+          </Paper>
+        )}
+
+        {/* Order Details Dialog - Using the accessible dialog component */}
+        {selectedOrder && (
+          <AccessibleDialog
+            open={detailsOpen}
+            onClose={handleCloseDetails}
+            maxWidth="md"
+            fullWidth
+            title={(
+              <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                <ReceiptIcon sx={{ mr: 1 }} />
+                <span>Order Details</span>
+              </Box>
+            )}
+            actions={
+              <>
+                <Button 
+                  onClick={() => selectedOrder && handlePrintBill(selectedOrder)}
+                  variant="contained"
+                  color="secondary"
+                  startIcon={<ReceiptIcon />}
+                  sx={{ mr: 1 }}
+                >
+                  Print Bill
+                </Button>
+                <Button 
+                  onClick={handleCloseDetails} 
+                  color="primary" 
+                  variant="contained"
+                >
+                  Close
+                </Button>
+              </>
+            }
+          >
+            <Grid container spacing={2}>
+              <Grid item xs={12} md={6}>
+                <Typography variant="subtitle1" gutterBottom>Order Information</Typography>
+                <Box sx={{ mb: 2 }}>
+                  <Typography variant="body2">
+                    <strong>Order ID:</strong> {formatOrderId(selectedOrder)}
+                    {(selectedOrder as any).aggregated_multi_expert && (
+                      <Chip 
+                        size="small" 
+                        label="Multi-Expert Order" 
+                        color="secondary" 
+                        sx={{ ml: 1 }} 
+                      />
+                    )}
+                  </Typography>
+                  <Typography variant="body2">
+                    <strong>Date:</strong> {new Date(selectedOrder.created_at).toLocaleString()}
+                  </Typography>
+                  <Typography variant="body2">
+                    <strong>Customer:</strong> {selectedOrder.client_name}
+                    {isSalonConsumptionOrder(selectedOrder) && (
+                      <Chip 
+                        size="small" 
+                        label="Salon Consumption" 
+                        color="warning" 
+                        sx={{ ml: 1 }} 
+                      />
+                    )}
+                  </Typography>
+                  <Typography variant="body2">
+                    <strong>Stylist{(selectedOrder as any).aggregated_multi_expert ? 's' : ''}:</strong> {selectedOrder.stylist_name}
+                    {(selectedOrder as any).aggregated_multi_expert && (
+                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                        Revenue split among all experts
+                      </Typography>
+                    )}
+                  </Typography>
+                  <Typography variant="body2">
+                    <strong>Purchase Type:</strong> <Box component="span" sx={{ ml: 1 }}>{renderPurchaseTypeChip(getPurchaseType(selectedOrder), selectedOrder)}</Box>
+                  </Typography>
+                  <Typography variant="body2">
+                    <strong>Status:</strong> {selectedOrder.status}
+                  </Typography>
+                  <Typography variant="body2">
+                    <strong>Payment Method:</strong>{" "}
+                    {Array.isArray(selectedOrder.payments) && selectedOrder.payments.length > 0
+                      ? selectedOrder.payments.map((p: PaymentDetail) =>
+                          PAYMENT_METHOD_LABELS[p.payment_method as PaymentMethod] ||
+                          p.payment_method.replace('_', ' ').replace(/\b\w/g, (l: string) => l.toUpperCase())
+                        ).join(', ')
+                      : PAYMENT_METHOD_LABELS[selectedOrder.payment_method as PaymentMethod] ||
+                        selectedOrder.payment_method?.replace('_', ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()) || 'Cash'}
+                  </Typography>
+                  {selectedOrder.appointment_time && (
+                    <Typography variant="body2">
+                      <strong>Appointment Time:</strong> {new Date(selectedOrder.appointment_time).toLocaleString()}
                     </Typography>
                   )}
-                </Typography>
-                <Typography variant="body2">
-                  <strong>Purchase Type:</strong> <Box component="span" sx={{ ml: 1 }}>{renderPurchaseTypeChip(getPurchaseType(selectedOrder), selectedOrder)}</Box>
-                </Typography>
-                <Typography variant="body2">
-                  <strong>Status:</strong> {selectedOrder.status}
-                </Typography>
-                <Typography variant="body2">
-                  <strong>Payment Method:</strong>{" "}
-                  {Array.isArray(selectedOrder.payments) && selectedOrder.payments.length > 0
-                    ? selectedOrder.payments.map((p: PaymentDetail) =>
-                        PAYMENT_METHOD_LABELS[p.payment_method as PaymentMethod] ||
-                        p.payment_method.replace('_', ' ').replace(/\b\w/g, (l: string) => l.toUpperCase())
-                      ).join(', ')
-                    : PAYMENT_METHOD_LABELS[selectedOrder.payment_method as PaymentMethod] ||
-                      selectedOrder.payment_method?.replace('_', ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()) || 'Cash'}
-                </Typography>
-                {selectedOrder.appointment_time && (
-                  <Typography variant="body2">
-                    <strong>Appointment Time:</strong> {new Date(selectedOrder.appointment_time).toLocaleString()}
-                  </Typography>
-                )}
-              </Box>
-            </Grid>
-            
-            <Grid item xs={12} md={6}>
-              <Typography variant="subtitle1" gutterBottom>Payment Summary</Typography>
-              <Box sx={{ mb: 2 }}>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                  <Typography variant="body2">Subtotal:</Typography>
-                  <Typography variant="body2">{formatCurrency(selectedOrder.subtotal)}</Typography>
                 </Box>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                  <Typography variant="body2">GST (18%):</Typography>
-                  <Typography variant="body2">{formatCurrency(selectedOrder.tax)}</Typography>
-                </Box>
-                {selectedOrder.discount > 0 && (
+              </Grid>
+              
+              <Grid item xs={12} md={6}>
+                <Typography variant="subtitle1" gutterBottom>Payment Summary</Typography>
+                <Box sx={{ mb: 2 }}>
                   <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                    <Typography variant="body2">Discount:</Typography>
-                    <Typography variant="body2" color="error">-{formatCurrency(selectedOrder.discount)}</Typography>
+                    <Typography variant="body2">Subtotal:</Typography>
+                    <Typography variant="body2">{formatCurrency(selectedOrder.subtotal)}</Typography>
                   </Box>
-                )}
-                <Divider sx={{ my: 1 }} />
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                  <Typography variant="body2" fontWeight="bold">Total:</Typography>
-                  <Typography variant="body2" fontWeight="bold">
-                    {(() => {
-                      // Calculate total from actual payments for accuracy (same logic as table)
-                      let displayTotal = selectedOrder.total_amount || selectedOrder.total || 0;
-                      if (selectedOrder.payments && selectedOrder.payments.length > 0) {
-                        const paymentTotal = selectedOrder.payments.reduce((sum: number, payment: any) => sum + (payment.amount || 0), 0);
-                        if (paymentTotal > 0) {
-                          displayTotal = paymentTotal;
-                        }
-                      }
-                      return formatCurrency(displayTotal);
-                    })()}
-                  </Typography>
-                </Box>
-                
-                {/* Show payment details for split payments */}
-                {(selectedOrder.is_split_payment || (selectedOrder as any).aggregated_multi_expert) && selectedOrder.payments && selectedOrder.payments.length > 0 && (
-                  <Box sx={{ mt: 2 }}>
-                    <Typography variant="subtitle2" gutterBottom>Payment Details</Typography>
-                    <TableContainer component={Paper} variant="outlined">
-                      <Table size="small">
-                        <TableHead>
-                          <TableRow>
-                            <TableCell>Method</TableCell>
-                            <TableCell align="right">Amount</TableCell>
-                          </TableRow>
-                        </TableHead>
-                        <TableBody>
-                          {selectedOrder.payments.map((payment: PaymentDetail) => {
-                            // Show the actual payment amount, not the full order total
-                            const displayAmount = payment.amount;
-                            
-                            return (
-                              <TableRow key={payment.id}>
-                                <TableCell>{PAYMENT_METHOD_LABELS[payment.payment_method as PaymentMethod]}</TableCell>
-                                <TableCell align="right">{formatCurrency(displayAmount)}</TableCell>
-                              </TableRow>
-                            );
-                          })}
-                          {selectedOrder.pending_amount > 0 && selectedOrder.status !== 'completed' && (
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                    <Typography variant="body2">GST (18%):</Typography>
+                    <Typography variant="body2">{formatCurrency(selectedOrder.tax)}</Typography>
+                  </Box>
+                  {selectedOrder.discount > 0 && (
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                      <Typography variant="body2">Discount:</Typography>
+                      <Typography variant="body2" color="error">-{formatCurrency(selectedOrder.discount)}</Typography>
+                    </Box>
+                  )}
+                  
+                  {/* Check if this order has membership payments */}
+                  {(() => {
+                    const hasMembershipPayment = selectedOrder.payments && selectedOrder.payments.some((payment: any) => payment.payment_method === 'membership');
+                    const membershipAmount = selectedOrder.payments 
+                      ? selectedOrder.payments
+                          .filter((payment: any) => payment.payment_method === 'membership')
+                          .reduce((sum: number, payment: any) => sum + (payment.amount || 0), 0)
+                      : 0;
+                    
+                    const regularAmount = selectedOrder.payments 
+                      ? selectedOrder.payments
+                          .filter((payment: any) => payment.payment_method !== 'membership')
+                          .reduce((sum: number, payment: any) => sum + (payment.amount || 0), 0)
+                      : (selectedOrder.total_amount || selectedOrder.total || 0);
+                    
+                    const totalOrderAmount = selectedOrder.total_amount || selectedOrder.total || 0;
+                    
+                    if (hasMembershipPayment && membershipAmount > 0) {
+                      // Calculate estimated GST discount for membership payment (assuming 18% GST)
+                      const estimatedMembershipGSTDiscount = membershipAmount * 0.18 / 1.18;
+                      
+                      return (
+                        <>
+                          <Divider sx={{ my: 2 }} />
+                          
+                          {/* Payment Breakdown Section */}
+                          <Typography variant="body2" fontWeight="bold" gutterBottom>
+                            Payment Breakdown:
+                          </Typography>
+                          <Box sx={{ mb: 1, display: 'flex', justifyContent: 'space-between', ml: 2 }}>
+                            <Typography variant="body2" color="primary.main">Services via Membership (Ex. GST):</Typography>
+                            <Typography variant="body2" fontWeight="500" color="primary.main">
+                              {formatCurrency(membershipAmount)}
+                            </Typography>
+                          </Box>
+                          <Box sx={{ mb: 1, display: 'flex', justifyContent: 'space-between', ml: 2 }}>
+                            <Typography variant="body2">Products & Regular Services (Incl. GST):</Typography>
+                            <Typography variant="body2" fontWeight="500">
+                              {formatCurrency(regularAmount)}
+                            </Typography>
+                          </Box>
+                          <Box sx={{ mb: 2, ml: 2, p: 1, bgcolor: 'info.lighter', borderRadius: 1 }}>
+                            <Typography variant="caption" color="text.secondary">
+                              <InfoIcon fontSize="inherit" sx={{ verticalAlign: 'middle', mr: 0.5 }} />
+                              Membership payments exclude GST • Products cannot be paid with membership balance
+                            </Typography>
+                          </Box>
+                          
+                          {/* Total Amount with detailed breakdown */}
+                          <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                            <Typography variant="h6" fontWeight="bold">Total Amount (All Items):</Typography>
+                            <Typography variant="h6" fontWeight="bold">
+                              {formatCurrency(totalOrderAmount + membershipAmount)}
+                            </Typography>
+                          </Box>
+                          
+                          {/* Show membership GST discount if applicable */}
+                          {estimatedMembershipGSTDiscount > 0 && (
+                            <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1, ml: 2 }}>
+                              <Typography variant="body2" color="success.main">Less: Membership GST Discount:</Typography>
+                              <Typography variant="body2" color="success.main" fontWeight="medium">
+                                -{formatCurrency(estimatedMembershipGSTDiscount)}
+                              </Typography>
+                            </Box>
+                          )}
+                          
+                          {/* Show membership payment deduction */}
+                          <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1, ml: 2 }}>
+                            <Typography variant="body2" color="primary.main">Less: Membership Payment:</Typography>
+                            <Typography variant="body2" color="primary.main" fontWeight="medium">
+                              -{formatCurrency(membershipAmount)}
+                            </Typography>
+                          </Box>
+                          
+                          {/* Show additional discount if any */}
+                          {selectedOrder.discount > 0 && (
+                            <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1, ml: 2 }}>
+                              <Typography variant="body2" color="warning.main">Less: Additional Discount:</Typography>
+                              <Typography variant="body2" color="warning.main" fontWeight="medium">
+                                -{formatCurrency(selectedOrder.discount)}
+                              </Typography>
+                            </Box>
+                          )}
+                          
+                          {/* Final amount that client paid */}
+                          <Divider sx={{ my: 1 }} />
+                          <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2, bgcolor: 'success.lighter', p: 1, borderRadius: 1 }}>
+                            <Typography variant="h6" fontWeight="bold">Client to Pay:</Typography>
+                            <Typography variant="h6" fontWeight="bold" color="success.main">
+                              {formatCurrency(regularAmount)}
+                            </Typography>
+                          </Box>
+                          
+                          {/* Membership discount explanation */}
+                          <Box sx={{ mb: 2, p: 1, bgcolor: 'info.lighter', borderRadius: 1, border: '1px solid', borderColor: 'info.main' }}>
+                            <Typography variant="caption" color="info.main" sx={{ display: 'flex', alignItems: 'center' }}>
+                              <InfoIcon fontSize="inherit" sx={{ mr: 0.5 }} />
+                              Membership Discount Applied: GST is excluded when paying via membership balance. 
+                              ₹{formatCurrency(membershipAmount)} was deducted from membership balance.
+                            </Typography>
+                          </Box>
+                        </>
+                      );
+                    } else {
+                      // Standard display when no membership payments
+                      return (
+                        <>
+                          {selectedOrder.discount > 0 && (
+                            <>
+                              <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                                <Typography variant="body2">Subtotal:</Typography>
+                                <Typography variant="body2" fontWeight="medium">
+                                  {formatCurrency(totalOrderAmount + selectedOrder.discount)}
+                                </Typography>
+                              </Box>
+                              <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1, ml: 2 }}>
+                                <Typography variant="body2" color="warning.main">Less: Discount:</Typography>
+                                <Typography variant="body2" color="warning.main" fontWeight="medium">
+                                  -{formatCurrency(selectedOrder.discount)}
+                                </Typography>
+                              </Box>
+                              <Divider sx={{ my: 1 }} />
+                            </>
+                          )}
+                          <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                            <Typography variant="body2" fontWeight="bold">Total:</Typography>
+                            <Typography variant="body2" fontWeight="bold">
+                              {(() => {
+                                // Calculate total from actual payments for accuracy (same logic as table)
+                                let displayTotal = selectedOrder.total_amount || selectedOrder.total || 0;
+                                if (selectedOrder.payments && selectedOrder.payments.length > 0) {
+                                  const paymentTotal = selectedOrder.payments.reduce((sum: number, payment: any) => sum + (payment.amount || 0), 0);
+                                  if (paymentTotal > 0) {
+                                    displayTotal = paymentTotal;
+                                  }
+                                }
+                                return formatCurrency(displayTotal);
+                              })()}
+                            </Typography>
+                          </Box>
+                        </>
+                      );
+                    }
+                  })()}
+                  
+                  {/* Show payment details for split payments */}
+                  {(selectedOrder.is_split_payment || (selectedOrder as any).aggregated_multi_expert) && selectedOrder.payments && selectedOrder.payments.length > 0 && (
+                    <Box sx={{ mt: 2 }}>
+                      <Typography variant="subtitle2" gutterBottom>Payment Details</Typography>
+                      <TableContainer component={Paper} variant="outlined">
+                        <Table size="small">
+                          <TableHead>
                             <TableRow>
-                              <TableCell>
-                                <Typography color="error">Pending Payment:</Typography>
-                              </TableCell>
-                              <TableCell align="right">
-                                <Typography color="error">{formatCurrency(selectedOrder.pending_amount)}</Typography>
-                              </TableCell>
+                              <TableCell>Method</TableCell>
+                              <TableCell align="right">Amount</TableCell>
                             </TableRow>
-                          )}
-                        </TableBody>
-                      </Table>
-                    </TableContainer>
-                  </Box>
-                )}
-              </Box>
-            </Grid>
-            
-            <Grid item xs={12}>
-              <Typography variant="subtitle1" gutterBottom>Order Items</Typography>
-              <TableContainer component={Paper} variant="outlined">
-                <Table size="small">
-                  <TableHead>
-                    <TableRow>
-                      <TableCell>Item</TableCell>
-                      <TableCell>Type</TableCell>
-                      <TableCell align="right">Price</TableCell>
-                      {/* Add more columns if needed */}
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {selectedOrder.services.map((service: any, index: number) => (
-                      <TableRow key={index}>
-                        <TableCell>{service.service_name}</TableCell>
-                        <TableCell>
-                          <Chip 
-                            size="small" 
-                            label={service.type || 'Service'} 
-                            color={service.type === 'product' ? 'secondary' : 'primary'}
-                          />
-                          {service.forSalonUse && (
-                            <Chip size="small" label="Salon Use" color="warning" sx={{ ml: 0.5 }} />
-                          )}
-                        </TableCell>
-                        <TableCell align="right">{formatCurrency(service.price)}</TableCell>
+                          </TableHead>
+                          <TableBody>
+                            {selectedOrder.payments.map((payment: PaymentDetail) => {
+                              // Show the actual payment amount, not the full order total
+                              const displayAmount = payment.amount;
+                              
+                              return (
+                                <TableRow key={payment.id}>
+                                  <TableCell>{PAYMENT_METHOD_LABELS[payment.payment_method as PaymentMethod]}</TableCell>
+                                  <TableCell align="right">{formatCurrency(displayAmount)}</TableCell>
+                                </TableRow>
+                              );
+                            })}
+                            {selectedOrder.pending_amount > 0 && selectedOrder.status !== 'completed' && (
+                              <TableRow>
+                                <TableCell>
+                                  <Typography color="error">Pending Payment:</Typography>
+                                </TableCell>
+                                <TableCell align="right">
+                                  <Typography color="error">{formatCurrency(selectedOrder.pending_amount)}</Typography>
+                                </TableCell>
+                              </TableRow>
+                            )}
+                          </TableBody>
+                        </Table>
+                      </TableContainer>
+                    </Box>
+                  )}
+                </Box>
+              </Grid>
+              
+              <Grid item xs={12}>
+                <Typography variant="subtitle1" gutterBottom>Order Items</Typography>
+                <TableContainer component={Paper} variant="outlined">
+                  <Table size="small">
+                    <TableHead>
+                      <TableRow>
+                        <TableCell>Item</TableCell>
+                        <TableCell>Type</TableCell>
+                        <TableCell align="right">Price</TableCell>
+                        {/* Add more columns if needed */}
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </TableContainer>
+                    </TableHead>
+                    <TableBody>
+                      {selectedOrder.services.map((service: any, index: number) => (
+                        <TableRow key={index}>
+                          <TableCell>{service.service_name}</TableCell>
+                          <TableCell>
+                            <Chip 
+                              size="small" 
+                              label={service.type || 'Service'} 
+                              color={service.type === 'product' ? 'secondary' : 'primary'}
+                            />
+                            {service.forSalonUse && (
+                              <Chip size="small" label="Salon Use" color="warning" sx={{ ml: 0.5 }} />
+                            )}
+                          </TableCell>
+                          <TableCell align="right">{formatCurrency(service.price)}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              </Grid>
             </Grid>
-          </Grid>
-        </AccessibleDialog>
-      )}
-      
-      {/* Payment Completion Dialog */}
-      {selectedOrder && (
-        <CompletePaymentDialog
-          open={paymentDialogOpen}
-          onClose={() => setPaymentDialogOpen(false)}
-          order={selectedOrder}
-          onCompletePayment={handleCompletePaymentSubmit}
-        />
-      )}
+          </AccessibleDialog>
+        )}
+        
+        {/* Payment Completion Dialog */}
+        {selectedOrder && (
+          <CompletePaymentDialog
+            open={paymentDialogOpen}
+            onClose={() => setPaymentDialogOpen(false)}
+            order={selectedOrder}
+            onCompletePayment={handleCompletePaymentSubmit}
+          />
+        )}
 
-      {/* Delete Confirmation Dialog */}
-      <Dialog
-        open={deleteConfirmOpen}
-        onClose={() => setDeleteConfirmOpen(false)}
-        aria-labelledby="alert-dialog-title"
-        aria-describedby="alert-dialog-description"
-      >
-        <DialogTitle id="alert-dialog-title">{"Confirm Delete"}</DialogTitle>
-        <DialogContent>
-          <DialogContentText id="alert-dialog-description">
-            Are you sure you want to delete this order? This action cannot be undone.
-          </DialogContentText>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setDeleteConfirmOpen(false)} color="primary">
-            Cancel
-          </Button>
-          <Button onClick={confirmDeleteOrder} color="primary" autoFocus>
-            Delete
-          </Button>
-        </DialogActions>
-      </Dialog>
-      
-      {/* Delete All Orders Confirmation Dialog */}
-      <Dialog
-        open={deleteAllConfirmOpen}
-        onClose={() => setDeleteAllConfirmOpen(false)}
-        aria-labelledby="alert-dialog-title-all"
-        aria-describedby="alert-dialog-description-all"
-      >
-        <DialogTitle id="alert-dialog-title-all">{"Delete All Orders"}</DialogTitle>
-        <DialogContent>
-          <DialogContentText id="alert-dialog-description-all">
-            Warning: This will permanently delete ALL orders in the system. This action cannot be undone. 
-            Are you absolutely sure you want to proceed?
-          </DialogContentText>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setDeleteAllConfirmOpen(false)} color="primary">
-            Cancel
-          </Button>
-          <Button 
-            onClick={confirmDeleteAllOrders} 
-            color="error" 
-            variant="contained"
-            autoFocus
-          >
-            Yes, Delete All Orders
-          </Button>
-        </DialogActions>
-      </Dialog>
+        {/* Delete Confirmation Dialog */}
+        <Dialog
+          open={deleteConfirmOpen}
+          onClose={() => setDeleteConfirmOpen(false)}
+          aria-labelledby="alert-dialog-title"
+          aria-describedby="alert-dialog-description"
+        >
+          <DialogTitle id="alert-dialog-title">{"Confirm Delete"}</DialogTitle>
+          <DialogContent>
+            <DialogContentText id="alert-dialog-description">
+              Are you sure you want to delete this order? This action cannot be undone.
+            </DialogContentText>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setDeleteConfirmOpen(false)} color="primary">
+              Cancel
+            </Button>
+            <Button onClick={confirmDeleteOrder} color="primary" autoFocus>
+              Delete
+            </Button>
+          </DialogActions>
+        </Dialog>
+        
+        {/* Delete All Orders Confirmation Dialog */}
+        <Dialog
+          open={deleteAllConfirmOpen}
+          onClose={() => setDeleteAllConfirmOpen(false)}
+          aria-labelledby="alert-dialog-title-all"
+          aria-describedby="alert-dialog-description-all"
+        >
+          <DialogTitle id="alert-dialog-title-all">{"Delete All Orders"}</DialogTitle>
+          <DialogContent>
+            <DialogContentText id="alert-dialog-description-all">
+              Warning: This will permanently delete ALL orders in the system. This action cannot be undone. 
+              Are you absolutely sure you want to proceed?
+            </DialogContentText>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setDeleteAllConfirmOpen(false)} color="primary">
+              Cancel
+            </Button>
+            <Button 
+              onClick={confirmDeleteAllOrders} 
+              color="error" 
+              variant="contained"
+              autoFocus
+            >
+              Yes, Delete All Orders
+            </Button>
+          </DialogActions>
+        </Dialog>
+      </Box>
     </Container>
   );
 } 

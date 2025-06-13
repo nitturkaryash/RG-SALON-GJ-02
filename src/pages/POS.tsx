@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Container, Box, Typography, Paper, Tabs, Tab, TextField, Button, Grid, Card, CardContent, CardActions, FormControl, InputLabel, Select, MenuItem, IconButton, Chip, Dialog, DialogTitle, DialogContent, DialogActions, Snackbar, Alert, CircularProgress, Collapse, Tooltip, FormHelperText } from '@mui/material';
-import { Add as AddIcon, Close as CloseIcon, RemoveShoppingCart, ShoppingBag, Check as CheckIcon, Refresh as RefreshIcon, AttachMoney, CreditCard, LocalAtm, AccountBalance, Receipt as ReceiptIcon, Inventory, Search, Info as InfoIcon } from '@mui/icons-material';
+import { Add as AddIcon, Close as CloseIcon, RemoveShoppingCart, ShoppingBag, Check as CheckIcon, Refresh as RefreshIcon, AttachMoney, CreditCard, LocalAtm, AccountBalance, Receipt as ReceiptIcon, Inventory, Search, Info as InfoIcon, CheckCircle, Warning } from '@mui/icons-material';
 import AccountBalanceWalletIcon from '@mui/icons-material/AccountBalanceWallet';
 import CardMembershipIcon from '@mui/icons-material/CardMembership';
 import { supabase } from '../utils/supabase/supabaseClient';
@@ -74,18 +74,7 @@ import { MembershipTier } from '../types/membershipTier';
 // Import the localStorage hook
 import { useLocalStorage } from '../utils/useLocalStorage';
 import { updateProductStock } from '../utils/inventoryUtils';
-
-// Active membership details for payment by balance
-interface ActiveMembershipDetails {
-  id: string;
-  tierId: string;
-  tierName: string;
-  currentBalance: number;
-  isActive: boolean;
-  purchaseDate: string;
-  expiresAt?: string | null;
-  durationMonths?: number;
-}
+import PaymentSection, { ActiveMembershipDetails } from '../components/PaymentSection';
 
 // Define a key for localStorage
 const POS_STATE_STORAGE_KEY = 'posState';
@@ -374,6 +363,7 @@ interface HistoryItem {
 interface POSOrderItem extends OrderItem {
   benefitAmount?: number;
   useMembershipPayment?: boolean; // Track if this item should use membership payment
+  experts?: any[]; // Track experts/stylists for revenue split logic
 }
 
 export default function POS() {
@@ -908,15 +898,20 @@ export default function POS() {
 	}, [walkInDiscount]);
 
 	const calculateTotalAmount = useCallback(() => {
-		// Calculate total amount by summing actual individual item amounts (matching order summary display)
+		// Calculate total amount by summing only items that need to be paid by client
+		// Services paid via membership are excluded since they're deducted from membership balance
 		const totalAmount = orderItems.reduce((sum, item) => {
 			const gstPercentage = item.gst_percentage || (item.type === 'product' ? productGstRate : serviceGstRate) || 18;
 			const isGstApplied = item.type === 'product' ? isProductGstApplied : (item.type === 'service' ? isServiceGstApplied : true);
 			const gstMultiplier = isGstApplied ? (1 + (gstPercentage / 100)) : 1;
 			
-			// For services paid via membership, exclude GST
+			// For services paid via membership, exclude from total (they're deducted from membership balance)
 			const isServicePaidViaMembership = item.type === 'service' && servicesMembershipPayment[item.id];
-			const finalMultiplier = isServicePaidViaMembership ? 1 : gstMultiplier;
+			if (isServicePaidViaMembership) {
+				return sum; // Don't add this to the client's payable amount
+			}
+			
+			const finalMultiplier = gstMultiplier;
 			const itemTotalAmount = (item.price * item.quantity * finalMultiplier);
 			const finalAmount = Math.max(0, itemTotalAmount - (item.discount || 0));
 			
@@ -1059,84 +1054,45 @@ export default function POS() {
 		membership: 0
 	});
 
-	// Auto-update payment amounts when total changes or split payment is disabled
-	useEffect(() => {
-		const membershipAmount = getMembershipPayableAmount();
-		const regularAmount = getRegularPayableAmount();
-		const hasProductsOrNonMembershipServices = regularAmount > 0;
-		const hasMembershipServices = membershipAmount > 0;
-		
-		// Auto-enable split payment if both membership and regular payments are needed
-		if (hasProductsOrNonMembershipServices && hasMembershipServices && !isSplitPayment) {
-			setIsSplitPayment(true);
-		}
-		
-		if (!isSplitPayment) {
-			const currentTotal = calculateTotalAmount();
-			// When split payment is disabled, auto-fill with cash to match total
-			setPaymentAmounts({
-				cash: currentTotal,
-				credit_card: 0,
-				debit_card: 0,
-				upi: 0,
-				bnpl: 0,
-				membership: 0
-			});
-		} else {
-			// When split payment is enabled, distribute amounts appropriately
-			const maxMembershipPayment = activeClientMembership ? Math.min(membershipAmount, activeClientMembership.currentBalance) : 0;
-			const remainingRegularAmount = regularAmount + Math.max(0, membershipAmount - maxMembershipPayment);
-			
-			setPaymentAmounts({
-				cash: remainingRegularAmount,
-				credit_card: 0,
-				debit_card: 0,
-				upi: 0,
-				bnpl: 0,
-				membership: maxMembershipPayment
-			});
-		}
-	}, [calculateTotalAmount, isSplitPayment, orderItems, walkInDiscount, walkInDiscountPercentage, getMembershipPayableAmount, getRegularPayableAmount, servicesMembershipPayment, activeClientMembership]);
-
-	// Separate useEffect to handle cash auto-adjustment in split payment mode
+	// Separate useEffect to handle membership balance updates
 	useEffect(() => {
 		if (isSplitPayment) {
-			const currentTotal = calculateTotalAmount();
-			const sumOthers = (paymentAmounts.credit_card || 0) + (paymentAmounts.debit_card || 0) + (paymentAmounts.upi || 0) + (paymentAmounts.bnpl || 0) + (paymentAmounts.membership || 0);
-			const remainingAmount = Math.max(0, currentTotal - sumOthers);
+			const membershipAmount = getMembershipPayableAmount();
+			const maxMembershipPayment = activeClientMembership ? Math.min(membershipAmount, activeClientMembership.currentBalance) : 0;
 			
-			// Only update cash if it's significantly different
-			if (Math.abs(paymentAmounts.cash - remainingAmount) > 0.01) {
-				setPaymentAmounts(prev => ({ ...prev, cash: remainingAmount }));
+			// Only update membership amount if it's different
+			if (Math.abs(paymentAmounts.membership - maxMembershipPayment) > 0.01) {
+				setPaymentAmounts(prev => ({ 
+					...prev, 
+					membership: maxMembershipPayment
+				}));
 			}
 		}
-	}, [paymentAmounts.credit_card, paymentAmounts.debit_card, paymentAmounts.upi, paymentAmounts.bnpl, paymentAmounts.membership, calculateTotalAmount, isSplitPayment]);
+	}, [activeClientMembership, isSplitPayment, getMembershipPayableAmount]);
 
-	// Filtered products and services based on search terms
+	// =============== FILTERED MEMOS (restored) ===============
 	const filteredProducts = useMemo(() => {
 		if (!productSearchTerm.trim()) {
-			// Only show products with stock and active status
 			return allProducts.filter(product => 
-				(product.stock_quantity === undefined || // Keep undefined stock for backward compatibility
+				(product.stock_quantity === undefined || 
 				product.stock_quantity === null || 
 				product.stock_quantity > 0) &&
-				product.active !== false // Only show products that are active or where active is undefined
+				product.active !== false
 			);
 		}
 		return allProducts.filter(product => 
 			(product.name.toLowerCase().includes(productSearchTerm.toLowerCase()) ||
 			(product.description && product.description.toLowerCase().includes(productSearchTerm.toLowerCase()))) &&
-			(product.stock_quantity === undefined || // Keep undefined stock for backward compatibility
+			(product.stock_quantity === undefined || 
 			product.stock_quantity === null || 
 			product.stock_quantity > 0) &&
-			product.active !== false // Only show products that are active or where active is undefined
+			product.active !== false
 		);
 	}, [allProducts, productSearchTerm]);
 
 	const filteredServices = useMemo(() => {
-		// First filter by active status, then by search term
 		const activeServices = (services || []).filter(service => 
-			service.active !== false // Show services that are active or where active is undefined
+			service.active !== false
 		);
 		
 		if (!serviceSearchTerm.trim()) return activeServices;
@@ -1147,12 +1103,10 @@ export default function POS() {
 		);
 	}, [services, serviceSearchTerm]);
 
-	// Derive service history for the selected client
 	const serviceHistory = useMemo(() => {
 		if (!orders || !selectedClient) return [];
 		
 		return orders.filter(order => {
-			// Cast to any to access client_name and services
 			const orderAny = order as any;
 			return (orderAny.client_name === selectedClient.full_name || 
 			       orderAny.customer_name === selectedClient.full_name) && 
@@ -1160,7 +1114,6 @@ export default function POS() {
 		});
 	}, [orders, selectedClient]);
 
-	// Filtered memberships based on search term
 	const filteredMemberships = useMemo(() => {
 		if (!membershipSearchTerm.trim()) return memberships || [];
 		return (memberships || []).filter(membership => 
@@ -1174,21 +1127,26 @@ export default function POS() {
 	// ====================================================
 	useEffect(() => {
   console.log('[POS useEffect] Running effect. Location:', location);
+  
   const appointmentNavData = location.state?.appointmentData;
-		
-  if (!appointmentNavData) {
+  const editOrderData = location.state?.editOrderData;
+  
+  // Handle both appointment data and edit order data
+  const navigationData = appointmentNavData || editOrderData;
+  
+  if (!navigationData) {
     if (processedNavKeyRef.current !== null) {
-      console.log('[POS useEffect] No appointmentData in location.state. Resetting processedNavKeyRef.');
+      console.log('[POS useEffect] No navigation data in location.state. Resetting processedNavKeyRef.');
       processedNavKeyRef.current = null;
     }
-    return; // Exit early if no appointment data
+    return; // Exit early if no navigation data
   }
   
-  console.log('[POS useEffect] Received appointment data:', JSON.stringify(appointmentNavData));
+  console.log('[POS useEffect] Received navigation data:', JSON.stringify(navigationData));
   
   // Skip if we've already processed this exact data
-  if (processedNavKeyRef.current === JSON.stringify(appointmentNavData)) {
-    console.log('[POS useEffect] Already processed this appointment data, skipping');
+  if (processedNavKeyRef.current === JSON.stringify(navigationData)) {
+    console.log('[POS useEffect] Already processed this navigation data, skipping');
     return;
   }
   
@@ -1199,117 +1157,227 @@ export default function POS() {
   }
 		
   // Mark as processed to prevent duplicate processing
-  processedNavKeyRef.current = JSON.stringify(appointmentNavData);
-  console.log('[POS useEffect] Processing appointment data');
+  processedNavKeyRef.current = JSON.stringify(navigationData);
+  console.log('[POS useEffect] Processing navigation data');
   
-  // Force tab to walk-in order
-  setTabValue(0);
-  
-  // Set client name and find client record
-  setCustomerName(appointmentNavData.clientName || '');
-  const matchingClient = clients?.find(c => c.full_name === appointmentNavData.clientName);
-  if (matchingClient) {
-    console.log('[POS useEffect] Setting selected client:', matchingClient.full_name);
-    setSelectedClient(matchingClient);
-  } else {
-    console.warn('[POS useEffect] Client not found for name:', appointmentNavData.clientName);
-  }
-  
-  // Find and set stylist(s)
-  const matchingStylist = stylists?.find(s => s.id === appointmentNavData.stylistId);
-  if (matchingStylist) {
-    console.log('[POS useEffect] Setting selected stylist:', matchingStylist.name);
-    setSelectedStylist(matchingStylist);
-  } else {
-    console.warn('[POS useEffect] Stylist not found for ID:', appointmentNavData.stylistId);
-  }
-
-  // Handle multiple experts if provided
-  if (appointmentNavData.allExperts && Array.isArray(appointmentNavData.allExperts) && appointmentNavData.allExperts.length > 1) {
-    console.log('[POS useEffect] Setting multiple stylists for multi-expert appointment:', appointmentNavData.allExperts);
-    const multipleStylists = appointmentNavData.allExperts.map((expert: any) => {
-      const stylistMatch = stylists?.find(s => s.id === expert.id);
-      if (!stylistMatch) {
-        console.warn('[POS useEffect] Stylist not found for expert ID:', expert.id);
-      }
-      return stylistMatch || null;
-    });
-    setSelectedStylists(multipleStylists);
-  } else {
-    // Reset to single stylist mode
-    setSelectedStylists([]);
-  }
-  
-  // Track the appointment ID for handling order creation later
-  if (appointmentNavData.id) {
-    console.log('[POS useEffect] Setting current appointment ID:', appointmentNavData.id);
-    setCurrentAppointmentId(appointmentNavData.id);
-  }
-  
-  // Clear existing order items before adding new ones
-  setOrderItems([]);
-  
-  try {
-    console.log('[POS useEffect] Processing services');
+  if (editOrderData) {
+    // Handle order editing
+    console.log('[POS useEffect] Processing edit order data');
     
-    // CASE 1: Handle service collection with multiple services
-    if (appointmentNavData.services && Array.isArray(appointmentNavData.services) && appointmentNavData.services.length > 0) {
-      console.log('[POS useEffect] Found service collection with', appointmentNavData.services.length, 'services');
+    // Determine which tab to use based on order type
+    if (editOrderData.isSalonConsumption) {
+      setTabValue(1); // Salon Purchase tab
+    } else {
+      setTabValue(0); // Walk-in Order tab
+    }
+    
+    // Set client information
+    setCustomerName(editOrderData.clientName || '');
+    const matchingClient = clients?.find(c => c.id === editOrderData.clientId || c.full_name === editOrderData.clientName);
+    if (matchingClient) {
+      console.log('[POS useEffect] Setting selected client for edit:', matchingClient.full_name);
+      setSelectedClient(matchingClient);
+    } else {
+      console.warn('[POS useEffect] Client not found for edit order');
+    }
+    
+    // Set stylist information
+    const matchingStylist = stylists?.find(s => s.id === editOrderData.stylistId);
+    if (matchingStylist) {
+      console.log('[POS useEffect] Setting selected stylist for edit:', matchingStylist.name);
+      setSelectedStylist(matchingStylist);
+    } else {
+      console.warn('[POS useEffect] Stylist not found for edit order ID:', editOrderData.stylistId);
+    }
+    
+    // Set payment information
+    if (editOrderData.paymentMethod) {
+      setWalkInPaymentMethod(editOrderData.paymentMethod as PaymentMethod);
+    }
+    
+    // Set discount
+    if (editOrderData.discount) {
+      setWalkInDiscount(editOrderData.discount);
+    }
+    
+    // Set consumption purpose if it's a salon consumption order
+    if (editOrderData.isSalonConsumption && editOrderData.consumptionPurpose) {
+      setConsumptionPurpose(editOrderData.consumptionPurpose);
+    }
+    
+    // Clear existing order items before adding edited ones
+    setOrderItems([]);
+    
+    // Process services/items from the order
+    if (editOrderData.services && Array.isArray(editOrderData.services) && editOrderData.services.length > 0) {
+      console.log('[POS useEffect] Found', editOrderData.services.length, 'services to edit');
       
-      // Process each service in the collection
-      const newOrderItems = appointmentNavData.services.map((service: any) => {
-        console.log('[POS useEffect] Processing service:', service);
+      const newOrderItems = editOrderData.services.map((service: any) => {
+        console.log('[POS useEffect] Processing edit service:', service);
         
-        if (!service.id || !service.name) {
-          console.warn('[POS useEffect] Invalid service data:', service);
-          return null; // Skip this invalid service
+        const serviceName = service.service_name || service.name || service.item_name;
+        const serviceId = service.service_id || service.id;
+        
+        if (!serviceId || !serviceName) {
+          console.warn('[POS useEffect] Invalid service data for edit:', service);
+          return null;
         }
-         
+        
         // Look up additional service details from services list if available
-        const serviceDetails = services.find(s => s.id === service.id);
+        const serviceDetails = services.find(s => s.id === serviceId);
         console.log('[POS useEffect] Service details lookup:', serviceDetails ? 'found' : 'not found');
          
-        						// Create the order item with available data
-						const orderItem: POSOrderItem = {
-							id: uuidv4(),
-							order_id: '',
-							item_id: service.id,
-							item_name: service.name,
-							quantity: service.quantity || 1,
-							price: service.price || (serviceDetails?.price || 0),
-							total: (service.price || (serviceDetails?.price || 0)) * (service.quantity || 1),
-							type: 'service',
-							category: service.category || serviceDetails?.category || 'service',
-							hsn_code: (service as any).hsn_code || serviceDetails?.hsn_code,
-							gst_percentage: (service as any).gst_percentage || serviceDetails?.gst_percentage || 18,
-							for_salon_use: false,
-							discount: 0,
-							discount_percentage: 0,
-							// Preserve experts information for revenue split logic
-							experts: (service as any).experts || []
-						};
+        // Create the order item with available data
+        const orderItem: POSOrderItem = {
+          id: uuidv4(),
+          order_id: editOrderData.orderId || '',
+          item_id: serviceId,
+          item_name: serviceName,
+          quantity: service.quantity || 1,
+          price: service.price || (serviceDetails?.price || 0),
+          total: (service.price || (serviceDetails?.price || 0)) * (service.quantity || 1),
+          type: service.type || (service.service_type) || 'service',
+          category: service.category || serviceDetails?.category || 'service',
+          hsn_code: service.hsn_code || serviceDetails?.hsn_code,
+          gst_percentage: service.gst_percentage || serviceDetails?.gst_percentage || 18,
+          for_salon_use: editOrderData.isSalonConsumption || service.for_salon_use || false,
+          discount: service.discount || 0,
+          discount_percentage: service.discount_percentage || 0,
+          // Preserve experts information for revenue split logic
+          experts: (service as any).experts || []
+        };
         
         return orderItem;
       }).filter(Boolean) as POSOrderItem[];
-
+      
       // Add all valid order items at once
       if (newOrderItems.length > 0) {
-        console.log('[POS useEffect] Adding order items:', newOrderItems);
-        setOrderItems(newOrderItems);
-        toast.success(`Added ${newOrderItems.length} services to order`);
+        console.log('[POS useEffect] Adding edit order items:', newOrderItems);
+        
+        if (editOrderData.isSalonConsumption) {
+          setSalonProducts(newOrderItems);
+        } else {
+          setOrderItems(newOrderItems);
+        }
+        
+        toast.success(`Loaded ${newOrderItems.length} items for editing`);
       } else {
-        console.warn('[POS useEffect] No valid services to add to order');
-        toast.error('No valid services found in appointment data');
+        console.warn('[POS useEffect] No valid services to edit');
+        toast.error('No valid services found in order data');
       }
-    } else {
-      console.warn('[POS useEffect] No services found in appointment data');
-      toast.error('No services found in appointment data');
     }
-  } catch (error) {
-    console.error('[POS useEffect] Error processing appointment data:', error);
-    toast.error('Error processing appointment data');
+    
+  } else if (appointmentNavData) {
+    // Handle appointment data (existing logic)
+    console.log('[POS useEffect] Processing appointment data');
+    
+    // Force tab to walk-in order
+    setTabValue(0);
+    
+    // Set client name and find client record
+    setCustomerName(appointmentNavData.clientName || '');
+    const matchingClient = clients?.find(c => c.full_name === appointmentNavData.clientName);
+    if (matchingClient) {
+      console.log('[POS useEffect] Setting selected client:', matchingClient.full_name);
+      setSelectedClient(matchingClient);
+    } else {
+      console.warn('[POS useEffect] Client not found for name:', appointmentNavData.clientName);
+    }
+    
+    // Find and set stylist(s)
+    const matchingStylist = stylists?.find(s => s.id === appointmentNavData.stylistId);
+    if (matchingStylist) {
+      console.log('[POS useEffect] Setting selected stylist:', matchingStylist.name);
+      setSelectedStylist(matchingStylist);
+    } else {
+      console.warn('[POS useEffect] Stylist not found for ID:', appointmentNavData.stylistId);
+    }
+
+    // Handle multiple experts if provided
+    if (appointmentNavData.allExperts && Array.isArray(appointmentNavData.allExperts) && appointmentNavData.allExperts.length > 1) {
+      console.log('[POS useEffect] Setting multiple stylists for multi-expert appointment:', appointmentNavData.allExperts);
+      const multipleStylists = appointmentNavData.allExperts.map((expert: any) => {
+        const stylistMatch = stylists?.find(s => s.id === expert.id);
+        if (!stylistMatch) {
+          console.warn('[POS useEffect] Stylist not found for expert ID:', expert.id);
+        }
+        return stylistMatch || null;
+      });
+      setSelectedStylists(multipleStylists);
+    } else {
+      // Reset to single stylist mode
+      setSelectedStylists([]);
+    }
+    
+    // Track the appointment ID for handling order creation later
+    if (appointmentNavData.id) {
+      console.log('[POS useEffect] Setting current appointment ID:', appointmentNavData.id);
+      setCurrentAppointmentId(appointmentNavData.id);
+    }
+    
+    // Clear existing order items before adding new ones
+    setOrderItems([]);
+    
+    try {
+      console.log('[POS useEffect] Processing appointment services');
+      
+      // CASE 1: Handle service collection with multiple services
+      if (appointmentNavData.services && Array.isArray(appointmentNavData.services) && appointmentNavData.services.length > 0) {
+        console.log('[POS useEffect] Found service collection with', appointmentNavData.services.length, 'services');
+        
+        // Process each service in the collection
+        const newOrderItems = appointmentNavData.services.map((service: any) => {
+          console.log('[POS useEffect] Processing service:', service);
+          
+          if (!service.id || !service.name) {
+            console.warn('[POS useEffect] Invalid service data:', service);
+            return null; // Skip this invalid service
+          }
+           
+          // Look up additional service details from services list if available
+          const serviceDetails = services.find(s => s.id === service.id);
+          console.log('[POS useEffect] Service details lookup:', serviceDetails ? 'found' : 'not found');
+           
+          // Create the order item with available data
+          const orderItem: POSOrderItem = {
+            id: uuidv4(),
+            order_id: '',
+            item_id: service.id,
+            item_name: service.name,
+            quantity: service.quantity || 1,
+            price: service.price || (serviceDetails?.price || 0),
+            total: (service.price || (serviceDetails?.price || 0)) * (service.quantity || 1),
+            type: 'service',
+            category: service.category || serviceDetails?.category || 'service',
+            hsn_code: (service as any).hsn_code || serviceDetails?.hsn_code,
+            gst_percentage: (service as any).gst_percentage || serviceDetails?.gst_percentage || 18,
+            for_salon_use: false,
+            discount: 0,
+            discount_percentage: 0
+          };
+          
+          return orderItem;
+        }).filter(Boolean) as POSOrderItem[];
+
+        // Add all valid order items at once
+        if (newOrderItems.length > 0) {
+          console.log('[POS useEffect] Adding order items:', newOrderItems);
+          setOrderItems(newOrderItems);
+          toast.success(`Added ${newOrderItems.length} services to order`);
+        } else {
+          console.warn('[POS useEffect] No valid services to add to order');
+          toast.error('No valid services found in appointment data');
+        }
+      } else {
+        console.warn('[POS useEffect] No services found in appointment data');
+        toast.error('No services found in appointment data');
+      }
+    } catch (error) {
+      console.error('[POS useEffect] Error processing appointment data:', error);
+      toast.error('Error processing appointment data');
+    }
   }
-}, [location, services, loadingServices, clients, stylists, setTabValue, setCustomerName, setSelectedClient, setSelectedStylist, setCurrentAppointmentId, setOrderItems]);
+}, [location, services, loadingServices, clients, stylists, setTabValue, setCustomerName, setSelectedClient, setSelectedStylist, setCurrentAppointmentId, setOrderItems, setSalonProducts, setWalkInPaymentMethod, setWalkInDiscount, setConsumptionPurpose]);
 
 	const fetchBalanceStockData = useCallback(async () => {
 		console.log("Fetching latest stock data from products table...");
@@ -1538,7 +1606,24 @@ export default function POS() {
 
 
 
-	// Modify the isStepValid function to check all required fields at once
+	// Enhanced payment validation helper
+	const getPaymentValidation = useCallback(() => {
+		const totalAmount = calculateTotalAmount();
+		const totalPayments = Object.values(paymentAmounts).reduce((sum, amount) => sum + amount, 0);
+		const remaining = totalAmount - totalPayments;
+		const isValid = Math.abs(remaining) < 0.01; // Allow small rounding differences
+		
+		return {
+			totalAmount,
+			totalPayments,
+			remaining,
+			isValid,
+			isOverpaid: remaining < -0.01,
+			isUnderpaid: remaining > 0.01
+		};
+	}, [calculateTotalAmount, paymentAmounts]);
+
+	// Update the isOrderValid function to use the new payment validation
 	const isOrderValid = useCallback(() => {
 		// Customer info validation
 		const customerInfoValid = customerName.trim() !== "" && selectedStylist !== null;
@@ -1546,12 +1631,121 @@ export default function POS() {
 		// Order items validation
 		const orderItemsValid = orderItems.length > 0;
 		
-		// Payment validation - just ensure some payment is entered
-		const totalPaymentAmount = Object.values(paymentAmounts).reduce((a, b) => a + b, 0);
-		const paymentValid = totalPaymentAmount > 0;
+		// Payment validation using the new validation helper
+		const paymentValidation = getPaymentValidation();
+		const paymentValid = paymentValidation.isValid;
 		
 		return customerInfoValid && orderItemsValid && paymentValid;
-	}, [customerName, selectedStylist, orderItems, paymentAmounts, calculateTotalAmount]);
+	}, [customerName, selectedStylist, orderItems, getPaymentValidation]);
+
+	// Add effect to handle split payment amount distribution
+	useEffect(() => {
+		if (isSplitPayment) {
+			const currentTotal = calculateTotalAmount();
+			const totalEntered = Object.values(paymentAmounts).reduce((sum, amount) => sum + amount, 0);
+			
+			// If total entered is more than the bill amount, adjust the last non-zero payment
+			if (totalEntered > currentTotal) {
+				const methods = Object.entries(paymentAmounts)
+					.filter(([_, amount]) => amount > 0)
+					.map(([method]) => method);
+				
+				if (methods.length > 0) {
+					const lastMethod = methods[methods.length - 1] as PaymentMethod;
+					const excess = totalEntered - currentTotal;
+					setPaymentAmounts(prev => ({
+						...prev,
+						[lastMethod]: Math.max(0, prev[lastMethod] - excess)
+					}));
+				}
+			}
+		}
+	}, [isSplitPayment, paymentAmounts, calculateTotalAmount]);
+
+	// Update the payment amount change handler
+	const handlePaymentAmountChange = useCallback((method: PaymentMethod, value: number) => {
+		const newValue = Math.max(0, value || 0);
+		const currentTotal = calculateTotalAmount();
+		
+		if (isSplitPayment) {
+			// In split payment mode, allow free distribution of amounts
+			const newPaymentAmounts = { ...paymentAmounts, [method]: newValue };
+			setPaymentAmounts(newPaymentAmounts);
+		} else {
+			// In single payment mode, check if user is trying to enter amounts in multiple fields
+			const otherPaymentMethods = Object.entries(paymentAmounts).filter(([m]) => m !== method);
+			const hasOtherPayments = otherPaymentMethods.some(([_, amt]) => amt > 0);
+			
+			if (hasOtherPayments && newValue > 0) {
+				// User is trying to enter amount in a second field - auto-enable split payment
+				setIsSplitPayment(true);
+				setPaymentAmounts({ ...paymentAmounts, [method]: newValue });
+			} else {
+				// Single payment mode - put all amount in the selected method
+				const newPaymentAmounts = {
+					cash: 0,
+					credit_card: 0,
+					debit_card: 0,
+					upi: 0,
+					bnpl: 0,
+					membership: 0
+				};
+				
+				newPaymentAmounts[method] = Math.min(newValue, currentTotal);
+				setPaymentAmounts(newPaymentAmounts);
+				setWalkInPaymentMethod(method);
+			}
+		}
+	}, [paymentAmounts, isSplitPayment, calculateTotalAmount]);
+
+	// Quick fill helper functions
+	const quickFillPayment = useCallback((method: PaymentMethod) => {
+		const currentTotal = calculateTotalAmount();
+		const currentPayments = { ...paymentAmounts };
+		const totalOtherPayments = Object.entries(currentPayments)
+			.filter(([m]) => m !== method)
+			.reduce((sum, [_, amt]) => sum + amt, 0);
+		
+		const remainingAmount = Math.max(0, currentTotal - totalOtherPayments);
+		
+		setPaymentAmounts(prev => ({
+			...prev,
+			[method]: remainingAmount
+		}));
+	}, [calculateTotalAmount, paymentAmounts]);
+
+	const clearAllPayments = useCallback(() => {
+		setPaymentAmounts({
+			cash: 0,
+			credit_card: 0,
+			debit_card: 0,
+			upi: 0,
+			bnpl: 0,
+			membership: 0
+		});
+	}, []);
+
+	const distributeEqually = useCallback(() => {
+		const totalAmount = calculateTotalAmount();
+		const activeMethods = ['cash', 'credit_card', 'debit_card', 'upi'] as PaymentMethod[];
+		const amountPerMethod = Math.floor(totalAmount / activeMethods.length);
+		const remainder = totalAmount % activeMethods.length;
+		
+		const newPayments: Record<PaymentMethod, number> = {
+			cash: 0,
+			credit_card: 0,
+			debit_card: 0,
+			upi: 0,
+			bnpl: 0,
+			membership: 0
+		};
+		
+		activeMethods.forEach((method, index) => {
+			newPayments[method] = amountPerMethod + (index === 0 ? remainder : 0);
+		});
+		
+		setPaymentAmounts(newPayments);
+	}, [calculateTotalAmount]);
 
 	// Modify handleCreateWalkInOrder to use the isOrderValid function
 	const handleCreateWalkInOrder = useCallback(async () => {
@@ -1563,9 +1757,25 @@ export default function POS() {
 		
 		const totalAmount = calculateTotalAmount();
 		const amountPaid = Object.values(paymentAmounts).reduce((a, b) => a + b, 0);
+		const membershipPayableAmount = getMembershipPayableAmount();
 		
-		// Allow partial payments - just ensure some payment is entered
-		if (amountPaid <= 0) {
+		// If there are membership services but no active membership, show error
+		if (membershipPayableAmount > 0 && !activeClientMembership) {
+			setSnackbarMessage("Client needs an active membership to pay for selected services via membership.");
+			setSnackbarOpen(true);
+			return;
+		}
+		
+		// If membership balance is insufficient, show error
+		if (membershipPayableAmount > 0 && activeClientMembership && activeClientMembership.currentBalance < membershipPayableAmount) {
+			setSnackbarMessage(`Insufficient membership balance. Required: ₹${membershipPayableAmount.toLocaleString()}, Available: ₹${activeClientMembership.currentBalance.toLocaleString()}`);
+			setSnackbarOpen(true);
+			return;
+		}
+		
+		// Allow orders where everything is paid via membership (totalAmount = 0)
+		// Only require payment amount if there's an amount left for the client to pay
+		if (totalAmount > 0 && amountPaid <= 0) {
 			setSnackbarMessage("Please enter a payment amount.");
 			setSnackbarOpen(true);
 			return;
@@ -1959,16 +2169,20 @@ export default function POS() {
 			}
 			
 			// Process membership payment and update balance
-			if (useMembershipPayment && activeClientMembership) {
-				const newBalance = activeClientMembership.currentBalance - paymentAmounts.membership;
+			const membershipPayableAmount = getMembershipPayableAmount();
+			if (membershipPayableAmount > 0 && activeClientMembership) {
+				// Deduct the membership payment amount from the membership balance
+				const newBalance = activeClientMembership.currentBalance - membershipPayableAmount;
 				const { error } = await supabase
 					.from('members')
 					.update({ current_balance: newBalance })
 					.eq('id', activeClientMembership.id);
 				if (error) {
 					toast.error('Failed to update membership balance');
+					console.error('Membership balance update error:', error);
 				} else {
 					setActiveClientMembership({ ...activeClientMembership, currentBalance: newBalance });
+					toast.success(`Membership balance updated. Deducted: ₹${membershipPayableAmount.toLocaleString()}`);
 				}
 			}
 
@@ -3125,6 +3339,16 @@ export default function POS() {
 														...prev,
 														[item.id]: e.target.checked
 													}));
+													
+													// Show toast message about membership discount
+													if (e.target.checked) {
+														const gstPercentage = item.gst_percentage || serviceGstRate || 18;
+														const itemTotal = item.price * item.quantity;
+														const gstAmount = (itemTotal * gstPercentage) / (100 + gstPercentage);
+														toast.success(`Membership payment applied! GST discount of ₹${gstAmount.toFixed(2)} automatically applied.`);
+													} else {
+														toast.info('Membership payment removed. Regular pricing with GST will apply.');
+													}
 												}}
 												size="small"
 												color="primary"
@@ -3337,10 +3561,107 @@ export default function POS() {
 					</>
 				)}
 				{/* Total Amount */}
-				<Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
-					<Typography variant="h6" fontWeight="bold">Total (Incl. GST):</Typography>
-					<Typography variant="h6" fontWeight="bold">{formatCurrency(totalAmount)}</Typography>
-				</Box>
+				{Object.values(servicesMembershipPayment).some(Boolean) && activeClientMembership ? (
+					<>
+						{/* Show full total first */}
+						<Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+							<Typography variant="h6" fontWeight="bold">Total Amount (All Items):</Typography>
+							<Typography variant="h6" fontWeight="bold">
+								{formatCurrency(orderItems.reduce((sum, item) => {
+									const gstPercentage = item.gst_percentage || (item.type === 'product' ? productGstRate : serviceGstRate) || 18;
+									const isGstApplied = item.type === 'product' ? isProductGstApplied : (item.type === 'service' ? isServiceGstApplied : true);
+									const gstMultiplier = isGstApplied ? (1 + (gstPercentage / 100)) : 1;
+									const itemTotalAmount = (item.price * item.quantity * gstMultiplier);
+									const finalAmount = Math.max(0, itemTotalAmount - (item.discount || 0));
+									return sum + finalAmount;
+								}, 0))}
+							</Typography>
+						</Box>
+						
+						{/* Show membership GST discount */}
+						{(() => {
+							const membershipGSTDiscount = orderItems
+								.filter(item => item.type === 'service' && servicesMembershipPayment[item.id])
+								.reduce((sum, item) => {
+									const gstPercentage = item.gst_percentage || serviceGstRate || 18;
+									const itemTotal = item.price * item.quantity;
+									const discountIncl = item.discount || 0;
+									const discountExcl = discountIncl / (1 + gstPercentage / 100);
+									const subtotal = Math.max(0, itemTotal - discountExcl);
+									const gstAmount = (subtotal * gstPercentage) / 100;
+									return sum + gstAmount;
+								}, 0);
+							
+							return membershipGSTDiscount > 0 ? (
+								<Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1, ml: 2 }}>
+									<Typography variant="body2" color="success.main">Less: Membership GST Discount:</Typography>
+									<Typography variant="body2" color="success.main" fontWeight="medium">
+										-{formatCurrency(membershipGSTDiscount)}
+									</Typography>
+								</Box>
+							) : null;
+						})()}
+						
+						{/* Show membership payment deduction */}
+						<Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1, ml: 2 }}>
+							<Typography variant="body2" color="primary.main">Less: Membership Payment:</Typography>
+							<Typography variant="body2" color="primary.main" fontWeight="medium">
+								-{formatCurrency(getMembershipPayableAmount())}
+							</Typography>
+						</Box>
+						
+						{/* Show discount if any */}
+						{walkInDiscount > 0 && (
+							<Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1, ml: 2 }}>
+								<Typography variant="body2" color="warning.main">Less: Additional Discount:</Typography>
+								<Typography variant="body2" color="warning.main" fontWeight="medium">
+									-{formatCurrency(walkInDiscount)}
+								</Typography>
+							</Box>
+						)}
+						
+						{/* Final amount to pay */}
+						<Divider sx={{ my: 1 }} />
+						<Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2, bgcolor: 'success.lighter', p: 1, borderRadius: 1 }}>
+							<Typography variant="h6" fontWeight="bold">Client to Pay:</Typography>
+							<Typography variant="h6" fontWeight="bold" color="success.main">{formatCurrency(calculateTotalAmount())}</Typography>
+						</Box>
+						
+						{/* Membership discount explanation */}
+						<Box sx={{ mb: 2, p: 1, bgcolor: 'info.lighter', borderRadius: 1, border: '1px solid', borderColor: 'info.main' }}>
+							<Typography variant="caption" color="info.main" sx={{ display: 'flex', alignItems: 'center' }}>
+								<InfoIcon fontSize="inherit" sx={{ mr: 0.5 }} />
+								Membership Discount Applied: GST is excluded when paying via membership balance. 
+								₹{formatCurrency(getMembershipPayableAmount())} will be deducted from membership balance.
+							</Typography>
+						</Box>
+					</>
+				) : (
+					<>
+						{/* Standard display when no membership payments */}
+						{walkInDiscount > 0 && (
+							<>
+								<Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+									<Typography variant="body2">Subtotal:</Typography>
+									<Typography variant="body2" fontWeight="medium">
+										{formatCurrency(totalAmount + walkInDiscount)}
+									</Typography>
+								</Box>
+								<Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1, ml: 2 }}>
+									<Typography variant="body2" color="warning.main">Less: Discount:</Typography>
+									<Typography variant="body2" color="warning.main" fontWeight="medium">
+										-{formatCurrency(walkInDiscount)}
+									</Typography>
+								</Box>
+								<Divider sx={{ my: 1 }} />
+							</>
+						)}
+						<Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
+							<Typography variant="h6" fontWeight="bold">Total (Incl. GST):</Typography>
+							<Typography variant="h6" fontWeight="bold">{formatCurrency(totalAmount)}</Typography>
+						</Box>
+					</>
+				)}
 				{/* Customer & Stylist Info */}
 				<Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, justifyContent: 'center', mb: 2 }}>
 					{selectedClient && (
@@ -3829,363 +4150,29 @@ export default function POS() {
 					{/* Payment Details */}
 					<Grid item xs={12}>
 						<Paper sx={{ p: 2, mb: 2 }}>
-							<Typography variant="h6" gutterBottom sx={{ borderBottom: '1px solid', borderColor: 'divider', pb: 1 }}>
-								Payment Details
-							</Typography>
+							<PaymentSection
+								paymentAmounts={paymentAmounts}
+								setPaymentAmounts={setPaymentAmounts}
+								isSplitPayment={isSplitPayment}
+								setIsSplitPayment={setIsSplitPayment}
+								walkInPaymentMethod={walkInPaymentMethod}
+								setWalkInPaymentMethod={setWalkInPaymentMethod}
+								calculateTotalAmount={calculateTotalAmount}
+								activeClientMembership={activeClientMembership}
+							/>
 							
-							{/* Payment Methods Section */}
-							<Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-								<Typography variant="subtitle2">
-									Payment Methods:
-								</Typography>
-								<Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-									<Typography variant="body2" color="primary" fontWeight="medium">
-										Total: {formatCurrency(calculateTotalAmount())}
-									</Typography>
-									<FormControlLabel
-										control={
-											<Switch
-												checked={isSplitPayment}
-												onChange={(e) => {
-													setIsSplitPayment(e.target.checked);
-													if (!e.target.checked) {
-														// When disabling split payment, set all amount to cash
-														const currentTotal = calculateTotalAmount();
-														setPaymentAmounts({
-															cash: currentTotal,
-															credit_card: 0,
-															debit_card: 0,
-															upi: 0,
-															bnpl: 0,
-															membership: 0
-														});
-														setWalkInPaymentMethod('cash');
-													}
-												}}
-												color="primary"
-												size="small"
-											/>
-										}
-										label={
-											<Typography variant="body2" color="text.secondary">
-												{isSplitPayment ? 'Multiple Methods' : 'Single Method'}
-											</Typography>
-										}
-									/>
-								</Box>
-							</Box>
-
-							{/* Membership Status and Toggle */}
-							{activeClientMembership && (
-								<Box sx={{ display: 'flex', alignItems: 'center', mb: 2, p: 1.5, bgcolor: 'background.default', borderRadius: '8px' }}>
-									<Chip
-										icon={<CardMembershipIcon />}
-										label={`${activeClientMembership.tierName} Member`}
-										size="small"
-										color="primary"
-										sx={{ mr: 2 }}
-									/>
-									<Typography variant="body2" sx={{ mr: 2, display: 'flex', alignItems: 'center' }}>
-										<AccountBalanceWalletIcon fontSize="small" sx={{ mr: 0.5 }} />
-										Available Balance: Rs. {activeClientMembership.currentBalance.toLocaleString()}
-									</Typography>
-									<FormControlLabel
-										control={
-											<Switch
-												checked={useMembershipPayment}
-												onChange={e => {
-													setUseMembershipPayment(e.target.checked);
-													if (e.target.checked) {
-														// When using membership, use the total amount
-														const totalAmount = calculateTotalAmount();
-														const paymentAmount = Math.min(totalAmount, activeClientMembership.currentBalance);
-														setPaymentAmounts(prev => ({
-															...prev,
-															membership: paymentAmount, 
-															cash: Math.max(0, totalAmount - paymentAmount) // Cover remaining with cash if any
-														}));
-														setWalkInPaymentMethod('membership');
-													} else {
-														// When disabling, move amount from membership to cash
-														const membershipAmount = paymentAmounts.membership;
-														setPaymentAmounts(prev => ({
-															...prev,
-															membership: 0,
-															cash: prev.cash + membershipAmount
-														}));
-														setWalkInPaymentMethod('cash');
-													}
-												}}
-												size="small"
-											/>
-										}
-										label="Pay via Membership"
-									/>
-								</Box>
-							)}
-
-							{/* Payment Method Cards */}
-							<Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, mb: 2 }}>
-								{/* Show all payment methods except membership */}
-								{(['cash', 'credit_card', 'debit_card', 'upi', 'bnpl'] as const).map(method => (
-									<Box
-										key={method}
-										onClick={() => {
-											if (!isSplitPayment) {
-												// In single payment mode, clicking the box transfers entire amount to this method
-												const currentTotal = calculateTotalAmount();
-												const newPaymentAmounts = {
-													cash: 0,
-													credit_card: 0,
-													debit_card: 0,
-													upi: 0,
-													bnpl: 0,
-													membership: 0
-												};
-												newPaymentAmounts[method] = currentTotal;
-												setPaymentAmounts(newPaymentAmounts);
-												setWalkInPaymentMethod(method);
-											}
-										}}
-										sx={{
-											minWidth: '140px',
-											flex: '1 1 0',
-											p: 1.5,
-											border: '2px solid',
-											borderColor: paymentAmounts[method] > 0 ? 'primary.main' : 'divider',
-											borderRadius: '8px',
-											bgcolor: paymentAmounts[method] > 0 ? 'primary.lighter' : 'background.paper',
-											transition: 'all 0.2s ease',
-											cursor: !isSplitPayment ? 'pointer' : 'default',
-											'&:hover': !isSplitPayment ? {
-												borderColor: 'primary.main',
-												bgcolor: 'primary.lightest'
-											} : {}
-										}}
-									>
-										<Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-											{method === 'cash' && <LocalAtm fontSize="small" sx={{ mr: 1, color: paymentAmounts[method] > 0 ? 'primary.main' : 'text.secondary' }} />}
-											{method === 'credit_card' && <CreditCard fontSize="small" sx={{ mr: 1, color: paymentAmounts[method] > 0 ? 'primary.main' : 'text.secondary' }} />}
-											{method === 'debit_card' && <CreditCard fontSize="small" sx={{ mr: 1, color: paymentAmounts[method] > 0 ? 'primary.main' : 'text.secondary' }} />}
-											{method === 'upi' && <AccountBalance fontSize="small" sx={{ mr: 1, color: paymentAmounts[method] > 0 ? 'primary.main' : 'text.secondary' }} />}
-											{method === 'bnpl' && <AttachMoney fontSize="small" sx={{ mr: 1, color: paymentAmounts[method] > 0 ? 'primary.main' : 'text.secondary' }} />}
-											<Typography variant="body2" fontWeight={paymentAmounts[method] > 0 ? 'bold' : 'normal'}>
-												{PAYMENT_METHOD_LABELS[method]}
-											</Typography>
-										</Box>
-										<TextField
-											fullWidth
-											size="small"
-											type="number"
-											value={paymentAmounts[method]}
-																				onChange={(e) => {
-										const newValue = Math.max(0, Number(e.target.value) || 0);
-										const currentTotal = calculateTotalAmount();
-										
-										if (isSplitPayment) {
-											// In split payment mode, allow manual entry for any method
-											setPaymentAmounts(prev => ({ ...prev, [method]: newValue }));
-										} else {
-											// In single payment mode, if user types a value, use that exact value
-											// and put any remaining amount in cash
-											const newPaymentAmounts = {
-												cash: 0,
-												credit_card: 0,
-												debit_card: 0,
-												upi: 0,
-												bnpl: 0,
-												membership: 0
-											};
-											
-											if (newValue === 0) {
-												// If user enters 0, move entire amount to cash
-												newPaymentAmounts.cash = currentTotal;
-												setWalkInPaymentMethod('cash');
-											} else if (newValue >= currentTotal) {
-												// If entered amount is >= total, put entire amount in this method
-												newPaymentAmounts[method] = currentTotal;
-												setWalkInPaymentMethod(method);
-											} else {
-												// If entered amount is less than total, put remainder in cash
-												newPaymentAmounts[method] = newValue;
-												newPaymentAmounts.cash = currentTotal - newValue;
-												setWalkInPaymentMethod(method);
-											}
-											
-											setPaymentAmounts(newPaymentAmounts);
-										}
-									}}
-											InputProps={{
-												startAdornment: <InputAdornment position="start">₹</InputAdornment>
-											}}
-											disabled={false}
-										/>
-									</Box>
-								))}
-
-								{/* Show membership payment option only for members */}
-								{activeClientMembership && activeClientMembership.isActive && (
-									<Box
-										onClick={() => {
-											if (!isSplitPayment) {
-												// In single payment mode, clicking the box transfers entire amount to membership
-												const currentTotal = calculateTotalAmount();
-												// Cap the amount at the available membership balance
-												const membershipAmount = Math.min(currentTotal, activeClientMembership.currentBalance);
-												const newPaymentAmounts = {
-													cash: currentTotal - membershipAmount, // Any remaining amount goes to cash
-													credit_card: 0,
-													debit_card: 0,
-													upi: 0,
-													bnpl: 0,
-													membership: membershipAmount
-												};
-												setPaymentAmounts(newPaymentAmounts);
-												setWalkInPaymentMethod('membership');
-												setUseMembershipPayment(true);
-											}
-										}}
-										sx={{
-											minWidth: '140px',
-											flex: '1 1 0',
-											p: 1.5,
-											border: '2px solid',
-											borderColor: paymentAmounts.membership > 0 ? 'primary.main' : 'divider',
-											borderRadius: '8px',
-											bgcolor: paymentAmounts.membership > 0 ? 'primary.lighter' : 'background.paper',
-											transition: 'all 0.2s ease',
-											cursor: !isSplitPayment ? 'pointer' : 'default',
-											'&:hover': !isSplitPayment ? {
-												borderColor: 'primary.main',
-												bgcolor: 'primary.lightest'
-											} : {}
-										}}
-									>
-										<Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-											<AccountBalanceWalletIcon fontSize="small" sx={{ mr: 1, color: paymentAmounts.membership > 0 ? 'primary.main' : 'text.secondary' }} />
-											<Typography variant="body2" fontWeight={paymentAmounts.membership > 0 ? 'bold' : 'normal'}>
-												Pay from Membership
-											</Typography>
-										</Box>
-										<TextField
-											fullWidth
-											size="small"
-											type="number"
-											value={paymentAmounts.membership}
-											onChange={(e) => {
-												const val = Math.min(
-													activeClientMembership.currentBalance,
-													Math.max(0, Number(e.target.value) || 0)
-												);
-												const currentTotal = calculateTotalAmount();
-												
-												if (isSplitPayment) {
-													// In split payment mode, allow manual entry for membership
-													setPaymentAmounts(prev => ({ ...prev, membership: val }));
-												} else {
-													// In single payment mode, if user types a value, use that exact value
-													// and put any remaining amount in cash
-													const newPaymentAmounts = {
-														cash: 0,
-														credit_card: 0,
-														debit_card: 0,
-														upi: 0,
-														bnpl: 0,
-														membership: 0
-													};
-													
-													if (val === 0) {
-														// If user enters 0, move entire amount to cash
-														newPaymentAmounts.cash = currentTotal;
-														setWalkInPaymentMethod('cash');
-														setUseMembershipPayment(false);
-													} else {
-														// Use the entered amount (capped by membership balance)
-														// and put any remaining amount in cash
-														newPaymentAmounts.membership = val;
-														newPaymentAmounts.cash = currentTotal - val;
-														setWalkInPaymentMethod('membership');
-														setUseMembershipPayment(true);
-													}
-													
-													setPaymentAmounts(newPaymentAmounts);
-												}
-											}}
-											InputProps={{
-												startAdornment: <InputAdornment position="start">₹</InputAdornment>,
-												inputProps: {
-													min: 0,
-													max: Math.min(calculateTotalAmount(), activeClientMembership.currentBalance)
-												}
-											}}
-											disabled={false}
-										/>
-										<Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
-											Available: Rs. {activeClientMembership.currentBalance.toLocaleString()}
-										</Typography>
-									</Box>
-								)}
-							</Box>
-							
-							{/* Payment Summary - Always visible */}
-							<Box sx={{ mt: 2, p: 2, bgcolor: 'primary.lighter', borderRadius: '8px', border: '1px solid', borderColor: 'primary.main' }}>
-								<Typography variant="subtitle2" gutterBottom sx={{ color: 'primary.main', fontWeight: 'bold' }}>
-									Payment Summary
-								</Typography>
-								<Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-									<Typography variant="body2">Total Amount:</Typography>
-									<Typography variant="body2" fontWeight="bold" color="primary.main">
-										{formatCurrency(calculateTotalAmount())}
-									</Typography>
-								</Box>
-								<Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-									<Typography variant="body2">Amount Entered:</Typography>
-									<Typography variant="body2" fontWeight="medium">
-										{formatCurrency(Object.values(paymentAmounts).reduce((a, b) => a + b, 0))}
-									</Typography>
-								</Box>
-								<Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-									<Typography variant="body2">Balance:</Typography>
-									<Typography 
-										variant="body2" 
-										fontWeight="bold"
-										color={Object.values(paymentAmounts).reduce((a, b) => a + b, 0) < calculateTotalAmount() ? "error.main" : "success.main"}
-									>
-										{formatCurrency(Math.max(0, calculateTotalAmount() - Object.values(paymentAmounts).reduce((a, b) => a + b, 0)))}
-									</Typography>
-								</Box>
-								{isSplitPayment && Object.values(paymentAmounts).filter(amt => amt > 0).length > 1 && (
-									<Box sx={{ mt: 2, pt: 1, borderTop: '1px solid', borderColor: 'divider' }}>
-										<Typography variant="caption" color="text.secondary" gutterBottom sx={{ display: 'block' }}>
-											Payment Methods Used:
-										</Typography>
-										{Object.entries(paymentAmounts)
-											.filter(([_, amt]) => amt > 0)
-											.map(([method, amt]) => (
-												<Box key={method} sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
-													<Typography variant="caption" color="text.secondary">
-														{PAYMENT_METHOD_LABELS[method]}:
-													</Typography>
-													<Typography variant="caption" fontWeight="medium">
-														{formatCurrency(amt)}
-													</Typography>
-												</Box>
-											))}
-									</Box>
-								)}
-							</Box>
-							
-							<Grid container spacing={2} sx={{ mt: 1 }}>
+							{/* Discount Section */}
+							<Grid container spacing={2} sx={{ mt: 2 }}>
 								<Grid item xs={12} sm={6}>
 									<TextField
 											fullWidth
-											label="Discount ₹"
+										label="Fixed Discount"
 											variant="outlined"
 											type="number"
 											size="small"
 											value={walkInDiscount}
 											onChange={(e) => {
-												const fixedDiscount = Math.max(0, Number(e.target.value) || 0); // Ensure discount is not negative
+											const fixedDiscount = parseFloat(e.target.value) || 0;
 												setWalkInDiscount(fixedDiscount);
 												// Calculate and set percentage discount based on total *after* item discounts but *before* global fixed discount
 												const subtotalAfterItemDiscounts = orderItems.reduce((sum, item) => sum + (item.price * item.quantity - (item.discount || 0)), 0);
@@ -4238,8 +4225,6 @@ export default function POS() {
 										}}
 									/>
 								</Grid>
-								
-
 							</Grid>
 							
 							{/* Complete Order Button */}
@@ -4266,7 +4251,7 @@ export default function POS() {
 									}
 									await handleCreateWalkInOrder();
 								}}
-								disabled={processing || Object.values(paymentAmounts).reduce((a, b) => a + b, 0) <= 0}
+								disabled={processing || !isOrderValid()}
 								startIcon={processing ? <CircularProgress size={20} /> : <CheckIcon />}
 							>
 								{processing ? 'Processing...' : 'Complete Order'}
@@ -4506,6 +4491,7 @@ export default function POS() {
 		</Box>
 	);
 }
+
 
 
 

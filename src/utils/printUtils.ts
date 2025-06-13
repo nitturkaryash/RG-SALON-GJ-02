@@ -14,11 +14,25 @@ const formatDate = (dateString: string) => {
   });
 };
 
-// Generate a printable order ID
+// Generate a customer-friendly order ID
 const formatOrderId = (order: any) => {
   if (!order || !order.id) return 'Unknown';
-  const date = new Date();
-  return `INV/${date.getFullYear()}/${order.id.substring(0, 8)}`;
+  
+  // Check if this is a salon consumption order
+  const isSalonConsumption = order.is_salon_consumption === true || 
+                            order.consumption_purpose || 
+                            order.client_name === 'Salon Consumption';
+  
+  // Create a simple numeric ID for customers
+  const timestamp = new Date(order.created_at || Date.now());
+  const year = timestamp.getFullYear().toString().slice(-2);
+  const month = (timestamp.getMonth() + 1).toString().padStart(2, '0');
+  const day = timestamp.getDate().toString().padStart(2, '0');
+  const randomId = order.id.substring(0, 4).toUpperCase();
+  
+  return isSalonConsumption ? 
+    `SALON-${year}${month}${day}-${randomId}` : 
+    `INV-${year}${month}${day}-${randomId}`;
 };
 
 // Helper to format payment method labels
@@ -26,17 +40,74 @@ const getPaymentMethodLabel = (method: string) => {
   const PAYMENT_METHOD_LABELS: Record<string, string> = {
     cash: "Cash",
     credit_card: "Credit Card",
-    debit_card: "Debit Card",
-    upi: "UPI",
+    debit_card: "Debit Card", 
+    upi: "UPI Payment",
     bnpl: "Pay Later",
     membership: "Membership Balance",
-    split: "Split Payment"
+    split: "Multiple Methods"
   };
   
-  return PAYMENT_METHOD_LABELS[method] || method;
+  return PAYMENT_METHOD_LABELS[method] || method.replace('_', ' ').toUpperCase();
 };
 
-// Main function to print a bill
+// Calculate totals with membership logic
+const calculateBillTotals = (bill: any) => {
+  // Check if there are membership payments
+  const hasMembershipPayment = bill.payments && bill.payments.some((payment: any) => payment.payment_method === 'membership');
+  const membershipAmount = bill.payments ? 
+    bill.payments
+      .filter((payment: any) => payment.payment_method === 'membership')
+      .reduce((sum: number, payment: any) => sum + (payment.amount || 0), 0) : 0;
+  
+  const regularPaymentAmount = bill.payments ? 
+    bill.payments
+      .filter((payment: any) => payment.payment_method !== 'membership')
+      .reduce((sum: number, payment: any) => sum + (payment.amount || 0), 0) : 
+    (bill.total_amount || bill.total || 0);
+
+  // Calculate original totals
+  let subtotalAmount = bill.subtotal || 0;
+  let taxAmount = bill.tax || 0;
+  let discountAmount = bill.discount || 0;
+  let totalAmount = bill.total_amount || bill.total || 0;
+
+  // If there are membership payments, we need to show the breakdown
+  if (hasMembershipPayment && membershipAmount > 0) {
+    // Calculate the original full amount (before membership discount)
+    const originalTotal = regularPaymentAmount + membershipAmount;
+    
+    // Estimate the membership GST discount (18% GST typically)
+    const membershipGSTDiscount = membershipAmount * 0.18 / 1.18;
+    
+    return {
+      subtotalAmount,
+      taxAmount,
+      discountAmount,
+      totalAmount: originalTotal, // Full original amount
+      membershipAmount,
+      membershipGSTDiscount,
+      regularPaymentAmount, // What customer actually pays
+      hasMembershipPayment,
+      cgst: taxAmount / 2,
+      sgst: taxAmount / 2
+    };
+  } else {
+    return {
+      subtotalAmount,
+      taxAmount,
+      discountAmount,
+      totalAmount,
+      membershipAmount: 0,
+      membershipGSTDiscount: 0,
+      regularPaymentAmount: totalAmount,
+      hasMembershipPayment: false,
+      cgst: taxAmount / 2,
+      sgst: taxAmount / 2
+    };
+  }
+};
+
+// Main function to print a customer bill
 export const printBill = (bill: any) => {
   // Create a new window for printing
   const printWindow = window.open('', '_blank');
@@ -45,124 +116,191 @@ export const printBill = (bill: any) => {
     return;
   }
   
-  // Calculate some values
-  const totalAmount = bill.total || 0;
-  const taxAmount = bill.tax || 0;
-  const subtotalAmount = bill.subtotal || 0;
-  const discountAmount = bill.discount || 0;
-  const cgst = taxAmount / 2;
-  const sgst = taxAmount / 2;
+  // Calculate all totals with membership logic
+  const totals = calculateBillTotals(bill);
   
-  // Create the content for the print window
+  // Check if this is a salon consumption order (don't show to customers typically)
+  const isSalonConsumption = bill.is_salon_consumption === true || 
+                            bill.consumption_purpose || 
+                            bill.client_name === 'Salon Consumption';
+  
+  // Create customer-friendly content
   const htmlContent = `
     <!DOCTYPE html>
     <html>
     <head>
-      <title>Tax Invoice</title>
+      <title>Receipt - ${salonConfig.name}</title>
       <style>
         body {
-          font-family: Arial, sans-serif;
+          font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
           margin: 0;
-          padding: 20px;
+          padding: 15px;
           color: #333;
-          max-width: 80mm; /* Standard receipt width */
+          max-width: 80mm;
           margin: 0 auto;
+          background: #fff;
         }
         .receipt {
-          border: 1px solid #ddd;
-          padding: 15px;
-          border-radius: 5px;
+          padding: 10px;
         }
         .header {
           text-align: center;
-          margin-bottom: 15px;
+          margin-bottom: 20px;
           border-bottom: 2px solid #000;
-          padding-bottom: 10px;
+          padding-bottom: 15px;
         }
         .salon-name {
-          font-size: 20px;
+          font-size: 22px;
           font-weight: bold;
-          margin-bottom: 5px;
+          margin-bottom: 8px;
+          color: #2c3e50;
         }
         .salon-details {
-          font-size: 12px;
-          margin: 3px 0;
+          font-size: 11px;
+          margin: 2px 0;
+          color: #555;
         }
         .bill-title {
-          font-size: 16px;
+          font-size: 18px;
           font-weight: bold;
           text-align: center;
-          margin: 10px 0;
+          margin: 15px 0;
+          color: #27ae60;
           text-transform: uppercase;
+          letter-spacing: 1px;
         }
-        .bill-details {
-          margin-bottom: 15px;
+        .customer-details {
+          margin-bottom: 20px;
           font-size: 12px;
-          border-bottom: 1px dashed #000;
-          padding-bottom: 10px;
+          padding: 10px;
+          background: #f8f9fa;
+          border-radius: 5px;
+        }
+        .detail-row {
+          display: flex;
+          justify-content: space-between;
+          margin: 5px 0;
+        }
+        .detail-label {
+          font-weight: 600;
+          color: #2c3e50;
         }
         .section-title {
           font-weight: bold;
-          margin: 10px 0 5px 0;
+          margin: 15px 0 8px 0;
           font-size: 14px;
           text-transform: uppercase;
+          color: #2c3e50;
+          border-bottom: 1px solid #ddd;
+          padding-bottom: 3px;
         }
-        table {
+        .items-table {
           width: 100%;
           border-collapse: collapse;
-          font-size: 12px;
+          font-size: 11px;
           margin: 10px 0;
         }
-        th, td {
+        .items-table th, .items-table td {
           text-align: left;
-          padding: 5px;
-          border-bottom: 1px solid #ddd;
+          padding: 6px 4px;
+          border-bottom: 1px solid #eee;
         }
-        th {
-          border-bottom: 2px solid #000;
+        .items-table th {
+          background: #f1f2f6;
+          font-weight: bold;
+          color: #2c3e50;
+          border-bottom: 2px solid #ddd;
+        }
+        .items-table td:last-child, .items-table th:last-child {
+          text-align: right;
         }
         .amount-row {
           display: flex;
           justify-content: space-between;
-          margin: 3px 0;
+          margin: 5px 0;
           font-size: 12px;
+          padding: 2px 0;
+        }
+        .amount-label {
+          color: #555;
+        }
+        .amount-value {
+          font-weight: 500;
+          color: #2c3e50;
+        }
+        .discount-row {
+          color: #e74c3c;
+        }
+        .membership-row {
+          color: #3498db;
+          background: #ecf0f1;
+          padding: 3px 5px;
+          border-radius: 3px;
+          margin: 3px 0;
         }
         .total-row {
           font-weight: bold;
-          border-top: 2px solid #000;
-          padding-top: 5px;
-          margin-top: 5px;
           font-size: 14px;
+          border-top: 2px solid #2c3e50;
+          border-bottom: 2px solid #2c3e50;
+          padding: 8px 0;
+          margin: 10px 0;
+          background: #f8f9fa;
+          padding-left: 5px;
+          padding-right: 5px;
+        }
+        .customer-paid-row {
+          font-weight: bold;
+          font-size: 15px;
+          color: #27ae60;
+          border: 2px solid #27ae60;
+          padding: 8px 5px;
+          margin: 8px 0;
+          border-radius: 5px;
+          background: #d5f4e6;
+        }
+        .payment-methods {
+          margin: 15px 0;
+        }
+        .payment-method-row {
+          display: flex;
+          justify-content: space-between;
+          margin: 5px 0;
+          font-size: 12px;
+          padding: 3px 5px;
+          background: #f8f9fa;
+          border-radius: 3px;
         }
         .footer {
           text-align: center;
-          margin-top: 15px;
-          font-size: 11px;
-          border-top: 1px dashed #000;
-          padding-top: 10px;
-        }
-        .gst-details {
-          font-size: 11px;
-          margin: 10px 0;
-          padding: 5px;
-          background: #f9f9f9;
-        }
-        .terms {
+          margin-top: 20px;
           font-size: 10px;
-          margin-top: 10px;
-          color: #666;
+          border-top: 1px dashed #bdc3c7;
+          padding-top: 15px;
+          color: #7f8c8d;
+        }
+        .thank-you {
+          font-size: 16px;
+          font-weight: bold;
+          color: #27ae60;
+          text-align: center;
+          margin: 15px 0;
+        }
+        .next-visit {
+          font-size: 11px;
+          color: #3498db;
+          text-align: center;
+          margin: 10px 0;
+          font-style: italic;
         }
         @media print {
           body {
             width: 80mm;
             margin: 0;
-            padding: 0;
+            padding: 5px;
           }
           .receipt {
-            border: none;
-          }
-          .no-print {
-            display: none;
+            padding: 0;
           }
         }
       </style>
@@ -171,102 +309,161 @@ export const printBill = (bill: any) => {
       <div class="receipt">
         <div class="header">
           <div class="salon-name">${salonConfig.name}</div>
-          <div class="salon-details">${salonConfig.address.line1}</div>
-          <div class="salon-details">${salonConfig.address.line2}</div>
+          <div class="salon-details">${salonConfig.address.line1}, ${salonConfig.address.line2}</div>
           <div class="salon-details">${salonConfig.address.city}, ${salonConfig.address.state} - ${salonConfig.address.pincode}</div>
-          <div class="salon-details">Phone: ${salonConfig.contact.phone}</div>
-          <div class="salon-details">Email: ${salonConfig.contact.email}</div>
-          <div class="salon-details">GSTIN: ${salonConfig.gst.number}</div>
+          <div class="salon-details">📞 ${salonConfig.contact.phone}</div>
+          <div class="salon-details">📧 ${salonConfig.contact.email}</div>
         </div>
         
-        <div class="bill-title">Tax Invoice</div>
+        <div class="bill-title">${isSalonConsumption ? 'Salon Consumption Receipt' : 'Service Receipt'}</div>
         
-        <div class="bill-details">
-          <div><strong>Invoice No:</strong> ${formatOrderId(bill)}</div>
-          <div><strong>Date:</strong> ${formatDate(bill.created_at)}</div>
-          <div><strong>Customer:</strong> ${bill.client_name || bill.customer_name || 'Walk-in Customer'}</div>
-          <div><strong>Stylist:</strong> ${bill.stylist_name || 'N/A'}</div>
+        <div class="customer-details">
+          <div class="detail-row">
+            <span class="detail-label">Receipt No:</span>
+            <span>${formatOrderId(bill)}</span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">Date & Time:</span>
+            <span>${formatDate(bill.created_at)}</span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">Customer:</span>
+            <span>${bill.client_name || bill.customer_name || 'Walk-in Customer'}</span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">Served By:</span>
+            <span>${bill.stylist_name || 'Our Team'}</span>
+          </div>
         </div>
         
-        <div class="section-title">Items</div>
-        <table>
+        <div class="section-title">Services & Products</div>
+        <table class="items-table">
           <thead>
             <tr>
-              <th>Description</th>
+              <th>Item</th>
               <th>Qty</th>
               <th>Rate</th>
               <th>Amount</th>
             </tr>
           </thead>
           <tbody>
-            ${(bill.services || []).map((item: any) => `
-              <tr>
-                <td>${item.service_name || item.name || 'Unknown'}</td>
-                <td>${item.quantity || 1}</td>
-                <td>₹${(item.price || 0).toFixed(2)}</td>
-                <td>₹${((item.price || 0) * (item.quantity || 1)).toFixed(2)}</td>
-              </tr>
-            `).join('')}
+            ${(bill.services || []).map((item: any) => {
+              const itemName = item.service_name || item.name || 'Service';
+              const quantity = item.quantity || 1;
+              const price = item.price || 0;
+              const itemTotal = price * quantity;
+              
+              return `
+                <tr>
+                  <td>${itemName}</td>
+                  <td>${quantity}</td>
+                  <td>₹${price.toFixed(2)}</td>
+                  <td>₹${itemTotal.toFixed(2)}</td>
+                </tr>
+              `;
+            }).join('')}
           </tbody>
         </table>
         
-        <div class="section-title">Payment Details</div>
+        <div class="section-title">Payment Summary</div>
+        
         <div class="amount-row">
-          <span>Subtotal:</span>
-          <span>₹${subtotalAmount.toFixed(2)}</span>
-        </div>
-        ${discountAmount > 0 ? `
-          <div class="amount-row">
-            <span>Discount:</span>
-            <span>-₹${discountAmount.toFixed(2)}</span>
-          </div>
-        ` : ''}
-        <div class="amount-row">
-          <span>CGST (9%):</span>
-          <span>₹${cgst.toFixed(2)}</span>
-        </div>
-        <div class="amount-row">
-          <span>SGST (9%):</span>
-          <span>₹${sgst.toFixed(2)}</span>
-        </div>
-        <div class="amount-row total-row">
-          <span>Total Amount:</span>
-          <span>₹${totalAmount.toFixed(2)}</span>
+          <span class="amount-label">Subtotal:</span>
+          <span class="amount-value">₹${totals.subtotalAmount.toFixed(2)}</span>
         </div>
         
-        <div class="section-title">Payment Method</div>
-        ${bill.payments && bill.payments.length > 0 ? `
-          ${bill.payments.map((payment: any) => `
-            <div class="amount-row">
-              <span>${getPaymentMethodLabel(payment.payment_method)}:</span>
-              <span>₹${payment.amount.toFixed(2)}</span>
-            </div>
-          `).join('')}
+        ${totals.discountAmount > 0 ? `
+          <div class="amount-row discount-row">
+            <span class="amount-label">Discount Applied:</span>
+            <span class="amount-value">-₹${totals.discountAmount.toFixed(2)}</span>
+          </div>
+        ` : ''}
+        
+        <div class="amount-row">
+          <span class="amount-label">CGST (9%):</span>
+          <span class="amount-value">₹${totals.cgst.toFixed(2)}</span>
+        </div>
+        <div class="amount-row">
+          <span class="amount-label">SGST (9%):</span>
+          <span class="amount-value">₹${totals.sgst.toFixed(2)}</span>
+        </div>
+        
+        ${totals.hasMembershipPayment ? `
+          <div class="amount-row total-row">
+            <span>Total Bill Amount:</span>
+            <span>₹${totals.totalAmount.toFixed(2)}</span>
+          </div>
+          
+          <div class="amount-row membership-row">
+            <span>💳 Membership Discount (GST Saved):</span>
+            <span>-₹${totals.membershipGSTDiscount.toFixed(2)}</span>
+          </div>
+          
+          <div class="amount-row membership-row">
+            <span>💳 Paid via Membership Balance:</span>
+            <span>-₹${totals.membershipAmount.toFixed(2)}</span>
+          </div>
+          
+          <div class="amount-row customer-paid-row">
+            <span>💰 You Paid:</span>
+            <span>₹${totals.regularPaymentAmount.toFixed(2)}</span>
+          </div>
         ` : `
-          <div class="amount-row">
-            <span>${getPaymentMethodLabel(bill.payment_method || 'cash')}:</span>
-            <span>₹${totalAmount.toFixed(2)}</span>
+          <div class="amount-row total-row">
+            <span>Total Amount:</span>
+            <span>₹${totals.totalAmount.toFixed(2)}</span>
           </div>
         `}
         
-        <div class="gst-details">
-          <div>State Code: ${salonConfig.gst.state_code}</div>
-          <div>PAN: ${salonConfig.legal.pan}</div>
-          <div>CIN: ${salonConfig.legal.cin}</div>
+        <div class="section-title">Payment Method</div>
+        <div class="payment-methods">
+          ${bill.payments && bill.payments.length > 0 ? 
+            bill.payments
+              .filter((payment: any) => payment.payment_method !== 'membership') // Don't show membership as a payment to customer
+              .map((payment: any) => `
+                <div class="payment-method-row">
+                  <span>${getPaymentMethodLabel(payment.payment_method)}:</span>
+                  <span>₹${payment.amount.toFixed(2)}</span>
+                </div>
+              `).join('') : 
+            (totals.regularPaymentAmount > 0 ? `
+              <div class="payment-method-row">
+                <span>${getPaymentMethodLabel(bill.payment_method || 'cash')}:</span>
+                <span>₹${totals.regularPaymentAmount.toFixed(2)}</span>
+              </div>
+            ` : '')
+          }
+          
+          ${totals.hasMembershipPayment ? `
+            <div class="payment-method-row" style="background: #d5f4e6; border: 1px solid #27ae60;">
+              <span>💳 Membership Balance Used:</span>
+              <span>₹${totals.membershipAmount.toFixed(2)}</span>
+            </div>
+          ` : ''}
         </div>
         
+        ${!isSalonConsumption ? `
+          <div class="thank-you">Thank You for Visiting!</div>
+          <div class="next-visit">🌟 We look forward to serving you again! 🌟</div>
+        ` : ''}
+        
         <div class="footer">
-          <div>Business Hours: ${salonConfig.business.hours}</div>
-          <div>${salonConfig.business.workingDays}</div>
-          <div>${salonConfig.contact.website}</div>
-          <div>Follow us on Instagram: ${salonConfig.social.instagram}</div>
-          <div class="terms">
-            * This is a computer-generated invoice and does not require a physical signature.
-            * All prices are inclusive of GST where applicable.
-            * Terms and conditions apply.
+          <div><strong>Business Hours:</strong> ${salonConfig.business.hours}</div>
+          <div><strong>Open:</strong> ${salonConfig.business.workingDays}</div>
+          <div>📍 ${salonConfig.contact.website}</div>
+          <div>📱 Follow us: ${salonConfig.social.instagram}</div>
+          
+          <div style="margin-top: 10px; font-size: 9px; color: #95a5a6;">
+            ${totals.hasMembershipPayment ? 
+              '• Membership benefits applied • GST saved on membership services' : 
+              '• All prices include applicable taxes'
+            }
+            <br>• This is a computer generated receipt
+            <br>• Thank you for choosing ${salonConfig.name}
           </div>
         </div>
       </div>
+      
       <script>
         window.onload = function() {
           window.print();
