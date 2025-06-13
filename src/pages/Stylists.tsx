@@ -173,6 +173,8 @@ export default function Stylists() {
     if (stylists?.length && allHolidays && orders) {
       const rangeStart = new Date(startDate);
       const rangeEnd = new Date(endDate);
+      // Extend rangeEnd to include the full day (23:59:59.999)
+      rangeEnd.setHours(23, 59, 59, 999);
       const today = new Date();
 
       const reports: HolidayReport[] = stylists.map(stylist => {
@@ -184,13 +186,13 @@ export default function Stylists() {
           return isWithinInterval(holidayDate, { start: rangeStart, end: rangeEnd });
         });
 
-        // Count upcoming and past holidays
-        const upcomingHolidays = stylistHolidayList.filter(holiday => {
+        // Count upcoming and past holidays within the selected range
+        const upcomingHolidays = holidaysInRange.filter(holiday => {
           const holidayDate = new Date(holiday.holiday_date);
           return isAfter(holidayDate, today) || isToday(holidayDate);
         }).length;
 
-        const pastHolidays = stylistHolidayList.filter(holiday => {
+        const pastHolidays = holidaysInRange.filter(holiday => {
           const holidayDate = new Date(holiday.holiday_date);
           return isBefore(holidayDate, today) && !isToday(holidayDate);
         }).length;
@@ -199,10 +201,14 @@ export default function Stylists() {
         // Since POS now creates separate orders for each expert with split amounts, 
         // we can simply sum up the revenue from orders assigned to this stylist
         const stylistOrders = orders.filter(order => {
-          const orderStylistId = (order as any).stylist?.id;
+          // Fixed: Check both stylist_id field and nested stylist.id field for compatibility
+          const orderStylistId = (order as any).stylist_id || (order as any).stylist?.id;
           const orderStylistName = (order as any).stylist_name || (order as any).stylist?.name;
           return orderStylistId ? orderStylistId === stylist.id : orderStylistName === stylist.name;
         });
+
+        // Debug: Found orders for stylist
+        // console.log(`[Revenue Calculation] ${stylist.name}: Found ${stylistOrders.length} orders`);
 
         const serviceRevenue = stylistOrders.reduce((total, order) => {
           const orderDate = new Date((order as any).created_at || order.created_at);
@@ -220,13 +226,17 @@ export default function Stylists() {
                 revenueToAdd += serviceTax;
               }
               
-              console.log(`[Revenue Calculation] ${stylist.name}: Order ${order.id} contributes ${revenueToAdd} (Service: ${servicePriceInOrder}, Tax: ${servicePriceInOrder > 0 && (order as any).subtotal > 0 && (order as any).tax > 0 ? (servicePriceInOrder / (order as any).subtotal) * (order as any).tax : 0})`);
+              // Debug: Order contribution
+              // console.log(`[Revenue Calculation] ${stylist.name}: Order ${order.id} contributes ${revenueToAdd}`)
               
               return total + revenueToAdd;
             }
           }
           return total;
         }, 0);
+
+        // Debug: Final revenue
+        // console.log(`[Revenue Calculation] ${stylist.name}: Final revenue: ${serviceRevenue}`);
 
         return {
           stylistId: stylist.id,
@@ -658,12 +668,14 @@ export default function Stylists() {
                             {formatCurrency(report.serviceRevenue)}
                           </Typography>
                           {/* Show indicator if this stylist has any multi-expert orders in the current date range */}
-                          {orders && orders.some(order => {
-                            const orderDate = new Date((order as any).created_at || order.created_at);
-                            const isInRange = isWithinInterval(orderDate, { start: new Date(startDate), end: new Date(endDate) });
-                            const orderStylistId = (order as any).stylist?.id;
-                            const orderStylistName = (order as any).stylist_name || (order as any).stylist?.name;
-                            const isStylistOrder = orderStylistId ? orderStylistId === stylist.id : orderStylistName === stylist.name;
+                                    {orders && orders.some(order => {
+            const orderDate = new Date((order as any).created_at || order.created_at);
+            const rangeEnd = new Date(endDate);
+            rangeEnd.setHours(23, 59, 59, 999);
+            const isInRange = isWithinInterval(orderDate, { start: new Date(startDate), end: rangeEnd });
+            const orderStylistId = (order as any).stylist_id || (order as any).stylist?.id;
+            const orderStylistName = (order as any).stylist_name || (order as any).stylist?.name;
+            const isStylistOrder = orderStylistId ? orderStylistId === stylist.id : orderStylistName === stylist.name;
                             
                             // Check if this order is part of a multi-expert appointment
                             if (isInRange && isStylistOrder && (order as any).appointment_id) {
@@ -840,10 +852,16 @@ export default function Stylists() {
               </Grid>
 
               {/* Holidays section in the edit dialog (optional) */}
-              {editingId && formData.holidays && formData.holidays.length > 0 && (
+              {editingId && formData.holidays && formData.holidays.filter(holiday => {
+                const holidayDate = new Date(holiday.date);
+                const rangeStart = new Date(startDate);
+                const rangeEnd = new Date(endDate);
+                rangeEnd.setHours(23, 59, 59, 999);
+                return isWithinInterval(holidayDate, { start: rangeStart, end: rangeEnd });
+              }).length > 0 && (
                 <Grid item xs={12}>
                   <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                    Holidays
+                    Holidays (In Selected Range)
                   </Typography>
                   <TableContainer component={Paper} variant="outlined">
                     <Table size="small">
@@ -857,6 +875,13 @@ export default function Stylists() {
                       </TableHead>
                       <TableBody>
                         {formData.holidays
+                          .filter(holiday => {
+                            const holidayDate = new Date(holiday.date);
+                            const rangeStart = new Date(startDate);
+                            const rangeEnd = new Date(endDate);
+                            rangeEnd.setHours(23, 59, 59, 999);
+                            return isWithinInterval(holidayDate, { start: rangeStart, end: rangeEnd });
+                          })
                           .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
                           .map((holiday) => (
                                                           <TableRow 
@@ -974,13 +999,27 @@ export default function Stylists() {
             />
 
             {/* Existing Holidays List */}
-            {selectedStylistForHoliday && stylistHolidays[selectedStylistForHoliday.id]?.length > 0 && (
+            {selectedStylistForHoliday && stylistHolidays[selectedStylistForHoliday.id]?.some(holiday => {
+              const holidayDate = new Date(holiday.holiday_date);
+              const rangeStart = new Date(startDate);
+              const rangeEnd = new Date(endDate);
+              rangeEnd.setHours(23, 59, 59, 999);
+              return isWithinInterval(holidayDate, { start: rangeStart, end: rangeEnd });
+            }) && (
               <Box sx={{ mt: 3 }}>
                 <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                  Existing Holidays
+                  Existing Holidays (In Selected Range)
                 </Typography>
                 <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                  {stylistHolidays[selectedStylistForHoliday.id].map((holiday) => {
+                  {stylistHolidays[selectedStylistForHoliday.id]
+                    .filter(holiday => {
+                      const holidayDate = new Date(holiday.holiday_date);
+                      const rangeStart = new Date(startDate);
+                      const rangeEnd = new Date(endDate);
+                      rangeEnd.setHours(23, 59, 59, 999);
+                      return isWithinInterval(holidayDate, { start: rangeStart, end: rangeEnd });
+                    })
+                    .map((holiday) => {
                     const hDate = new Date(holiday.holiday_date);
                     const isTodayChip = isSameDay(hDate, new Date());
                     const isPastChip = isBefore(hDate, new Date()) && !isTodayChip;
@@ -1014,6 +1053,18 @@ export default function Stylists() {
                     );
                   })}
                 </Box>
+                {stylistHolidays[selectedStylistForHoliday.id]
+                  .filter(holiday => {
+                    const holidayDate = new Date(holiday.holiday_date);
+                    const rangeStart = new Date(startDate);
+                    const rangeEnd = new Date(endDate);
+                    rangeEnd.setHours(23, 59, 59, 999);
+                    return isWithinInterval(holidayDate, { start: rangeStart, end: rangeEnd });
+                  }).length === 0 && (
+                  <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                    No holidays in the selected date range.
+                  </Typography>
+                )}
               </Box>
             )}
           </Box>
