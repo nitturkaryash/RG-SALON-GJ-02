@@ -908,19 +908,40 @@ export default function POS() {
 	}, [walkInDiscount]);
 
 	const calculateTotalAmount = useCallback(() => {
-		const prodSubtotal = calculateProductSubtotal();
-		const servSubtotal = calculateServiceSubtotal();
-		const membershipSubtotal = calculateMembershipSubtotal();
-		const prodGst = calculateProductGstAmount(prodSubtotal);
-		const servGst = calculateServiceGstAmount(servSubtotal);
-		const membershipGst = calculateMembershipGstAmount(membershipSubtotal);
-		const combinedSubtotal = prodSubtotal + servSubtotal + membershipSubtotal + prodGst + servGst + membershipGst;
+		// Calculate amounts that will be paid via membership (services only, no GST)
+		const membershipPayableAmount = orderItems
+			.filter(item => item.type === 'service' && servicesMembershipPayment[item.id])
+			.reduce((sum, item) => {
+				const itemTotal = item.price * item.quantity;
+				const discountAmount = item.discount || 0;
+				// For membership payments, use the base price (ex-GST) minus any discounts
+				return sum + Math.max(0, itemTotal - discountAmount);
+			}, 0);
+
+		// Calculate amounts that will be paid via regular methods (with GST for applicable items)
+		const regularPayableAmount = orderItems
+			.filter(item => item.type !== 'service' || !servicesMembershipPayment[item.id])
+			.reduce((sum, item) => {
+				const itemTotal = item.price * item.quantity;
+				const discountAmount = item.discount || 0;
+				const gstPct = item.gst_percentage || (item.type === 'product' ? productGstRate : serviceGstRate) || 18;
+				const isGstApplied = item.type === 'product' ? isProductGstApplied : (item.type === 'service' ? isServiceGstApplied : true);
+				
+				if (isGstApplied) {
+					// For regular payments, include GST
+					const gstAmount = (itemTotal * gstPct) / 100;
+					return sum + Math.max(0, itemTotal + gstAmount - discountAmount);
+				} else {
+					// No GST applied
+					return sum + Math.max(0, itemTotal - discountAmount);
+				}
+			}, 0);
+
+		// Apply global discount to regular payment amount only
+		const adjustedRegularAmount = Math.max(0, regularPayableAmount - walkInDiscount);
 		
-		// Use the separate discount calculation
-		const totalDiscount = calculateTotalDiscount();
-		
-		return Math.max(0, combinedSubtotal - totalDiscount); // Ensure total is not negative
-	}, [calculateProductSubtotal, calculateServiceSubtotal, calculateMembershipSubtotal, calculateProductGstAmount, calculateServiceGstAmount, calculateMembershipGstAmount, calculateTotalDiscount]);
+		return membershipPayableAmount + adjustedRegularAmount;
+	}, [orderItems, servicesMembershipPayment, serviceGstRate, productGstRate, isProductGstApplied, isServiceGstApplied, walkInDiscount]);
 
 	const calculateSalonGST = useCallback(() => {
 		// Calculate taxable value and GST components for each product
@@ -1057,13 +1078,42 @@ export default function POS() {
 
 	// Auto-update payment amounts when total changes or split payment is disabled
 	useEffect(() => {
-		const membershipAmount = getMembershipPayableAmount();
-		const regularAmount = getRegularPayableAmount();
-		const hasProductsOrNonMembershipServices = regularAmount > 0;
-		const hasMembershipServices = membershipAmount > 0;
+		// Calculate membership payable amount (services marked for membership payment, no GST)
+		const membershipPayableAmount = orderItems
+			.filter(item => item.type === 'service' && servicesMembershipPayment[item.id])
+			.reduce((sum, item) => {
+				const itemTotal = item.price * item.quantity;
+				const discountAmount = item.discount || 0;
+				// For membership payments, use the base price (ex-GST) minus any discounts
+				return sum + Math.max(0, itemTotal - discountAmount);
+			}, 0);
+
+		// Calculate regular payable amount (all other items with GST for applicable items)
+		const regularPayableAmount = orderItems
+			.filter(item => item.type !== 'service' || !servicesMembershipPayment[item.id])
+			.reduce((sum, item) => {
+				const itemTotal = item.price * item.quantity;
+				const discountAmount = item.discount || 0;
+				const gstPct = item.gst_percentage || (item.type === 'product' ? productGstRate : serviceGstRate) || 18;
+				const isGstApplied = item.type === 'product' ? isProductGstApplied : (item.type === 'service' ? isServiceGstApplied : true);
+				
+				if (isGstApplied) {
+					// For regular payments, include GST
+					const gstAmount = (itemTotal * gstPct) / 100;
+					return sum + Math.max(0, itemTotal + gstAmount - discountAmount);
+				} else {
+					// No GST applied
+					return sum + Math.max(0, itemTotal - discountAmount);
+				}
+			}, 0);
+
+		// Apply global discount to regular payment only
+		const adjustedRegularAmount = Math.max(0, regularPayableAmount - walkInDiscount);
+		const hasMembershipPayment = membershipPayableAmount > 0;
+		const hasRegularPayment = adjustedRegularAmount > 0;
 		
 		// Auto-enable split payment if both membership and regular payments are needed
-		if (hasProductsOrNonMembershipServices && hasMembershipServices && !isSplitPayment) {
+		if (hasMembershipPayment && hasRegularPayment && !isSplitPayment) {
 			setIsSplitPayment(true);
 		}
 		
@@ -1080,11 +1130,12 @@ export default function POS() {
 			});
 		} else {
 			// When split payment is enabled, distribute amounts appropriately
-			const maxMembershipPayment = activeClientMembership ? Math.min(membershipAmount, activeClientMembership.currentBalance) : 0;
-			const remainingRegularAmount = regularAmount + Math.max(0, membershipAmount - maxMembershipPayment);
+			const maxMembershipPayment = activeClientMembership ? Math.min(membershipPayableAmount, activeClientMembership.currentBalance) : 0;
+			const remainingMembershipAmount = Math.max(0, membershipPayableAmount - maxMembershipPayment);
+			const totalCashAmount = adjustedRegularAmount + remainingMembershipAmount;
 			
 			setPaymentAmounts({
-				cash: remainingRegularAmount,
+				cash: totalCashAmount,
 				credit_card: 0,
 				debit_card: 0,
 				upi: 0,
@@ -1092,7 +1143,7 @@ export default function POS() {
 				membership: maxMembershipPayment
 			});
 		}
-	}, [calculateTotalAmount, isSplitPayment, orderItems, walkInDiscount, walkInDiscountPercentage, getMembershipPayableAmount, getRegularPayableAmount, servicesMembershipPayment, activeClientMembership]);
+	}, [calculateTotalAmount, isSplitPayment, orderItems, walkInDiscount, walkInDiscountPercentage, servicesMembershipPayment, activeClientMembership, serviceGstRate, productGstRate, isProductGstApplied, isServiceGstApplied]);
 
 	// Separate useEffect to handle cash auto-adjustment in split payment mode
 	useEffect(() => {
@@ -1547,446 +1598,7 @@ export default function POS() {
 		return customerInfoValid && orderItemsValid && paymentValid;
 	}, [customerName, selectedStylist, orderItems, paymentAmounts, calculateTotalAmount]);
 
-	// Modify handleCreateWalkInOrder to use the isOrderValid function
-	const handleCreateWalkInOrder = useCallback(async () => {
-		if (!isOrderValid()) {
-			setSnackbarMessage("Please complete all required fields.");
-			setSnackbarOpen(true);
-			return;
-		}
-		
-		const totalAmount = calculateTotalAmount();
-		const amountPaid = Object.values(paymentAmounts).reduce((a, b) => a + b, 0);
-		
-		// Allow partial payments - just ensure some payment is entered
-		if (amountPaid <= 0) {
-			setSnackbarMessage("Please enter a payment amount.");
-			setSnackbarOpen(true);
-			return;
-		}
-		
-		setProcessing(true);
-		
-		try {
-			let clientIdToUse = selectedClient?.id;
-			let clientNameToUse = selectedClient?.full_name || customerName.trim();
-			let isNewClient = false;
-
-			// If no existing client is selected and a customer name is provided, create a new client
-			if (!selectedClient && customerName.trim() !== "") {
-				isNewClient = true;
-				console.log("Attempting to create new client:", customerName.trim());
-				try {
-					const newClientData = {
-						full_name: customerName.trim(),
-						phone: newClientPhone.trim(),
-						email: newClientEmail.trim(),
-						notes: 'Added via POS' // Default note
-					};
-					// Assume createClient is async and returns the created client object or relevant part
-					const createdClient = await createClientAsync(newClientData); // Use createClientAsync 
-					if (createdClient && createdClient.id) {
-						clientIdToUse = createdClient.id;
-						clientNameToUse = createdClient.full_name; // Use the name from the created client
-						toast.success(`New client '${clientNameToUse}' created successfully!`);
-						// queryClient.invalidateQueries({ queryKey: ['clients'] }); // Example for TanStack Query
-					} else {
-						// This case might indicate createClient didn't return expected data or failed silently before throwing
-						throw new Error('New client was processed but ID is missing.'); 
-					}
-				} catch (error) {
-					console.error("Error creating new client:", error);
-					const message = error instanceof Error ? error.message : "Unknown error creating client";
-					setSnackbarMessage(`Error creating client: ${message}`);
-					setSnackbarOpen(true);
-					setProcessing(false);
-					return; // Stop order processing if client creation fails
-				}
-			}
-
-			// Log order items for inventory tracking
-			const productItems = orderItems.filter(item => item.type === 'product');
-			const serviceItems = orderItems.filter(item => item.type === 'service');
-			
-			console.log(`📦 Creating order with ${orderItems.length} total items, including ${productItems.length} products that will reduce inventory:`);
-			if (productItems.length > 0) {
-				productItems.forEach(product => {
-					console.log(`📦 Product: ${product.item_name}, ID: ${product.item_id}, Quantity: ${product.quantity}`);
-				});
-			}
-
-			// Correct arguments for updateClientFromOrder 
-			// We need the actual total amount and payment method for the order
-			const actualTotalAmount = calculateTotalAmount();
-			const actualPaymentMethod = isSplitPayment ? 'split' : walkInPaymentMethod;
-			
-			// Only update client if a name is available
-			const finalClientNameToUpdate = clientNameToUse; 
-			if (finalClientNameToUpdate && finalClientNameToUpdate !== 'Walk-in Customer') { 
-				await updateClientFromOrder(
-					finalClientNameToUpdate,
-					actualTotalAmount,      
-					actualPaymentMethod,    
-					new Date().toISOString() 
-				);
-			} else {
-				console.log('Skipping client update for generic Walk-in Customer or missing name.');
-			}
-			
-			// Rather than using the orderData CreateOrderData object directly,
-			// transform it to match the parameters expected by the standalone createWalkInOrder function
-			
-			// Convert services to format expected by standalone function
-			const formattedServices = serviceItems.map(service => ({
-				id: service.item_id,
-				service_id: service.item_id,
-				service_name: service.item_name,
-				name: service.item_name,
-				price: service.price,
-				quantity: service.quantity,
-				gst_percentage: service.gst_percentage || 0,
-				hsn_code: service.hsn_code || '',
-				type: 'service' as const,
-				product_id: service.item_id,
-				product_name: service.item_name,
-				category: service.category,
-				discount: service.discount || 0,
-				discount_percentage: service.discount_percentage || 0
-			}));
-			
-			// Convert products to format expected by standalone function
-			const formattedProducts = productItems.map(item => ({
-				id: item.item_id,
-				name: item.item_name,
-				price: item.price,
-				quantity: item.quantity,
-				type: 'product' as const,
-				gst_percentage: item.gst_percentage || 0,
-				hsn_code: item.hsn_code || '',
-				service_id: item.item_id,
-				service_name: item.item_name,
-				product_id: item.item_id,
-				product_name: item.item_name,
-				category: item.category,
-				discount: item.discount || 0,
-				discount_percentage: item.discount_percentage || 0
-			}));
-			
-			// Convert memberships to format expected by standalone function
-			const membershipItems = orderItems.filter(item => item.type === 'membership');
-			const formattedMemberships = membershipItems.map(item => ({
-				id: item.item_id,
-				name: item.item_name,
-				price: item.price,
-				quantity: item.quantity,
-				type: 'membership' as const,
-				gst_percentage: 18, // Memberships typically have 18% GST
-				hsn_code: item.hsn_code || '',
-				service_id: item.item_id,
-				service_name: item.item_name,
-				product_id: item.item_id,
-				product_name: item.item_name,
-				category: 'membership',
-				discount: item.discount || 0,
-				discount_percentage: item.discount_percentage || 0,
-				duration_months: item.duration_months || 12
-			}));
-			
-			// Format selected stylist
-			const staffInfo = selectedStylist ? {
-				id: selectedStylist.id,
-				name: selectedStylist.name
-			} : null;
-			
-			// Generate invoice number if needed
-			const invoiceNumber = `INV-${Date.now().toString().slice(-6)}`;
-			
-			console.log(`📦 Calling standalone createWalkInOrder with:`, {
-				customerName: clientNameToUse, 
-				products: formattedProducts.length,
-				services: formattedServices.length,
-				memberships: formattedMemberships.length,
-				staffInfo
-			});
-			
-			// Call the standalone function with the correct parameters
-			const subtotal = calculateProductSubtotal() + calculateServiceSubtotal() + calculateMembershipSubtotal();
-			const tax = calculateProductGstAmount(calculateProductSubtotal()) + calculateServiceGstAmount(calculateServiceSubtotal()) + calculateMembershipGstAmount(calculateMembershipSubtotal());
-			// Always use the full amount regardless of payment method
-			const totalAmount = subtotal + tax - walkInDiscount;
-			
-					// Check if this is a multi-expert appointment
-		const isMultiExpert = selectedStylists && selectedStylists.length > 1 && selectedStylists.every(s => s !== null);
-		const expertsToProcess = isMultiExpert ? selectedStylists.filter(s => s !== null) : [staffInfo];
-		const numberOfExperts = expertsToProcess.length;
-		
-		console.log(`[Multi-Expert Order] Creating ${numberOfExperts} orders for ${numberOfExperts} experts:`, expertsToProcess.map(e => e?.name));
-		
-		// Create orders for each expert (split revenue among them)
-		const orderResults = [];
-		
-		for (let i = 0; i < expertsToProcess.length; i++) {
-			const expert = expertsToProcess[i];
-			if (!expert) continue;
-
-			// ---------- NEW: decide whether this expert gets products / memberships ----------
-			const includeProductsAndMemberships = !(isMultiExpert && i !== 0); // only the primary expert (index 0) gets these
-
-			// Calculate splits ----------------------------------------------------------
-			// Service portions (always split)
-			const splitServiceSubtotal = calculateServiceSubtotal() / numberOfExperts;
-			const splitServiceTax      = calculateServiceGstAmount(calculateServiceSubtotal()) / numberOfExperts;
-
-			// Product / membership portions (only primary gets them)
-			const productSubForExpert      = includeProductsAndMemberships ? calculateProductSubtotal()      : 0;
-			const membershipSubForExpert   = includeProductsAndMemberships ? calculateMembershipSubtotal()  : 0;
-			const productTaxForExpert      = includeProductsAndMemberships ? calculateProductGstAmount(calculateProductSubtotal())     : 0;
-			const membershipTaxForExpert   = includeProductsAndMemberships ? calculateMembershipGstAmount(calculateMembershipSubtotal()) : 0;
-
-			// Final totals for this expert --------------------------------------------
-			const expertSubtotal = productSubForExpert + membershipSubForExpert + splitServiceSubtotal;
-			const expertTax      = productTaxForExpert + membershipTaxForExpert + splitServiceTax;
-			const expertTotal    = expertSubtotal + expertTax - (isMultiExpert ? (walkInDiscount / numberOfExperts) : walkInDiscount);
-
-			// Build item arrays --------------------------------------------------------
-			const expertProducts      = includeProductsAndMemberships ? formattedProducts : [];
-			const expertMemberships   = includeProductsAndMemberships ? formattedMemberships : [];
-			const expertServices      = isMultiExpert ? 
-				formattedServices.map(service => ({
-					...service,
-					price: service.price / numberOfExperts, // already divided earlier
-					total: (service.price / numberOfExperts) * service.quantity,
-					split_revenue: true,
-					total_experts: numberOfExperts,
-					expert_index: i + 1
-			})) : formattedServices;
-
-			const itemsForOrder = [...expertProducts, ...expertServices, ...expertMemberships].map(item => ({
-				...item,
-				discount: item.discount || 0,
-				discount_percentage: item.discount_percentage || 0
-			})) as any[];
-
-			// -------------------------------------------------------------------------
-			const orderResult = await createWalkInOrderMutation.mutateAsync({
-				order_id: uuidv4(),
-				client_id: clientIdToUse || '',
-				client_name: clientNameToUse,
-				stylist_id: expert.id || '',
-				stylist_name: expert.name || '',
-				appointment_id: currentAppointmentId || undefined,
-				items: [],
-				services: itemsForOrder,
-				payment_method: isSplitPayment ? 'split' : (useMembershipPayment ? 'membership' : walkInPaymentMethod),
-				split_payments: isSplitPayment ? splitPayments : undefined,
-				discount: isMultiExpert ? (walkInDiscount / numberOfExperts) : walkInDiscount,
-				discount_percentage: walkInDiscountPercentage,
-				subtotal: expertSubtotal,
-				tax: expertTax,
-				total: expertTotal,
-				total_amount: expertTotal,
-				status: 'completed',
-				order_date: orderDate ? orderDate.toISOString() : new Date().toISOString(),
-				is_walk_in: true,
-				is_salon_consumption: false,
-				pending_amount: Math.max(0, expertTotal - (amountPaid / numberOfExperts)),
-				payments: isSplitPayment ? splitPayments : [{
-					id: uuidv4(),
-					amount: expertTotal,
-					payment_method: useMembershipPayment ? 'membership' : walkInPaymentMethod,
-					payment_date: orderDate ? orderDate.toISOString() : new Date().toISOString()
-				}],
-				...(isMultiExpert && {
-					multi_expert: true,
-					total_experts: numberOfExperts,
-					expert_index: i + 1
-				})
-			});
-
-			orderResults.push(orderResult);
-			
-			if (!orderResult.success) {
-				throw new Error(`Failed to create order for ${expert.name}: ${orderResult.error?.message || 'Unknown error'}`);
-			}
-			
-			console.log(`[Multi-Expert Order] Created order for ${expert.name}: ${orderResult.order?.id}`);
-		}
-		
-		// Use the first order result for the rest of the logic (they should all be successful)
-		const orderResult = orderResults[0];
-			
-			if (!orderResult.success) {
-				throw new Error(orderResult.error?.message || 'Failed to create order');
-			}
-
-					// --- Update Appointment Status if Applicable ---
-		if (currentAppointmentId && updateAppointment) {
-			try {
-				// Update all created orders with the appointment_id if needed
-				for (const result of orderResults) {
-					if (result.order && result.order.id) {
-						console.log(`DEBUG: Updating order ${result.order.id} with appointment_id ${currentAppointmentId}`);
-						
-						// Update the order with the appointment ID
-						const { error: updateOrderError } = await supabase
-							.from('pos_orders')
-							.update({ appointment_id: currentAppointmentId })
-							.eq('id', result.order.id);
-							
-						if (updateOrderError) {
-							console.error('Error updating order with appointment_id:', updateOrderError);
-						} else {
-							console.log(`Successfully linked order ${result.order.id} to appointment ${currentAppointmentId}`);
-						}
-					}
-				}
-				
-				// Update the appointment status
-				await updateAppointment({ 
-					id: currentAppointmentId, 
-					status: 'completed', 
-					paid: true, 
-					checked_in: false, // Auto check-out when completing order
-					clientDetails: [] 
-				});
-				console.log(`Appointment ${currentAppointmentId} marked as completed, paid, and checked out.`);
-			} catch (updateError) {
-				console.error(`Failed to update appointment status for ${currentAppointmentId}:`, updateError);
-				toast.error('Order created, but failed to update appointment status.');
-			}
-		}
-
-					const successMessage = isMultiExpert ? 
-			`${orderResults.length} orders created successfully for ${numberOfExperts} experts!` : 
-			"Order created successfully!";
-		setSnackbarMessage(successMessage);
-		setSnackbarOpen(true);
-		
-		// Store the created order for printing (use the first order)
-		if (orderResult.order) {
-			setLastCreatedOrder(orderResult.order);
-			setPrintDialogOpen(true);
-		}
-			
-			resetFormState();
-			
-			if (orderResult.success) {
-				console.log('🔍 DEBUG: Order created successfully, checking product stock quantities...');
-				
-				// Replace the existing timeout block with this one
-				setTimeout(async () => {
-					let stockUpdateNeeded = false;
-					
-					for (const product of formattedProducts) {
-						if (product.id) {
-							const stockQty = await debugStockQuantity(product.id);
-							console.log(`🔍 DEBUG: After order - Product ${product.name} (${product.id}) stock quantity: ${stockQty}`);
-							
-							// Check if the quantity has actually changed
-							if (stockQty === null || typeof stockQty === 'number') {
-								const initialStockQty = allProducts.find(p => p.id === product.id)?.stock_quantity;
-								console.log(`🔍 DEBUG: Initial stock was: ${initialStockQty}, current is: ${stockQty}`);
-								
-								if (initialStockQty && stockQty !== null && stockQty >= initialStockQty) {
-									console.log(`🔍 DEBUG: Stock not reduced for ${product.name}, applying direct update fallback`);
-									stockUpdateNeeded = true;
-									
-									// Apply direct stock update
-									await directUpdateStockQuantity(product.id, product.quantity || 1);
-									
-									// Verify after direct update
-									const updatedStock = await debugStockQuantity(product.id);
-									console.log(`🔍 DEBUG: After direct update - Product ${product.name} stock: ${updatedStock}`);
-								}
-							}
-						}
-					}
-					
-					if (stockUpdateNeeded) {
-						console.log('🔍 DEBUG: Direct stock updates applied. Refreshing UI...');
-						// Trigger inventory refresh
-						window.dispatchEvent(new CustomEvent('inventory-updated'));
-						fetchBalanceStockData();
-					}
-				}, 1000);
-			}
-			
-			// Process membership payment and update balance
-			if (useMembershipPayment && activeClientMembership) {
-				const newBalance = activeClientMembership.currentBalance - paymentAmounts.membership;
-				const { error } = await supabase
-					.from('members')
-					.update({ current_balance: newBalance })
-					.eq('id', activeClientMembership.id);
-				if (error) {
-					toast.error('Failed to update membership balance');
-				} else {
-					setActiveClientMembership({ ...activeClientMembership, currentBalance: newBalance });
-				}
-			}
-
-			// Initialize balance for new memberships
-			const membershipItemsForProcessing = orderItems.filter(i => i.type === 'membership' || i.category === 'membership');
-			for (const item of membershipItemsForProcessing) {
-				// Check if membership already exists for this client
-				const { data: existingMembership } = await supabase
-					.from('members')
-					.select('id')
-					.eq('client_id', clientIdToUse)
-					.eq('tier_id', item.item_id)
-					.single();
-
-				if (existingMembership) {
-					// Update existing membership
-					const { error: updateError } = await supabase
-						.from('members')
-						.update({
-							current_balance: item.price + (item.benefitAmount || 0),
-							total_membership_amount: item.price,
-							benefit_amount: item.benefitAmount || 0,
-							expires_at: new Date(Date.now() + (item.duration_months || 12) * 30 * 24 * 60 * 60 * 1000).toISOString()
-						})
-						.eq('id', existingMembership.id);
-
-					if (updateError) {
-						toast.error('Failed to update membership');
-						console.error('Membership update error:', updateError);
-					} else {
-						toast.success('Membership renewed');
-					}
-				} else {
-					// Create new membership
-					const { error: insertError } = await supabase
-						.from('members')
-						.insert({
-							client_id: clientIdToUse,
-							client_name: clientNameToUse,
-							tier_id: item.item_id,
-							purchase_date: new Date().toISOString(),
-							expires_at: new Date(Date.now() + (item.duration_months || 12) * 30 * 24 * 60 * 60 * 1000).toISOString(),
-							current_balance: item.price + (item.benefitAmount || 0),
-							total_membership_amount: item.price,
-							benefit_amount: item.benefitAmount || 0
-						});
-
-					if (insertError) {
-						toast.error('Failed to record membership purchase');
-						console.error('Membership insert error:', insertError);
-					} else {
-						toast.success('Membership activated');
-					}
-				}
-			}
-		} catch (error) {
-			console.error("Error creating walk-in order:", error);
-			const message = error instanceof Error ? error.message : "Unknown error";
-			setSnackbarMessage(`Error creating order: ${message}`);
-			setSnackbarOpen(true);
-		} finally {
-			setProcessing(false);
-		}
-	}, [currentAppointmentId, updateAppointment, orderItems, isOrderValid, calculateProductSubtotal, calculateServiceSubtotal, calculateProductGstAmount, calculateServiceGstAmount, walkInDiscount, getAmountPaid, selectedClient, selectedStylist, customerName, createWalkInOrderMutation, createOrder, isSplitPayment, splitPayments, productGstRate, serviceGstRate, calculateTotalAmount, allProducts, fetchBalanceStockData, directUpdateStockQuantity, createClientAsync, newClientPhone, newClientEmail, useMembershipPayment, activeClientMembership, paymentAmounts]);
-
+	// Define resetFormState BEFORE it's used in other callbacks
 	const resetFormState = useCallback(() => {
 		// Remove activeStep reset since we don't use steps anymore
 		// setActiveStep(0);
@@ -2036,6 +1648,421 @@ export default function POS() {
 			console.error("Error clearing POS state from localStorage:", error);
 		}
 	}, []);
+
+	// Now define handleCreateWalkInOrder which uses resetFormState
+	const handleCreateWalkInOrder = useCallback(async () => {
+		if (!isOrderValid()) {
+			toast.error("Please complete all required fields.");
+			return;
+		}
+		
+		// Set processing to true immediately
+		setProcessing(true);
+		
+		try {
+			const clientIdToUse = selectedClient ? selectedClient.id : null;
+			const clientNameToUse = selectedClient ? selectedClient.full_name : customerName;
+			
+			// Create new client if none selected and we have phone/email
+			if (!selectedClient && (newClientPhone || newClientEmail)) {
+				try {
+					const newClient = await createClientAsync({
+						full_name: customerName,
+						phone: newClientPhone,
+						email: newClientEmail
+					});
+					if (newClient) {
+						// Use the newly created client for the order
+						setSelectedClient(newClient);
+						// clientIdToUse and clientNameToUse will be updated in the next render
+						// For this order, use the new client details
+						const updatedClientId = newClient.id;
+						const updatedClientName = newClient.full_name;
+						console.log('Created new client for order:', updatedClientName);
+					}
+				} catch (clientError) {
+					console.error('Error creating new client:', clientError);
+					toast.error('Failed to create new client');
+					return;
+				}
+			}
+
+			const amountPaid = getAmountPaid();
+			console.log(`💰 Amount paid calculation: ${amountPaid}`);
+
+			// Format order items with required fields
+			const formattedServices = orderItems
+				.filter(item => item.type === 'service')
+				.map(service => ({
+					id: service.id || uuidv4(),
+					service_id: service.item_id,
+					service_name: service.item_name,
+					quantity: service.quantity,
+					price: service.price,
+					total: service.price * service.quantity,
+					type: 'service',
+					category: service.category,
+					gst_percentage: service.gst_percentage || serviceGstRate,
+					discount: service.discount || 0,
+					discount_percentage: service.discount_percentage || 0,
+					for_salon_use: service.for_salon_use || false
+				}));
+
+			const formattedProducts = orderItems
+				.filter(item => item.type === 'product')
+				.map(product => ({
+					id: product.id || uuidv4(),
+					product_id: product.item_id,
+					product_name: product.item_name,
+					quantity: product.quantity,
+					price: product.price,
+					total: product.price * product.quantity,
+					type: 'product',
+					category: product.category,
+					gst_percentage: product.gst_percentage || productGstRate,
+					hsn_code: product.hsn_code,
+					units: product.units,
+					discount: product.discount || 0,
+					discount_percentage: product.discount_percentage || 0,
+					for_salon_use: product.for_salon_use || false
+				}));
+
+			const formattedMemberships = orderItems
+				.filter(item => item.type === 'membership')
+				.map(membership => ({
+					id: membership.id || uuidv4(),
+					membership_id: membership.item_id,
+					membership_name: membership.item_name,
+					quantity: membership.quantity,
+					price: membership.price,
+					total: membership.price * membership.quantity,
+					type: 'membership',
+					duration_months: membership.duration_months || 12,
+					benefit_amount: membership.benefitAmount || 0,
+					discount: membership.discount || 0,
+					discount_percentage: membership.discount_percentage || 0
+				}));
+
+			const allOrderItems = [...formattedServices, ...formattedProducts, ...formattedMemberships];
+
+			// Check if we need to split orders by experts (multi-expert handling)
+			// For now, default to single expert until multi-expert feature is fully implemented
+			const numberOfExperts = 1;
+			const isMultiExpert = false;
+			
+			console.log(`Order will be split across ${numberOfExperts} expert(s)`);
+
+			// Calculate totals
+			const subtotal = calculateProductSubtotal() + calculateServiceSubtotal() + calculateMembershipSubtotal();
+			const tax = calculateProductGstAmount(calculateProductSubtotal()) + calculateServiceGstAmount(calculateServiceSubtotal()) + calculateMembershipGstAmount(calculateMembershipSubtotal());
+			const total = subtotal + tax - walkInDiscount;
+
+			const orderResults = [];
+			
+			// Process orders for each expert
+			for (let i = 0; i < numberOfExperts; i++) {
+				const expert = isMultiExpert ? 
+					stylists?.find(s => s.id === expertIds[i]) || { id: expertIds[i], name: 'Unknown Expert' } :
+					selectedStylist || { id: '', name: 'Walk-in' };
+
+				console.log(`Creating order ${i + 1}/${numberOfExperts} for expert: ${expert.name}`);
+
+				// For single expert, include all items. For multi-expert, include only relevant items + equal share of products/memberships
+				const includeProductsAndMemberships = i === 0; // Only include products/memberships in first expert's order
+
+				// Calculate expert-specific amounts
+				const splitServiceSubtotal = calculateServiceSubtotal() / numberOfExperts;
+				const splitServiceTax      = calculateServiceGstAmount(calculateServiceSubtotal()) / numberOfExperts;
+
+				// Products and memberships only go to first expert
+				const productSubForExpert      = includeProductsAndMemberships ? calculateProductSubtotal()      : 0;
+				const membershipSubForExpert   = includeProductsAndMemberships ? calculateMembershipSubtotal()   : 0;
+				const productTaxForExpert      = includeProductsAndMemberships ? calculateProductGstAmount(calculateProductSubtotal())     : 0;
+				const membershipTaxForExpert   = includeProductsAndMemberships ? calculateMembershipGstAmount(calculateMembershipSubtotal()) : 0;
+
+				const expertSubtotal = splitServiceSubtotal + productSubForExpert + membershipSubForExpert;
+				const expertTax      = splitServiceTax      + productTaxForExpert + membershipTaxForExpert;
+				const expertTotal    = expertSubtotal + expertTax - (isMultiExpert ? (walkInDiscount / numberOfExperts) : walkInDiscount);
+
+				// Build item arrays --------------------------------------------------------
+				const expertProducts      = includeProductsAndMemberships ? formattedProducts : [];
+				const expertMemberships   = includeProductsAndMemberships ? formattedMemberships : [];
+				const expertServices      = isMultiExpert ? 
+					formattedServices.map(service => ({
+						...service,
+						price: service.price / numberOfExperts, // already divided earlier
+						total: (service.price / numberOfExperts) * service.quantity,
+						split_revenue: true,
+						total_experts: numberOfExperts,
+						expert_index: i + 1
+				})) : formattedServices;
+
+				const itemsForOrder = [...expertProducts, ...expertServices, ...expertMemberships].map(item => ({
+					...item,
+					discount: item.discount || 0,
+					discount_percentage: item.discount_percentage || 0
+				})) as any[];
+
+				// -------------------------------------------------------------------------
+				// Calculate payment breakdown for this expert
+				const membershipPayableForExpert = itemsForOrder
+					.filter(item => item.type === 'service' && servicesMembershipPayment[item.service_id])
+					.reduce((sum, item) => {
+						const itemTotal = item.price * item.quantity;
+						const discountAmount = item.discount || 0;
+						const gstPct = item.gst_percentage || serviceGstRate;
+						const gstExclusiveTotal = itemTotal / (1 + gstPct / 100);
+						const gstExclusiveDiscount = discountAmount / (1 + gstPct / 100);
+						return sum + Math.max(0, gstExclusiveTotal - gstExclusiveDiscount);
+					}, 0);
+
+				const regularPayableForExpert = itemsForOrder
+					.filter(item => item.type !== 'service' || !servicesMembershipPayment[item.service_id])
+					.reduce((sum, item) => {
+						const itemTotal = item.price * item.quantity;
+						const discountAmount = item.discount || 0;
+						const gstPct = item.gst_percentage || (item.type === 'product' ? productGstRate : serviceGstRate) || 18;
+						const isGstApplied = item.type === 'product' ? isProductGstApplied : (item.type === 'service' ? isServiceGstApplied : true);
+						
+						if (isGstApplied) {
+							return sum + Math.max(0, itemTotal - discountAmount);
+						} else {
+							const gstExclusiveTotal = itemTotal;
+							const gstExclusiveDiscount = discountAmount / (1 + gstPct / 100);
+							return sum + Math.max(0, gstExclusiveTotal - gstExclusiveDiscount);
+						}
+					}, 0);
+
+				const orderResult = await createWalkInOrderMutation.mutateAsync({
+					order_id: uuidv4(),
+					client_id: clientIdToUse || '',
+					client_name: clientNameToUse,
+					stylist_id: expert.id || '',
+					stylist_name: expert.name || '',
+					appointment_id: currentAppointmentId || undefined,
+					items: [],
+					services: itemsForOrder,
+					payment_method: isSplitPayment ? 'split' : (useMembershipPayment ? 'membership' : walkInPaymentMethod),
+					split_payments: isSplitPayment ? Object.entries(paymentAmounts)
+						.filter(([method, amount]) => amount > 0)
+						.map(([method, amount]) => ({
+							id: uuidv4(),
+							payment_method: method as PaymentMethod,
+							amount: method === 'membership' ? membershipPayableForExpert : 
+									(isMultiExpert ? amount / numberOfExperts : amount),
+							payment_date: orderDate ? orderDate.toISOString() : new Date().toISOString(),
+							gst_applied: method !== 'membership',
+							notes: method === 'membership' ? 'GST Exempt - Membership Payment' : 'GST Inclusive'
+						})) : undefined,
+					discount: isMultiExpert ? (walkInDiscount / numberOfExperts) : walkInDiscount,
+					discount_percentage: walkInDiscountPercentage,
+					subtotal: expertSubtotal,
+					tax: expertTax,
+					total: expertTotal,
+					total_amount: expertTotal,
+					status: 'completed',
+					order_date: orderDate ? orderDate.toISOString() : new Date().toISOString(),
+					is_walk_in: true,
+					is_salon_consumption: false,
+					pending_amount: Math.max(0, expertTotal - (amountPaid / numberOfExperts)),
+					payments: isSplitPayment ? Object.entries(paymentAmounts)
+						.filter(([method, amount]) => amount > 0)
+						.map(([method, amount]) => ({
+							id: uuidv4(),
+							amount: method === 'membership' ? membershipPayableForExpert : 
+									(isMultiExpert ? amount / numberOfExperts : amount),
+							payment_method: method as PaymentMethod,
+							payment_date: orderDate ? orderDate.toISOString() : new Date().toISOString(),
+							gst_applied: method !== 'membership',
+							notes: method === 'membership' ? 'GST Exempt - Membership Payment' : 'GST Inclusive'
+						})) : [{
+							id: uuidv4(),
+							amount: expertTotal,
+							payment_method: useMembershipPayment ? 'membership' : walkInPaymentMethod,
+							payment_date: orderDate ? orderDate.toISOString() : new Date().toISOString(),
+							gst_applied: !useMembershipPayment,
+							notes: useMembershipPayment ? 'GST Exempt - Membership Payment' : 'GST Inclusive'
+						}],
+					...(isMultiExpert && {
+						multi_expert: true,
+						total_experts: numberOfExperts,
+						expert_index: i + 1
+					})
+				});
+
+				orderResults.push(orderResult);
+				
+				if (!orderResult.success) {
+					throw new Error(`Failed to create order for ${expert.name}: ${orderResult.error?.message || 'Unknown error'}`);
+				}
+				
+				console.log(`[Multi-Expert Order] Created order for ${expert.name}: ${orderResult.order?.id}`);
+			}
+			
+			// Use the first order result for the rest of the logic (they should all be successful)
+			const orderResult = orderResults[0];
+				
+				if (!orderResult.success) {
+					throw new Error(orderResult.error?.message || 'Failed to create order');
+				}
+
+						// --- Update Appointment Status if Applicable ---
+			if (currentAppointmentId && updateAppointment) {
+				try {
+					// Update all created orders with the appointment_id if needed
+					for (const result of orderResults) {
+						if (result.order && result.order.id) {
+							console.log(`DEBUG: Updating order ${result.order.id} with appointment_id ${currentAppointmentId}`);
+							
+							// Update the order with the appointment ID
+							const { error: updateOrderError } = await supabase
+								.from('pos_orders')
+								.update({ appointment_id: currentAppointmentId })
+								.eq('id', result.order.id);
+								
+							if (updateOrderError) {
+								console.error('Error updating order with appointment_id:', updateOrderError);
+							} else {
+								console.log(`Successfully linked order ${result.order.id} to appointment ${currentAppointmentId}`);
+							}
+						}
+					}
+					
+					// Update the appointment status
+					await updateAppointment({ 
+						id: currentAppointmentId, 
+						status: 'completed', 
+						paid: true, 
+						checked_in: false, // Auto check-out when completing order
+						clientDetails: [] 
+					});
+					console.log(`Appointment ${currentAppointmentId} marked as completed, paid, and checked out.`);
+				} catch (updateError) {
+					console.error(`Failed to update appointment status for ${currentAppointmentId}:`, updateError);
+					toast.error('Order created, but failed to update appointment status.');
+				}
+			}
+
+						const successMessage = isMultiExpert ? 
+				`${orderResults.length} orders created successfully for ${numberOfExperts} experts!` : 
+				"Order created successfully!";
+			setSnackbarMessage(successMessage);
+			setSnackbarOpen(true);
+			
+			// Store the created order for printing (use the first order)
+			if (orderResult.order) {
+				setLastCreatedOrder(orderResult.order);
+				setPrintDialogOpen(true);
+			}
+				
+				resetFormState();
+				
+				if (orderResult.success) {
+					console.log('🔍 DEBUG: Order created successfully, checking product stock quantities...');
+					
+					// Replace the existing timeout block with this one
+					setTimeout(async () => {
+						let stockUpdateNeeded = false;
+						
+						for (const product of formattedProducts) {
+							if (product.product_id) {
+								const stockQty = await debugStockQuantity(product.product_id);
+								console.log(`🔍 DEBUG: After order - Product ${product.product_name} (${product.product_id}) stock quantity: ${stockQty}`);
+								
+								// Check if the quantity has actually changed
+								if (stockQty === null || typeof stockQty === 'number') {
+									const initialStockQty = allProducts.find(p => p.id === product.product_id)?.stock_quantity;
+									console.log(`🔍 DEBUG: Initial stock was: ${initialStockQty}, current is: ${stockQty}`);
+									
+									if (stockQty !== initialStockQty) {
+										stockUpdateNeeded = true;
+									}
+								}
+							}
+						}
+						
+						if (stockUpdateNeeded) {
+							console.log('🔍 DEBUG: Stock quantities have changed, refreshing data...');
+							await fetchBalanceStockData();
+						}
+					}, 1000);
+				}
+				
+				// Process membership payment and update balance
+				if (useMembershipPayment && activeClientMembership) {
+					const newBalance = activeClientMembership.currentBalance - paymentAmounts.membership;
+					const { error } = await supabase
+						.from('members')
+						.update({ current_balance: newBalance })
+						.eq('id', activeClientMembership.id);
+					if (error) {
+						toast.error('Failed to update membership balance');
+					} else {
+						setActiveClientMembership({ ...activeClientMembership, currentBalance: newBalance });
+					}
+				}
+
+				// Initialize balance for new memberships
+				const membershipItemsForProcessing = orderItems.filter(i => i.type === 'membership' || i.category === 'membership');
+				for (const item of membershipItemsForProcessing) {
+					// Check if membership already exists for this client
+					const { data: existingMembership } = await supabase
+						.from('members')
+						.select('id')
+						.eq('client_id', clientIdToUse)
+						.eq('tier_id', item.item_id)
+						.single();
+
+					if (existingMembership) {
+						// Update existing membership
+						const { error: updateError } = await supabase
+							.from('members')
+							.update({
+								current_balance: item.price + (item.benefitAmount || 0),
+								total_membership_amount: item.price,
+								benefit_amount: item.benefitAmount || 0,
+								expires_at: new Date(Date.now() + (item.duration_months || 12) * 30 * 24 * 60 * 60 * 1000).toISOString()
+							})
+							.eq('id', existingMembership.id);
+
+						if (updateError) {
+							toast.error('Failed to update membership');
+							console.error('Membership update error:', updateError);
+						} else {
+							toast.success('Membership renewed');
+						}
+					} else {
+						// Create new membership
+						const { error: insertError } = await supabase
+							.from('members')
+							.insert({
+								client_id: clientIdToUse,
+								client_name: clientNameToUse,
+								tier_id: item.item_id,
+								purchase_date: new Date().toISOString(),
+								expires_at: new Date(Date.now() + (item.duration_months || 12) * 30 * 24 * 60 * 60 * 1000).toISOString(),
+								current_balance: item.price + (item.benefitAmount || 0),
+								total_membership_amount: item.price,
+								benefit_amount: item.benefitAmount || 0
+							});
+
+						if (insertError) {
+							toast.error('Failed to record membership purchase');
+							console.error('Membership insert error:', insertError);
+						} else {
+							toast.success('Membership activated');
+						}
+					}
+				}
+		} catch (error) {
+			console.error("Error creating walk-in order:", error);
+			const message = error instanceof Error ? error.message : "Unknown error";
+			setSnackbarMessage(`Error creating order: ${message}`);
+			setSnackbarOpen(true);
+		} finally {
+			setProcessing(false);
+		}
+	}, [currentAppointmentId, updateAppointment, orderItems, isOrderValid, calculateProductSubtotal, calculateServiceSubtotal, calculateProductGstAmount, calculateServiceGstAmount, walkInDiscount, getAmountPaid, selectedClient, selectedStylist, customerName, createWalkInOrderMutation, createOrder, isSplitPayment, paymentAmounts, productGstRate, serviceGstRate, calculateTotalAmount, allProducts, fetchBalanceStockData, directUpdateStockQuantity, createClientAsync, newClientPhone, newClientEmail, useMembershipPayment, activeClientMembership, resetFormState, orderDate, servicesMembershipPayment, calculateMembershipSubtotal, calculateMembershipGstAmount, stylists, walkInDiscountPercentage]);
 
 	const handleAddSalonProduct = useCallback((service: POSService, quantity: number = 1) => {
 		// Check if product already exists in salon products
@@ -2437,7 +2464,7 @@ export default function POS() {
 		} finally {
 			setProcessing(false);
 		}
-	}, [currentAppointmentId, updateAppointment, orderItems, isOrderValid, calculateProductSubtotal, calculateServiceSubtotal, calculateProductGstAmount, calculateServiceGstAmount, walkInDiscount, getAmountPaid, selectedClient, selectedStylist, customerName, createWalkInOrderMutation, createOrder, isSplitPayment, splitPayments, productGstRate, serviceGstRate, salonProducts, consumptionPurpose, consumptionNotes, requisitionVoucherNo, fetchBalanceStockData, resetFormState, navigate, queryClient, directUpdateStockQuantity, createClientAsync, newClientPhone, newClientEmail, orderDate]); // Changed createClient to createClientAsync here as well
+	}, [currentAppointmentId, updateAppointment, orderItems, isOrderValid, calculateProductSubtotal, calculateServiceSubtotal, calculateProductGstAmount, calculateServiceGstAmount, walkInDiscount, getAmountPaid, selectedClient, selectedStylist, customerName, createWalkInOrderMutation, createOrder, isSplitPayment, splitPayments, productGstRate, serviceGstRate, salonProducts, consumptionPurpose, consumptionNotes, requisitionVoucherNo, fetchBalanceStockData, resetFormState, navigate, queryClient, directUpdateStockQuantity, createClientAsync, newClientPhone, newClientEmail, orderDate]); // Fixed dependencies
 
 	const handleRemoveFromOrder = useCallback((itemId: string) => {
 		setOrderItems((prevItems) => prevItems.filter((item) => item.id !== itemId));
@@ -2498,7 +2525,16 @@ export default function POS() {
 					discount: walkInDiscount, 
 					total: totalAmount,
 					payment_method: isSplitPayment ? 'split' : walkInPaymentMethod,
-					split_payments: isSplitPayment ? splitPayments : [],
+					split_payments: isSplitPayment ? Object.entries(paymentAmounts)
+						.filter(([method, amount]) => amount > 0)
+						.map(([method, amount]) => ({
+							id: uuidv4(),
+							payment_method: method as PaymentMethod,
+							amount: amount,
+							payment_date: orderDate ? orderDate.toISOString() : new Date().toISOString(),
+							gst_applied: method !== 'membership',
+							notes: method === 'membership' ? 'GST Exempt - Membership Payment' : 'GST Inclusive'
+						})) : [],
 					notes: appointment.notes || "",
 					gst_amount: gstAmount, 
 					total_amount: totalAmount,
@@ -2548,7 +2584,16 @@ export default function POS() {
 					discount: walkInDiscount, 
 					total: totalAmount,
 					payment_method: isSplitPayment ? 'split' : walkInPaymentMethod,
-					split_payments: isSplitPayment ? splitPayments : [],
+					split_payments: isSplitPayment ? Object.entries(paymentAmounts)
+						.filter(([method, amount]) => amount > 0)
+						.map(([method, amount]) => ({
+							id: uuidv4(),
+							payment_method: method as PaymentMethod,
+							amount: amount,
+							payment_date: orderDate ? orderDate.toISOString() : new Date().toISOString(),
+							gst_applied: method !== 'membership',
+							notes: method === 'membership' ? 'GST Exempt - Membership Payment' : 'GST Inclusive'
+						})) : [],
 					notes: appointment.notes || "",
 					gst_amount: gstAmount, 
 					total_amount: totalAmount,
@@ -2567,7 +2612,7 @@ export default function POS() {
 			console.error("Failed to create order:", error);
 			toast.error(`Failed to create order: ${error?.message || 'Unknown error'}`);
 		}
-	}, [appointments, selectedClient, selectedStylist, orderItems, productGstRate, serviceGstRate, calculateProductGstAmount, calculateServiceGstAmount, calculateTotalAmount, calculateProductSubtotal, calculateServiceSubtotal, walkInDiscount, isSplitPayment, splitPayments, walkInPaymentMethod, createOrder, createWalkInOrderMutation, resetFormState, orderDate]);
+	}, [appointments, selectedClient, selectedStylist, orderItems, productGstRate, serviceGstRate, calculateProductGstAmount, calculateServiceGstAmount, calculateTotalAmount, calculateProductSubtotal, calculateServiceSubtotal, walkInDiscount, isSplitPayment, paymentAmounts, walkInPaymentMethod, createOrder, createWalkInOrderMutation, resetFormState, orderDate]);
 
 	// Add this helper function to group services by category
 	const groupByCategory = (items: POSService[] | Service[]): Record<string, (POSService | Service)[]> => {
@@ -3257,18 +3302,56 @@ export default function POS() {
 						<Typography variant="body2" fontWeight="bold" gutterBottom>
 							Payment Breakdown:
 						</Typography>
-						<Box sx={{ mb: 1, display: 'flex', justifyContent: 'space-between', ml: 2 }}>
-							<Typography variant="body2" color="primary.main">Services via Membership (Ex. GST):</Typography>
-							<Typography variant="body2" fontWeight="500" color="primary.main">
-								{formatCurrency(getMembershipPayableAmount())}
-							</Typography>
-						</Box>
-						<Box sx={{ mb: 1, display: 'flex', justifyContent: 'space-between', ml: 2 }}>
-							<Typography variant="body2">Products & Regular Services (Incl. GST):</Typography>
-							<Typography variant="body2" fontWeight="500">
-								{formatCurrency(getRegularPayableAmount())}
-							</Typography>
-						</Box>
+						{(() => {
+							// Calculate membership payable amount (services only, no GST)
+							const membershipPayableAmount = orderItems
+								.filter(item => item.type === 'service' && servicesMembershipPayment[item.id])
+								.reduce((sum, item) => {
+									const itemTotal = item.price * item.quantity;
+									const discountAmount = item.discount || 0;
+									const gstPct = item.gst_percentage || serviceGstRate;
+									const gstExclusiveTotal = itemTotal / (1 + gstPct / 100);
+									const gstExclusiveDiscount = discountAmount / (1 + gstPct / 100);
+									return sum + Math.max(0, gstExclusiveTotal - gstExclusiveDiscount);
+								}, 0);
+
+							// Calculate regular payable amount (all other items with GST)
+							const regularPayableAmount = orderItems
+								.filter(item => item.type !== 'service' || !servicesMembershipPayment[item.id])
+								.reduce((sum, item) => {
+									const itemTotal = item.price * item.quantity;
+									const discountAmount = item.discount || 0;
+									const gstPct = item.gst_percentage || (item.type === 'product' ? productGstRate : serviceGstRate) || 18;
+									const isGstApplied = item.type === 'product' ? isProductGstApplied : (item.type === 'service' ? isServiceGstApplied : true);
+									
+									if (isGstApplied) {
+										return sum + Math.max(0, itemTotal - discountAmount);
+									} else {
+										const gstExclusiveTotal = itemTotal;
+										const gstExclusiveDiscount = discountAmount / (1 + gstPct / 100);
+										return sum + Math.max(0, gstExclusiveTotal - gstExclusiveDiscount);
+									}
+								}, 0);
+
+							const adjustedRegularAmount = Math.max(0, regularPayableAmount - walkInDiscount);
+
+							return (
+								<>
+									<Box sx={{ mb: 1, display: 'flex', justifyContent: 'space-between', ml: 2 }}>
+										<Typography variant="body2" color="primary.main">Services via Membership (Ex. GST):</Typography>
+										<Typography variant="body2" fontWeight="500" color="primary.main">
+											{formatCurrency(membershipPayableAmount)}
+										</Typography>
+									</Box>
+									<Box sx={{ mb: 1, display: 'flex', justifyContent: 'space-between', ml: 2 }}>
+										<Typography variant="body2">Products & Regular Services (Incl. GST):</Typography>
+										<Typography variant="body2" fontWeight="500">
+											{formatCurrency(adjustedRegularAmount)}
+										</Typography>
+									</Box>
+								</>
+							);
+						})()}
 						<Box sx={{ mb: 2, ml: 2, p: 1, bgcolor: 'info.lighter', borderRadius: 1 }}>
 							<Typography variant="caption" color="text.secondary">
 								<InfoIcon fontSize="inherit" sx={{ verticalAlign: 'middle', mr: 0.5 }} />
@@ -3357,260 +3440,179 @@ export default function POS() {
 	// 6. RENDER OUTPUT (JSX)
 	// ====================================================
 	return (
-		<Box sx={{ flexGrow: 1, width: '100%', maxWidth: 1400, mx: 'auto', py: 2 }}>
-			{/* Tabs for Walk-in Order and Salon Purchase */}
-			<Box sx={{ mb: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-				<Tabs
-					value={tabValue}
-					onChange={(_, newValue) => setTabValue(newValue)}
-					variant="fullWidth"
-					indicatorColor="primary"
-					textColor="primary"
-				>
-					<Tab 
-						label={
-							<Box sx={{ display: 'flex', alignItems: 'center' }}>
-								<ShoppingBasketIcon sx={{ mr: 1 }} />
-								Walk-in Order
-							</Box>
-						} 
-					/>
-					<Tab 
-						label={
-							<Box sx={{ display: 'flex', alignItems: 'center' }}>
-								<Inventory sx={{ mr: 1 }} />
-								Salon Purchase
-							</Box>
-						} 
-					/>
-				</Tabs>
-				<IconButton
-					color="primary"
-					onClick={() => setHistoryDrawerOpen(true)}
-					size="small"
-					sx={{ ml: 1 }}
-					title="View Client History"
-				>
-					<HistoryIcon />
-				</IconButton>
-			</Box>
+		<Box sx={{ 
+			display: 'flex', 
+			height: '100vh', 
+			overflow: 'hidden',
+			bgcolor: '#f5f7fa'
+		}}>
+			{/* Left Panel - Products & Services */}
+			<Box sx={{ 
+				width: '35%', 
+				borderRight: 1, 
+				borderColor: 'divider',
+				display: 'flex',
+				flexDirection: 'column',
+				height: '100vh',
+				bgcolor: 'white'
+			}}>
+				{/* Header */}
+				<Box sx={{ 
+					p: 2, 
+					borderBottom: 1, 
+					borderColor: 'divider', 
+					bgcolor: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+					color: 'white'
+				}}>
+					<Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+						<Typography variant="h6" fontWeight="bold" sx={{ color: 'white' }}>
+							💼 R&G Salon POS
+						</Typography>
+						<Box sx={{ display: 'flex', gap: 1 }}>
+							<Tabs
+								value={tabValue}
+								onChange={(_, newValue) => setTabValue(newValue)}
+								variant="standard"
+								indicatorColor="secondary"
+								textColor="inherit"
+								sx={{ 
+									minHeight: 'auto',
+									'& .MuiTab-root': { 
+										color: 'rgba(255,255,255,0.8)',
+										fontWeight: 500,
+										'&.Mui-selected': { color: 'white' }
+									},
+									'& .MuiTabs-indicator': { backgroundColor: 'white' }
+								}}
+							>
+								<Tab 
+									icon={<ShoppingBag fontSize="small" />}
+									label="Sale" 
+									sx={{ minHeight: 'auto', py: 0.5, px: 2, fontSize: '0.875rem' }}
+								/>
+								<Tab 
+									icon={<Inventory fontSize="small" />}
+									label="Consumption" 
+									sx={{ minHeight: 'auto', py: 0.5, px: 2, fontSize: '0.875rem' }}
+								/>
+							</Tabs>
+							<IconButton
+								color="inherit"
+								onClick={() => setHistoryDrawerOpen(true)}
+								size="small"
+								title="View Client History"
+								sx={{ color: 'white' }}
+							>
+								<HistoryIcon />
+							</IconButton>
+						</Box>
+					</Box>
+					
+					{/* Quick Customer & Stylist Selection */}
+					<Box sx={{ display: 'flex', gap: 1, mb: 1 }}>
+						<Autocomplete
+							options={clients || []}
+							getOptionLabel={(option) => option.full_name || ""}
+							value={selectedClient}
+							onChange={(_, newValue) => handleClientSelect(newValue)}
+							size="small"
+							sx={{ 
+								flex: 1,
+								'& .MuiOutlinedInput-root': {
+									bgcolor: 'rgba(255,255,255,0.9)',
+									borderRadius: 2,
+									'& fieldset': { borderColor: 'rgba(255,255,255,0.3)' },
+									'&:hover fieldset': { borderColor: 'rgba(255,255,255,0.5)' },
+									'&.Mui-focused fieldset': { borderColor: 'white' }
+								},
+								'& .MuiInputLabel-root': { color: 'rgba(0,0,0,0.7)' }
+							}}
+							renderInput={(params) => (
+								<TextField
+									{...params}
+									label="👤 Client"
+									variant="outlined"
+									size="small"
+								/>
+							)}
+						/>
+						<FormControl 
+							size="small" 
+							sx={{ 
+								minWidth: 130,
+								'& .MuiOutlinedInput-root': {
+									bgcolor: 'rgba(255,255,255,0.9)',
+									borderRadius: 2,
+									'& fieldset': { borderColor: 'rgba(255,255,255,0.3)' },
+									'&:hover fieldset': { borderColor: 'rgba(255,255,255,0.5)' },
+									'&.Mui-focused fieldset': { borderColor: 'white' }
+								},
+								'& .MuiInputLabel-root': { color: 'rgba(0,0,0,0.7)' }
+							}}
+						>
+							<InputLabel>✂️ Stylist</InputLabel>
+							<Select
+								value={selectedStylist?.id || ""}
+								label="✂️ Stylist"
+								onChange={(e) => {
+									const stylist = stylists?.find(s => s.id === e.target.value) || null;
+									setSelectedStylist(stylist);
+								}}
+								MenuProps={{
+									PaperProps: {
+										style: {
+											maxHeight: 200,
+											width: 200,
+										},
+									},
+								}}
+							>
+								{(stylists || []).map((stylist) => (
+									<MenuItem key={stylist.id} value={stylist.id}>
+										{stylist.name}
+									</MenuItem>
+								))}
+							</Select>
+						</FormControl>
+					</Box>
 
-			{/* Tab Panels */}
-			<TabPanel value={tabValue} index={0}>
-				<Grid container spacing={2}>
-					{/* Customer Information */}
-					<Grid item xs={12}>
-						<Paper sx={{ p: 2, mb: 2 }}>
-							<Typography variant="h6" gutterBottom sx={{ borderBottom: '1px solid', borderColor: 'divider', pb: 1 }}>
-								Customer Information
-							</Typography>
-							
-							<Grid container spacing={2}>
-								<Grid item xs={12} sm={4}>
-									<Autocomplete
-										options={clients || []}
-										getOptionLabel={(option) => option.full_name || ""}
-										value={selectedClient}
-										onChange={(_, newValue) => {
-											handleClientSelect(newValue);
-											if (newValue && newValue.full_name) {
-												// Explicitly fetch client history when a client is selected
-												fetchClientHistory(newValue.full_name);
-											}
-										}}
-										renderInput={(params) => (
-											<TextField
-												{...params}
-												label="Select Client"
-												variant="outlined"
-												fullWidth
-												size="small"
-												helperText={clients && clients.length === 0 ? "No clients available. Type a name to add a new one." : "Select an existing client or type a new name below."}
-											/>
-										)}
-										renderOption={(props, option) => (
-											<li {...props} key={option.id}>
-												<Box>
-													<Typography variant="body2">{option.full_name}</Typography>
-													{option.phone && (
-														<Typography variant="caption" color="text.secondary">
-															{option.phone}
-														</Typography>
-													)}
-												</Box>
-											</li>
-										)}
-										size="small"
-									/>
-									{/* Add History button near the client autocomplete */}
-									{selectedClient && (
-										<Button
-											color="primary"
-											onClick={() => {
-												setHistoryDrawerOpen(true);
-												if (selectedClient.full_name) {
-													fetchClientHistory(selectedClient.full_name);
-												}
-											}}
-											size="small"
-											sx={{ mt: 1 }}
-											startIcon={<HistoryIcon />}
-										>
-											View History
-										</Button>
-									)}
-								</Grid>
-								<Grid item xs={12} sm={4}>
-									<TextField
-										fullWidth
-										label="Customer Name"
-										variant="outlined"
-										value={customerName}
-										onChange={(e) => {
-											setCustomerName(e.target.value);
-											// If name is changed manually, deselect client to allow new client entry
-											if (selectedClient && selectedClient.full_name !== e.target.value) {
-												setSelectedClient(null);
-											}
-										}}
-										required
-										error={customerName.trim() === ""}
-										size="small"
-									/>
-								</Grid>
-								{/* New Client Phone and Email - Conditionally Rendered */}
-								{!selectedClient && customerName.trim() !== "" && (
-									<>
-										<Grid item xs={12} sm={4}>
-											<TextField
-												fullWidth
-												label="New Client Phone"
-												variant="outlined"
-												value={newClientPhone}
-												onChange={(e) => setNewClientPhone(e.target.value)}
-												size="small"
-												placeholder='(Optional)'
-											/>
-										</Grid>
-										<Grid item xs={12} sm={4}>
-											<TextField
-												fullWidth
-												label="New Client Email"
-												variant="outlined"
-												value={newClientEmail}
-												onChange={(e) => setNewClientEmail(e.target.value)}
-												size="small"
-												placeholder='(Optional)'
-											/>
-										</Grid>
-									</>
-								)}
-								{/* Stylist Selection - Handle both single and multi-expert modes */}
-								{selectedStylists.length > 0 ? (
-									// Multi-expert mode: Show multiple stylist dropdowns
-									selectedStylists.map((stylist, index) => (
-										<Grid item xs={12} sm={selectedClient || !customerName.trim() ? 4 : 6} key={index}>
-											<FormControl
-												fullWidth
-												required
-												error={stylist === null}
-												size="small"
-											>
-												<InputLabel id={`stylist-select-label-${index}`}>
-													{index === 0 ? 'Primary Expert' : `Expert ${index + 1}`}
-												</InputLabel>
-												<Select
-													labelId={`stylist-select-label-${index}`}
-													id={`stylist-select-${index}`}
-													value={stylist?.id || ""}
-													label={index === 0 ? 'Primary Expert' : `Expert ${index + 1}`}
-													onChange={(e) => {
-														const stylistId = e.target.value;
-														const selectedStylist = stylists?.find(s => s.id === stylistId) || null;
-														const newStylists = [...selectedStylists];
-														newStylists[index] = selectedStylist;
-														setSelectedStylists(newStylists);
-														
-														// Update the primary stylist if this is the first dropdown
-														if (index === 0) {
-															setSelectedStylist(selectedStylist);
-														}
-													}}
-												>
-													<MenuItem value="">
-														<em>None</em>
-													</MenuItem>
-													{(stylists || [])?.map((stylistOption) => (
-														<MenuItem key={stylistOption.id} value={stylistOption.id}>
-															{stylistOption.name}
-														</MenuItem>
-													))}
-												</Select>
-												{stylist === null && (
-													<FormHelperText error>
-														Expert is required
-													</FormHelperText>
-												)}
-											</FormControl>
-										</Grid>
-									))
-								) : (
-									// Single stylist mode: Show original dropdown
-									<Grid item xs={12} sm={selectedClient || !customerName.trim() ? 4 : 12} >
-										<FormControl
-											fullWidth
-											required
-											error={selectedStylist === null}
-											size="small"
-										>
-											<InputLabel id="stylist-select-label">
-												Select Stylist
-											</InputLabel>
-											<Select
-												labelId="stylist-select-label"
-												id="stylist-select"
-												value={selectedStylist?.id || ""}
-												label="Select Stylist"
-												onChange={(e) => {
-													const stylistId = e.target.value;
-													const stylist = stylists?.find(s => s.id === stylistId) || null;
-													setSelectedStylist(stylist);
-												}}
-											>
-												<MenuItem value="">
-													<em>None</em>
-												</MenuItem>
-												{(stylists || [])?.map((stylist) => (
-													<MenuItem key={stylist.id} value={stylist.id}>
-														{stylist.name}
-													</MenuItem>
-												))}
-											</Select>
-											{selectedStylist === null && (
-												<FormHelperText error>
-													Stylist is required
-												</FormHelperText>
-											)}
-										</FormControl>
-									</Grid>
-								)}
-							</Grid>
-						</Paper>
-					</Grid>
+					{/* Add Customer Name Input if no client selected */}
+					{!selectedClient && (
+						<TextField
+							fullWidth
+							label="📝 Customer Name"
+							variant="outlined"
+							value={customerName}
+							onChange={(e) => setCustomerName(e.target.value)}
+							size="small"
+							sx={{ 
+								mb: 1,
+								'& .MuiOutlinedInput-root': {
+									bgcolor: 'rgba(255,255,255,0.9)',
+									borderRadius: 2,
+									'& fieldset': { borderColor: 'rgba(255,255,255,0.3)' },
+									'&:hover fieldset': { borderColor: 'rgba(255,255,255,0.5)' },
+									'&.Mui-focused fieldset': { borderColor: 'white' }
+								},
+								'& .MuiInputLabel-root': { color: 'rgba(0,0,0,0.7)' }
+							}}
+						/>
+					)}
+				</Box>
 
-					{/* Services & Products */}
-					<Grid item xs={12}>
-						<Paper sx={{ p: 2, mb: 2 }}>
-							<Typography variant="h6" gutterBottom sx={{ borderBottom: '1px solid', borderColor: 'divider', pb: 1 }}>
-								Services & Products
-							</Typography>
-							
-							{/* Services & Products Autocomplete */}
-							<Box sx={{ display: 'flex', flexDirection: 'row', gap: 2, mb: 2, flexWrap: 'wrap' }}>
-								<Box sx={{ flex: 1, minWidth: '240px' }}>
+				{/* Tab Content */}
+				<Box sx={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+					{tabValue === 0 && (
+						<>
+							{/* Quick Add Section */}
+							<Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider', bgcolor: '#fafbfc' }}>
+								<Typography variant="subtitle2" fontWeight="bold" gutterBottom sx={{ color: '#4a5568', mb: 1.5 }}>
+									🛍️ Quick Add Items
+								</Typography>
+								<Box sx={{ display: 'flex', gap: 1, mb: 2 }}>
 									<Autocomplete
 										options={filteredServices as Service[]}
-										getOptionLabel={(option) => `${option.name} (₹${option.price} • ${option.duration} min)`}
+										getOptionLabel={(option) => `${option.name} (₹${option.price})`}
 										value={serviceDropdownValue}
 										onChange={(_, newService) => {
 											if (newService) handleAddToOrder({
@@ -3623,30 +3625,24 @@ export default function POS() {
 											});
 											setServiceDropdownValue(null);
 										}}
+										size="small"
+										sx={{ 
+											flex: 1,
+											'& .MuiOutlinedInput-root': {
+												borderRadius: 2,
+												'&:hover fieldset': { borderColor: '#667eea' },
+												'&.Mui-focused fieldset': { borderColor: '#667eea' }
+											}
+										}}
 										renderInput={(params) => (
-											<TextField {...params} label="Select Service" variant="outlined" size="small" />
+											<TextField {...params} label="✂️ Add Service" variant="outlined" size="small" />
 										)}
 									/>
 								</Box>
-								<Box sx={{ flex: 1, minWidth: '240px' }}>
+								<Box sx={{ display: 'flex', gap: 1 }}>
 									<Autocomplete
 										options={filteredProducts}
-										getOptionLabel={(option) => {
-											const stockLabel = option.stock_quantity !== undefined ? 
-												` (${option.stock_quantity} in stock)` : '';
-											return `${option.name}${stockLabel}`;
-										}}
-										renderOption={(props, option) => (
-											<li {...props}>
-												<Box>
-													<Typography variant="body2">{option.name}</Typography>
-													<Typography variant="caption" color="text.secondary">
-														₹{option.price} • {option.stock_quantity !== undefined ? 
-															`${option.stock_quantity} in stock` : 'Stock not available'}
-													</Typography>
-												</Box>
-											</li>
-										)}
+										getOptionLabel={(option) => `${option.name} (₹${option.price})`}
 										value={productDropdownValue}
 										onChange={(_, newProduct) => {
 											if (newProduct) {
@@ -3658,665 +3654,701 @@ export default function POS() {
 											}
 											setProductDropdownValue(null);
 										}}
-										renderInput={(params) => (
-											<TextField {...params} label="Select Product" variant="outlined" size="small" />
-										)}
-									/>
-								</Box>
-								<Box sx={{ flex: 1, minWidth: '240px' }}>
-									<Autocomplete
-										options={filteredMemberships}
-										getOptionLabel={(option) => `${option.name} (₹${option.price})`}
-										value={membershipDropdownValue}
-										onChange={(_, newMembership) => {
-											if (newMembership) handleAddMembershipToOrder({
-												id: newMembership.id,
-												name: newMembership.name,
-												price: newMembership.price,
-												duration_months: newMembership.duration_months,
-												benefits: newMembership.benefits || [],
-												description: newMembership.description,
-												type: 'membership'
-											});
-											setMembershipDropdownValue(null);
+										size="small"
+										sx={{ 
+											flex: 1,
+											'& .MuiOutlinedInput-root': {
+												borderRadius: 2,
+												'&:hover fieldset': { borderColor: '#667eea' },
+												'&.Mui-focused fieldset': { borderColor: '#667eea' }
+											}
 										}}
 										renderInput={(params) => (
-											<TextField {...params} label="Select Membership" variant="outlined" size="small" />
+											<TextField {...params} label="🛍️ Add Product" variant="outlined" size="small" />
 										)}
 									/>
 								</Box>
 							</Box>
-							{selectedClient && (
-								<>
-									<Divider sx={{ my: 2 }} />
-									<Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
-										<Typography variant="h6">Client Details</Typography>
-										<IconButton
-											color="primary"
-											onClick={() => setHistoryDrawerOpen(true)}
-											size="small"
-											sx={{ ml: 1 }}
-											title="View Client History"
-										>
-											<HistoryIcon />
-										</IconButton>
-									</Box>
-									<Grid container spacing={2}>
-										<Grid item xs={12} sm={6}>
-											<Typography variant="subtitle2">Contact</Typography>
-											<Typography>{selectedClient.phone}{selectedClient.email ? ` • ${selectedClient.email}` : ''}</Typography>
-										</Grid>
-										<Grid item xs={12} sm={6}>
-											<Typography variant="subtitle2">Last Visit</Typography>
-											<Typography>{selectedClient.last_visit ? format(new Date(selectedClient.last_visit), 'dd/MM/yyyy') : 'Never'}</Typography>
-										</Grid>
-										<Grid item xs={12} sm={6}>
-											<Typography variant="subtitle2">Total Spent</Typography>
-											<Typography color="success.main">{formatCurrency(selectedClient.total_spent || 0)}</Typography>
-										</Grid>
-										<Grid item xs={12} sm={6}>
-											<Typography variant="subtitle2">Pending Payment</Typography>
-											{selectedClient.pending_payment && selectedClient.pending_payment > 0
-												? <Chip label={formatCurrency(selectedClient.pending_payment)} color="warning" />
-												: <Typography color="text.secondary">No pending amount</Typography>}
-										</Grid>
-										{/* Added Gender, Birth Date, Anniversary Date, Lifetime Visits */}
-										<Grid item xs={12} sm={6}>
-											<Typography variant="subtitle2">Gender</Typography>
-											<Typography>{selectedClient.gender || 'N/A'}</Typography>
-										</Grid>
-										<Grid item xs={12} sm={6}>
-											<Typography variant="subtitle2">Birth Date</Typography>
-											<Typography>{selectedClient.birth_date ? format(new Date(selectedClient.birth_date), 'dd/MM/yyyy') : 'N/A'}</Typography>
-										</Grid>
-										<Grid item xs={12} sm={6}>
-											<Typography variant="subtitle2">Anniversary Date</Typography>
-											<Typography>{selectedClient.anniversary_date ? format(new Date(selectedClient.anniversary_date), 'dd/MM/yyyy') : 'N/A'}</Typography>
-										</Grid>
-										<Grid item xs={12} sm={6}>
-											<Typography variant="subtitle2">Lifetime Visits</Typography>
-											<Typography>
-												{selectedClient && orders ? orders.filter(
-													order => 
-														((order as any).client_name === selectedClient.full_name || (order as any).customer_name === selectedClient.full_name) && 
-														(order as any).status !== 'cancelled' && 
-														!(order as any).consumption_purpose && 
-														(order as any).client_name !== 'Salon Consumption'
-												).length : 0}
-											</Typography>
-										</Grid>
-									</Grid>
-								</>
-							)}
-							
-							{/* Service Selection Section */}
-							{renderServiceSelectionSection()}
-							
-							{/* Product Selection Section */}
-							{renderProductsSelectionSection()}
-							
-							{/* Membership Selection Section - Add this new section */}
-							{renderMembershipSelectionSection()}
-						</Paper>
-					</Grid>
 
-					{/* Order Summary */}
-					<Grid item xs={12}>
-						<Paper sx={{ p: 2, mb: 2 }}>
-							{renderOrderSummary()}
-						</Paper>
-					</Grid>
-
-					{/* Payment Details */}
-					<Grid item xs={12}>
-						<Paper sx={{ p: 2, mb: 2 }}>
-							<Typography variant="h6" gutterBottom sx={{ borderBottom: '1px solid', borderColor: 'divider', pb: 1 }}>
-								Payment Details
-							</Typography>
-							
-							{/* Payment Methods Section */}
-							<Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-								<Typography variant="subtitle2">
-									Payment Methods:
-								</Typography>
-								<Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-									<Typography variant="body2" color="primary" fontWeight="medium">
-										Total: {formatCurrency(calculateTotalAmount())}
-									</Typography>
-									<FormControlLabel
-										control={
-											<Switch
-												checked={isSplitPayment}
-												onChange={(e) => {
-													setIsSplitPayment(e.target.checked);
-													if (!e.target.checked) {
-														// When disabling split payment, set all amount to cash
-														const currentTotal = calculateTotalAmount();
-														setPaymentAmounts({
-															cash: currentTotal,
-															credit_card: 0,
-															debit_card: 0,
-															upi: 0,
-															bnpl: 0,
-															membership: 0
-														});
-														setWalkInPaymentMethod('cash');
-													}
-												}}
-												color="primary"
-												size="small"
-											/>
-										}
-										label={
-											<Typography variant="body2" color="text.secondary">
-												{isSplitPayment ? 'Multiple Methods' : 'Single Method'}
-											</Typography>
-										}
-									/>
-								</Box>
-							</Box>
-
-							{/* Membership Status and Toggle */}
+							{/* Membership Status */}
 							{activeClientMembership && (
-								<Box sx={{ display: 'flex', alignItems: 'center', mb: 2, p: 1.5, bgcolor: 'background.default', borderRadius: '8px' }}>
-									<Chip
-										icon={<CardMembershipIcon />}
-										label={`${activeClientMembership.tierName} Member`}
-										size="small"
-										color="primary"
-										sx={{ mr: 2 }}
-									/>
-									<Typography variant="body2" sx={{ mr: 2, display: 'flex', alignItems: 'center' }}>
-										<AccountBalanceWalletIcon fontSize="small" sx={{ mr: 0.5 }} />
-										Available Balance: Rs. {activeClientMembership.currentBalance.toLocaleString()}
-									</Typography>
-									<FormControlLabel
-										control={
-											<Switch
-												checked={useMembershipPayment}
-												onChange={e => {
-													setUseMembershipPayment(e.target.checked);
-													if (e.target.checked) {
-														// When using membership, use the total amount
-														const totalAmount = calculateTotalAmount();
-														const paymentAmount = Math.min(totalAmount, activeClientMembership.currentBalance);
-														setPaymentAmounts(prev => ({
-															...prev,
-															membership: paymentAmount, 
-															cash: Math.max(0, totalAmount - paymentAmount) // Cover remaining with cash if any
-														}));
-														setWalkInPaymentMethod('membership');
-													} else {
-														// When disabling, move amount from membership to cash
-														const membershipAmount = paymentAmounts.membership;
-														setPaymentAmounts(prev => ({
-															...prev,
-															membership: 0,
-															cash: prev.cash + membershipAmount
-														}));
-														setWalkInPaymentMethod('cash');
-													}
-												}}
-												size="small"
-											/>
-										}
-										label="Pay via Membership"
-									/>
+								<Box sx={{ 
+									p: 1.5, 
+									bgcolor: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', 
+									borderBottom: 1, 
+									borderColor: 'divider',
+									color: 'white'
+								}}>
+									<Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+										<Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+											<CardMembershipIcon fontSize="small" sx={{ color: 'white' }} />
+											<Typography variant="body2" fontWeight="medium" sx={{ color: 'white' }}>
+												💎 {activeClientMembership.tierName}
+											</Typography>
+										</Box>
+										<Box sx={{ 
+											bgcolor: 'rgba(255,255,255,0.2)', 
+											px: 1.5, 
+											py: 0.5, 
+											borderRadius: 2,
+											border: '1px solid rgba(255,255,255,0.3)'
+										}}>
+											<Typography variant="body2" fontWeight="bold" sx={{ color: 'white' }}>
+												₹{activeClientMembership.currentBalance.toLocaleString()}
+											</Typography>
+										</Box>
+									</Box>
 								</Box>
 							)}
+						</>
+					)}
 
-							{/* Payment Method Cards */}
-							<Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, mb: 2 }}>
-								{/* Show all payment methods except membership */}
+					{tabValue === 1 && (
+						<Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider', bgcolor: '#fafbfc' }}>
+							<Typography variant="subtitle2" fontWeight="bold" gutterBottom sx={{ color: '#4a5568', mb: 1.5 }}>
+								🏪 Salon Consumption
+							</Typography>
+							<Box sx={{ display: 'flex', gap: 1 }}>
+								<Autocomplete
+									options={filteredProducts.filter(p => p.type === 'product')}
+									getOptionLabel={(option) => `${option.name} (₹${option.price})`}
+									value={null}
+									onChange={(_, newProduct) => {
+										if (newProduct) {
+											if (newProduct.stock_quantity !== undefined && newProduct.stock_quantity <= 0) {
+												toast.error(`${newProduct.name} is out of stock`);
+											} else {
+												handleAddSalonProduct(newProduct);
+											}
+										}
+									}}
+									size="small"
+									sx={{ 
+										flex: 1,
+										'& .MuiOutlinedInput-root': {
+											borderRadius: 2,
+											'&:hover fieldset': { borderColor: '#667eea' },
+											'&.Mui-focused fieldset': { borderColor: '#667eea' }
+										}
+									}}
+									renderInput={(params) => (
+										<TextField {...params} label="📦 Add Product for Salon Use" variant="outlined" size="small" />
+									)}
+								/>
+							</Box>
+							<TextField
+								fullWidth
+								label="📝 Purpose"
+								value={consumptionPurpose}
+								onChange={(e) => setConsumptionPurpose(e.target.value)}
+								size="small"
+								sx={{ 
+									mt: 1,
+									'& .MuiOutlinedInput-root': {
+										borderRadius: 2,
+										'&:hover fieldset': { borderColor: '#667eea' },
+										'&.Mui-focused fieldset': { borderColor: '#667eea' }
+									}
+								}}
+							/>
+						</Box>
+					)}
+				</Box>
+			</Box>
+
+			{/* Center Panel - Order Items */}
+			<Box sx={{ 
+				width: '40%', 
+				borderRight: 1, 
+				borderColor: 'divider',
+				display: 'flex',
+				flexDirection: 'column',
+				height: '100vh',
+				bgcolor: 'white'
+			}}>
+				{/* Order Header */}
+				<Box sx={{ 
+					p: 2, 
+					borderBottom: 1, 
+					borderColor: 'divider', 
+					bgcolor: '#f8f9fa',
+					display: 'flex',
+					alignItems: 'center',
+					justifyContent: 'space-between'
+				}}>
+					<Typography variant="h6" fontWeight="bold" sx={{ color: '#2d3748' }}>
+						{tabValue === 0 ? '🛒 Current Order' : '📦 Salon Consumption'}
+					</Typography>
+					<Chip 
+						label={`${(tabValue === 0 ? orderItems : salonProducts).length} items`}
+						size="small"
+						color="primary"
+						variant="outlined"
+					/>
+				</Box>
+
+				{/* Order Items List */}
+				<Box sx={{ flex: 1, overflow: 'auto', p: 1, bgcolor: '#fafbfc' }}>
+					{(tabValue === 0 ? orderItems : salonProducts).length === 0 ? (
+						<Box sx={{ 
+							p: 4, 
+							textAlign: 'center', 
+							color: 'text.secondary',
+							bgcolor: 'white',
+							borderRadius: 2,
+							border: '2px dashed #e2e8f0',
+							mt: 2
+						}}>
+							<Box sx={{ fontSize: '3rem', mb: 1 }}>
+								{tabValue === 0 ? '🛒' : '📦'}
+							</Box>
+							<Typography variant="body2" fontWeight="medium">
+								{tabValue === 0 ? 'No items in order' : 'No products selected for consumption'}
+							</Typography>
+							<Typography variant="caption" color="text.secondary">
+								{tabValue === 0 ? 'Add services or products to get started' : 'Select products for salon use'}
+							</Typography>
+						</Box>
+					) : (
+						<List dense sx={{ p: 0 }}>
+							{(tabValue === 0 ? orderItems : salonProducts).map((item, index) => (
+								<React.Fragment key={item.id}>
+									<Card
+										sx={{
+											mb: 1.5,
+											borderRadius: 2,
+											boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+											border: '1px solid #e2e8f0',
+											transition: 'all 0.2s ease',
+											'&:hover': {
+												boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+												transform: 'translateY(-1px)'
+											}
+										}}
+									>
+										<CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
+											<Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+												<Box sx={{ flex: 1 }}>
+													<Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+														{item.type === 'service' && <ContentCutIcon fontSize="small" sx={{ mr: 1, color: '#667eea' }} />}
+														{item.type === 'product' && <Inventory fontSize="small" sx={{ mr: 1, color: '#38a169' }} />}
+														{item.type === 'membership' && <CardMembershipIcon fontSize="small" sx={{ mr: 1, color: '#d69e2e' }} />}
+														<Typography variant="body2" fontWeight="bold" sx={{ color: '#2d3748' }}>
+															{item.item_name}
+														</Typography>
+													</Box>
+													<Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1 }}>
+														<Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+															<Typography variant="caption" color="text.secondary">Qty:</Typography>
+															<TextField
+																type="number"
+																size="small"
+																value={item.quantity}
+																onChange={(e) => {
+																	const newQuantity = Math.max(1, parseInt(e.target.value) || 1);
+																	if (tabValue === 0) {
+																		const updatedItems = orderItems.map(i => 
+																			i.id === item.id ? { ...i, quantity: newQuantity } : i
+																		);
+																		setOrderItems(updatedItems);
+																	} else {
+																		const updatedProducts = salonProducts.map(p => 
+																			p.id === item.id ? { ...p, quantity: newQuantity, total: p.price * newQuantity } : p
+																		);
+																		setSalonProducts(updatedProducts);
+																	}
+																}}
+																sx={{ 
+																	width: 60,
+																	'& .MuiOutlinedInput-root': {
+																		borderRadius: 1.5,
+																		'& fieldset': { borderColor: '#e2e8f0' }
+																	}
+																}}
+																InputProps={{ inputProps: { min: 1 } }}
+															/>
+														</Box>
+														<Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
+															× ₹{item.price}
+														</Typography>
+													</Box>
+													{tabValue === 0 && item.type === 'service' && (
+														<Box sx={{ 
+															p: 1, 
+															bgcolor: activeClientMembership ? '#f0f4ff' : '#f7f7f7', 
+															borderRadius: 1.5,
+															border: '1px solid #e2e8f0'
+														}}>
+															<FormControlLabel
+																control={
+																	<Switch
+																		checked={servicesMembershipPayment[item.id] || false}
+																		onChange={(e) => {
+																			if (!activeClientMembership || !activeClientMembership.isActive) {
+																				toast.error('No active membership found');
+																				return;
+																			}
+																			setServicesMembershipPayment(prev => ({
+																				...prev,
+																				[item.id]: e.target.checked
+																			}));
+																		}}
+																		size="small"
+																		disabled={!activeClientMembership || !activeClientMembership.isActive}
+																		sx={{
+																			'& .MuiSwitch-switchBase.Mui-checked': {
+																				color: '#667eea'
+																			},
+																			'& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': {
+																				backgroundColor: '#667eea'
+																			}
+																		}}
+																	/>
+																}
+																label={
+																	<Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+																		<AccountBalanceWalletIcon fontSize="small" sx={{ color: servicesMembershipPayment[item.id] ? '#667eea' : '#9ca3af' }} />
+																		<Typography variant="caption" fontWeight="medium">
+																			Pay via Membership
+																		</Typography>
+																	</Box>
+																}
+																sx={{ m: 0 }}
+															/>
+														</Box>
+													)}
+												</Box>
+												<Box sx={{ textAlign: 'right', ml: 2 }}>
+													<Typography variant="h6" fontWeight="bold" sx={{ color: '#2d3748', mb: 0.5 }}>
+														₹{(item.price * item.quantity).toFixed(0)}
+													</Typography>
+													{tabValue === 0 && item.type === 'service' && servicesMembershipPayment[item.id] && (
+														<Chip 
+															label="Ex. GST" 
+															size="small" 
+															color="primary" 
+															variant="outlined"
+															sx={{ mb: 1, fontSize: '0.7rem' }}
+														/>
+													)}
+													<IconButton
+														size="small"
+														color="error"
+														onClick={() => {
+															if (tabValue === 0) {
+																handleRemoveFromOrder(item.id);
+															} else {
+																handleRemoveSalonProduct(item.item_id);
+															}
+														}}
+														sx={{ 
+															bgcolor: '#fee2e2',
+															'&:hover': { bgcolor: '#fecaca' },
+															border: '1px solid #f87171'
+														}}
+													>
+														<CloseIcon fontSize="small" />
+													</IconButton>
+												</Box>
+											</Box>
+										</CardContent>
+									</Card>
+								</React.Fragment>
+							))}
+						</List>
+					)}
+				</Box>
+			</Box>
+
+			{/* Right Panel - Payment & Summary */}
+			<Box sx={{ 
+				width: '25%', 
+				display: 'flex',
+				flexDirection: 'column',
+				height: '100vh',
+				bgcolor: 'white'
+			}}>
+				{/* Summary Header */}
+				<Box sx={{ 
+					p: 2, 
+					borderBottom: 1, 
+					borderColor: 'divider', 
+					bgcolor: 'linear-gradient(135deg, #38a169 0%, #2d7738 100%)',
+					color: 'white'
+				}}>
+					<Typography variant="h6" fontWeight="bold" sx={{ color: 'white' }}>
+						{tabValue === 0 ? '💳 Payment' : '📋 Summary'}
+					</Typography>
+				</Box>
+
+				{tabValue === 0 && (
+					<>
+						{/* Order Total */}
+						<Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider', bgcolor: '#f8f9fa' }}>
+							<Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+								<Typography variant="body2" sx={{ fontWeight: 500, color: '#4a5568' }}>Subtotal:</Typography>
+								<Typography variant="body2" fontWeight="bold">₹{(calculateProductSubtotal() + calculateServiceSubtotal() + calculateMembershipSubtotal()).toFixed(0)}</Typography>
+							</Box>
+							<Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+								<Typography variant="body2" sx={{ fontWeight: 500, color: '#4a5568' }}>GST:</Typography>
+								<Typography variant="body2" fontWeight="bold">₹{(calculateProductGstAmount(calculateProductSubtotal()) + calculateServiceGstAmount(calculateServiceSubtotal()) + calculateMembershipGstAmount(calculateMembershipSubtotal())).toFixed(0)}</Typography>
+							</Box>
+							{walkInDiscount > 0 && (
+								<Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+									<Typography variant="body2" sx={{ fontWeight: 500, color: '#4a5568' }}>Discount:</Typography>
+									<Typography variant="body2" color="error.main" fontWeight="bold">-₹{walkInDiscount.toFixed(0)}</Typography>
+								</Box>
+							)}
+							<Divider sx={{ my: 1.5 }} />
+							<Box sx={{ 
+								display: 'flex', 
+								justifyContent: 'space-between',
+								p: 1.5,
+								bgcolor: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+								borderRadius: 2,
+								color: 'white'
+							}}>
+								<Typography variant="h6" fontWeight="bold">Total:</Typography>
+								<Typography variant="h6" fontWeight="bold">
+									₹{calculateTotalAmount().toFixed(0)}
+								</Typography>
+							</Box>
+						</Box>
+
+						{/* Payment Methods */}
+						<Box sx={{ flex: 1, overflow: 'auto', p: 2 }}>
+							{/* Payment breakdown if membership services exist */}
+							{Object.values(servicesMembershipPayment).some(Boolean) && activeClientMembership && (
+								<Card sx={{ mb: 2, bgcolor: '#f0f4ff', border: '1px solid #c7d2fe' }}>
+									<CardContent sx={{ p: 1.5 }}>
+										<Typography variant="body2" fontWeight="bold" gutterBottom sx={{ color: '#4338ca' }}>
+											💎 Payment Split:
+										</Typography>
+										{(() => {
+											const membershipAmount = orderItems
+												.filter(item => item.type === 'service' && servicesMembershipPayment[item.id])
+												.reduce((sum, item) => sum + Math.max(0, (item.price * item.quantity) - (item.discount || 0)), 0);
+											
+											const regularAmount = Math.max(0, calculateTotalAmount() - membershipAmount);
+											
+											return (
+												<>
+													<Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+														<Typography variant="caption" sx={{ color: '#4338ca' }}>💎 Membership (Ex. GST):</Typography>
+														<Typography variant="caption" fontWeight="bold" sx={{ color: '#4338ca' }}>₹{membershipAmount.toFixed(0)}</Typography>
+													</Box>
+													<Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+														<Typography variant="caption" sx={{ color: '#4338ca' }}>💳 Regular (Inc. GST):</Typography>
+														<Typography variant="caption" fontWeight="bold" sx={{ color: '#4338ca' }}>₹{regularAmount.toFixed(0)}</Typography>
+													</Box>
+												</>
+											);
+										})()}
+									</CardContent>
+								</Card>
+							)}
+
+							{/* Payment Method Cards - Enhanced Design */}
+							<Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
 								{(['cash', 'credit_card', 'debit_card', 'upi', 'bnpl'] as const).map(method => (
-									<Box
+									<Card
 										key={method}
+										sx={{
+											border: 2,
+											borderColor: paymentAmounts[method] > 0 ? '#667eea' : '#e2e8f0',
+											borderRadius: 2,
+											bgcolor: paymentAmounts[method] > 0 ? '#f0f4ff' : 'white',
+											cursor: 'pointer',
+											transition: 'all 0.2s ease',
+											'&:hover': {
+												borderColor: '#667eea',
+												transform: 'translateY(-1px)',
+												boxShadow: '0 4px 12px rgba(102, 126, 234, 0.15)'
+											}
+										}}
 										onClick={() => {
 											if (!isSplitPayment) {
-												// In single payment mode, clicking the box transfers entire amount to this method
 												const currentTotal = calculateTotalAmount();
 												const newPaymentAmounts = {
-													cash: 0,
-													credit_card: 0,
-													debit_card: 0,
-													upi: 0,
-													bnpl: 0,
-													membership: 0
+													cash: 0, credit_card: 0, debit_card: 0, upi: 0, bnpl: 0, membership: 0
 												};
 												newPaymentAmounts[method] = currentTotal;
 												setPaymentAmounts(newPaymentAmounts);
 												setWalkInPaymentMethod(method);
 											}
 										}}
+									>
+										<CardContent sx={{ p: 1.5 }}>
+											<Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+												<Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+													{method === 'cash' && <LocalAtm fontSize="small" sx={{ color: paymentAmounts[method] > 0 ? '#667eea' : '#9ca3af' }} />}
+													{method === 'credit_card' && <CreditCard fontSize="small" sx={{ color: paymentAmounts[method] > 0 ? '#667eea' : '#9ca3af' }} />}
+													{method === 'debit_card' && <CreditCard fontSize="small" sx={{ color: paymentAmounts[method] > 0 ? '#667eea' : '#9ca3af' }} />}
+													{method === 'upi' && <AccountBalance fontSize="small" sx={{ color: paymentAmounts[method] > 0 ? '#667eea' : '#9ca3af' }} />}
+													{method === 'bnpl' && <AttachMoney fontSize="small" sx={{ color: paymentAmounts[method] > 0 ? '#667eea' : '#9ca3af' }} />}
+													<Typography variant="body2" fontWeight={paymentAmounts[method] > 0 ? 'bold' : 'medium'} sx={{ color: paymentAmounts[method] > 0 ? '#4338ca' : '#6b7280' }}>
+														{PAYMENT_METHOD_LABELS[method]}
+													</Typography>
+												</Box>
+												<TextField
+													size="small"
+													type="number"
+													value={paymentAmounts[method]}
+													onChange={(e) => {
+														const newValue = Math.max(0, Number(e.target.value) || 0);
+														setPaymentAmounts(prev => ({ ...prev, [method]: newValue }));
+													}}
+													sx={{ 
+														width: 80,
+														'& .MuiOutlinedInput-root': {
+															borderRadius: 1.5,
+															bgcolor: 'white',
+															'& fieldset': { borderColor: '#e5e7eb' },
+															'&:hover fieldset': { borderColor: '#667eea' },
+															'&.Mui-focused fieldset': { borderColor: '#667eea' }
+														}
+													}}
+													InputProps={{
+														startAdornment: <InputAdornment position="start">₹</InputAdornment>
+													}}
+												/>
+											</Box>
+										</CardContent>
+									</Card>
+								))}
+
+								{/* Membership Payment */}
+								{activeClientMembership && activeClientMembership.isActive && (
+									<Card
 										sx={{
-											minWidth: '140px',
-											flex: '1 1 0',
-											p: 1.5,
-											border: '2px solid',
-											borderColor: paymentAmounts[method] > 0 ? 'primary.main' : 'divider',
-											borderRadius: '8px',
-											bgcolor: paymentAmounts[method] > 0 ? 'primary.lighter' : 'background.paper',
+											border: 2,
+											borderColor: paymentAmounts.membership > 0 ? '#d69e2e' : '#e2e8f0',
+											borderRadius: 2,
+											bgcolor: paymentAmounts.membership > 0 ? '#fef5e7' : 'white',
 											transition: 'all 0.2s ease',
-											cursor: !isSplitPayment ? 'pointer' : 'default',
-											'&:hover': !isSplitPayment ? {
-												borderColor: 'primary.main',
-												bgcolor: 'primary.lightest'
-											} : {}
+											'&:hover': {
+												borderColor: '#d69e2e',
+												transform: 'translateY(-1px)',
+												boxShadow: '0 4px 12px rgba(214, 158, 46, 0.15)'
+											}
 										}}
 									>
-										<Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-											{method === 'cash' && <LocalAtm fontSize="small" sx={{ mr: 1, color: paymentAmounts[method] > 0 ? 'primary.main' : 'text.secondary' }} />}
-											{method === 'credit_card' && <CreditCard fontSize="small" sx={{ mr: 1, color: paymentAmounts[method] > 0 ? 'primary.main' : 'text.secondary' }} />}
-											{method === 'debit_card' && <CreditCard fontSize="small" sx={{ mr: 1, color: paymentAmounts[method] > 0 ? 'primary.main' : 'text.secondary' }} />}
-											{method === 'upi' && <AccountBalance fontSize="small" sx={{ mr: 1, color: paymentAmounts[method] > 0 ? 'primary.main' : 'text.secondary' }} />}
-											{method === 'bnpl' && <AttachMoney fontSize="small" sx={{ mr: 1, color: paymentAmounts[method] > 0 ? 'primary.main' : 'text.secondary' }} />}
-											<Typography variant="body2" fontWeight={paymentAmounts[method] > 0 ? 'bold' : 'normal'}>
-												{PAYMENT_METHOD_LABELS[method]}
-											</Typography>
-										</Box>
+										<CardContent sx={{ p: 1.5 }}>
+											<Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+												<Box>
+													<Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+														<CardMembershipIcon fontSize="small" sx={{ color: paymentAmounts.membership > 0 ? '#d69e2e' : '#9ca3af' }} />
+														<Typography variant="body2" fontWeight={paymentAmounts.membership > 0 ? 'bold' : 'medium'} sx={{ color: paymentAmounts.membership > 0 ? '#92400e' : '#6b7280' }}>
+															Membership
+														</Typography>
+													</Box>
+													<Typography variant="caption" sx={{ color: '#92400e', fontWeight: 500 }}>
+														Balance: ₹{activeClientMembership.currentBalance.toLocaleString()}
+													</Typography>
+												</Box>
+												<TextField
+													size="small"
+													type="number"
+													value={paymentAmounts.membership}
+													onChange={(e) => {
+														const val = Math.min(
+															activeClientMembership.currentBalance,
+															Math.max(0, Number(e.target.value) || 0)
+														);
+														setPaymentAmounts(prev => ({ ...prev, membership: val }));
+													}}
+													sx={{ 
+														width: 80,
+														'& .MuiOutlinedInput-root': {
+															borderRadius: 1.5,
+															bgcolor: 'white',
+															'& fieldset': { borderColor: '#e5e7eb' },
+															'&:hover fieldset': { borderColor: '#d69e2e' },
+															'&.Mui-focused fieldset': { borderColor: '#d69e2e' }
+														}
+													}}
+													InputProps={{
+														startAdornment: <InputAdornment position="start">₹</InputAdornment>
+													}}
+												/>
+											</Box>
+										</CardContent>
+									</Card>
+								)}
+							</Box>
+
+							{/* Discount Section */}
+							<Card sx={{ mt: 2, bgcolor: '#fef3c7', border: '1px solid #f59e0b' }}>
+								<CardContent sx={{ p: 1.5 }}>
+									<Typography variant="body2" fontWeight="bold" gutterBottom sx={{ color: '#92400e' }}>
+										🎯 Discount
+									</Typography>
+									<Box sx={{ display: 'flex', gap: 1 }}>
 										<TextField
-											fullWidth
 											size="small"
+											label="Amount"
 											type="number"
-											value={paymentAmounts[method]}
-																				onChange={(e) => {
-										const newValue = Math.max(0, Number(e.target.value) || 0);
-										const currentTotal = calculateTotalAmount();
-										
-										if (isSplitPayment) {
-											// In split payment mode, allow manual entry for any method
-											setPaymentAmounts(prev => ({ ...prev, [method]: newValue }));
-										} else {
-											// In single payment mode, if user types a value, use that exact value
-											// and put any remaining amount in cash
-											const newPaymentAmounts = {
-												cash: 0,
-												credit_card: 0,
-												debit_card: 0,
-												upi: 0,
-												bnpl: 0,
-												membership: 0
-											};
-											
-											if (newValue === 0) {
-												// If user enters 0, move entire amount to cash
-												newPaymentAmounts.cash = currentTotal;
-												setWalkInPaymentMethod('cash');
-											} else if (newValue >= currentTotal) {
-												// If entered amount is >= total, put entire amount in this method
-												newPaymentAmounts[method] = currentTotal;
-												setWalkInPaymentMethod(method);
-											} else {
-												// If entered amount is less than total, put remainder in cash
-												newPaymentAmounts[method] = newValue;
-												newPaymentAmounts.cash = currentTotal - newValue;
-												setWalkInPaymentMethod(method);
-											}
-											
-											setPaymentAmounts(newPaymentAmounts);
-										}
-									}}
+											value={walkInDiscount}
+											onChange={(e) => setWalkInDiscount(Math.max(0, Number(e.target.value) || 0))}
+											sx={{ 
+												flex: 1,
+												'& .MuiOutlinedInput-root': {
+													borderRadius: 1.5,
+													bgcolor: 'white'
+												}
+											}}
 											InputProps={{
 												startAdornment: <InputAdornment position="start">₹</InputAdornment>
 											}}
-											disabled={false}
 										/>
-									</Box>
-								))}
-
-								{/* Show membership payment option only for members */}
-								{activeClientMembership && activeClientMembership.isActive && (
-									<Box
-										onClick={() => {
-											if (!isSplitPayment) {
-												// In single payment mode, clicking the box transfers entire amount to membership
-												const currentTotal = calculateTotalAmount();
-												// Cap the amount at the available membership balance
-												const membershipAmount = Math.min(currentTotal, activeClientMembership.currentBalance);
-												const newPaymentAmounts = {
-													cash: currentTotal - membershipAmount, // Any remaining amount goes to cash
-													credit_card: 0,
-													debit_card: 0,
-													upi: 0,
-													bnpl: 0,
-													membership: membershipAmount
-												};
-												setPaymentAmounts(newPaymentAmounts);
-												setWalkInPaymentMethod('membership');
-												setUseMembershipPayment(true);
-											}
-										}}
-										sx={{
-											minWidth: '140px',
-											flex: '1 1 0',
-											p: 1.5,
-											border: '2px solid',
-											borderColor: paymentAmounts.membership > 0 ? 'primary.main' : 'divider',
-											borderRadius: '8px',
-											bgcolor: paymentAmounts.membership > 0 ? 'primary.lighter' : 'background.paper',
-											transition: 'all 0.2s ease',
-											cursor: !isSplitPayment ? 'pointer' : 'default',
-											'&:hover': !isSplitPayment ? {
-												borderColor: 'primary.main',
-												bgcolor: 'primary.lightest'
-											} : {}
-										}}
-									>
-										<Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-											<AccountBalanceWalletIcon fontSize="small" sx={{ mr: 1, color: paymentAmounts.membership > 0 ? 'primary.main' : 'text.secondary' }} />
-											<Typography variant="body2" fontWeight={paymentAmounts.membership > 0 ? 'bold' : 'normal'}>
-												Pay from Membership
-											</Typography>
-										</Box>
 										<TextField
-											fullWidth
 											size="small"
+											label="Percent"
 											type="number"
-											value={paymentAmounts.membership}
+											value={walkInDiscountPercentage}
 											onChange={(e) => {
-												const val = Math.min(
-													activeClientMembership.currentBalance,
-													Math.max(0, Number(e.target.value) || 0)
-												);
+												const percentage = Math.max(0, Math.min(100, Number(e.target.value) || 0));
+												setWalkInDiscountPercentage(percentage);
 												const currentTotal = calculateTotalAmount();
-												
-												if (isSplitPayment) {
-													// In split payment mode, allow manual entry for membership
-													setPaymentAmounts(prev => ({ ...prev, membership: val }));
-												} else {
-													// In single payment mode, if user types a value, use that exact value
-													// and put any remaining amount in cash
-													const newPaymentAmounts = {
-														cash: 0,
-														credit_card: 0,
-														debit_card: 0,
-														upi: 0,
-														bnpl: 0,
-														membership: 0
-													};
-													
-													if (val === 0) {
-														// If user enters 0, move entire amount to cash
-														newPaymentAmounts.cash = currentTotal;
-														setWalkInPaymentMethod('cash');
-														setUseMembershipPayment(false);
-													} else {
-														// Use the entered amount (capped by membership balance)
-														// and put any remaining amount in cash
-														newPaymentAmounts.membership = val;
-														newPaymentAmounts.cash = currentTotal - val;
-														setWalkInPaymentMethod('membership');
-														setUseMembershipPayment(true);
-													}
-													
-													setPaymentAmounts(newPaymentAmounts);
+												setWalkInDiscount((currentTotal * percentage) / 100);
+											}}
+											sx={{ 
+												flex: 1,
+												'& .MuiOutlinedInput-root': {
+													borderRadius: 1.5,
+													bgcolor: 'white'
 												}
 											}}
 											InputProps={{
-												startAdornment: <InputAdornment position="start">₹</InputAdornment>,
-												inputProps: {
-													min: 0,
-													max: Math.min(calculateTotalAmount(), activeClientMembership.currentBalance)
-												}
-											}}
-											disabled={false}
-										/>
-										<Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
-											Available: Rs. {activeClientMembership.currentBalance.toLocaleString()}
-										</Typography>
-									</Box>
-								)}
-							</Box>
-							
-							{/* Payment Summary - Always visible */}
-							<Box sx={{ mt: 2, p: 2, bgcolor: 'primary.lighter', borderRadius: '8px', border: '1px solid', borderColor: 'primary.main' }}>
-								<Typography variant="subtitle2" gutterBottom sx={{ color: 'primary.main', fontWeight: 'bold' }}>
-									Payment Summary
-								</Typography>
-								<Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-									<Typography variant="body2">Total Amount:</Typography>
-									<Typography variant="body2" fontWeight="bold" color="primary.main">
-										{formatCurrency(calculateTotalAmount())}
-									</Typography>
-								</Box>
-								<Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-									<Typography variant="body2">Amount Entered:</Typography>
-									<Typography variant="body2" fontWeight="medium">
-										{formatCurrency(Object.values(paymentAmounts).reduce((a, b) => a + b, 0))}
-									</Typography>
-								</Box>
-								<Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-									<Typography variant="body2">Balance:</Typography>
-									<Typography 
-										variant="body2" 
-										fontWeight="bold"
-										color={Object.values(paymentAmounts).reduce((a, b) => a + b, 0) < calculateTotalAmount() ? "error.main" : "success.main"}
-									>
-										{formatCurrency(Math.max(0, calculateTotalAmount() - Object.values(paymentAmounts).reduce((a, b) => a + b, 0)))}
-									</Typography>
-								</Box>
-								{isSplitPayment && Object.values(paymentAmounts).filter(amt => amt > 0).length > 1 && (
-									<Box sx={{ mt: 2, pt: 1, borderTop: '1px solid', borderColor: 'divider' }}>
-										<Typography variant="caption" color="text.secondary" gutterBottom sx={{ display: 'block' }}>
-											Payment Methods Used:
-										</Typography>
-										{Object.entries(paymentAmounts)
-											.filter(([_, amt]) => amt > 0)
-											.map(([method, amt]) => (
-												<Box key={method} sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
-													<Typography variant="caption" color="text.secondary">
-														{PAYMENT_METHOD_LABELS[method]}:
-													</Typography>
-													<Typography variant="caption" fontWeight="medium">
-														{formatCurrency(amt)}
-													</Typography>
-												</Box>
-											))}
-									</Box>
-								)}
-							</Box>
-							
-							<Grid container spacing={2} sx={{ mt: 1 }}>
-								<Grid item xs={12} sm={6}>
-									<TextField
-											fullWidth
-											label="Discount ₹"
-											variant="outlined"
-											type="number"
-											size="small"
-											value={walkInDiscount}
-											onChange={(e) => {
-												const fixedDiscount = Math.max(0, Number(e.target.value) || 0); // Ensure discount is not negative
-												setWalkInDiscount(fixedDiscount);
-												// Calculate and set percentage discount based on total *after* item discounts but *before* global fixed discount
-												const subtotalAfterItemDiscounts = orderItems.reduce((sum, item) => sum + (item.price * item.quantity - (item.discount || 0)), 0);
-												const totalWithGST = subtotalAfterItemDiscounts + calculateProductGstAmount(calculateProductSubtotal()) + calculateServiceGstAmount(calculateServiceSubtotal()) + calculateMembershipGstAmount(calculateMembershipSubtotal());
-
-												if (totalWithGST > 0) {
-													const calculatedPercentageFromFixed = (fixedDiscount / totalWithGST) * 100;
-													setWalkInDiscountPercentage(Math.max(0, Math.min(100, parseFloat(calculatedPercentageFromFixed.toFixed(2)))));
-												} else {
-													setWalkInDiscountPercentage(0);
-												}
-											}}
-											InputProps={{
-												inputProps: { min: 0, step: 1 },
-												startAdornment: (
-													<InputAdornment position="start">
-														₹
-													</InputAdornment>
-												),
+												endAdornment: <InputAdornment position="end">%</InputAdornment>
 											}}
 										/>
-								</Grid>
-								
-								<Grid item xs={12} sm={6}>
-									<TextField
-										fullWidth
-										label="Discount %"
-										variant="outlined"
-										type="number"
-										size="small"
-										value={walkInDiscountPercentage}
-										onChange={(e) => {
-											const percentage = parseFloat(e.target.value);
-											const validPercentage = isNaN(percentage) ? 0 : Math.max(0, Math.min(100, percentage));
-											setWalkInDiscountPercentage(validPercentage);
-											// Calculate and set fixed discount based on total *after* item discounts
-											const subtotalAfterItemDiscounts = orderItems.reduce((sum, item) => sum + (item.price * item.quantity - (item.discount || 0)), 0);
-											const totalWithGST = subtotalAfterItemDiscounts + calculateProductGstAmount(calculateProductSubtotal()) + calculateServiceGstAmount(calculateServiceSubtotal()) + calculateMembershipGstAmount(calculateMembershipSubtotal());
-											
-											const calculatedFixedDiscountFromPercentage = (totalWithGST * validPercentage) / 100;
-											setWalkInDiscount(parseFloat(calculatedFixedDiscountFromPercentage.toFixed(2)));
-										}}
-										InputProps={{
-											inputProps: { min: 0, max: 100, step: 0.1 },
-											endAdornment: (
-												<InputAdornment position="end">
-													%
-												</InputAdornment>
-											),
-										}}
-									/>
-								</Grid>
-								
+									</Box>
+								</CardContent>
+							</Card>
+						</Box>
 
-							</Grid>
-							
-							{/* Complete Order Button */}
+						{/* Complete Order Button */}
+						<Box sx={{ p: 2, borderTop: 1, borderColor: 'divider' }}>
 							<Button
 								variant="contained"
-								color="primary"
 								fullWidth
-								sx={{ mt: 2 }}
-								onClick={async () => {
-									// Build payments array from paymentAmounts for split payment
-									if (isSplitPayment) {
-										const payments = Object.entries(paymentAmounts)
-											.filter(([_, amt]) => amt > 0)
-											.map(([method, amt]) => ({ 
-												id: uuidv4(), 
-												payment_method: method as PaymentMethod, 
-												amount: amt 
-											}));
-										setSplitPayments(payments);
-									} else {
-										// For single payment, find the active payment method
-										const activePaymentMethod = Object.entries(paymentAmounts).find(([_, amt]) => amt > 0)?.[0] as PaymentMethod || 'cash';
-										setWalkInPaymentMethod(activePaymentMethod);
-									}
-									await handleCreateWalkInOrder();
-								}}
-								disabled={processing || Object.values(paymentAmounts).reduce((a, b) => a + b, 0) <= 0}
+								size="large"
+								onClick={handleCreateWalkInOrder}
+								disabled={processing || orderItems.length === 0}
 								startIcon={processing ? <CircularProgress size={20} /> : <CheckIcon />}
+								sx={{ 
+									py: 1.5,
+									background: 'linear-gradient(135deg, #38a169 0%, #2d7738 100%)',
+									borderRadius: 2,
+									fontSize: '1rem',
+									fontWeight: 'bold',
+									textTransform: 'none',
+									boxShadow: '0 4px 12px rgba(56, 161, 105, 0.3)',
+									'&:hover': {
+										background: 'linear-gradient(135deg, #2d7738 0%, #22543d 100%)',
+										boxShadow: '0 6px 20px rgba(56, 161, 105, 0.4)',
+									},
+									'&:disabled': {
+										background: '#e2e8f0',
+										color: '#a0aec0'
+									}
+								}}
 							>
-								{processing ? 'Processing...' : 'Complete Order'}
+								{processing ? 'Processing Order...' : '✅ Complete Order'}
 							</Button>
-						</Paper>
-					</Grid>
-				</Grid>
-			</TabPanel>
+						</Box>
+					</>
+				)}
 
-			<TabPanel value={tabValue} index={1}>
-				<Grid container spacing={2}>
-					<Grid item xs={12}>
-						<Paper sx={{ p: 2, mb: 2 }}>
-							<Typography variant="h6" gutterBottom sx={{ borderBottom: '1px solid', borderColor: 'divider', pb: 1 }}>
-								Salon Consumption
-							</Typography>
-							
-							{renderSalonProductSelection()}
-							
-							{/* Salon Products Summary */}
-							<Box sx={{ mt: 4 }}>
-								<Typography variant="h6" gutterBottom>
-									Selected Products for Salon Use
-								</Typography>
-								
-								{salonProducts.length === 0 ? (
-									<Typography color="text.secondary" sx={{ py: 2, textAlign: 'center' }}>
-										No products selected for salon use yet
+				{tabValue === 1 && (
+					<>
+						{/* Salon Consumption Summary */}
+						<Box sx={{ flex: 1, overflow: 'auto', p: 2 }}>
+							<Card sx={{ mb: 2, bgcolor: '#f0f9ff', border: '1px solid #0ea5e9' }}>
+								<CardContent sx={{ p: 1.5 }}>
+									<Typography variant="body2" fontWeight="bold" sx={{ color: '#0369a1' }}>
+										📊 Total Amount: ₹{salonProducts.reduce((sum, item) => sum + item.price * item.quantity, 0).toFixed(0)}
 									</Typography>
-								) : (
-									<>
-										<TableContainer component={Paper} variant="outlined" sx={{ mb: 2 }}>
-											<Table size="small">
-												<TableHead>
-													<TableRow>
-														<TableCell>Product</TableCell>
-														<TableCell align="right">Quantity</TableCell>
-														<TableCell align="right">Purchase Cost/Unit (Ex.GST)</TableCell>
-														<TableCell align="right">Total</TableCell>
-														<TableCell></TableCell>
-													</TableRow>
-												</TableHead>
-												<TableBody>
-													{salonProducts.map((product) => (
-														<TableRow key={product.id}>
-															<TableCell>{product.item_name}</TableCell>
-															<TableCell align="right">{product.quantity}</TableCell>
-															<TableCell align="right">{formatCurrency(product.price)}</TableCell>
-															<TableCell align="right">{formatCurrency(product.price * product.quantity)}</TableCell>
-															<TableCell align="right">
-																<IconButton
-																	size="small"
-																	color="error"
-																	onClick={() => handleRemoveSalonProduct(product.item_id)}
-																>
-																	<DeleteOutlineIcon fontSize="small" />
-																</IconButton>
-															</TableCell>
-														</TableRow>
-													))}
-													{/* Total Row */}
-													<TableRow>
-														<TableCell colSpan={3} align="right" sx={{ fontWeight: 'bold' }}>
-															Total:
-														</TableCell>
-														<TableCell align="right" sx={{ fontWeight: 'bold' }}>
-															{formatCurrency(salonProducts.reduce((sum, product) => sum + product.price * product.quantity, 0))}
-														</TableCell>
-														<TableCell></TableCell>
-													</TableRow>
-												</TableBody>
-											</Table>
-										</TableContainer>
-										
-										{/* Additional Notes */}
-										<Grid container spacing={2}>
-											<Grid item xs={12}>
-												<TextField
-													fullWidth
-													label="Consumption Notes (Optional)"
-													variant="outlined"
-													multiline
-													rows={3}
-													value={consumptionNotes}
-													onChange={(e) => setConsumptionNotes(e.target.value)}
-													sx={{ mb: 2 }}
-												/>
-											</Grid>
-										</Grid>
-										
-										{/* Consumption Button */}
-										<Button
-											variant="contained"
-											color="primary"
-											fullWidth
-											onClick={handleCreateSalonConsumptionWorkaround}
-											disabled={processing || !isSalonConsumptionValid()}
-											startIcon={processing ? <CircularProgress size={20} /> : null}
-										>
-											{processing ? "Processing..." : "Record Salon Consumption"}
-										</Button>
-									</>
-								)}
-							</Box>
-						</Paper>
-					</Grid>
-				</Grid>
-			</TabPanel>
-			{/* History Drawer */}
+								</CardContent>
+							</Card>
+							
+							<TextField
+								fullWidth
+								label="📝 Additional Notes"
+								multiline
+								rows={3}
+								value={consumptionNotes}
+								onChange={(e) => setConsumptionNotes(e.target.value)}
+								size="small"
+								sx={{ 
+									mb: 2,
+									'& .MuiOutlinedInput-root': {
+										borderRadius: 2,
+										'&:hover fieldset': { borderColor: '#667eea' },
+										'&.Mui-focused fieldset': { borderColor: '#667eea' }
+									}
+								}}
+							/>
+
+							<LocalizationProvider dateAdapter={AdapterDateFns}>
+								<DatePicker
+									label="📅 Consumption Date"
+									value={orderDate}
+									onChange={(newDate) => setOrderDate(newDate)}
+									slotProps={{
+										textField: {
+											fullWidth: true,
+											size: "small",
+											sx: { 
+												mb: 2,
+												'& .MuiOutlinedInput-root': {
+													borderRadius: 2,
+													'&:hover fieldset': { borderColor: '#667eea' },
+													'&.Mui-focused fieldset': { borderColor: '#667eea' }
+												}
+											}
+										}
+									}}
+								/>
+							</LocalizationProvider>
+						</Box>
+
+						{/* Record Consumption Button */}
+						<Box sx={{ p: 2, borderTop: 1, borderColor: 'divider' }}>
+							<Button
+								variant="contained"
+								fullWidth
+								size="large"
+								onClick={handleCreateSalonConsumptionWorkaround}
+								disabled={processing || !isSalonConsumptionValid()}
+								startIcon={processing ? <CircularProgress size={20} /> : <Inventory />}
+								sx={{ 
+									py: 1.5,
+									background: 'linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%)',
+									borderRadius: 2,
+									fontSize: '1rem',
+									fontWeight: 'bold',
+									textTransform: 'none',
+									boxShadow: '0 4px 12px rgba(14, 165, 233, 0.3)',
+									'&:hover': {
+										background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
+										boxShadow: '0 6px 20px rgba(14, 165, 233, 0.4)',
+									},
+									'&:disabled': {
+										background: '#e2e8f0',
+										color: '#a0aec0'
+									}
+								}}
+							>
+								{processing ? "Recording..." : "📋 Record Consumption"}
+							</Button>
+						</Box>
+					</>
+				)}
+			</Box>
+
+			{/* History Drawer - Keep existing implementation */}
 			<Drawer anchor="right" open={historyDrawerOpen} onClose={() => setHistoryDrawerOpen(false)}>
 				<Box sx={{ width: 400, p: 2 }}>
 					<Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2, borderBottom: '1px solid rgba(0,0,0,0.12)', pb: 1 }}>
@@ -4333,71 +4365,69 @@ export default function POS() {
 							<Typography color="text.secondary">No previous services found for this client.</Typography>
 						</Box>
 					) : (
-						<>
-							<List sx={{ 
-								maxHeight: 'calc(100vh - 120px)', 
-								overflowY: 'auto',
-								bgcolor: 'background.paper',
-								borderRadius: 1,
-								border: '1px solid rgba(0,0,0,0.12)'
-							}}>
-								{clientServiceHistory.map((item: any, index) => (
-									<React.Fragment key={item.id || `item-${index}`}>
-										<ListItem>
-											<ListItemText
-												primary={
-													<Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-														<Typography variant="body1" fontWeight="medium">
-															{item.service_name || item.item_name || 'Unknown Item'}
-															{item.quantity > 1 && <Typography component="span" variant="body2" sx={{ ml: 0.5 }}>
-																(x{item.quantity})
-															</Typography>}
-														</Typography>
-														<Typography fontWeight="medium">₹{item.price}</Typography>
-													</Box>
-												}
-												secondary={
-													<>
-														<Typography variant="body2">
-															{item.pos_orders?.created_at 
-																? format(new Date(item.pos_orders.created_at), 'dd/MM/yyyy') 
-																: item.appointment_data?.created_at 
-																	? format(new Date(item.appointment_data.created_at), 'dd/MM/yyyy')
-																	: 'N/A'}
-														</Typography>
-														<Typography variant="body2" color="textSecondary">
-															{item.pos_orders
-																? `POS Order - ${item.type === 'product' ? 'Product' : 'Service'}`
-																: item.appointment_data
-																	? `Appointment with ${item.appointment_data.stylist_name || 'Unknown Stylist'}`
-																	: ''}
-														</Typography>
-													</>
-												}
-											/>
-											<Chip 
-												size="small" 
-												color={
-													(item.pos_orders?.status === 'completed' || item.appointment_data?.status === 'completed') 
-														? 'success' 
-														: (item.pos_orders?.status === 'cancelled' || item.appointment_data?.status === 'cancelled') 
-															? 'error' 
-															: 'default'
-												}
-												label={item.pos_orders?.status || item.appointment_data?.status || 'N/A'}
-												sx={{ ml: 1 }}
-											/>
-										</ListItem>
-										<Divider />
-									</React.Fragment>
-								))}
-							</List>
-						</>
+						<List sx={{ 
+							maxHeight: 'calc(100vh - 120px)', 
+							overflowY: 'auto',
+							bgcolor: 'background.paper',
+							borderRadius: 1,
+							border: '1px solid rgba(0,0,0,0.12)'
+						}}>
+							{clientServiceHistory.map((item: any, index) => (
+								<React.Fragment key={item.id || `item-${index}`}>
+									<ListItem>
+										<ListItemText
+											primary={
+												<Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+													<Typography variant="body1" fontWeight="medium">
+														{item.service_name || item.item_name || 'Unknown Item'}
+														{item.quantity > 1 && <Typography component="span" variant="body2" sx={{ ml: 0.5 }}>
+															(x{item.quantity})
+														</Typography>}
+													</Typography>
+													<Typography fontWeight="medium">₹{item.price}</Typography>
+												</Box>
+											}
+											secondary={
+												<>
+													<Typography variant="body2">
+														{item.pos_orders?.created_at 
+															? format(new Date(item.pos_orders.created_at), 'dd/MM/yyyy') 
+															: item.appointment_data?.created_at 
+																? format(new Date(item.appointment_data.created_at), 'dd/MM/yyyy')
+																: 'N/A'}
+													</Typography>
+													<Typography variant="body2" color="textSecondary">
+														{item.pos_orders
+															? `POS Order - ${item.type === 'product' ? 'Product' : 'Service'}`
+															: item.appointment_data
+																? `Appointment with ${item.appointment_data.stylist_name || 'Unknown Stylist'}`
+																: ''}
+													</Typography>
+												</>
+											}
+										/>
+										<Chip 
+											size="small" 
+											color={
+												(item.pos_orders?.status === 'completed' || item.appointment_data?.status === 'completed') 
+													? 'success' 
+													: (item.pos_orders?.status === 'cancelled' || item.appointment_data?.status === 'cancelled') 
+														? 'error' 
+														: 'default'
+											}
+											label={item.pos_orders?.status || item.appointment_data?.status || 'N/A'}
+											sx={{ ml: 1 }}
+										/>
+									</ListItem>
+									<Divider />
+								</React.Fragment>
+							))}
+						</List>
 					)}
 				</Box>
 			</Drawer>
 			
-			{/* Print Bill Dialog */}
+			{/* Print Bill Dialog - Keep existing implementation */}
 			<Dialog
 				open={printDialogOpen}
 				onClose={() => setPrintDialogOpen(false)}
