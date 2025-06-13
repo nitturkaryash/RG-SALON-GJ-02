@@ -944,8 +944,8 @@ export default function Orders() {
       return (
         <Box>
           {Object.entries(paymentSummary).map(([method, amount], index) => {
-            // For aggregated multi-expert orders, show the full order amount instead of split amount
-            const displayAmount = isAggregatedOrder ? (order.total || order.total_amount || 0) : amount;
+            // Show the actual payment amount, not the full order total
+            const displayAmount = amount;
             
             return (
               <Box key={index} sx={{ mb: 0.5 }}>
@@ -957,7 +957,7 @@ export default function Orders() {
               </Box>
             );
           })}
-          {(order.pending_amount || 0) > 0 && (
+          {(order.pending_amount || 0) > 0 && order.status !== 'completed' && (
             <Box sx={{ mb: 0.5 }}>
               <Chip
                 size="small"
@@ -983,7 +983,7 @@ export default function Orders() {
           color="primary"
           variant="outlined"
         />
-                 {(order.pending_amount || 0) > 0 && (
+                 {(order.pending_amount || 0) > 0 && order.status !== 'completed' && (
            <Box sx={{ mt: 0.5 }}>
              <Chip
                size="small"
@@ -1462,12 +1462,24 @@ export default function Orders() {
                       />
                     </TableCell>
                     <TableCell>
-                      <Typography 
-                        fontWeight="medium" 
-                        color={isSalonOrder ? '#FF6B00' : 'text.primary'}
-                      >
-                        ₹{Math.round(order.total_amount || order.total || 0)}
-                      </Typography>
+                      {(() => {
+                        // Calculate total from actual payments for accuracy
+                        let displayTotal = order.total_amount || order.total || 0;
+                        if (order.payments && order.payments.length > 0) {
+                          const paymentTotal = order.payments.reduce((sum: number, payment: any) => sum + (payment.amount || 0), 0);
+                          if (paymentTotal > 0) {
+                            displayTotal = paymentTotal;
+                          }
+                        }
+                        return (
+                          <Typography 
+                            fontWeight="medium" 
+                            color={isSalonOrder ? '#FF6B00' : 'text.primary'}
+                          >
+                            ₹{Math.round(displayTotal)}
+                          </Typography>
+                        );
+                      })()}
                     </TableCell>
                     <TableCell align="right">
                       <ButtonGroup size="small" variant="outlined">
@@ -1644,7 +1656,19 @@ export default function Orders() {
                 <Divider sx={{ my: 1 }} />
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
                   <Typography variant="body2" fontWeight="bold">Total:</Typography>
-                  <Typography variant="body2" fontWeight="bold">{formatCurrency(selectedOrder.total)}</Typography>
+                  <Typography variant="body2" fontWeight="bold">
+                    {(() => {
+                      // Calculate total from actual payments for accuracy (same logic as table)
+                      let displayTotal = selectedOrder.total_amount || selectedOrder.total || 0;
+                      if (selectedOrder.payments && selectedOrder.payments.length > 0) {
+                        const paymentTotal = selectedOrder.payments.reduce((sum: number, payment: any) => sum + (payment.amount || 0), 0);
+                        if (paymentTotal > 0) {
+                          displayTotal = paymentTotal;
+                        }
+                      }
+                      return formatCurrency(displayTotal);
+                    })()}
+                  </Typography>
                 </Box>
                 
                 {/* Show payment details for split payments */}
@@ -1661,9 +1685,8 @@ export default function Orders() {
                         </TableHead>
                         <TableBody>
                           {selectedOrder.payments.map((payment: PaymentDetail) => {
-                            // For aggregated multi-expert orders, show the full order amount instead of split amount
-                            const isAggregatedOrder = (selectedOrder as any).aggregated_multi_expert;
-                            const displayAmount = isAggregatedOrder ? (selectedOrder.total || selectedOrder.total_amount || 0) : payment.amount;
+                            // Show the actual payment amount, not the full order total
+                            const displayAmount = payment.amount;
                             
                             return (
                               <TableRow key={payment.id}>
@@ -1672,7 +1695,7 @@ export default function Orders() {
                               </TableRow>
                             );
                           })}
-                          {selectedOrder.pending_amount > 0 && (
+                          {selectedOrder.pending_amount > 0 && selectedOrder.status !== 'completed' && (
                             <TableRow>
                               <TableCell>
                                 <Typography color="error">Pending Payment:</Typography>
