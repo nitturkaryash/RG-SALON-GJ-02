@@ -2115,7 +2115,17 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
           format(new Date(appointment.start_time), 'yyyy-MM-dd') === appointmentDate
         );
 
-        if (sameClientAppointments.length > 1) {
+        // Determine whether these multiple records actually belong to **different** bookings.
+        // If they all share the same booking_id (typical in multi-expert scenarios) we
+        // treat them as a single booking and skip the bulk-check-in dialog.
+        const contextBookingKey = contextMenuAppointment.booking_id || `appt-${contextMenuAppointment.id}`;
+        const hasDifferentBooking = sameClientAppointments.some(appt => {
+          if (appt.id === contextMenuAppointment.id) return false; // skip itself
+          const apptBookingKey = appt.booking_id || `appt-${appt.id}`;
+          return apptBookingKey !== contextBookingKey;
+        });
+
+        if (hasDifferentBooking) {
           setCheckInConfirmDialog({
             open: true,
             appointments: sameClientAppointments,
@@ -2168,7 +2178,16 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
           format(new Date(appointment.start_time), 'yyyy-MM-dd') === appointmentDate
         );
 
-        if (sameClientAppointments.length > 1) {
+        // Skip multi-expert duplicates: show bulk dialog only if there are appointments from
+        // a different booking (different booking_id or independent appointment).
+        const contextBookingKey = contextMenuAppointment.booking_id || `appt-${contextMenuAppointment.id}`;
+        const hasDifferentBooking = sameClientAppointments.some(appt => {
+          if (appt.id === contextMenuAppointment.id) return false;
+          const apptBookingKey = appt.booking_id || `appt-${appt.id}`;
+          return apptBookingKey !== contextBookingKey;
+        });
+
+        if (hasDifferentBooking) {
           setCheckOutConfirmDialog({
             open: true,
             appointments: sameClientAppointments,
