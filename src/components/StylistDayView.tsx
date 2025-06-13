@@ -1923,7 +1923,7 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
               {appointment.is_for_someone_else && appointment.booker_name && (
                 <>
                   <Divider sx={{ my: 0.5 }} />
-                  <Typography variant="caption" sx={{ color: '#1976D2', fontWeight: 'bold' }}>
+                  <Typography variant="caption" sx={{ color: '#FFFFFF', fontWeight: 'bold' }}>
                     Booked by: {appointment.booker_name}
                     {appointment.booker_phone && ` (${appointment.booker_phone})`}
                   </Typography>

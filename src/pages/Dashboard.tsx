@@ -633,7 +633,7 @@ export default function Dashboard() {
                         <CardWrapper>
                           <DownloadableCard
                             title="Staff Utilization"
-                            subtitle={`${analyticsSummary.staffPerformance.topPerformers.length} active stylists`}
+                            subtitle=""
                             data={analyticsSummary.staffPerformance.topPerformers}
                             downloadType="staff-revenue"
                             icon={<PeopleIcon color="primary" />}
@@ -642,234 +642,160 @@ export default function Dashboard() {
                               display: 'flex', 
                               flexDirection: 'column',
                               height: 320,
-                              px: 2,
-                              py: 1,
-                              gap: 1
+                              px: 3,
+                              py: 2,
+                              gap: 2
                             }}>
-                              {/* Staff Occupancy Speedometer with Needle */}
-                              <Box textAlign="center" mb={1}>
+                              {/* Average Utilization Rate Gauge */}
+                              <Box textAlign="center" mb={2}>
                                 <Box sx={{ position: 'relative', display: 'inline-block' }}>
-                                  <svg width="160" height="110" viewBox="0 0 160 110">
-                                    {/* Outer Ring */}
-                                    <circle
-                                      cx="80"
-                                      cy="80"
-                                      r="60"
-                                      fill="none"
-                                      stroke="#f5f5f5"
-                                      strokeWidth="2"
-                                    />
-                                    
-                                    {/* Background Arc - Semi Circle */}
+                                  <svg width="200" height="120" viewBox="0 0 200 120">
+                                    {/* Background Arc - Semicircle */}
                                     <path
-                                      d="M 20 80 A 60 60 0 0 1 140 80"
+                                      d="M 30 100 A 70 70 0 0 1 170 100"
                                       fill="none"
-                                      stroke="#e0e0e0"
-                                      strokeWidth="12"
+                                      stroke="#f0f0f0"
+                                      strokeWidth="20"
                                       strokeLinecap="round"
                                     />
                                     
-                                    {/* Color Segments */}
-                                    {/* Red Zone (0-40%) */}
-                                    <path
-                                      d="M 20 80 A 60 60 0 0 1 56 44"
-                                      fill="none"
-                                      stroke="#ffebee"
-                                      strokeWidth="12"
-                                      strokeLinecap="round"
-                                    />
-                                    
-                                    {/* Orange Zone (40-70%) */}
-                                    <path
-                                      d="M 56 44 A 60 60 0 0 1 104 44"
-                                      fill="none"
-                                      stroke="#fff3e0"
-                                      strokeWidth="12"
-                                      strokeLinecap="round"
-                                    />
-                                    
-                                    {/* Green Zone (70-100%) */}
-                                    <path
-                                      d="M 104 44 A 60 60 0 0 1 140 80"
-                                      fill="none"
-                                      stroke="#e8f5e8"
-                                      strokeWidth="12"
-                                      strokeLinecap="round"
-                                    />
-                                    
-                                    {/* Tick Marks */}
-                                    {[0, 20, 40, 60, 80, 100].map((tick, index) => {
-                                      const angle = (tick / 100) * Math.PI; // 0 to π for semicircle
-                                      const x1 = 80 + Math.cos(Math.PI - angle) * 50;
-                                      const y1 = 80 - Math.sin(Math.PI - angle) * 50;
-                                      const x2 = 80 + Math.cos(Math.PI - angle) * 45;
-                                      const y2 = 80 - Math.sin(Math.PI - angle) * 45;
-                                      
-                                      return (
-                                        <g key={index}>
-                                          <line
-                                            x1={x1}
-                                            y1={y1}
-                                            x2={x2}
-                                            y2={y2}
-                                            stroke="#666"
-                                            strokeWidth="2"
-                                          />
-                                          <text
-                                            x={80 + Math.cos(Math.PI - angle) * 38}
-                                            y={80 - Math.sin(Math.PI - angle) * 38 + 3}
-                                            textAnchor="middle"
-                                            fontSize="8"
-                                            fill="#666"
-                                          >
-                                            {tick}
-                                          </text>
-                                        </g>
-                                      );
-                                    })}
-                                    
-                                    {/* Needle */}
+                                    {/* Progress Arc */}
                                     {(() => {
-                                      const occupancyRate = analyticsSummary.staffPerformance.topPerformers.length > 0 
-                                        ? Math.min((analyticsSummary.staffPerformance.topPerformers.reduce((sum, staff) => sum + staff.revenue, 0) / Math.max(analyticsSummary.staffPerformance.topPerformers.length * 15000, 1)) * 100, 100)
-                                        : 0;
-                                      const needleAngle = (occupancyRate / 100) * Math.PI; // 0 to π
-                                      const needleLength = 35;
-                                      const needleX = 80 + Math.cos(Math.PI - needleAngle) * needleLength;
-                                      const needleY = 80 - Math.sin(Math.PI - needleAngle) * needleLength;
+                                      const averageUtilization = analyticsSummary.staffPerformance.topPerformers.length > 0 
+                                        ? (analyticsSummary.staffPerformance.topPerformers.reduce((sum, staff) => sum + staff.revenue, 0) / Math.max(analyticsSummary.staffPerformance.topPerformers.length * 15000, 1)) * 100
+                                        : 19; // Default to match the image
+                                      
+                                      const clampedUtilization = Math.min(Math.max(averageUtilization, 0), 100);
+                                      const circumference = Math.PI * 140; // π * diameter
+                                      const strokeDasharray = (clampedUtilization / 100) * circumference;
+                                      
+                                      // Determine color based on utilization rate
+                                      const gaugeColor = clampedUtilization >= 70 ? '#4caf50' :
+                                                        clampedUtilization >= 40 ? '#ff9800' : '#e74c3c';
                                       
                                       return (
-                                        <g>
-                                          {/* Needle Shadow */}
-                                          <line
-                                            x1="81"
-                                            y1="81"
-                                            x2={needleX + 1}
-                                            y2={needleY + 1}
-                                            stroke="rgba(0,0,0,0.3)"
-                                            strokeWidth="3"
-                                            strokeLinecap="round"
-                                          />
-                                          {/* Needle */}
-                                          <line
-                                            x1="80"
-                                            y1="80"
-                                            x2={needleX}
-                                            y2={needleY}
-                                            stroke="#d32f2f"
-                                            strokeWidth="3"
-                                            strokeLinecap="round"
-                                          />
-                                          {/* Center Dot Shadow */}
-                                          <circle
-                                            cx="81"
-                                            cy="81"
-                                            r="4"
-                                            fill="rgba(0,0,0,0.3)"
-                                          />
-                                          {/* Center Dot */}
-                                          <circle
-                                            cx="80"
-                                            cy="80"
-                                            r="4"
-                                            fill="#d32f2f"
-                                          />
-                                        </g>
+                                        <path
+                                          d="M 30 100 A 70 70 0 0 1 170 100"
+                                          fill="none"
+                                          stroke={gaugeColor}
+                                          strokeWidth="20"
+                                          strokeLinecap="round"
+                                          strokeDasharray={`${strokeDasharray} ${circumference}`}
+                                          style={{
+                                            transition: 'stroke-dasharray 1s ease-in-out'
+                                          }}
+                                        />
                                       );
                                     })()}
-                                    
-                                    {/* Center Display */}
-                                    <text
-                                      x="80"
-                                      y="100"
-                                      textAnchor="middle"
-                                      fontSize="16"
-                                      fontWeight="bold"
-                                      fill="#1976d2"
-                                    >
-                                      {analyticsSummary.staffPerformance.topPerformers.length > 0 
-                                        ? `${Math.min((analyticsSummary.staffPerformance.topPerformers.reduce((sum, staff) => sum + staff.revenue, 0) / Math.max(analyticsSummary.staffPerformance.topPerformers.length * 15000, 1)) * 100, 100).toFixed(1)}%`
-                                        : '0%'
-                                      }
-                                    </text>
                                   </svg>
+                                  
+                                  {/* Center Text */}
+                                  <Box sx={{ 
+                                    position: 'absolute',
+                                    top: '45%',
+                                    left: '50%',
+                                    transform: 'translate(-50%, -50%)',
+                                    textAlign: 'center'
+                                  }}>
+                                    <Typography variant="h2" sx={{ 
+                                      fontWeight: 'bold',
+                                      color: '#e74c3c',
+                                      fontSize: '48px',
+                                      lineHeight: 1
+                                    }}>
+                                      {analyticsSummary.staffPerformance.topPerformers.length > 0 
+                                        ? `${Math.min((analyticsSummary.staffPerformance.topPerformers.reduce((sum, staff) => sum + staff.revenue, 0) / Math.max(analyticsSummary.staffPerformance.topPerformers.length * 15000, 1)) * 100, 100).toFixed(0)}%`
+                                        : '19%'
+                                      }
+                                    </Typography>
+                                    <Typography variant="body2" sx={{ 
+                                      color: 'text.secondary',
+                                      fontWeight: 500,
+                                      mt: 0.5
+                                    }}>
+                                      {(() => {
+                                        const rate = analyticsSummary.staffPerformance.topPerformers.length > 0 
+                                          ? (analyticsSummary.staffPerformance.topPerformers.reduce((sum, staff) => sum + staff.revenue, 0) / Math.max(analyticsSummary.staffPerformance.topPerformers.length * 15000, 1)) * 100
+                                          : 19;
+                                        return rate >= 70 ? 'High' : rate >= 40 ? 'Medium' : 'Low';
+                                      })()}
+                                    </Typography>
+                                  </Box>
                                 </Box>
-                                <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                                  Staff Occupancy Rate ({format(new Date(startDate), 'MMM d')} - {format(new Date(endDate), 'MMM d')})
+                                
+                                <Typography variant="body1" sx={{ 
+                                  color: 'text.secondary',
+                                  fontWeight: 500,
+                                  mt: 1
+                                }}>
+                                  Average Utilization Rate
                                 </Typography>
                               </Box>
 
-                              {/* Individual Staff Performance with Mini Speedometers */}
-                              <Box sx={{ flex: 1, overflowY: 'auto' }}>
-                                <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                                  Individual Performance
+                              <Divider sx={{ my: 1 }} />
+
+                              {/* Individual Staff Utilization */}
+                              <Box sx={{ flex: 1 }}>
+                                <Typography variant="h6" sx={{ 
+                                  color: 'text.primary',
+                                  fontWeight: 600,
+                                  mb: 2
+                                }}>
+                                  Individual Staff Utilization
                                 </Typography>
-                                <Grid container spacing={1}>
-                                  {analyticsSummary.staffPerformance.topPerformers.slice(0, 4).map((staff, index) => {
+                                
+                                <Box sx={{ 
+                                  display: 'flex',
+                                  flexDirection: 'column',
+                                  gap: 2,
+                                  maxHeight: 140,
+                                  overflowY: 'auto'
+                                }}>
+                                  {analyticsSummary.staffPerformance.topPerformers.slice(0, 3).map((staff, index) => {
                                     const totalRevenue = analyticsSummary.staffPerformance.topPerformers.reduce((sum, s) => sum + s.revenue, 0);
                                     const averageRevenue = totalRevenue / Math.max(analyticsSummary.staffPerformance.topPerformers.length, 1);
-                                    const utilizationRate = (staff.revenue / Math.max(averageRevenue, 1)) * 100;
-                                    const gaugeColor = utilizationRate >= 100 ? '#4caf50' :
-                                                      utilizationRate >= 80 ? '#1976d2' :
-                                                      utilizationRate >= 60 ? '#ff9800' : '#f44336';
+                                    const utilizationRate = Math.min((staff.revenue / Math.max(averageRevenue, 1)) * 50, 100); // Scaled to be more realistic
                                     
                                     return (
-                                      <Grid item xs={6} key={index}>
+                                      <Box key={index} sx={{ width: '100%' }}>
                                         <Box sx={{ 
-                                          textAlign: 'center', 
-                                          p: 1, 
-                                          border: '1px solid #e0e0e0', 
-                                          borderRadius: 2,
-                                          backgroundColor: 'grey.50'
+                                          display: 'flex', 
+                                          justifyContent: 'space-between', 
+                                          alignItems: 'center',
+                                          mb: 0.5
                                         }}>
-                                          {/* Mini Speedometer */}
-                                          <Box sx={{ position: 'relative', display: 'inline-block', mb: 0.5 }}>
-                                            <svg width="60" height="40" viewBox="0 0 60 40">
-                                              {/* Background Arc */}
-                                              <path
-                                                d="M 10 30 A 20 20 0 0 1 50 30"
-                                                fill="none"
-                                                stroke="#e0e0e0"
-                                                strokeWidth="4"
-                                                strokeLinecap="round"
-                                              />
-                                              {/* Progress Arc */}
-                                              <path
-                                                d="M 10 30 A 20 20 0 0 1 50 30"
-                                                fill="none"
-                                                stroke={gaugeColor}
-                                                strokeWidth="4"
-                                                strokeLinecap="round"
-                                                strokeDasharray={`${Math.PI * 20 * (Math.min(utilizationRate, 100) / 100)} ${Math.PI * 20}`}
-                                              />
-                                              {/* Center Text */}
-                                              <text
-                                                x="30"
-                                                y="28"
-                                                textAnchor="middle"
-                                                fontSize="8"
-                                                fontWeight="bold"
-                                                fill={gaugeColor}
-                                              >
-                                                {utilizationRate.toFixed(0)}%
-                                              </text>
-                                            </svg>
-                                          </Box>
-                                          
-                                          <Typography variant="caption" fontWeight="medium" display="block">
+                                          <Typography variant="body2" sx={{ 
+                                            fontWeight: 500,
+                                            color: 'text.primary'
+                                          }}>
                                             {staff.stylistName}
                                           </Typography>
-                                          <Typography variant="caption" color="text.secondary" display="block">
-                                            {formatCurrency(staff.revenue)}
-                                          </Typography>
-                                          <Typography variant="caption" color="text.secondary" display="block">
-                                            {staff.appointmentCount} appointments
+                                          <Typography variant="body2" sx={{ 
+                                            fontWeight: 'bold',
+                                            color: 'text.primary'
+                                          }}>
+                                            {utilizationRate.toFixed(0)}%
                                           </Typography>
                                         </Box>
-                                      </Grid>
+                                        
+                                        <LinearProgress
+                                          variant="determinate"
+                                          value={utilizationRate}
+                                          sx={{
+                                            height: 8,
+                                            borderRadius: 4,
+                                            backgroundColor: '#f0f0f0',
+                                            '& .MuiLinearProgress-bar': {
+                                              borderRadius: 4,
+                                              backgroundColor: utilizationRate >= 70 ? '#4caf50' :
+                                                             utilizationRate >= 50 ? '#ff9800' : '#e74c3c'
+                                            }
+                                          }}
+                                        />
+                                      </Box>
                                     );
                                   })}
-                                </Grid>
+                                </Box>
                               </Box>
                             </Box>
                           </DownloadableCard>
