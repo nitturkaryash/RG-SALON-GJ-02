@@ -1280,7 +1280,9 @@ export default function POS() {
 							gst_percentage: (service as any).gst_percentage || serviceDetails?.gst_percentage || 18,
 							for_salon_use: false,
 							discount: 0,
-							discount_percentage: 0
+							discount_percentage: 0,
+							// Preserve experts information for revenue split logic
+							experts: (service as any).experts || []
 						};
         
         return orderItem;
@@ -1732,10 +1734,43 @@ export default function POS() {
 			// ---------- NEW: decide whether this expert gets products / memberships ----------
 			const includeProductsAndMemberships = !(isMultiExpert && i !== 0); // only the primary expert (index 0) gets these
 
-			// Calculate splits ----------------------------------------------------------
-			// Service portions (always split)
-			const splitServiceSubtotal = calculateServiceSubtotal() / numberOfExperts;
-			const splitServiceTax      = calculateServiceGstAmount(calculateServiceSubtotal()) / numberOfExperts;
+			// --- New per-service revenue split ---
+			const expertServicesOriginal = formattedServices.filter(service => {
+			  const expArr = (service as any).experts as any[] | undefined;
+			  console.log(`[Multi-Expert Billing] Service ${service.item_name}, Expert ${expert.name}, Experts array:`, expArr);
+			  
+			  if (expArr && expArr.length > 0) {
+			    const hasExpert = expArr.some(ex => ex.id === expert.id);
+			    console.log(`[Multi-Expert Billing] Service ${service.item_name} - Expert ${expert.name} assigned: ${hasExpert}`);
+			    return hasExpert;
+			  }
+			  
+			  // FIXED: Only give services with no experts array to the primary expert (first expert)
+			  const isPrimaryExpert = i === 0;
+			  console.log(`[Multi-Expert Billing] Service ${service.item_name} has no experts array - assigning to primary expert only (${expert.name} is primary: ${isPrimaryExpert})`);
+			  return isPrimaryExpert;
+			});
+
+			console.log(`[Multi-Expert Billing] Expert ${expert.name} gets ${expertServicesOriginal.length} services:`, expertServicesOriginal.map(s => s.item_name));
+
+			// For each service, determine share count and adjust price
+			const splitServicesForExpert = expertServicesOriginal.map(service => {
+			  const expArr = ((service as any).experts || []) as any[];
+			  const shareCount = expArr && expArr.length > 0 ? expArr.length : numberOfExperts;
+			  const splitPrice = service.price / shareCount;
+			  return {
+			    ...service,
+			    price: splitPrice,
+			    total: splitPrice * service.quantity,
+			    split_revenue: true,
+			    total_experts: shareCount,
+			    expert_index: (expArr && expArr.length > 0) ? expArr.findIndex(ex => ex.id === expert.id) + 1 : (i + 1)
+			  } as any;
+			});
+
+			// Calculate service subtotals & tax for this expert based on split services
+			const splitServiceSubtotal = splitServicesForExpert.reduce((sum, s) => sum + s.price * s.quantity, 0);
+			const splitServiceTax      = splitServicesForExpert.reduce((sum, s) => sum + calculateServiceGstAmount(s.price * s.quantity), 0);
 
 			// Product / membership portions (only primary gets them)
 			const productSubForExpert      = includeProductsAndMemberships ? calculateProductSubtotal()      : 0;
@@ -1751,17 +1786,10 @@ export default function POS() {
 			// Build item arrays --------------------------------------------------------
 			const expertProducts      = includeProductsAndMemberships ? formattedProducts : [];
 			const expertMemberships   = includeProductsAndMemberships ? formattedMemberships : [];
-			const expertServices      = isMultiExpert ? 
-				formattedServices.map(service => ({
-					...service,
-					price: service.price / numberOfExperts, // already divided earlier
-					total: (service.price / numberOfExperts) * service.quantity,
-					split_revenue: true,
-					total_experts: numberOfExperts,
-					expert_index: i + 1
-			})) : formattedServices;
+			const expertServicesFinal = isMultiExpert ? 
+				splitServicesForExpert : formattedServices;
 
-			const itemsForOrder = [...expertProducts, ...expertServices, ...expertMemberships].map(item => ({
+			const itemsForOrder = [...expertProducts, ...expertServicesFinal, ...expertMemberships].map(item => ({
 				...item,
 				discount: item.discount || 0,
 				discount_percentage: item.discount_percentage || 0

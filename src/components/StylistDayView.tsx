@@ -65,6 +65,13 @@ import { PAYMENT_METHOD_LABELS, PaymentMethod } from '../hooks/usePOS';
 import { supabase } from '../utils/supabase/supabaseClient';
 import { printBill } from '../utils/printUtils';
 import { getClientName as getAppointmentClientName } from '../pages/Appointments';
+import { v4 as uuidv4 } from 'uuid';
+
+// Define a minimal service type for type guarding
+interface ServiceLike {
+  id: string;
+  [key: string]: any;
+}
 
 // Custom implementations of date-fns functions
 const formatTime = (time: string | Date): string => {
@@ -653,6 +660,48 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
     setSelectedAppointment(appointment);
     setContextMenuAppointment(appointment);
     setContextMenuAnchorEl(event.currentTarget as HTMLElement);
+    
+    const clientDetails = clients.find(c => c.id === appointment.client_id);
+    const serviceDetails = services.find(s => s.id === appointment.service_id);
+
+    const allExpertsForAppointment = appointment.clientDetails?.flatMap(
+      (detail: any) => detail.stylistIds?.map((id: string) => stylists.find((s: any) => s.id === id)).filter(Boolean) || []
+    ) || [];
+
+    const uniqueExperts = Array.from(new Map(allExpertsForAppointment.map((e: any) => [e.id, e])).values());
+
+    if (uniqueExperts.length === 0 && appointment.stylist_id) {
+      const primaryStylist = stylists.find((s: any) => s.id === appointment.stylist_id);
+      if (primaryStylist) uniqueExperts.push(primaryStylist);
+    }
+    
+    const serviceCollection = serviceCollections.find(sc => sc.service_ids.includes(appointment.service_id));
+
+    const clientEntry: ClientEntry = {
+      id: uuidv4(),
+      client: clientDetails,
+      selectedCollectionId: serviceCollection?.id || '',
+      services: [serviceDetails].filter(Boolean),
+      stylistList: uniqueExperts.map((s: any) => ({ id: s.id, name: s.name })),
+    };
+    
+    const [startHour, startMinute] = format(new Date(appointment.start_time), 'HH:mm').split(':');
+    const [endHour, endMinute] = format(new Date(appointment.end_time), 'HH:mm').split(':');
+    
+    setEditFormData({
+      ...editFormData,
+      clientEntries: [clientEntry],
+      startTime: `${startHour}:${startMinute}`,
+      endTime: `${endHour}:${endMinute}`,
+      notes: appointment.notes || '',
+      clientId: clientDetails?.id || '',
+      clientName: clientDetails?.full_name || '',
+      mobileNumber: clientDetails?.phone || '',
+      stylistId: (uniqueExperts[0] as any)?.id || '',
+      stylistIds: uniqueExperts.filter((s: any) => s && s.id).map((s: any) => s.id),
+      serviceId: serviceDetails?.id || '',
+    });
+    setEditDialogOpen(true);
   };
 
   // Drag and drop handlers
@@ -812,21 +861,16 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
           if (!finalClientId) {
             try {
               const clientName = entry.client.full_name.trim();
-              console.log(`Creating new client with name: '${clientName}', phone: '${entry.client.phone || ''}'`);
-              
               if (!clientName) {
                 throw new Error(`Cannot create client with empty name for entry ${idx + 1}`);
               }
-              
               const newClient = await updateClientFromAppointment(
                 clientName,
                 entry.client.phone || '',
-                entry.client.email || '', // Add email if available
+                entry.client.email || '',
                 '' // No notes for now
               );
-              
               finalClientId = newClient.id;
-              console.log('Created new client with ID:', finalClientId);
             } catch (clientError) {
               console.error('Error creating new client:', clientError);
               throw new Error(`Failed to create client for entry ${idx + 1}: ${clientError instanceof Error ? clientError.message : 'Unknown error'}`);
@@ -835,8 +879,10 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
           
           return {
             clientId: finalClientId,
-            serviceIds: entry.services.map(s => s.id),
-            stylistIds: entry.stylistList?.map(st => st.id) || [],
+            // Use a type guard to ensure services are valid before mapping
+            serviceIds: entry.services.filter((s): s is ServiceLike => !!s?.id).map(s => s.id),
+            // Ensure all experts from stylistList are included in stylistIds
+            stylistIds: entry.stylistList?.map((st: any) => st.id) || [],
           };
         })
       );
@@ -1652,11 +1698,13 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
     }));
   };
 
-  const handleServicesChange = (entryId: string, services: any[]) => {
+  const handleServicesChange = (entryId: string, newServices: any[]) => {
+    const validServices = newServices.filter((s): s is ServiceLike => s && typeof s === 'object' && !!s.id);
+    
     setEditFormData(prev => ({
       ...prev,
       clientEntries: prev.clientEntries.map(entry =>
-        entry.id === entryId ? { ...entry, services } : entry
+        entry.id === entryId ? { ...entry, services: validServices } : entry
       )
     }));
   };
@@ -1910,14 +1958,104 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
                 <PhoneIcon fontSize="small" />
                 {clientPhone}
               </Typography>
-              <Typography variant="body2">
-                {serviceName} ({startTime} - {endTime})
-              </Typography>
-              {isMultiExpert && (
-                <Typography variant="body2" sx={{ color: '#FF9800', fontWeight: 'bold' }}>
-                  👥 Multi-Expert Service
-                </Typography>
+              
+              {/* Enhanced multi-expert/multi-service display */}
+              {isMultiExpert ? (
+                <>
+                  <Divider sx={{ my: 1, bgcolor: 'rgba(255,255,255,0.3)' }} />
+                  <Typography variant="body2" sx={{ color: '#FF9800', fontWeight: 'bold', mb: 1 }}>
+                    👥 Multi-Expert Booking
+                  </Typography>
+                  
+                  {/* Show all services and their experts */}
+                  {(() => {
+                    // Find all related appointments with the same booking_id
+                    const relatedAppointments = todayAppointments.filter(app => 
+                      app.booking_id === appointment.booking_id && app.booking_id
+                    );
+                    
+                    // Create a comprehensive service-expert map using clientDetails
+                    const serviceExpertMap = new Map<string, {
+                      serviceName: string;
+                      experts: Set<string>;
+                      startTime: string;
+                      endTime: string;
+                    }>();
+                    
+                    // Process each related appointment to extract service and expert information
+                    relatedAppointments.forEach(relApp => {
+                      // First, try to get comprehensive data from clientDetails
+                      if (relApp.clientDetails && relApp.clientDetails.length > 0) {
+                        relApp.clientDetails.forEach((clientDetail: any) => {
+                          // Process each service in clientDetails
+                          if (clientDetail.services && clientDetail.services.length > 0) {
+                            clientDetail.services.forEach((service: any) => {
+                              const serviceId = service.id;
+                              const serviceName = service.name || 'Unknown Service';
+                              
+                              if (!serviceExpertMap.has(serviceId)) {
+                                serviceExpertMap.set(serviceId, {
+                                  serviceName,
+                                  experts: new Set(),
+                                  startTime: relApp.start_time,
+                                  endTime: relApp.end_time
+                                });
+                              }
+                              
+                              const serviceData = serviceExpertMap.get(serviceId)!;
+                              
+                              // Add all experts from clientDetails.stylists for this service
+                              if (clientDetail.stylists && clientDetail.stylists.length > 0) {
+                                clientDetail.stylists.forEach((stylist: any) => {
+                                  if (stylist && stylist.name) {
+                                    serviceData.experts.add(stylist.name);
+                                  }
+                                });
+                              }
+                            });
+                          }
+                        });
+                      }
+                      
+                      // Fallback: if no clientDetails or incomplete data, use appointment level data
+                      if (!relApp.clientDetails || relApp.clientDetails.length === 0) {
+                        const serviceId = relApp.service_id;
+                        const serviceName = relApp.service_name || services.find(s => s.id === serviceId)?.name || 'Unknown Service';
+                        const expertName = relApp.stylist_name || stylists.find(s => s.id === relApp.stylist_id)?.name || 'Unknown Expert';
+                        
+                        if (!serviceExpertMap.has(serviceId)) {
+                          serviceExpertMap.set(serviceId, {
+                            serviceName,
+                            experts: new Set(),
+                            startTime: relApp.start_time,
+                            endTime: relApp.end_time
+                          });
+                        }
+                        
+                        const serviceData = serviceExpertMap.get(serviceId)!;
+                        serviceData.experts.add(expertName);
+                      }
+                    });
+                    
+                    return Array.from(serviceExpertMap.values()).map((serviceData, index) => (
+                      <Box key={index} sx={{ mb: 1 }}>
+                        <Typography variant="body2" sx={{ display: 'flex', alignItems: 'center', gap: 0.5, fontWeight: 'bold' }}>
+                          📋 {serviceData.serviceName}
+                        </Typography>
+                        <Typography variant="body2" sx={{ display: 'flex', alignItems: 'center', gap: 0.5, ml: 2 }}>
+                          ⏰ {format(new Date(serviceData.startTime), 'hh:mm a')} - {format(new Date(serviceData.endTime), 'hh:mm a')}
+                        </Typography>
+                        <Typography variant="body2" sx={{ display: 'flex', alignItems: 'center', gap: 0.5, ml: 2 }}>
+                          👤 {Array.from(serviceData.experts).join(', ')}
+                        </Typography>
+                      </Box>
+                    ));
+                  })()}
+                </>
+              ) : (
+                <Typography variant="body2">{appointment.service_name}</Typography>
               )}
+              
               {isCheckedIn && <Typography variant="body2">✓ Checked In</Typography>}
               {status === 'completed' && <Typography variant="body2">✓ Completed (Click to view bill)</Typography>}
               {appointment.is_for_someone_else && appointment.booker_name && (
