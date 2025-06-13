@@ -1773,15 +1773,39 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
             );
             
             // If there are multiple appointments with the same booking_id,
-            // only show in the column of the stylist with the earliest appointment time
+            // determine the primary stylist for display to ensure consistent positioning
             if (relatedAppointments.length > 1) {
-              // Find the primary appointment (earliest start time)
-              const primaryAppointment = relatedAppointments.reduce((earliest, current) => 
-                new Date(current.start_time).getTime() < new Date(earliest.start_time).getTime() ? current : earliest
-              );
+              // Strategy 1: Try to get the primary stylist from clientDetails first
+              let primaryStylistId = null;
               
-              // Only show if this is the primary appointment's stylist
-              return primaryAppointment.stylist_id === stylistId;
+              // Look through all related appointments to find clientDetails with stylist info
+              for (const relatedApp of relatedAppointments) {
+                if (relatedApp.clientDetails && relatedApp.clientDetails.length > 0) {
+                  const clientDetail = relatedApp.clientDetails[0];
+                  if (clientDetail.stylistIds && clientDetail.stylistIds.length > 0) {
+                    primaryStylistId = clientDetail.stylistIds[0]; // Use first stylist as primary
+                    console.log(`[Multi-Expert Fix] Found primary stylist from clientDetails: ${primaryStylistId} for booking ${app.booking_id}`);
+                    break; // Found primary stylist, no need to continue
+                  }
+                }
+              }
+              
+              // Strategy 2: If no primary stylist found in clientDetails, find the "main" appointment
+              // Use the appointment with the smallest stylist_id (for deterministic behavior)
+              if (!primaryStylistId) {
+                const primaryAppointment = relatedAppointments.reduce((main, current) => 
+                  current.stylist_id < main.stylist_id ? current : main
+                );
+                primaryStylistId = primaryAppointment.stylist_id;
+                console.log(`[Multi-Expert Fix] Using fallback primary stylist: ${primaryStylistId} for booking ${app.booking_id}`);
+              }
+              
+              // Only show if this is the primary stylist's column
+              const shouldShow = primaryStylistId === stylistId;
+              if (shouldShow) {
+                console.log(`[Multi-Expert Fix] Showing multi-expert appointment in ${stylistId} column for booking ${app.booking_id}`);
+              }
+              return shouldShow;
             }
           }
           return true;
