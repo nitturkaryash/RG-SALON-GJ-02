@@ -1974,21 +1974,21 @@ export default function POS() {
 			// --- New per-service revenue split ---
 			const expertServicesOriginal = formattedServices.filter(service => {
 			  const expArr = (service as any).experts as any[] | undefined;
-			  console.log(`[Multi-Expert Billing] Service ${service.item_name}, Expert ${expert.name}, Experts array:`, expArr);
+			  console.log(`[Multi-Expert Billing] Service ${service.name}, Expert ${expert.name}, Experts array:`, expArr);
 			  
 			  if (expArr && expArr.length > 0) {
 			    const hasExpert = expArr.some(ex => ex.id === expert.id);
-			    console.log(`[Multi-Expert Billing] Service ${service.item_name} - Expert ${expert.name} assigned: ${hasExpert}`);
+			    console.log(`[Multi-Expert Billing] Service ${service.name} - Expert ${expert.name} assigned: ${hasExpert}`);
 			    return hasExpert;
 			  }
 			  
 			  // FIXED: Only give services with no experts array to the primary expert (first expert)
 			  const isPrimaryExpert = i === 0;
-			  console.log(`[Multi-Expert Billing] Service ${service.item_name} has no experts array - assigning to primary expert only (${expert.name} is primary: ${isPrimaryExpert})`);
+			  console.log(`[Multi-Expert Billing] Service ${service.name} has no experts array - assigning to primary expert only (${expert.name} is primary: ${isPrimaryExpert})`);
 			  return isPrimaryExpert;
 			});
 
-			console.log(`[Multi-Expert Billing] Expert ${expert.name} gets ${expertServicesOriginal.length} services:`, expertServicesOriginal.map(s => s.item_name));
+			console.log(`[Multi-Expert Billing] Expert ${expert.name} gets ${expertServicesOriginal.length} services:`, expertServicesOriginal.map(s => s.name));
 
 			// For each service, determine share count and adjust price
 			const splitServicesForExpert = expertServicesOriginal.map(service => {
