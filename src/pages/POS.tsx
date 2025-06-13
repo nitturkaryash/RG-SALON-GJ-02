@@ -3310,8 +3310,14 @@ export default function POS() {
 				)}
 				{/* Total Amount */}
 				<Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
-					<Typography variant="h6" fontWeight="bold">Total (Incl. GST):</Typography>
-					<Typography variant="h6" fontWeight="bold">{formatCurrency(totalAmount)}</Typography>
+					<Typography variant="h6" fontWeight="bold">
+						{Object.values(servicesMembershipPayment).some(Boolean) && activeClientMembership ? 
+							'Client to Pay:' : 'Total (Incl. GST):'}
+					</Typography>
+					<Typography variant="h6" fontWeight="bold">
+						{Object.values(servicesMembershipPayment).some(Boolean) && activeClientMembership ? 
+							formatCurrency(getRegularPayableAmount()) : formatCurrency(totalAmount)}
+					</Typography>
 				</Box>
 				{/* Customer & Stylist Info */}
 				<Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, justifyContent: 'center', mb: 2 }}>
