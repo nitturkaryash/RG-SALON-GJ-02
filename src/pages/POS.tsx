@@ -491,6 +491,16 @@ export default function POS() {
 	// State for last created order and print dialog
 	const [lastCreatedOrder, setLastCreatedOrder] = useState<any>(null);
 	const [printDialogOpen, setPrintDialogOpen] = useState(false);
+	const [clientDetailsExpanded, setClientDetailsExpanded] = useState(false); // Add state for Client Details accordion
+
+	const [paymentAmounts, setPaymentAmounts] = useLocalStorage<Record<PaymentMethod, number>>(`${POS_STATE_STORAGE_KEY}_paymentAmounts`, {
+		cash: 0,
+		credit_card: 0,
+		debit_card: 0,
+		upi: 0,
+		bnpl: 0,
+		membership: 0
+	});
 
 	// When membership payment toggled, clear discounts
 	useEffect(() => {
@@ -1043,16 +1053,6 @@ export default function POS() {
 	}, [salonProducts]);
 
 
-
-	// Payment amounts map for editable multi-method entries
-	const [paymentAmounts, setPaymentAmounts] = useState<Record<PaymentMethod, number>>({
-		cash: 0,
-		credit_card: 0,
-		debit_card: 0,
-		upi: 0,
-		bnpl: 0,
-		membership: 0
-	});
 
 	// Separate useEffect to handle membership balance updates
 	useEffect(() => {
@@ -1750,7 +1750,18 @@ export default function POS() {
 	// Modify handleCreateWalkInOrder to use the isOrderValid function
 	const handleCreateWalkInOrder = useCallback(async () => {
 		if (!isOrderValid()) {
-			setSnackbarMessage("Please complete all required fields.");
+			const paymentValidation = getPaymentValidation();
+			let errorMessage = "Please complete all required fields.";
+			
+			if (!paymentValidation.isValid) {
+				if (paymentValidation.isUnderpaid) {
+					errorMessage = `Payment incomplete. Remaining amount: ₹${paymentValidation.remaining.toFixed(2)}`;
+				} else if (paymentValidation.isOverpaid) {
+					errorMessage = `Payment exceeds bill amount by ₹${Math.abs(paymentValidation.remaining).toFixed(2)}. Please adjust the payment amounts.`;
+				}
+			}
+			
+			setSnackbarMessage(errorMessage);
 			setSnackbarOpen(true);
 			return;
 		}
@@ -1758,6 +1769,18 @@ export default function POS() {
 		const totalAmount = calculateTotalAmount();
 		const amountPaid = Object.values(paymentAmounts).reduce((a, b) => a + b, 0);
 		const membershipPayableAmount = getMembershipPayableAmount();
+		
+		// Enhanced payment validation
+		const paymentValidation = getPaymentValidation();
+		if (!paymentValidation.isValid) {
+			if (paymentValidation.isOverpaid) {
+				setSnackbarMessage(`Payment exceeds bill amount by ₹${Math.abs(paymentValidation.remaining).toFixed(2)}. Please adjust the payment amounts.`);
+			} else if (paymentValidation.isUnderpaid) {
+				setSnackbarMessage(`Payment incomplete. Remaining amount: ₹${paymentValidation.remaining.toFixed(2)}`);
+			}
+			setSnackbarOpen(true);
+			return;
+		}
 		
 		// If there are membership services but no active membership, show error
 		if (membershipPayableAmount > 0 && !activeClientMembership) {
@@ -4069,63 +4092,84 @@ export default function POS() {
 							{selectedClient && (
 								<>
 									<Divider sx={{ my: 2 }} />
-									<Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
-										<Typography variant="h6">Client Details</Typography>
-										<IconButton
-											color="primary"
-											onClick={() => setHistoryDrawerOpen(true)}
-											size="small"
-											sx={{ ml: 1 }}
-											title="View Client History"
+									<Accordion 
+										expanded={clientDetailsExpanded} 
+										onChange={(_, isExpanded) => setClientDetailsExpanded(isExpanded)}
+										sx={{ boxShadow: 'none', border: '1px solid', borderColor: 'divider' }}
+									>
+										<AccordionSummary
+											expandIcon={<ExpandMoreIcon />}
+											aria-controls="client-details-content"
+											id="client-details-header"
+											sx={{ 
+												bgcolor: 'grey.50', 
+												minHeight: 48,
+												'&.Mui-expanded': { minHeight: 48 }
+											}}
 										>
-											<HistoryIcon />
-										</IconButton>
-									</Box>
-									<Grid container spacing={2}>
-										<Grid item xs={12} sm={6}>
-											<Typography variant="subtitle2">Contact</Typography>
-											<Typography>{selectedClient.phone}{selectedClient.email ? ` • ${selectedClient.email}` : ''}</Typography>
-										</Grid>
-										<Grid item xs={12} sm={6}>
-											<Typography variant="subtitle2">Last Visit</Typography>
-											<Typography>{selectedClient.last_visit ? format(new Date(selectedClient.last_visit), 'dd/MM/yyyy') : 'Never'}</Typography>
-										</Grid>
-										<Grid item xs={12} sm={6}>
-											<Typography variant="subtitle2">Total Spent</Typography>
-											<Typography color="success.main">{formatCurrency(selectedClient.total_spent || 0)}</Typography>
-										</Grid>
-										<Grid item xs={12} sm={6}>
-											<Typography variant="subtitle2">Pending Payment</Typography>
-											{selectedClient.pending_payment && selectedClient.pending_payment > 0
-												? <Chip label={formatCurrency(selectedClient.pending_payment)} color="warning" />
-												: <Typography color="text.secondary">No pending amount</Typography>}
-										</Grid>
-										{/* Added Gender, Birth Date, Anniversary Date, Lifetime Visits */}
-										<Grid item xs={12} sm={6}>
-											<Typography variant="subtitle2">Gender</Typography>
-											<Typography>{selectedClient.gender || 'N/A'}</Typography>
-										</Grid>
-										<Grid item xs={12} sm={6}>
-											<Typography variant="subtitle2">Birth Date</Typography>
-											<Typography>{selectedClient.birth_date ? format(new Date(selectedClient.birth_date), 'dd/MM/yyyy') : 'N/A'}</Typography>
-										</Grid>
-										<Grid item xs={12} sm={6}>
-											<Typography variant="subtitle2">Anniversary Date</Typography>
-											<Typography>{selectedClient.anniversary_date ? format(new Date(selectedClient.anniversary_date), 'dd/MM/yyyy') : 'N/A'}</Typography>
-										</Grid>
-										<Grid item xs={12} sm={6}>
-											<Typography variant="subtitle2">Lifetime Visits</Typography>
-											<Typography>
-												{selectedClient && orders ? orders.filter(
-													order => 
-														((order as any).client_name === selectedClient.full_name || (order as any).customer_name === selectedClient.full_name) && 
-														(order as any).status !== 'cancelled' && 
-														!(order as any).consumption_purpose && 
-														(order as any).client_name !== 'Salon Consumption'
-												).length : 0}
-											</Typography>
-										</Grid>
-									</Grid>
+											<Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', mr: 1 }}>
+												<Typography variant="h6">Client Details</Typography>
+												<IconButton
+													color="primary"
+													onClick={(e) => {
+														e.stopPropagation();
+														setHistoryDrawerOpen(true);
+													}}
+													size="small"
+													title="View Client History"
+												>
+													<HistoryIcon />
+												</IconButton>
+											</Box>
+										</AccordionSummary>
+										<AccordionDetails>
+											<Grid container spacing={2}>
+												<Grid item xs={12} sm={6}>
+													<Typography variant="subtitle2">Contact</Typography>
+													<Typography>{selectedClient.phone}{selectedClient.email ? ` • ${selectedClient.email}` : ''}</Typography>
+												</Grid>
+												<Grid item xs={12} sm={6}>
+													<Typography variant="subtitle2">Last Visit</Typography>
+													<Typography>{selectedClient.last_visit ? format(new Date(selectedClient.last_visit), 'dd/MM/yyyy') : 'Never'}</Typography>
+												</Grid>
+												<Grid item xs={12} sm={6}>
+													<Typography variant="subtitle2">Total Spent</Typography>
+													<Typography color="success.main">{formatCurrency(selectedClient.total_spent || 0)}</Typography>
+												</Grid>
+												<Grid item xs={12} sm={6}>
+													<Typography variant="subtitle2">Pending Payment</Typography>
+													{selectedClient.pending_payment && selectedClient.pending_payment > 0
+														? <Chip label={formatCurrency(selectedClient.pending_payment)} color="warning" />
+														: <Typography color="text.secondary">No pending amount</Typography>}
+												</Grid>
+												{/* Added Gender, Birth Date, Anniversary Date, Lifetime Visits */}
+												<Grid item xs={12} sm={6}>
+													<Typography variant="subtitle2">Gender</Typography>
+													<Typography>{selectedClient.gender || 'N/A'}</Typography>
+												</Grid>
+												<Grid item xs={12} sm={6}>
+													<Typography variant="subtitle2">Birth Date</Typography>
+													<Typography>{selectedClient.birth_date ? format(new Date(selectedClient.birth_date), 'dd/MM/yyyy') : 'N/A'}</Typography>
+												</Grid>
+												<Grid item xs={12} sm={6}>
+													<Typography variant="subtitle2">Anniversary Date</Typography>
+													<Typography>{selectedClient.anniversary_date ? format(new Date(selectedClient.anniversary_date), 'dd/MM/yyyy') : 'N/A'}</Typography>
+												</Grid>
+												<Grid item xs={12} sm={6}>
+													<Typography variant="subtitle2">Lifetime Visits</Typography>
+													<Typography>
+														{selectedClient && orders ? orders.filter(
+															order => 
+																((order as any).client_name === selectedClient.full_name || (order as any).customer_name === selectedClient.full_name) && 
+																(order as any).status !== 'cancelled' && 
+																!(order as any).consumption_purpose && 
+																(order as any).client_name !== 'Salon Consumption'
+														).length : 0}
+													</Typography>
+												</Grid>
+											</Grid>
+										</AccordionDetails>
+									</Accordion>
 								</>
 							)}
 							
