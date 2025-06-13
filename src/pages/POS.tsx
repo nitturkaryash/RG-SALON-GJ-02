@@ -5,7 +5,7 @@ import AccountBalanceWalletIcon from '@mui/icons-material/AccountBalanceWallet';
 import CardMembershipIcon from '@mui/icons-material/CardMembership';
 import { supabase } from '../utils/supabase/supabaseClient';
 import { v4 as uuidv4 } from 'uuid';
-import { PaymentMethod, usePOS, createWalkInOrder, CreateOrderData } from '../hooks/usePOS';
+import { PaymentMethod, usePOS, createWalkInOrder, CreateOrderData, PaymentMethodWithSplit } from '../hooks/usePOS';
 import { useProducts } from '../hooks/useProducts';
 import { Order, OrderItem } from '../models/orderTypes';
 import { useNavigate, useLocation } from "react-router-dom";
@@ -908,19 +908,23 @@ export default function POS() {
 	}, [walkInDiscount]);
 
 	const calculateTotalAmount = useCallback(() => {
-		const prodSubtotal = calculateProductSubtotal();
-		const servSubtotal = calculateServiceSubtotal();
-		const membershipSubtotal = calculateMembershipSubtotal();
-		const prodGst = calculateProductGstAmount(prodSubtotal);
-		const servGst = calculateServiceGstAmount(servSubtotal);
-		const membershipGst = calculateMembershipGstAmount(membershipSubtotal);
-		const combinedSubtotal = prodSubtotal + servSubtotal + membershipSubtotal + prodGst + servGst + membershipGst;
+		// Calculate total amount by summing actual individual item amounts (matching order summary display)
+		const totalAmount = orderItems.reduce((sum, item) => {
+			const gstPercentage = item.gst_percentage || (item.type === 'product' ? productGstRate : serviceGstRate) || 18;
+			const isGstApplied = item.type === 'product' ? isProductGstApplied : (item.type === 'service' ? isServiceGstApplied : true);
+			const gstMultiplier = isGstApplied ? (1 + (gstPercentage / 100)) : 1;
+			
+			// For services paid via membership, exclude GST
+			const isServicePaidViaMembership = item.type === 'service' && servicesMembershipPayment[item.id];
+			const finalMultiplier = isServicePaidViaMembership ? 1 : gstMultiplier;
+			const itemTotalAmount = (item.price * item.quantity * finalMultiplier);
+			const finalAmount = Math.max(0, itemTotalAmount - (item.discount || 0));
+			
+			return sum + finalAmount;
+		}, 0) - walkInDiscount; // Apply global discount to the total
 		
-		// Use the separate discount calculation
-		const totalDiscount = calculateTotalDiscount();
-		
-		return Math.max(0, combinedSubtotal - totalDiscount); // Ensure total is not negative
-	}, [calculateProductSubtotal, calculateServiceSubtotal, calculateMembershipSubtotal, calculateProductGstAmount, calculateServiceGstAmount, calculateMembershipGstAmount, calculateTotalDiscount]);
+		return Math.max(0, totalAmount); // Ensure total is not negative
+	}, [orderItems, productGstRate, serviceGstRate, isProductGstApplied, isServiceGstApplied, servicesMembershipPayment, walkInDiscount]);
 
 	const calculateSalonGST = useCallback(() => {
 		// Calculate taxable value and GST components for each product
@@ -1768,6 +1772,25 @@ export default function POS() {
 			})) as any[];
 
 			// -------------------------------------------------------------------------
+			// Use the correct amountPaid calculation from paymentAmounts
+			const totalAmountPaid = Object.values(paymentAmounts).reduce((a, b) => a + b, 0);
+			
+			// Build payments array from paymentAmounts instead of splitPayments
+			const paymentsArray = Object.entries(paymentAmounts)
+				.filter(([_, amount]) => amount > 0)
+				.map(([method, amount]) => ({
+					id: uuidv4(),
+					amount: isMultiExpert ? amount / numberOfExperts : amount,
+					payment_method: method as PaymentMethodWithSplit,
+					payment_date: orderDate ? orderDate.toISOString() : new Date().toISOString()
+				}));
+
+			// Determine payment method based on actual payments used
+			const paymentMethodsUsed = Object.entries(paymentAmounts).filter(([_, amount]) => amount > 0);
+			const primaryPaymentMethod = paymentMethodsUsed.length === 1 ? 
+				paymentMethodsUsed[0][0] as PaymentMethodWithSplit : 
+				(paymentMethodsUsed.length > 1 ? 'split' as PaymentMethodWithSplit : walkInPaymentMethod);
+
 			const orderResult = await createWalkInOrderMutation.mutateAsync({
 				order_id: uuidv4(),
 				client_id: clientIdToUse || '',
@@ -1777,8 +1800,8 @@ export default function POS() {
 				appointment_id: currentAppointmentId || undefined,
 				items: [],
 				services: itemsForOrder,
-				payment_method: isSplitPayment ? 'split' : (useMembershipPayment ? 'membership' : walkInPaymentMethod),
-				split_payments: isSplitPayment ? splitPayments : undefined,
+				payment_method: primaryPaymentMethod,
+				split_payments: paymentMethodsUsed.length > 1 ? paymentsArray : undefined,
 				discount: isMultiExpert ? (walkInDiscount / numberOfExperts) : walkInDiscount,
 				discount_percentage: walkInDiscountPercentage,
 				subtotal: expertSubtotal,
@@ -1789,13 +1812,9 @@ export default function POS() {
 				order_date: orderDate ? orderDate.toISOString() : new Date().toISOString(),
 				is_walk_in: true,
 				is_salon_consumption: false,
-				pending_amount: Math.max(0, expertTotal - (amountPaid / numberOfExperts)),
-				payments: isSplitPayment ? splitPayments : [{
-					id: uuidv4(),
-					amount: expertTotal,
-					payment_method: useMembershipPayment ? 'membership' : walkInPaymentMethod,
-					payment_date: orderDate ? orderDate.toISOString() : new Date().toISOString()
-				}],
+				// Calculate expert's share of payment correctly
+				pending_amount: 0, // Always 0 for completed orders - no pending amounts
+				payments: paymentsArray,
 				...(isMultiExpert && {
 					multi_expert: true,
 					total_experts: numberOfExperts,
@@ -2744,7 +2763,7 @@ export default function POS() {
 							onChange={(_, newProduct) => {
 								if (newProduct) {
 									if (newProduct.stock_quantity !== undefined && newProduct.stock_quantity <= 0) {
-										toast.error(`${newProduct.name} is out of stock`);
+										 toast.error(`${newProduct.name} is out of stock`);
 									} else {
 										handleAddSalonProduct(newProduct); // handleAddSalonProduct uses getPurchaseCostForProduct internally
 										const purchaseCostForToast = getPurchaseCostForProduct(newProduct.id, newProduct.name, newProduct.price);
@@ -2864,8 +2883,20 @@ export default function POS() {
 		// Total discount for display (individual discounts already applied to subtotals)
 		const totalDiscount = individualItemDiscounts + walkInDiscount;
 		
-		// Use the calculateTotalAmount function which properly handles discounts
-		const totalAmount = calculateTotalAmount();
+		// Calculate total amount by summing actual individual item amounts (matching display)
+		const totalAmount = orderItems.reduce((sum, item) => {
+			const gstPercentage = item.gst_percentage || (item.type === 'product' ? productGstRate : serviceGstRate) || 18;
+			const isGstApplied = item.type === 'product' ? isProductGstApplied : (item.type === 'service' ? isServiceGstApplied : true);
+			const gstMultiplier = isGstApplied ? (1 + (gstPercentage / 100)) : 1;
+			
+			// For services paid via membership, exclude GST
+			const isServicePaidViaMembership = item.type === 'service' && servicesMembershipPayment[item.id];
+			const finalMultiplier = isServicePaidViaMembership ? 1 : gstMultiplier;
+			const totalAmount = (item.price * item.quantity * finalMultiplier);
+			const finalAmount = Math.max(0, totalAmount - (item.discount || 0));
+			
+			return sum + finalAmount;
+		}, 0) - walkInDiscount; // Apply global discount to the total
 
 		return (
 			<Paper sx={{ p: 3, height: '100%' }}>
@@ -4196,7 +4227,7 @@ export default function POS() {
 											.filter(([_, amt]) => amt > 0)
 											.map(([method, amt]) => ({ 
 												id: uuidv4(), 
-												payment_method: method as PaymentMethod, 
+												payment_method: method as PaymentMethodWithSplit, 
 												amount: amt 
 											}));
 										setSplitPayments(payments);
