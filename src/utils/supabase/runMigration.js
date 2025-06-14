@@ -2,17 +2,22 @@ const { createClient } = require('@supabase/supabase-js');
 const fs = require('fs');
 const path = require('path');
 
-// Read environment variables or provide default values for development
-const supabaseUrl = process.env.SUPABASE_URL || 'https://cpkxkoosykyahuezxela.supabase.co';
-const supabaseKey = process.env.SUPABASE_KEY || '';
+console.log('🚀 Starting database migration with NEW Supabase credentials...');
 
-if (!supabaseKey) {
-  console.error('Error: Supabase key is required. Set the SUPABASE_KEY environment variable.');
-  process.exit(1);
+// NEW Supabase configuration - Updated credentials
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://mtyudylsozncvilibxda.supabase.co';
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im10eXVkeWxzb3puY3ZpbGlieGRhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDk4OTE0MTIsImV4cCI6MjA2NTQ2NzQxMn0.KJP6Pu3jaheEj8wTPioZsRUNRnkKH88hcRgvS97FOZA';
+
+console.log('📡 URL:', supabaseUrl);
+
+if (supabaseUrl.includes('mtyudylsozncvilibxda')) {
+  console.log('✅ Using NEW Supabase database for migration');
+} else {
+  console.warn('⚠️ WARNING: Still using old database!');
 }
 
 // Initialize Supabase client
-const supabase = createClient(supabaseUrl, supabaseKey, {
+const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: { persistSession: false }
 });
 

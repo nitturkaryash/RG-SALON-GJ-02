@@ -1,8 +1,12 @@
-import { createClient } from '@supabase/supabase-js';
+const { createClient } = require('@supabase/supabase-js');
 
-// Get environment variables
-const supabaseUrl = 'https://cpkxkoosykyahuezxela.supabase.co';
-const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNwa3hrb29zeWt5YWh1ZXp4ZWxhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDAxMzQ0NzcsImV4cCI6MjA1NTcxMDQ3N30.R0MaAaqVFMLObwnMVz-eghsKb_HYDWhCOAeFrQcw8e0';
+// NEW Supabase configuration - Updated credentials
+const supabaseUrl = 'https://mtyudylsozncvilibxda.supabase.co';
+const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im10eXVkeWxzb3puY3ZpbGlieGRhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDk4OTE0MTIsImV4cCI6MjA2NTQ2NzQxMn0.KJP6Pu3jaheEj8wTPioZsRUNRnkKH88hcRgvS97FOZA';
+
+console.log('🔧 Setup POS Orders using NEW Supabase credentials');
+console.log('📡 URL:', supabaseUrl);
+console.log('✅ Using database: mtyudylsozncvilibxda');
 
 // Create Supabase client
 const supabase = createClient(supabaseUrl, supabaseAnonKey);

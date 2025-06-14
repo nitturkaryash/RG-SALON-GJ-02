@@ -38,8 +38,8 @@ const validateJwtFormat = (token: string): boolean => {
 // Initialize supabase client creation in a controlled function
 function initializeSupabaseClient() {
   // Get environment variables for Supabase
-  let supabaseUrl = 'https://cpkxkoosykyahuezxela.supabase.co';
-  let supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNwa3hrb29zeWt5YWh1ZXp4ZWxhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDAxMzQ0NzcsImV4cCI6MjA1NTcxMDQ3N30.R0MaAaqVFMLObwnMVz-eghsKb_HYDWhCOAeFrQcw8e0';
+  let supabaseUrl = 'https://mtyudylsozncvilibxda.supabase.co';
+  let supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im10eXVkeWxzb3puY3ZpbGlieGRhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDk4OTE0MTIsImV4cCI6MjA2NTQ2NzQxMn0.KJP6Pu3jaheEj8wTPioZsRUNRnkKH88hcRgvS97FOZA';
 
   // Try different environment variable formats (Vite, Next.js, etc.)
   if (import.meta.env.VITE_SUPABASE_URL) {

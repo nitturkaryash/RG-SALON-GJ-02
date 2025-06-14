@@ -1,15 +1,24 @@
 // Supabase connection test script
 import { createClient } from '@supabase/supabase-js';
+require('dotenv').config();
 
 // This is a minimal test script to verify Supabase connection
 // It can be run directly with Node.js
 
-// Get environment variables with fallbacks
-const supabaseUrl = process.env.VITE_SUPABASE_URL || 'https://cpkxkoosykyahuezxela.supabase.co';
-const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNwa3hrb29zeWt5YWh1ZXp4ZWxhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDAxMzQ0NzcsImV4cCI6MjA1NTcxMDQ3N30.R0MaAaqVFMLObwnMVz-eghsKb_HYDWhCOAeFrQcw8e0';
+console.log('🔍 Checking Supabase Connection with NEW credentials...');
 
-console.log('Supabase URL:', supabaseUrl);
-console.log('Supabase Key length:', supabaseAnonKey.length);
+// NEW Supabase configuration
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://mtyudylsozncvilibxda.supabase.co';
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im10eXVkeWxzb3puY3ZpbGlieGRhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDk4OTE0MTIsImV4cCI6MjA2NTQ2NzQxMn0.KJP6Pu3jaheEj8wTPioZsRUNRnkKH88hcRgvS97FOZA';
+
+console.log('📡 URL:', supabaseUrl);
+console.log('🔑 Key preview:', supabaseAnonKey.substring(0, 50) + '...');
+
+if (supabaseUrl.includes('mtyudylsozncvilibxda')) {
+  console.log('✅ Using NEW Supabase database');
+} else {
+  console.warn('⚠️ WARNING: Still using old database!');
+}
 
 // Create the client
 const supabase = createClient(supabaseUrl, supabaseAnonKey);

@@ -8,16 +8,34 @@ let supabaseClient: SupabaseClient;
 
 // Initialize variables in a function to control order
 function initSupabase() {
-  // Get environment variables with fallbacks
-  supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://cpkxkoosykyahuezxela.supabase.co';
-  supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNwa3hrb29zeWt5YWh1ZXp4ZWxhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDAxMzQ0NzcsImV4cCI6MjA1NTcxMDQ3N30.R0MaAaqVFMLObwnMVz-eghsKb_HYDWhCOAeFrQcw8e0';
-  
+  // Use NEXT_PUBLIC_ credentials as primary, with fallbacks
+  supabaseUrl = 
+    import.meta.env.NEXT_PUBLIC_SUPABASE_URL || 
+    process.env.NEXT_PUBLIC_SUPABASE_URL || 
+    'https://mtyudylsozncvilibxda.supabase.co';
+
+  supabaseAnonKey = 
+    import.meta.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 
+    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im10eXVkeWxzb3puY3ZpbGlieGRhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDk4OTE0MTIsImV4cCI6MjA2NTQ2NzQxMn0.KJP6Pu3jaheEj8wTPioZsRUNRnkKH88hcRgvS97FOZA';
+
+  console.log('🔧 Supabase Client Configuration:');
+  console.log('📡 URL:', supabaseUrl);
+  console.log('🔑 Key length:', supabaseAnonKey.length);
+
+  // Verify we're using the new credentials
+  if (supabaseUrl.includes('mtyudylsozncvilibxda')) {
+    console.log('✅ Using NEW Supabase credentials');
+  } else {
+    console.warn('⚠️ WARNING: Still using old Supabase credentials!');
+  }
+
   // Create the Supabase client
   supabaseClient = createClient(supabaseUrl, supabaseAnonKey, {
     auth: {
-      autoRefreshToken: true,
       persistSession: true,
-    },
+      autoRefreshToken: true
+    }
   });
   
   return supabaseClient;
@@ -96,4 +114,15 @@ export type Order = {
   total: number
   status: 'pending' | 'completed' | 'refunded'
   payment_method: string
-} 
+}
+
+// Database types
+export type Json =
+  | string
+  | number
+  | boolean
+  | null
+  | { [key: string]: Json | undefined }
+  | Json[]
+
+export default supabase 

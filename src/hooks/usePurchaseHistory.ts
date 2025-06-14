@@ -87,7 +87,7 @@ export const usePurchaseHistory = () => {
     setIsLoading(true);
     setError(null);
     try {
-      // Fetch enriched purchase history from backend table with precomputed stock values
+      // Fetch enriched purchase history from purchase_history_with_stock table with precomputed stock values
       const { data: purchaseRecords, error: fetchError } = await supabase
         .from(TABLES.PURCHASE_HISTORY_WITH_STOCK)
         .select(
@@ -97,14 +97,13 @@ export const usePurchaseHistory = () => {
           'supplier,current_stock_at_purchase,computed_stock_taxable_value,computed_stock_cgst,' +
           'computed_stock_sgst,computed_stock_igst,computed_stock_total_value,"Purchase_Cost/Unit(Ex.GST)",created_at,updated_at,transaction_type'
         )
-        .order('date', { ascending: true });
+        .order('date', { ascending: false });
 
       if (fetchError) throw handleSupabaseError(fetchError);
 
-      // We no longer need separate stock fetch; backend table includes current_stock_at_purchase and computed_* values
-
+      // Transform data from purchase_history_with_stock table
       const transformedData: PurchaseTransaction[] = (purchaseRecords as any[]).map(item => {
-        // Map directly from stored fields in purchase_history_with_stock
+        // Map fields from purchase_history_with_stock
         const currentStockQty = item.current_stock_at_purchase;
         const currentTaxable = item.computed_stock_taxable_value;
         const currentCgst = item.computed_stock_cgst;
@@ -170,7 +169,7 @@ export const usePurchaseHistory = () => {
   // Delete a purchase transaction by ID from both history and purchases tables
   const deletePurchaseTransaction = useCallback(async (purchaseId: string): Promise<boolean> => {
     try {
-      // Remove from history table
+      // Remove from purchase_history_with_stock table
       const { error: histError } = await supabase
         .from(TABLES.PURCHASE_HISTORY_WITH_STOCK)
         .delete()
@@ -179,15 +178,17 @@ export const usePurchaseHistory = () => {
         console.error('Error deleting purchase history record:', histError);
         return false;
       }
-      // Remove original purchase
+      
+      // Also remove from original inventory_purchases table to keep both in sync
       const { error: purchaseError } = await supabase
         .from('inventory_purchases')
         .delete()
         .eq('purchase_id', purchaseId);
       if (purchaseError) {
         console.error('Error deleting purchase record:', purchaseError);
-        return false;
+        // Don't return false here as the main operation succeeded
       }
+      
       // Update local state to reflect deletion
       setPurchases(prev => prev.filter(p => p.purchase_id !== purchaseId));
       return true;
@@ -207,26 +208,38 @@ export const usePurchaseHistory = () => {
       console.log('Updates to apply:', JSON.stringify(updateData));
       
       // Log the exact SQL query we're about to execute (for debugging)
-      console.log(`SQL (equivalent): UPDATE inventory_purchases SET date='${updateData.date}', updated_at='${updateData.updated_at}' WHERE purchase_id='${purchaseId}'`);
+      console.log(`SQL (equivalent): UPDATE purchase_history_with_stock SET date='${updateData.date}' WHERE purchase_id='${purchaseId}'`);
       
-      // Update the purchase in inventory_purchases table
-      const { data, error: updateError } = await supabase
-        .from('inventory_purchases')
+      // Update the purchase in purchase_history_with_stock table first
+      const { data: historyData, error: historyUpdateError } = await supabase
+        .from(TABLES.PURCHASE_HISTORY_WITH_STOCK)
         .update(updateData)
         .eq('purchase_id', purchaseId)
         .select(); // Add select to get the returned data
       
-      if (updateError) {
-        console.error('Error updating purchase transaction:', updateError);
-        console.error('Error details:', JSON.stringify(updateError));
+      if (historyUpdateError) {
+        console.error('Error updating purchase history:', historyUpdateError);
+        console.error('Error details:', JSON.stringify(historyUpdateError));
         return { 
           success: false, 
-          error: { message: updateError.message || 'Failed to update purchase' }
+          error: { message: historyUpdateError.message || 'Failed to update purchase history' }
         };
       }
       
+      // Also update the original inventory_purchases table to keep both in sync
+      const { data: purchaseData, error: purchaseUpdateError } = await supabase
+        .from('inventory_purchases')
+        .update(updateData)
+        .eq('purchase_id', purchaseId)
+        .select();
+      
+      if (purchaseUpdateError) {
+        console.warn('Error updating inventory_purchases table:', purchaseUpdateError);
+        // Don't fail the operation as the main table was updated successfully
+      }
+      
       console.log('Purchase transaction updated successfully');
-      console.log('Updated record:', data);
+      console.log('Updated history record:', historyData);
 
       // Update local state to reflect the changes
       setPurchases(prev => prev.map(purchase => 
@@ -280,7 +293,7 @@ export const usePurchaseHistory = () => {
         purchase_cgst: inventoryData.purchase_cgst,
         purchase_sgst: inventoryData.purchase_sgst,
         purchase_invoice_value_rs: inventoryData.purchase_invoice_value_rs,
-        "Vendor": 'OPENING BALANCE', // Changed to OPENING BALANCE
+        supplier: 'OPENING BALANCE', // Changed to supplier instead of "Vendor"
         transaction_type: 'stock_increment', // Changed from 'inventory_update' to 'stock_increment'
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
@@ -288,7 +301,7 @@ export const usePurchaseHistory = () => {
 
       console.log('Inventory update payload:', inventoryUpdatePayload);
 
-      // Insert into inventory_purchases table with transaction_type = 'inventory_update'
+      // Insert into inventory_purchases table first
       const { data: insertedData, error: insertError } = await supabase
         .from('inventory_purchases')
         .insert([inventoryUpdatePayload])
@@ -300,7 +313,28 @@ export const usePurchaseHistory = () => {
         throw handleSupabaseError(insertError);
       }
 
-      console.log('Inventory update inserted successfully:', insertedData);
+      console.log('Inventory update inserted into inventory_purchases:', insertedData);
+
+      // Also insert into purchase_history_with_stock table
+      const historyPayload = {
+        ...inventoryUpdatePayload,
+        purchase_id: insertedData.purchase_id, // Use the generated ID
+        current_stock_at_purchase: inventoryData.update_qty,
+        "Purchase_Cost/Unit(Ex.GST)": inventoryData.purchase_cost_per_unit_ex_gst
+      };
+
+      const { data: historyData, error: historyError } = await supabase
+        .from(TABLES.PURCHASE_HISTORY_WITH_STOCK)
+        .insert([historyPayload])
+        .select()
+        .single();
+
+      if (historyError) {
+        console.error('Error inserting into purchase history:', historyError);
+        // Don't throw here as the main record was created successfully
+      } else {
+        console.log('Inventory update inserted into purchase_history_with_stock:', historyData);
+      }
 
       // Update the product stock in the products table
       const { error: stockUpdateError } = await supabase.rpc('increment_product_stock', {
