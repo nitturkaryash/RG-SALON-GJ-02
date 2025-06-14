@@ -599,33 +599,55 @@ export default function POS() {
 			}
 		}
 
-		// Determine the type - ensure it is always either 'product' or 'service', never undefined
-		const itemType = service.type === 'service' ? 'service' : 'product';
+		// Check if the item already exists in the order
+		const existingItemIndex = orderItems.findIndex(item => item.item_id === service.id);
 		
-		const newItem: POSOrderItem = {
-			id: uuidv4(),
-			order_id: '',
-			item_id: service.id,
-			item_name: service.name,
-			quantity: quantity,
-			price: customPrice !== undefined ? customPrice : service.price,
-			total: (customPrice !== undefined ? customPrice : service.price) * quantity,
-			type: itemType, // Ensure type is never undefined
-			hsn_code: service.hsn_code,
-			gst_percentage: service.gst_percentage,
-			for_salon_use: false,
-			discount: 0, // Initialize discount to 0
-			discount_percentage: 0 // Initialize discount_percentage to 0
-		};
+		if (existingItemIndex >= 0) {
+			// Item already exists, increase quantity
+			const updatedItems = [...orderItems];
+			const existingItem = updatedItems[existingItemIndex];
+			const newQuantity = existingItem.quantity + quantity;
+			const itemPrice = customPrice !== undefined ? customPrice : existingItem.price; // Keep existing price unless custom price is provided
+			
+			updatedItems[existingItemIndex] = {
+				...existingItem,
+				quantity: newQuantity,
+				price: itemPrice,
+				total: itemPrice * newQuantity
+			};
+			
+			setOrderItems(updatedItems);
+			toast.success(`Increased ${service.name} quantity to ${newQuantity}`);
+		} else {
+			// Item doesn't exist, create new item
+			// Determine the type - ensure it is always either 'product' or 'service', never undefined
+			const itemType = service.type === 'service' ? 'service' : 'product';
+			
+			const newItem: POSOrderItem = {
+				id: uuidv4(),
+				order_id: '',
+				item_id: service.id,
+				item_name: service.name,
+				quantity: quantity,
+				price: customPrice !== undefined ? customPrice : service.price,
+				total: (customPrice !== undefined ? customPrice : service.price) * quantity,
+				type: itemType, // Ensure type is never undefined
+				hsn_code: service.hsn_code,
+				gst_percentage: service.gst_percentage,
+				for_salon_use: false,
+				discount: 0, // Initialize discount to 0
+				discount_percentage: 0 // Initialize discount_percentage to 0
+			};
 
-		console.log(`🛒 Created order item:`, newItem);
+			console.log(`🛒 Created order item:`, newItem);
 
-		setOrderItems((prev) => {
-			const newState = [...prev, newItem];
-			return newState;
-		});
+			setOrderItems((prev) => {
+				const newState = [...prev, newItem];
+				return newState;
+			});
 
-		toast.success(`Added ${service.name} to order`);
+			toast.success(`Added ${service.name} to order`);
+		}
 	}, [orderItems, toast]); // Keep dependencies for handleAddToOrder itself
 
 	// RESTORING fetchClientHistory HERE
@@ -3182,9 +3204,56 @@ export default function POS() {
 										{item.type === 'product' && <Inventory fontSize="inherit" sx={{ verticalAlign: 'middle', mr: 0.5, color: 'secondary.main' }} />}
 										{item.type === 'membership' && <CardMembershipIcon fontSize="inherit" sx={{ verticalAlign: 'middle', mr: 0.5, color: 'success.main' }} />}
 										{item.item_name}
-										<Typography component="span" variant="body2" color="text.secondary" sx={{ ml: 0.5 }}>
-											(x{item.quantity})
-										</Typography>
+										<TextField
+											size="small"
+											variant="standard"
+											type="number"
+											label="Qty"
+											value={item.quantity}
+											onChange={(e) => {
+												const newQuantity = Math.max(1, parseInt(e.target.value) || 1);
+												
+												// For products, check stock availability
+												if (item.type === 'product') {
+													const product = allProducts.find(p => p.id === item.item_id);
+													if (product && product.stock_quantity !== undefined) {
+														// Check if new quantity exceeds available stock
+														if (newQuantity > product.stock_quantity) {
+															toast.warning(`Cannot set quantity to ${newQuantity} - Only ${product.stock_quantity} available in stock`);
+															return;
+														}
+													}
+												}
+												
+												const updatedItems = orderItems.map(i => {
+													if (i.id === item.id) {
+														// Calculate proportional discount adjustment
+														const oldQuantity = i.quantity;
+														const quantityRatio = newQuantity / oldQuantity;
+														
+														// Adjust discount amount proportionally if it exists
+														const newDiscountAmount = (i.discount || 0) * quantityRatio;
+														
+														return { 
+															...i, 
+															quantity: newQuantity,
+															total: i.price * newQuantity,
+															discount: newDiscountAmount,
+															// Recalculate discount percentage based on new quantity
+															discount_percentage: newDiscountAmount > 0 ? 
+																Math.min(100, (newDiscountAmount / (i.price * newQuantity)) * 100) : 
+																(i.discount_percentage || 0)
+														};
+													}
+													return i;
+												});
+												setOrderItems(updatedItems);
+											}}
+											sx={{ width: '60px', ml: 1 }}
+											InputProps={{
+												inputProps: { min: 1, style: { textAlign: 'center' } }
+											}}
+										/>
 									</Typography>
 									<Box sx={{ display: 'flex', alignItems: 'center', mt: 1, gap: 2 }}>
 										{(() => {
