@@ -75,7 +75,7 @@ interface HolidayReport {
   upcomingHolidays: number;
   pastHolidays: number;
   holidays: StylistHoliday[];
-  serviceRevenue: number;
+  serviceRevenue: number; // Revenue from services only, excluding GST/tax, products, and memberships
 }
 
 const initialFormData: StylistFormData = {
@@ -214,20 +214,20 @@ export default function Stylists() {
           const orderDate = new Date((order as any).created_at || order.created_at);
           if (isWithinInterval(orderDate, { start: rangeStart, end: rangeEnd })) {
             if (order.status === 'completed' && (order as any).services && Array.isArray((order as any).services)) {
+              // Only count services performed by stylists - exclude products and memberships
+              // Revenue shown WITHOUT GST/tax (base service price only)
               const servicePriceInOrder = (order as any).services
-                .filter((item: any) => !item.type || item.type === 'service')
+                .filter((item: any) => {
+                  // Explicitly include only 'service' type, exclude 'product' and 'membership'
+                  return item.type === 'service' || (!item.type && item.item_name && !item.membership_id);
+                })
                 .reduce((sum: number, service: any) => sum + ((service.price || 0) * (service.quantity || 1)), 0);
 
+              // Return service revenue WITHOUT adding any tax/GST
               let revenueToAdd = servicePriceInOrder;
               
-              // Add proportional tax if applicable
-              if (servicePriceInOrder > 0 && (order as any).subtotal > 0 && (order as any).tax > 0) {
-                const serviceTax = (servicePriceInOrder / (order as any).subtotal) * (order as any).tax;
-                revenueToAdd += serviceTax;
-              }
-              
               // Debug: Order contribution
-              // console.log(`[Revenue Calculation] ${stylist.name}: Order ${order.id} contributes ${revenueToAdd}`)
+              // console.log(`[Revenue Calculation] ${stylist.name}: Order ${order.id} contributes ${revenueToAdd} (excluding GST)`)
               
               return total + revenueToAdd;
             }
