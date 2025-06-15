@@ -2566,7 +2566,7 @@ export default function POS() {
 				const stockSnapshot: Record<string, number> = {};
 				let firstProductStock = 0;
 				
-				// IMPROVED: Get stock directly from products, similar to walk-in orders
+				// FIXED: Query the correct table - products instead of product_master
 				for (const product of salonProducts) {
 					try {
 						const { data: productData } = await supabase
@@ -2578,8 +2578,8 @@ export default function POS() {
 						if (productData && productData.stock_quantity !== undefined) {
 							stockSnapshot[product.item_id] = productData.stock_quantity;
 							
-							// Use the first product's stock for the current_stock integer field
-							if (firstProductStock === 0 && productData.stock_quantity > 0) {
+							// FIXED: Set first product stock exactly like walk-in orders (no condition)
+							if (firstProductStock === 0) {
 								firstProductStock = productData.stock_quantity;
 							}
 						}
@@ -2589,14 +2589,14 @@ export default function POS() {
 						const result = processResults.find(r => r.product === product.item_name);
 						if (result && result.success && result.initialStock !== undefined) {
 							stockSnapshot[product.item_id] = result.initialStock;
-							if (firstProductStock === 0 && result.initialStock > 0) {
+							if (firstProductStock === 0) {
 								firstProductStock = result.initialStock;
 							}
 						}
 					}
 				}
 				
-				// Always add stock snapshot and current_stock to the order data (even if empty/0)
+				// Always add stock snapshot and current_stock to the order data (exactly like walk-in orders)
 				orderData.stock_snapshot = JSON.stringify(stockSnapshot);
 				orderData.current_stock = String(firstProductStock);
 

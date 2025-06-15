@@ -586,7 +586,7 @@ export async function createWalkInOrder(
               .from('products')
               .select('stock_quantity')
               .eq('id', product.id)
-      .single();
+              .single();
       
             if (productData && productData.stock_quantity !== undefined) {
               stockSnapshot[product.id] = productData.stock_quantity;
