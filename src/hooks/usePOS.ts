@@ -1033,7 +1033,7 @@ export function usePOS() {
       const isSplitPayment = payments.length > 0;
       let orderStatus: 'completed' | 'pending' | 'cancelled' = 'completed';
       
-      // Ensure all services have proper data fields
+      // Ensure all services have proper data fields and preserve multi-expert metadata
       const enhancedServices = data.services?.map(s => {
         // Common fields for both product and service
         const baseFields = {
@@ -1044,21 +1044,31 @@ export function usePOS() {
           gst_percentage: s.gst_percentage || 0
         };
 
-        // Add type-specific fields
+        // Build the core service object
+        let serviceObj: any;
         if (s.type === 'product') {
-          return {
+          serviceObj = {
             ...baseFields,
-            product_id: s.service_id, // Add product_id reference
-            product_name: s.service_name, // Add product_name for display
-            type: 'product' as const, // Use const assertion for correct type
+            product_id: s.service_id,
+            product_name: s.service_name,
+            type: 'product' as const,
             hsn_code: s.hsn_code || ''
           };
         } else {
-          return {
+          serviceObj = {
             ...baseFields,
-            type: 'service' as const // Use const assertion for correct type
+            type: 'service' as const
           };
         }
+
+        // Preserve multi-expert fields if present
+        return {
+          ...serviceObj,
+          ...(s as any).experts && { experts: (s as any).experts },
+          ...(s as any).total_experts && { total_experts: (s as any).total_experts },
+          ...(s as any).split_revenue && { split_revenue: (s as any).split_revenue },
+          ...(s as any).expert_index && { expert_index: (s as any).expert_index }
+        };
       }) || [];
 
       const order: PosOrder = {
