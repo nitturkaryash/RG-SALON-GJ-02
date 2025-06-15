@@ -1293,10 +1293,65 @@ export default function POS() {
       console.warn('[POS useEffect] Stylist not found for ID:', appointmentNavData.stylistId);
     }
 
-    // Handle multiple experts if provided
-    if (appointmentNavData.allExperts && Array.isArray(appointmentNavData.allExperts) && appointmentNavData.allExperts.length > 1) {
-      console.log('[POS useEffect] Setting multiple stylists for multi-expert appointment:', appointmentNavData.allExperts);
-      const multipleStylists = appointmentNavData.allExperts.map((expert: any) => {
+    // Process each service in the collection to build order items first
+    let newOrderItems: POSOrderItem[] = [];
+    if (appointmentNavData.services && Array.isArray(appointmentNavData.services) && appointmentNavData.services.length > 0) {
+      console.log('[POS useEffect] Found service collection with', appointmentNavData.services.length, 'services');
+      
+      // Process each service in the collection
+      newOrderItems = appointmentNavData.services.map((service: any) => {
+        console.log('[POS useEffect] Processing service:', service);
+        
+        if (!service.id || !service.name) {
+          console.warn('[POS useEffect] Invalid service data:', service);
+          return null; // Skip this invalid service
+        }
+         
+        // Look up additional service details from services list if available
+        const serviceDetails = services.find(s => s.id === service.id);
+        console.log('[POS useEffect] Service details lookup:', serviceDetails ? 'found' : 'not found');
+         
+        // Create the order item with available data
+        const orderItem: POSOrderItem = {
+          id: uuidv4(),
+          order_id: '',
+          item_id: service.id,
+          item_name: service.name,
+          quantity: service.quantity || 1,
+          price: service.price || (serviceDetails?.price || 0),
+          total: (service.price || (serviceDetails?.price || 0)) * (service.quantity || 1),
+          type: 'service',
+          category: service.category || serviceDetails?.category || 'service',
+          hsn_code: (service as any).hsn_code || serviceDetails?.hsn_code,
+          gst_percentage: (service as any).gst_percentage || serviceDetails?.gst_percentage || 18,
+          for_salon_use: false,
+          discount: 0,
+          discount_percentage: 0,
+          // Preserve experts information for multi-expert appointments
+          experts: (service as any).experts || []
+        };
+        
+        return orderItem;
+      }).filter(Boolean) as POSOrderItem[];
+    }
+
+    // STEP 2: Reconstruct the expert list from service data
+    console.log('[POS useEffect] Reconstructing expert list from service data...');
+    const expertsInServices = Array.from(
+      new Map(
+        newOrderItems
+          .flatMap(item => item.experts || [])
+          .filter(expert => expert.id) // Only include experts with valid IDs
+          .map(ex => [ex.id, ex])  // de-dupe on id
+      ).values()
+    );
+
+    console.log('[POS useEffect] Experts found in services:', expertsInServices);
+
+    // Set the experts based on service data (not appointmentNavData.allExperts)
+    if (expertsInServices.length > 1) {
+      console.log('[POS useEffect] Setting multiple stylists from service expert data:', expertsInServices);
+      const multipleStylists = expertsInServices.map((expert: any) => {
         const stylistMatch = stylists?.find(s => s.id === expert.id);
         if (!stylistMatch) {
           console.warn('[POS useEffect] Stylist not found for expert ID:', expert.id);
@@ -1304,8 +1359,20 @@ export default function POS() {
         return stylistMatch || null;
       });
       setSelectedStylists(multipleStylists);
+      // Set primary expert as the first one
+      setSelectedStylist(multipleStylists[0] || null);
+    } else if (expertsInServices.length === 1) {
+      // Single expert from services
+      const expert = expertsInServices[0];
+      const stylistMatch = stylists?.find(s => s.id === expert.id);
+      if (stylistMatch) {
+        console.log('[POS useEffect] Setting single stylist from service data:', stylistMatch.name);
+        setSelectedStylist(stylistMatch);
+      }
+      setSelectedStylists([]);
     } else {
-      // Reset to single stylist mode
+      // Fallback to original stylist if no experts in services
+      console.log('[POS useEffect] No experts in services, using fallback stylist');
       setSelectedStylists([]);
     }
     
@@ -1321,56 +1388,14 @@ export default function POS() {
     try {
       console.log('[POS useEffect] Processing appointment services');
       
-      // CASE 1: Handle service collection with multiple services
-      if (appointmentNavData.services && Array.isArray(appointmentNavData.services) && appointmentNavData.services.length > 0) {
-        console.log('[POS useEffect] Found service collection with', appointmentNavData.services.length, 'services');
-        
-        // Process each service in the collection
-        const newOrderItems = appointmentNavData.services.map((service: any) => {
-          console.log('[POS useEffect] Processing service:', service);
-          
-          if (!service.id || !service.name) {
-            console.warn('[POS useEffect] Invalid service data:', service);
-            return null; // Skip this invalid service
-          }
-           
-          // Look up additional service details from services list if available
-          const serviceDetails = services.find(s => s.id === service.id);
-          console.log('[POS useEffect] Service details lookup:', serviceDetails ? 'found' : 'not found');
-           
-          // Create the order item with available data
-          const orderItem: POSOrderItem = {
-            id: uuidv4(),
-            order_id: '',
-            item_id: service.id,
-            item_name: service.name,
-            quantity: service.quantity || 1,
-            price: service.price || (serviceDetails?.price || 0),
-            total: (service.price || (serviceDetails?.price || 0)) * (service.quantity || 1),
-            type: 'service',
-            category: service.category || serviceDetails?.category || 'service',
-            hsn_code: (service as any).hsn_code || serviceDetails?.hsn_code,
-            gst_percentage: (service as any).gst_percentage || serviceDetails?.gst_percentage || 18,
-            for_salon_use: false,
-            discount: 0,
-            discount_percentage: 0
-          };
-          
-          return orderItem;
-        }).filter(Boolean) as POSOrderItem[];
-
-        // Add all valid order items at once
-        if (newOrderItems.length > 0) {
-          console.log('[POS useEffect] Adding order items:', newOrderItems);
-          setOrderItems(newOrderItems);
-          toast.success(`Added ${newOrderItems.length} services to order`);
-        } else {
-          console.warn('[POS useEffect] No valid services to add to order');
-          toast.error('No valid services found in appointment data');
-        }
+      // Add all valid order items at once (already processed above)
+      if (newOrderItems.length > 0) {
+        console.log('[POS useEffect] Adding order items:', newOrderItems);
+        setOrderItems(newOrderItems);
+        toast.success(`Added ${newOrderItems.length} services to order`);
       } else {
-        console.warn('[POS useEffect] No services found in appointment data');
-        toast.error('No services found in appointment data');
+        console.warn('[POS useEffect] No valid services to add to order');
+        toast.error('No valid services found in appointment data');
       }
     } catch (error) {
       console.error('[POS useEffect] Error processing appointment data:', error);
@@ -1890,7 +1915,9 @@ export default function POS() {
 				product_name: service.item_name,
 				category: service.category,
 				discount: service.discount || 0,
-				discount_percentage: service.discount_percentage || 0
+				discount_percentage: service.discount_percentage || 0,
+				// Preserve experts array for revenue splitting
+				experts: (service as any).experts || []
 			}));
 			
 			// Convert products to format expected by standalone function
@@ -1958,6 +1985,11 @@ export default function POS() {
 		const isMultiExpert = selectedStylists && selectedStylists.length > 1 && selectedStylists.every(s => s !== null);
 		const expertsToProcess = isMultiExpert ? selectedStylists.filter(s => s !== null) : [staffInfo];
 		const numberOfExperts = expertsToProcess.length;
+		
+		console.log(`[Multi-Expert Debug] selectedStylists:`, selectedStylists);
+		console.log(`[Multi-Expert Debug] isMultiExpert:`, isMultiExpert);
+		console.log(`[Multi-Expert Debug] expertsToProcess:`, expertsToProcess);
+		console.log(`[Multi-Expert Debug] numberOfExperts:`, numberOfExperts);
 		
 		console.log(`[Multi-Expert Order] Creating ${numberOfExperts} orders for ${numberOfExperts} experts:`, expertsToProcess.map(e => e?.name));
 		
@@ -2076,7 +2108,8 @@ export default function POS() {
 				// Calculate expert's share of payment correctly
 				pending_amount: 0, // Always 0 for completed orders - no pending amounts
 				payments: paymentsArray,
-				...(isMultiExpert && {
+				// Always set multi_expert fields when we have multiple experts
+				...(numberOfExperts > 1 && {
 					multi_expert: true,
 					total_experts: numberOfExperts,
 					expert_index: i + 1
@@ -3186,6 +3219,26 @@ export default function POS() {
 											(x{item.quantity})
 										</Typography>
 									</Typography>
+									{/* Show experts for service items */}
+									{item.type === 'service' && (item as POSOrderItem).experts && (item as POSOrderItem).experts!.length > 0 && (
+										<Box sx={{ mt: 0.5, display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
+											{(item as POSOrderItem).experts!.map((expert: any, index: number) => (
+												<Chip
+													key={expert.id || index}
+													label={expert.name || 'Unknown'}
+													size="small"
+													variant="outlined"
+													sx={{ 
+														fontSize: '0.6rem', 
+														height: '18px', 
+														'& .MuiChip-label': { px: 0.5 },
+														color: 'primary.main',
+														borderColor: 'primary.main'
+													}}
+												/>
+											))}
+										</Box>
+									)}
 									<Box sx={{ display: 'flex', alignItems: 'center', mt: 1, gap: 2 }}>
 										{(() => {
 											// Calculate GST-inclusive price for display and discount calculations

@@ -179,9 +179,6 @@ export default function Orders() {
     if (!orders) return [];
 
     const result: ExtendedOrder[] = [];
-    const aggMap: Record<string, ExtendedOrder> = {};
-
-    console.log('[Orders Aggregation] Processing orders:', orders.length);
     
     // Group orders by appointment_id to find potential multi-expert orders
     const ordersByAppointment: Record<string, ExtendedOrder[]> = {};
@@ -189,14 +186,6 @@ export default function Orders() {
     
     orders.forEach(raw => {
       const order = normalizeOrder(raw);
-      console.log('[Orders Aggregation] Order:', {
-        id: order.id,
-        client: order.client_name,
-        stylist: order.stylist_name,
-        multi_expert: order.multi_expert,
-        appointment_id: order.appointment_id,
-        total: order.total
-      });
       
       if (order.appointment_id) {
         if (!ordersByAppointment[order.appointment_id]) {
@@ -212,70 +201,82 @@ export default function Orders() {
     Object.entries(ordersByAppointment).forEach(([appointmentId, appointmentOrders]) => {
       if (appointmentOrders.length > 1) {
         // This is a multi-expert appointment - aggregate the orders
-        console.log('[Orders Aggregation] Aggregating multi-expert orders for appointment:', appointmentId, 'orders:', appointmentOrders.length);
         
-        // Use the first order as the base
         const baseOrder = appointmentOrders[0];
         
-        // Check if we have split orders (partial amounts) or if there's an original order with full amounts
-        // If all orders have the same total, they might be individual split orders
-        // If one order has a much larger total, it's likely the original
         const totals = appointmentOrders.map(order => order.total || order.total_amount || 0);
         const maxTotal = Math.max(...totals);
         const minTotal = Math.min(...totals);
         const totalSum = totals.reduce((sum, total) => sum + total, 0);
         
-        // If all totals are similar (split orders), sum them up
-        // If there's a significant difference, use the largest (original order)
-        const isAllSplitOrders = (maxTotal - minTotal) < (maxTotal * 0.1); // Less than 10% difference means likely all split
+        const sameTotalExperts = appointmentOrders.every(o => (o as any).total_experts && (o as any).total_experts === (appointmentOrders[0] as any).total_experts);
+        const allHaveMultiExpertFlag = appointmentOrders.every(o => (o as any).multi_expert === true);
+        const similarTotals = (maxTotal - minTotal) < (maxTotal * 0.1);
+        const isAllSplitOrders = sameTotalExperts || allHaveMultiExpertFlag || similarTotals;
         
         let finalTotal, finalSubtotal, finalTax;
         
         if (isAllSplitOrders) {
-          // All orders are split orders - sum them up to get the original amount
           finalTotal = totalSum;
           finalSubtotal = appointmentOrders.reduce((sum, order) => sum + (order.subtotal || 0), 0);
           finalTax = appointmentOrders.reduce((sum, order) => sum + (order.tax || 0), 0);
-          console.log('[Orders Aggregation] Detected split orders, summing amounts. Total:', finalTotal);
         } else {
-          // There's likely an original order with full amounts - use the largest
           const originalOrder = appointmentOrders.find(order => (order.total || order.total_amount || 0) === maxTotal) || baseOrder;
           finalTotal = originalOrder.total || originalOrder.total_amount || 0;
           finalSubtotal = originalOrder.subtotal || 0;
           finalTax = originalOrder.tax || 0;
-          console.log('[Orders Aggregation] Detected original order with full amounts. Total:', finalTotal);
         }
         
         const aggregatedOrder: ExtendedOrder & { stylist_names: string[] } = {
           ...baseOrder,
-          // Use calculated amounts based on whether we have split orders or original order
           total: finalTotal,
           total_amount: finalTotal,
           subtotal: finalSubtotal,
           tax: finalTax,
-          // Keep original payment method from base order
           payment_method: baseOrder.payment_method,
           stylist_names: [],
-          // Keep original payments from base order - don't duplicate split payments
-          payments: baseOrder.payments || [],
-          // For multi-expert orders, we need to aggregate services properly
-          // If all orders are split, combine unique services; otherwise use base order services
-          services: isAllSplitOrders ? 
-            // Combine all unique services from all orders
+          payments: (() => {
+            if (isAllSplitOrders) {
+              const combined: any[] = [];
+              appointmentOrders.forEach(order => {
+                if (order.payments && Array.isArray(order.payments)) {
+                  order.payments.forEach(pay => {
+                    const existing = combined.find(p => p.payment_method === pay.payment_method);
+                    if (existing) {
+                      existing.amount = (existing.amount || 0) + (pay.amount || 0);
+                    } else {
+                      combined.push({ ...pay });
+                    }
+                  });
+                }
+              });
+              return combined;
+            }
+            return baseOrder.payments || [];
+          })(),
+          services: isAllSplitOrders ?
             appointmentOrders.reduce((allServices: any[], order) => {
               if (order.services && Array.isArray(order.services)) {
                 order.services.forEach(service => {
-                  // Check if service already exists (by name or id)
-                  const existingService = allServices.find(s => 
-                    s.service_name === service.service_name || s.id === service.id
-                  );
+                  const existingService = allServices.find(s => {
+                    const nameMatch = s.service_name && service.service_name && s.service_name === service.service_name;
+                    const sidMatch  = (s as any).service_id && (service as any).service_id && (s as any).service_id === (service as any).service_id;
+                    const idMatch   = s.id && service.id && s.id === service.id;
+                    return nameMatch || sidMatch || idMatch;
+                  });
+
                   if (!existingService) {
-                    // For split orders, restore original price by multiplying by number of experts
-                    const originalPrice = service.price * appointmentOrders.length;
-                    allServices.push({
-                      ...service,
-                      price: originalPrice
-                    });
+                    // Restore original price by multiplying by the service-specific expert count
+                    const serviceMultiplier = (service as any).experts?.length;
+                    if (serviceMultiplier && serviceMultiplier > 0) {
+                      const originalPrice = service.price * serviceMultiplier;
+                      allServices.push({
+                        ...service,
+                        price: originalPrice,
+                      });
+                    } else {
+                      allServices.push(service);
+                    }
                   }
                 });
               }
@@ -285,35 +286,24 @@ export default function Orders() {
           aggregated_multi_expert: true as any
         };
 
-        // Aggregate stylist names from all orders
         appointmentOrders.forEach(order => {
           if (order.stylist_name && !aggregatedOrder.stylist_names.includes(order.stylist_name)) {
             aggregatedOrder.stylist_names.push(order.stylist_name);
           }
         });
 
-        // Update stylist_name to show all stylists
         aggregatedOrder.stylist_name = aggregatedOrder.stylist_names.filter(Boolean).join(', ');
-        
-        console.log('[Orders Aggregation] Created aggregate for appointment:', appointmentId, 'stylists:', aggregatedOrder.stylist_name, 'total:', aggregatedOrder.total, 'items:', aggregatedOrder.services?.length);
         
         result.push(aggregatedOrder as ExtendedOrder);
       } else {
-        // Single order for this appointment
-        console.log('[Orders Aggregation] Added single appointment order:', appointmentOrders[0].id);
         result.push(appointmentOrders[0]);
       }
     });
 
-    // Add standalone orders (no appointment_id)
     standaloneOrders.forEach(order => {
-      console.log('[Orders Aggregation] Added standalone order:', order.id);
       result.push(order);
     });
 
-    console.log('[Orders Aggregation] Final result count:', result.length, 'from original:', orders.length);
-
-    // Sort by created_at desc to match previous behaviour
     return result.sort((a, b) => {
       const da = new Date(a.created_at || '').getTime();
       const db = new Date(b.created_at || '').getTime();
@@ -354,15 +344,6 @@ export default function Orders() {
     }
   }, [aggregatedOrders]);
 
-  // When orders are loaded from the API, normalize them (commented out to prevent recursion)
-  /*
-  useEffect(() => {
-    if (rawOrders?.length) {
-      setOrders(rawOrders.map(normalizeOrder));
-    }
-  }, [rawOrders]);
-  */
-
   const handleViewDetails = (order: any) => {
     setSelectedOrder(order)
     setDetailsOpen(true)
@@ -370,7 +351,6 @@ export default function Orders() {
 
   const handleCloseDetails = () => {
     setDetailsOpen(false)
-    // Clear the selected order after dialog closes
     setTimeout(() => setSelectedOrder(null), 300)
   }
   
@@ -399,18 +379,12 @@ export default function Orders() {
       const success = await deleteOrderById(orderId)
       
       if (success) {
-        // The secondary delete for salon_consumption_products is assumed to be handled by the backend
-        // or within deleteOrderById. Removing the explicit client-side attempt.
-        
         setDeleteConfirmOpen(false)
         setOrderToDelete(null)
         if (filteredOrders.length <= rowsPerPage && page > 0) {
           setPage(0)
         }
-        // Invalidate clients query to refetch client data
         queryClient.invalidateQueries({ queryKey: ['clients'] })
-        // Ensure a success toast for the primary deletion is shown if not handled by deleteOrderById.
-        // For example: toast.success('Order deleted successfully');
       }
     } catch (error) {
       console.error('Error in confirmDeleteOrder:', error)
@@ -424,30 +398,24 @@ export default function Orders() {
 
   const confirmDeleteAllOrders = async () => {
     try {
-      // Show loading toast
       const loadingToast = toast.info('Deleting all orders...', {
         autoClose: false,
         closeButton: false
       });
       
-      // Disable the dialog buttons
       const deleteAllConfirmButton = document.querySelector('button[color="error"]');
       if (deleteAllConfirmButton) {
         (deleteAllConfirmButton as HTMLButtonElement).disabled = true;
         (deleteAllConfirmButton as HTMLButtonElement).innerHTML = 'Deleting...';
       }
       
-      // Attempt to delete all orders
       const success = await deleteAllOrders();
       
-      // Close the loading toast
       toast.dismiss(loadingToast);
       
       if (success) {
         toast.success('All orders have been deleted successfully');
-        // Close the dialog
         setDeleteAllConfirmOpen(false);
-        // Reset to first page
         setPage(0);
       } else {
         toast.error('Failed to delete all orders. Please try again.');
@@ -456,7 +424,6 @@ export default function Orders() {
       console.error('Error in confirmDeleteAllOrders:', error);
       toast.error('An error occurred: ' + (error instanceof Error ? error.message : 'Unknown error'));
     } finally {
-      // Re-enable the dialog buttons if needed
       const deleteAllConfirmButton = document.querySelector('button[color="error"]');
       if (deleteAllConfirmButton) {
         (deleteAllConfirmButton as HTMLButtonElement).disabled = false;
@@ -468,7 +435,6 @@ export default function Orders() {
   const handleExportCSV = () => {
     if (!aggregatedOrders || aggregatedOrders.length === 0) return;
     
-    // Pass `aggregatedOrders` as the second argument for context and override ID to match display
     let formattedOrders = formatOrdersForExport(filteredOrders, aggregatedOrders);
     formattedOrders = formattedOrders.map((item, index) => ({
       ...item,
@@ -480,7 +446,6 @@ export default function Orders() {
   const handleExportPDF = () => {
     if (!aggregatedOrders || aggregatedOrders.length === 0) return;
     
-    // Pass `aggregatedOrders` as the second argument for context and override ID to match display
     let formattedOrdersPDF = formatOrdersForExport(filteredOrders, aggregatedOrders);
     formattedOrdersPDF = formattedOrdersPDF.map((item, index) => ({
       ...item,
@@ -549,12 +514,11 @@ export default function Orders() {
 
   // Function to detect if an order is a salon consumption order
   const isSalonConsumptionOrder = (order: ExtendedOrder) => {
-    // Check all possible ways an order can be marked as salon consumption
     return (
       order.is_salon_consumption === true || 
-      order.consumption_purpose || // Check for consumption_purpose field we added
-      order.client_name === 'Salon Consumption' || // Match the client_name we set in handleCreateSalonConsumption
-      (order.services && order.services.some((s: any) => s.for_salon_use === true)) // Check if any service is marked for salon use
+      order.consumption_purpose ||
+      order.client_name === 'Salon Consumption' ||
+      (order.services && order.services.some((s: any) => s.for_salon_use === true))
     );
   };
 
@@ -566,7 +530,6 @@ export default function Orders() {
 
   // Handler for processing the payment update
   const handlePaymentUpdate = async (orderId: string, paymentDetails: PaymentDetail) => {
-    // Assuming updateOrderPayment is a react-query mutation object
     await updateOrderPayment.mutateAsync({ orderId, paymentDetails }) 
   }
   
@@ -578,8 +541,6 @@ export default function Orders() {
   // Handle tab change
   const handleTabChange = (event: React.SyntheticEvent, newValue: OrderTab) => {
     setActiveTab(newValue);
-    
-    // Reset pagination when changing tabs
     setPage(0);
     
     // Apply appropriate filters based on the selected tab
@@ -641,8 +602,8 @@ export default function Orders() {
         order.status = 'completed';
       }
       
-      return order; // order is now ExtendedOrder
-    }).filter((order) => { // order here is ExtendedOrder
+      return order;
+    }).filter((order) => {
       // Text search
       const searchLower = searchQuery.toLowerCase();
       const matchesSearch = 
@@ -1398,9 +1359,7 @@ export default function Orders() {
                 </TableHead>
                 <TableBody>
                   {paginatedOrders.map((order) => {
-                    // Check if this is a salon consumption order
                     const isSalonOrder = isSalonConsumptionOrder(order);
-                    // Check if this is an aggregated multi-expert order
                     const isAggregatedOrder = (order as any).aggregated_multi_expert;
                     
                     return (
@@ -1434,7 +1393,7 @@ export default function Orders() {
                       </TableCell>
                       <TableCell>
                         {order.client_name || 'Unknown client'}
-                        {isSalonOrder && (
+                        {selectedOrder && isSalonConsumptionOrder(selectedOrder) && (
                           <Chip 
                             size="small" 
                             label="Salon Use" 
@@ -1466,26 +1425,29 @@ export default function Orders() {
                       </TableCell>
                       <TableCell>
                         {(() => {
-                          // Calculate total from actual payments for accuracy
                           let displayTotal = order.total_amount || order.total || 0;
-                          if (order.payments && order.payments.length > 0) {
-                            // Calculate total payments excluding membership payments
+                          
+                          if (!isAggregatedOrder && order.payments && order.payments.length > 0) {
                             const regularPaymentTotal = order.payments
                               .filter((payment: any) => payment.payment_method !== 'membership')
                               .reduce((sum: number, payment: any) => sum + (payment.amount || 0), 0);
                             
-                            // If there are any regular payments, use that as the display total
-                            // Otherwise, fall back to the original total amount
                             if (regularPaymentTotal > 0) {
                               displayTotal = regularPaymentTotal;
                             }
                           }
+                          
                           return (
                             <Typography 
                               fontWeight="medium" 
                               color={isSalonOrder ? '#FF6B00' : 'text.primary'}
                             >
                               ₹{Math.round(displayTotal)}
+                              {isAggregatedOrder && (
+                                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.7rem' }}>
+                                  (Aggregated Total)
+                                </Typography>
+                              )}
                             </Typography>
                           );
                         })()}
@@ -1613,12 +1575,12 @@ export default function Orders() {
                   </Typography>
                   <Typography variant="body2">
                     <strong>Customer:</strong> {selectedOrder.client_name}
-                    {isSalonConsumptionOrder(selectedOrder) && (
+                    {selectedOrder && isSalonConsumptionOrder(selectedOrder) && (
                       <Chip 
                         size="small" 
-                        label="Salon Consumption" 
+                        label="Salon Use" 
                         color="warning" 
-                        sx={{ ml: 1 }} 
+                        sx={{ ml: 1, backgroundColor: '#FF6B00', color: 'white' }} 
                       />
                     )}
                   </Typography>
@@ -1672,7 +1634,6 @@ export default function Orders() {
                     </Box>
                   )}
                   
-                  {/* Check if this order has membership payments */}
                   {(() => {
                     const hasMembershipPayment = selectedOrder.payments && selectedOrder.payments.some((payment: any) => payment.payment_method === 'membership');
                     const membershipAmount = selectedOrder.payments 
@@ -1868,7 +1829,6 @@ export default function Orders() {
                         <TableCell>Item</TableCell>
                         <TableCell>Type</TableCell>
                         <TableCell align="right">Price</TableCell>
-                        {/* Add more columns if needed */}
                       </TableRow>
                     </TableHead>
                     <TableBody>
