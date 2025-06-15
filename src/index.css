@@ -1,8 +1,8 @@
-@import "tailwindcss/preflight";
+@import "tailwindcss/base";
+@import "tailwindcss/components";
+@import "tailwindcss/utilities";
 
 @custom-variant dark (&:is(.dark *));
-
-@tailwind utilities;
 
 :root {
   --primary-color: #6B8E23;
@@ -192,15 +192,6 @@ p {
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
-}
-
-@layer base {
-  * {
-    @apply border-border outline-ring/50;
-  }
-  body {
-    @apply bg-background text-foreground;
-  }
 }
 
 /* Allow text selection in input fields and textareas */

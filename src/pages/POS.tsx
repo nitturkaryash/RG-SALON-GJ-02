@@ -2566,26 +2566,39 @@ export default function POS() {
 				const stockSnapshot: Record<string, number> = {};
 				let firstProductStock = 0;
 				
-				// Get the initial stock quantities (no changes made)
-				for (const result of processResults) {
-					if (result.success && result.initialStock !== undefined) {
-						const product = salonProducts.find(p => p.item_name === result.product);
-						if (product) {
-							stockSnapshot[product.item_id] = result.initialStock;
+				// IMPROVED: Get stock directly from products, similar to walk-in orders
+				for (const product of salonProducts) {
+					try {
+						const { data: productData } = await supabase
+							.from('products')
+							.select('stock_quantity')
+							.eq('id', product.item_id)
+							.single();
+						
+						if (productData && productData.stock_quantity !== undefined) {
+							stockSnapshot[product.item_id] = productData.stock_quantity;
 							
 							// Use the first product's stock for the current_stock integer field
-							if (firstProductStock === 0) {
+							if (firstProductStock === 0 && productData.stock_quantity > 0) {
+								firstProductStock = productData.stock_quantity;
+							}
+						}
+					} catch (err) {
+						console.warn(`Failed to get stock for salon consumption product ${product.item_id}:`, err);
+						// Try to get from processResults as fallback
+						const result = processResults.find(r => r.product === product.item_name);
+						if (result && result.success && result.initialStock !== undefined) {
+							stockSnapshot[product.item_id] = result.initialStock;
+							if (firstProductStock === 0 && result.initialStock > 0) {
 								firstProductStock = result.initialStock;
 							}
 						}
 					}
 				}
 				
-				// Add stock snapshot and current_stock to the order data
-				if (Object.keys(stockSnapshot).length > 0) {
-					orderData.stock_snapshot = JSON.stringify(stockSnapshot);
-					orderData.current_stock = String(firstProductStock);
-				}
+				// Always add stock snapshot and current_stock to the order data (even if empty/0)
+				orderData.stock_snapshot = JSON.stringify(stockSnapshot);
+				orderData.current_stock = String(firstProductStock);
 
 				console.log('Creating order record with data:', orderData);
 
