@@ -2430,8 +2430,32 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
           console.log('DEBUG: Direct query results:', directOrders);
           
           if (directOrders && directOrders.length > 0) {
-            console.log('DEBUG: Found order directly with appointment_id!');
-            setSelectedBill(directOrders[0]);
+            console.log('DEBUG: Found orders directly with appointment_id!');
+            
+            // For multi-expert appointments, we need to aggregate the data
+            if (directOrders.length > 1) {
+              const consolidatedBill = {
+                ...directOrders[0], // Use first order as base
+                // Aggregate services from all orders
+                services: directOrders.flatMap(order => order.services || []),
+                // Show all stylists involved
+                stylist_name: directOrders.map(order => order.stylist_name).filter(Boolean).join(', '),
+                // Aggregate totals
+                subtotal: directOrders.reduce((sum, order) => sum + (order.subtotal || 0), 0),
+                tax: directOrders.reduce((sum, order) => sum + (order.tax || 0), 0),
+                total: directOrders.reduce((sum, order) => sum + (order.total || 0), 0),
+                total_amount: directOrders.reduce((sum, order) => sum + (order.total_amount || order.total || 0), 0),
+                // Combine payments from all orders
+                payments: directOrders.flatMap(order => order.payments || []),
+                // Mark as multi-expert
+                is_multi_expert: true,
+                expert_count: directOrders.length
+              };
+              console.log('DEBUG: Consolidated multi-expert bill:', consolidatedBill);
+              setSelectedBill(consolidatedBill);
+            } else {
+              setSelectedBill(directOrders[0]);
+            }
             setBillDetailsOpen(true);
             return;
           }
@@ -3663,101 +3687,199 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
             </Box>
           </DialogTitle>
           <DialogContent>
-            <Box sx={{ mb: 3 }}>
-              <Typography variant="subtitle1" gutterBottom sx={{ fontWeight: 'bold' }}>Order Information</Typography>
-              <Box sx={{ mb: 2 }}>
-                <Typography variant="body2">
-                  <strong>Order ID:</strong> {formatOrderId(selectedBill)}
-                </Typography>
-                <Typography variant="body2">
-                  <strong>Date:</strong> {new Date(selectedBill.created_at).toLocaleString()}
-                </Typography>
-                <Typography variant="body2">
-                  <strong>Customer:</strong> {selectedBill.client_name}
-                </Typography>
-                <Typography variant="body2">
-                  <strong>Stylist:</strong> {selectedBill.stylist_name}
-                </Typography>
-              </Box>
-            </Box>
-            
-            {/* Item Details */}
-            <Typography variant="subtitle1" gutterBottom sx={{ fontWeight: 'bold' }}>Items</Typography>
-            <TableContainer component={Paper} variant="outlined" sx={{ mb: 3 }}>
-              <Table size="small">
-                <TableHead>
-                  <TableRow>
-                    <TableCell>Item</TableCell>
-                    <TableCell align="right">Qty</TableCell>
-                    <TableCell align="right">Price</TableCell>
-                    <TableCell align="right">Total</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {selectedBill.services && selectedBill.services.map((item: any, index: number) => (
-                    <TableRow key={index}>
-                      <TableCell>{item.service_name || item.name}</TableCell>
-                      <TableCell align="right">{item.quantity || 1}</TableCell>
-                      <TableCell align="right">{formatCurrency(item.price)}</TableCell>
-                      <TableCell align="right">{formatCurrency((item.price * (item.quantity || 1)))}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </TableContainer>
-            
-            {/* Payment Summary */}
-            <Typography variant="subtitle1" gutterBottom sx={{ fontWeight: 'bold' }}>Payment Summary</Typography>
-            <Box sx={{ mb: 3 }}>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                <Typography variant="body2">Subtotal:</Typography>
-                <Typography variant="body2">{formatCurrency(selectedBill.subtotal)}</Typography>
-              </Box>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                <Typography variant="body2">GST (18%):</Typography>
-                <Typography variant="body2">{formatCurrency(selectedBill.tax)}</Typography>
-              </Box>
-              {selectedBill.discount > 0 && (
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                  <Typography variant="body2">Discount:</Typography>
-                  <Typography variant="body2" color="error">-{formatCurrency(selectedBill.discount)}</Typography>
-                </Box>
-              )}
-              <Divider sx={{ my: 1 }} />
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                <Typography variant="body2" fontWeight="bold">Total:</Typography>
-                <Typography variant="body2" fontWeight="bold">{formatCurrency(selectedBill.total)}</Typography>
-              </Box>
-              
-              {/* Payment Method */}
-              <Box sx={{ mt: 2 }}>
-                <Typography variant="subtitle2" gutterBottom>Payment Method</Typography>
-                {selectedBill.payments && selectedBill.payments.length > 0 ? (
-                  <TableContainer component={Paper} variant="outlined">
-                    <Table size="small">
-                      <TableHead>
-                        <TableRow>
-                          <TableCell>Method</TableCell>
-                          <TableCell align="right">Amount</TableCell>
-                        </TableRow>
-                      </TableHead>
-                      <TableBody>
-                        {selectedBill.payments.map((payment: any) => (
-                          <TableRow key={payment.id}>
-                            <TableCell>{PAYMENT_METHOD_LABELS[payment.payment_method as PaymentMethod] || payment.payment_method}</TableCell>
-                            <TableCell align="right">{formatCurrency(payment.amount)}</TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </TableContainer>
-                ) : (
-                  <Typography>
-                    {PAYMENT_METHOD_LABELS[selectedBill.payment_method as PaymentMethod] || selectedBill.payment_method}: {formatCurrency(selectedBill.total)}
+            <Grid container spacing={2}>
+              <Grid item xs={12} md={6}>
+                <Typography variant="subtitle1" gutterBottom>Order Information</Typography>
+                <Box sx={{ mb: 2 }}>
+                  <Typography variant="body2">
+                    <strong>Order ID:</strong> {formatOrderId(selectedBill)}
+                    {selectedBill.is_multi_expert && (
+                      <Chip 
+                        size="small" 
+                        label="Multi-Expert Order" 
+                        color="secondary" 
+                        sx={{ ml: 1 }} 
+                      />
+                    )}
                   </Typography>
-                )}
-              </Box>
-            </Box>
+                  <Typography variant="body2">
+                    <strong>Date:</strong> {new Date(selectedBill.created_at).toLocaleString()}
+                  </Typography>
+                  <Typography variant="body2">
+                    <strong>Customer:</strong> {selectedBill.client_name}
+                  </Typography>
+                  <Typography variant="body2">
+                    <strong>Stylist{selectedBill.is_multi_expert ? 's' : ''}:</strong> {selectedBill.stylist_name}
+                    {selectedBill.is_multi_expert && (
+                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                        Revenue split among all experts
+                      </Typography>
+                    )}
+                  </Typography>
+                  <Typography variant="body2">
+                    <strong>Status:</strong> {selectedBill.status || 'completed'}
+                  </Typography>
+                                     <Typography variant="body2">
+                     <strong>Payment Method:</strong>{" "}
+                     {(() => {
+                       if (selectedBill.payments && selectedBill.payments.length > 0) {
+                         const uniqueMethods = [...new Set(selectedBill.payments.map((p: any) => p.payment_method))] as string[];
+                         return uniqueMethods.map((method: string) => 
+                           PAYMENT_METHOD_LABELS[method as PaymentMethod] || 
+                           method.replace('_', ' ').replace(/\b\w/g, (l: string) => l.toUpperCase())
+                         ).join(', ');
+                       }
+                       return PAYMENT_METHOD_LABELS[selectedBill.payment_method as PaymentMethod] ||
+                         selectedBill.payment_method?.replace('_', ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()) || 'Cash';
+                     })()}
+                   </Typography>
+                  {selectedBill.appointment_time && (
+                    <Typography variant="body2">
+                      <strong>Appointment Time:</strong> {new Date(selectedBill.appointment_time).toLocaleString()}
+                    </Typography>
+                  )}
+                </Box>
+              </Grid>
+              
+              <Grid item xs={12} md={6}>
+                <Typography variant="subtitle1" gutterBottom>Payment Summary</Typography>
+                <Box sx={{ mb: 2 }}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                    <Typography variant="body2">Subtotal:</Typography>
+                    <Typography variant="body2">{formatCurrency(selectedBill.subtotal || 0)}</Typography>
+                  </Box>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                    <Typography variant="body2">GST (18%):</Typography>
+                    <Typography variant="body2">{formatCurrency(selectedBill.tax || 0)}</Typography>
+                  </Box>
+                  {(selectedBill.discount || 0) > 0 && (
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                      <Typography variant="body2">Discount:</Typography>
+                      <Typography variant="body2" color="error">-{formatCurrency(selectedBill.discount || 0)}</Typography>
+                    </Box>
+                  )}
+                                     <Divider sx={{ my: 1 }} />
+                   <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                     <Typography variant="body2" fontWeight="bold">Total:</Typography>
+                     <Typography variant="body2" fontWeight="bold">
+                       {(() => {
+                         // Calculate total from actual payments for accuracy (same logic as Orders page)
+                         let displayTotal = selectedBill.total_amount || selectedBill.total || 0;
+                         if (selectedBill.payments && selectedBill.payments.length > 0) {
+                           const paymentTotal = selectedBill.payments.reduce((sum: number, payment: any) => sum + (payment.amount || 0), 0);
+                           if (paymentTotal > 0) {
+                             displayTotal = paymentTotal;
+                           }
+                         }
+                         return formatCurrency(displayTotal);
+                       })()}
+                     </Typography>
+                   </Box>
+                   
+                   {/* Show payment details for split payments - only when multiple payment methods or multi-expert */}
+                   {(selectedBill.is_split_payment || selectedBill.is_multi_expert) && selectedBill.payments && selectedBill.payments.length > 0 && (
+                     <Box sx={{ mt: 2 }}>
+                       <Typography variant="subtitle2" gutterBottom>Payment Details</Typography>
+                       <TableContainer component={Paper} variant="outlined">
+                         <Table size="small">
+                           <TableHead>
+                             <TableRow>
+                               <TableCell>Method</TableCell>
+                               <TableCell align="right">Amount</TableCell>
+                             </TableRow>
+                           </TableHead>
+                           <TableBody>
+                             {(() => {
+                               // Aggregate payments by method (same logic as Orders page)
+                               const aggregatedPayments = selectedBill.payments.reduce((acc: any, payment: any) => {
+                                 const method = payment.payment_method;
+                                 if (!acc[method]) {
+                                   acc[method] = { payment_method: method, amount: 0 };
+                                 }
+                                 acc[method].amount += payment.amount || 0;
+                                 return acc;
+                               }, {});
+                               
+                               return Object.values(aggregatedPayments).map((payment: any) => (
+                                 <TableRow key={payment.payment_method}>
+                                   <TableCell>{PAYMENT_METHOD_LABELS[payment.payment_method as PaymentMethod] || payment.payment_method}</TableCell>
+                                   <TableCell align="right">{formatCurrency(payment.amount)}</TableCell>
+                                 </TableRow>
+                               ));
+                             })()}
+                             {(selectedBill.pending_amount || 0) > 0 && selectedBill.status !== 'completed' && (
+                               <TableRow>
+                                 <TableCell>
+                                   <Typography color="error">Pending Payment:</Typography>
+                                 </TableCell>
+                                 <TableCell align="right">
+                                   <Typography color="error">{formatCurrency(selectedBill.pending_amount || 0)}</Typography>
+                                 </TableCell>
+                               </TableRow>
+                             )}
+                           </TableBody>
+                         </Table>
+                       </TableContainer>
+                     </Box>
+                   )}
+                </Box>
+              </Grid>
+              
+              <Grid item xs={12}>
+                <Typography variant="subtitle1" gutterBottom>Order Items</Typography>
+                <TableContainer component={Paper} variant="outlined">
+                  <Table size="small">
+                                           <TableHead>
+                         <TableRow>
+                           <TableCell>Item</TableCell>
+                           <TableCell>Type</TableCell>
+                           <TableCell align="right">Price</TableCell>
+                         </TableRow>
+                       </TableHead>
+                                         <TableBody>
+                       {(() => {
+                         if (!selectedBill.services) return null;
+                         
+                         // Aggregate services by name (same logic as Orders page)
+                         const aggregatedServices = selectedBill.services.reduce((acc: any, item: any) => {
+                           const serviceName = item.service_name || item.name;
+                           if (!acc[serviceName]) {
+                             acc[serviceName] = {
+                               service_name: serviceName,
+                               name: serviceName,
+                               type: item.type || 'Service',
+                               forSalonUse: item.forSalonUse,
+                               price: 0,
+                               quantity: 0
+                             };
+                           }
+                           acc[serviceName].price += (item.price || 0) * (item.quantity || 1);
+                           acc[serviceName].quantity += (item.quantity || 1);
+                           return acc;
+                         }, {});
+                         
+                         return Object.values(aggregatedServices).map((item: any, index: number) => (
+                           <TableRow key={index}>
+                             <TableCell>{item.service_name || item.name}</TableCell>
+                             <TableCell>
+                               <Chip 
+                                 size="small" 
+                                 label={item.type || 'Service'} 
+                                 color={item.type === 'product' ? 'secondary' : 'primary'}
+                               />
+                               {item.forSalonUse && (
+                                 <Chip size="small" label="Salon Use" color="warning" sx={{ ml: 0.5 }} />
+                               )}
+                             </TableCell>
+                             <TableCell align="right">{formatCurrency(item.price)}</TableCell>
+                           </TableRow>
+                         ));
+                       })()}
+                     </TableBody>
+                  </Table>
+                </TableContainer>
+              </Grid>
+            </Grid>
           </DialogContent>
           <DialogActions>
             <Button 
