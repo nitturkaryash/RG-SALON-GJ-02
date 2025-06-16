@@ -14,6 +14,7 @@ export interface Service {
   collection_id?: string;
   subcollection_id?: string;
   gender?: string;
+  membership_eligible?: boolean;
   created_at?: string;
   updated_at?: string;
 }
@@ -50,6 +51,7 @@ export function useServices() {
             collection_id: service.collection_id,
             subcollection_id: service.subcollection_id,
             gender: service.gender,
+            membership_eligible: service.membership_eligible ?? true,
             created_at: service.created_at,
             updated_at: service.updated_at
           })) as Service[];
@@ -80,6 +82,7 @@ export function useServices() {
         subcollection_id: newService.subcollection_id,
         gender: newService.gender,
         active: newService.active ?? true,
+        membership_eligible: newService.membership_eligible ?? true,
       };
       
       const { data, error } = await supabase

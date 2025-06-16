@@ -28,11 +28,18 @@ const formatOrderId = (order: any) => {
   const year = timestamp.getFullYear().toString().slice(-2);
   const month = (timestamp.getMonth() + 1).toString().padStart(2, '0');
   const day = timestamp.getDate().toString().padStart(2, '0');
-  const randomId = order.id.substring(0, 4).toUpperCase();
+  
+  // Create a sequential number from the order ID
+  const sequentialId = Math.abs(order.id.split('').reduce((a: number, b: string) => {
+    a = ((a << 5) - a) + b.charCodeAt(0);
+    return a & a;
+  }, 0)) % 10000;
+  
+  const paddedId = sequentialId.toString().padStart(4, '0');
   
   return isSalonConsumption ? 
-    `SALON-${year}${month}${day}-${randomId}` : 
-    `INV-${year}${month}${day}-${randomId}`;
+    `SALON-${year}${month}${day}-${paddedId}` : 
+    `${paddedId}`;
 };
 
 // Helper to format payment method labels
@@ -59,17 +66,60 @@ const calculateBillTotals = (bill: any) => {
       .filter((payment: any) => payment.payment_method === 'membership')
       .reduce((sum: number, payment: any) => sum + (payment.amount || 0), 0) : 0;
   
-  const regularPaymentAmount = bill.payments ? 
+  // Check for multi-expert orders (various flags used by different parts of the system)
+  const isMultiExpert = (bill as any).aggregated_multi_expert || 
+                        (bill as any).is_multi_expert || 
+                        (bill as any).multi_expert ||
+                        ((bill as any).expert_count && (bill as any).expert_count > 1) ||
+                        ((bill as any).total_experts && (bill as any).total_experts > 1);
+                        
+  let regularPaymentAmount = bill.payments ? 
     bill.payments
       .filter((payment: any) => payment.payment_method !== 'membership')
       .reduce((sum: number, payment: any) => sum + (payment.amount || 0), 0) : 
     (bill.total_amount || bill.total || 0);
+
+  if (isMultiExpert && bill.payments && bill.payments.length > 0) {
+    // Calculate how many experts were involved
+    const expertCount = (bill as any).expert_count || 
+                       (bill as any).total_experts || 
+                       (bill.services ? [...new Set(bill.services.map((s: any) => s.stylist_name).filter(Boolean))].length : 1);
+    
+    regularPaymentAmount = bill.payments
+      .filter((payment: any) => payment.payment_method !== 'membership')
+      .reduce((sum: number, payment: any) => sum + (payment.amount || 0), 0) * expertCount;
+  }
 
   // Calculate original totals
   let subtotalAmount = bill.subtotal || 0;
   let taxAmount = bill.tax || 0;
   let discountAmount = bill.discount || 0;
   let totalAmount = bill.total_amount || bill.total || 0;
+
+  // For multi-expert orders, calculate correct totals from aggregated services
+  if (isMultiExpert && bill.services && bill.services.length > 0) {
+    const serviceAggregation: Record<string, { total_price: number }> = {};
+    
+    bill.services.forEach((service: any) => {
+      const serviceName = service.service_name || service.item_name || service.name;
+      const quantity = service.quantity || 1;
+      const price = service.price || 0;
+
+      if (!serviceAggregation[serviceName]) {
+        serviceAggregation[serviceName] = { total_price: 0 };
+      }
+      serviceAggregation[serviceName].total_price += (price * quantity);
+    });
+
+    // Calculate the correct totals from aggregated services
+    const correctSubtotal = Object.values(serviceAggregation).reduce((sum, item) => sum + item.total_price, 0);
+    const correctTax = correctSubtotal * 0.18; // 18% GST
+    const correctTotal = correctSubtotal + correctTax - discountAmount;
+    
+    subtotalAmount = correctSubtotal;
+    taxAmount = correctTax;
+    totalAmount = correctTotal;
+  }
 
   // If there are membership payments, we need to show the breakdown
   if (hasMembershipPayment && membershipAmount > 0) {
@@ -309,25 +359,26 @@ export const printBill = (bill: any) => {
       <div class="receipt">
         <div class="header">
           <div class="salon-name">${salonConfig.name}</div>
-          <div class="salon-details">${salonConfig.address.line1}, ${salonConfig.address.line2}</div>
-          <div class="salon-details">${salonConfig.address.city}, ${salonConfig.address.state} - ${salonConfig.address.pincode}</div>
+          <div class="salon-details">${salonConfig.address.line1}</div>
+          <div class="salon-details">${salonConfig.address.line2}, ${salonConfig.address.state} - ${salonConfig.address.pincode}</div>
           <div class="salon-details">📞 ${salonConfig.contact.phone}</div>
           <div class="salon-details">📧 ${salonConfig.contact.email}</div>
+          <div class="salon-details"><strong>GSTIN:</strong> ${salonConfig.gst.number}</div>
         </div>
         
-        <div class="bill-title">${isSalonConsumption ? 'Salon Consumption Receipt' : 'Service Receipt'}</div>
+        <div class="bill-title">${isSalonConsumption ? 'Salon Consumption Receipt' : 'Tax Invoice'}</div>
         
         <div class="customer-details">
           <div class="detail-row">
-            <span class="detail-label">Receipt No:</span>
+            <span class="detail-label">Invoice Number:</span>
             <span>${formatOrderId(bill)}</span>
           </div>
           <div class="detail-row">
-            <span class="detail-label">Date & Time:</span>
+            <span class="detail-label">Date:</span>
             <span>${formatDate(bill.created_at)}</span>
           </div>
           <div class="detail-row">
-            <span class="detail-label">Customer:</span>
+            <span class="detail-label">Customer Name:</span>
             <span>${bill.client_name || bill.customer_name || 'Walk-in Customer'}</span>
           </div>
           <div class="detail-row">
@@ -340,28 +391,78 @@ export const printBill = (bill: any) => {
         <table class="items-table">
           <thead>
             <tr>
-              <th>Item</th>
-              <th>Qty</th>
+              <th>Service/Product</th>
+              <th>Quantity</th>
               <th>Rate</th>
               <th>Amount</th>
             </tr>
           </thead>
           <tbody>
-            ${(bill.services || []).map((item: any) => {
-              const itemName = item.service_name || item.name || 'Service';
-              const quantity = item.quantity || 1;
-              const price = item.price || 0;
-              const itemTotal = price * quantity;
+            ${(() => {
+              // Check for multi-expert orders (various flags used by different parts of the system)
+              const isMultiExpert = (bill as any).aggregated_multi_expert || 
+                                    (bill as any).is_multi_expert || 
+                                    (bill as any).multi_expert ||
+                                    ((bill as any).expert_count && (bill as any).expert_count > 1) ||
+                                    ((bill as any).total_experts && (bill as any).total_experts > 1);
               
-              return `
-                <tr>
-                  <td>${itemName}</td>
-                  <td>${quantity}</td>
-                  <td>₹${price.toFixed(2)}</td>
-                  <td>₹${itemTotal.toFixed(2)}</td>
-                </tr>
-              `;
-            }).join('')}
+              if (isMultiExpert && bill.services && bill.services.length > 0) {
+                // Aggregate services by name for multi-expert orders
+                const serviceAggregation: Record<string, {
+                  service_name: string;
+                  total_quantity: number;
+                  unit_price: number;
+                  total_price: number;
+                }> = {};
+
+                bill.services.forEach((item: any) => {
+                  const serviceName = item.service_name || item.item_name || item.name || 'Service';
+                  const quantity = item.quantity || 1;
+                  const price = item.price || 0;
+
+                  if (!serviceAggregation[serviceName]) {
+                    serviceAggregation[serviceName] = {
+                      service_name: serviceName,
+                      total_quantity: quantity,
+                      unit_price: 0,
+                      total_price: 0
+                    };
+                  }
+
+                  // Add up the prices from all experts working on this service
+                  serviceAggregation[serviceName].unit_price += price;
+                  serviceAggregation[serviceName].total_price += (price * quantity);
+                });
+
+                return Object.values(serviceAggregation).map((aggregatedService) => {
+                  return `
+                    <tr>
+                      <td>${aggregatedService.service_name}</td>
+                      <td>${aggregatedService.total_quantity}</td>
+                      <td>₹${aggregatedService.unit_price.toFixed(2)}</td>
+                      <td>₹${aggregatedService.total_price.toFixed(2)}</td>
+                    </tr>
+                  `;
+                }).join('');
+              } else {
+                // Regular order - display services normally
+                return (bill.services || []).map((item: any) => {
+                  const itemName = item.service_name || item.name || 'Service';
+                  const quantity = item.quantity || 1;
+                  const price = item.price || 0;
+                  const itemTotal = price * quantity;
+                  
+                  return `
+                    <tr>
+                      <td>${itemName}</td>
+                      <td>${quantity}</td>
+                      <td>₹${price.toFixed(2)}</td>
+                      <td>₹${itemTotal.toFixed(2)}</td>
+                    </tr>
+                  `;
+                }).join('');
+              }
+            })()}
           </tbody>
         </table>
         
@@ -410,29 +511,64 @@ export const printBill = (bill: any) => {
           </div>
         ` : `
           <div class="amount-row total-row">
-            <span>Total Amount:</span>
+            <span>Total:</span>
             <span>₹${totals.totalAmount.toFixed(2)}</span>
           </div>
         `}
         
-        <div class="section-title">Payment Method</div>
+        <div class="section-title">Payment Mode</div>
         <div class="payment-methods">
-          ${bill.payments && bill.payments.length > 0 ? 
-            bill.payments
-              .filter((payment: any) => payment.payment_method !== 'membership') // Don't show membership as a payment to customer
-              .map((payment: any) => `
+          ${(() => {
+            // Check for multi-expert orders (various flags used by different parts of the system)
+            const isMultiExpert = (bill as any).aggregated_multi_expert || 
+                                  (bill as any).is_multi_expert || 
+                                  (bill as any).multi_expert ||
+                                  ((bill as any).expert_count && (bill as any).expert_count > 1) ||
+                                  ((bill as any).total_experts && (bill as any).total_experts > 1);
+            
+            if (bill.payments && bill.payments.length > 0) {
+              if (isMultiExpert) {
+                // For multi-expert orders, calculate the correct payment amounts
+                const expertCount = (bill as any).expert_count || 
+                                   (bill as any).total_experts || 
+                                   (bill.services ? [...new Set(bill.services.map((s: any) => s.stylist_name).filter(Boolean))].length : 1);
+                
+                // Group payments by method and multiply by expert count
+                const aggregatedPayments: Record<string, number> = {};
+                bill.payments
+                  .filter((payment: any) => payment.payment_method !== 'membership')
+                  .forEach((payment: any) => {
+                    const method = payment.payment_method;
+                    aggregatedPayments[method] = (aggregatedPayments[method] || 0) + (payment.amount * expertCount);
+                  });
+                
+                return Object.entries(aggregatedPayments).map(([method, amount]) => `
+                  <div class="payment-method-row">
+                    <span>${getPaymentMethodLabel(method)}:</span>
+                    <span>₹${amount.toFixed(2)}</span>
+                  </div>
+                `).join('');
+              } else {
+                // Regular orders - show payments normally
+                return bill.payments
+                  .filter((payment: any) => payment.payment_method !== 'membership')
+                  .map((payment: any) => `
+                    <div class="payment-method-row">
+                      <span>${getPaymentMethodLabel(payment.payment_method)}:</span>
+                      <span>₹${payment.amount.toFixed(2)}</span>
+                    </div>
+                  `).join('');
+              }
+            } else if (totals.regularPaymentAmount > 0) {
+              return `
                 <div class="payment-method-row">
-                  <span>${getPaymentMethodLabel(payment.payment_method)}:</span>
-                  <span>₹${payment.amount.toFixed(2)}</span>
+                  <span>${getPaymentMethodLabel(bill.payment_method || 'cash')}:</span>
+                  <span>₹${totals.regularPaymentAmount.toFixed(2)}</span>
                 </div>
-              `).join('') : 
-            (totals.regularPaymentAmount > 0 ? `
-              <div class="payment-method-row">
-                <span>${getPaymentMethodLabel(bill.payment_method || 'cash')}:</span>
-                <span>₹${totals.regularPaymentAmount.toFixed(2)}</span>
-              </div>
-            ` : '')
-          }
+              `;
+            }
+            return '';
+          })()}
           
           ${totals.hasMembershipPayment ? `
             <div class="payment-method-row" style="background: #d5f4e6; border: 1px solid #27ae60;">

@@ -34,6 +34,7 @@ export function useSubCollectionServices(collectionId?: string, subCollectionId?
         duration: typeof service.duration === 'number' ? service.duration : 30,
         active: service.active === true,
         gender: service.gender || null,
+        membership_eligible: service.membership_eligible ?? true,
         created_at: service.created_at || new Date().toISOString(),
       })) as ServiceItem[]
     },
@@ -54,6 +55,7 @@ export function useSubCollectionServices(collectionId?: string, subCollectionId?
         duration: typeof newService.duration === 'number' ? newService.duration : 30,
         active: newService.active === true,
         gender: newService.gender || null,
+        membership_eligible: newService.membership_eligible ?? true,
         created_at: timestamp,
         updated_at: timestamp,
       }

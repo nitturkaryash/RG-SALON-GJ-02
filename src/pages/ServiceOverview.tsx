@@ -25,6 +25,7 @@ import {
   TableBody,
   Switch,
   FormControlLabel,
+  Chip,
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -39,7 +40,7 @@ import { formatCurrency } from '../utils/format';
 
 const initialColForm = { name: '', description: '' };
 const initialSubForm = { name: '', description: '' };
-const initialServForm = { name: '', description: '', price: 0, duration: 30, active: true, gender: '' };
+const initialServForm = { name: '', description: '', price: 0, duration: 30, active: true, gender: '', membership_eligible: true };
 
 export default function ServiceOverview() {
   const navigate = useNavigate();
@@ -137,7 +138,19 @@ export default function ServiceOverview() {
 
   // Service dialog handlers
   const handleServOpenAdd = () => { setServFormData(initialServForm); setServEditingId(null); setServDialogOpen(true); };
-  const handleServEdit = (serv: ServiceItem) => { setServFormData({ name: serv.name, description: serv.description, price: serv.price, duration: serv.duration, active: serv.active, gender: serv.gender || '' }); setServEditingId(serv.id); setServDialogOpen(true); };
+  const handleServEdit = (serv: ServiceItem) => { 
+    setServFormData({ 
+      name: serv.name, 
+      description: serv.description, 
+      price: serv.price, 
+      duration: serv.duration, 
+      active: serv.active, 
+      gender: serv.gender || '',
+      membership_eligible: serv.membership_eligible ?? true
+    }); 
+    setServEditingId(serv.id); 
+    setServDialogOpen(true); 
+  };
   const handleServClose = () => { setServDialogOpen(false); setServFormData(initialServForm); setServEditingId(null); };
   const handleServSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -226,7 +239,13 @@ export default function ServiceOverview() {
           <Table size="small">
             <TableHead>
               <TableRow>
-                <TableCell>Name</TableCell><TableCell>Description</TableCell><TableCell align="right">Duration</TableCell><TableCell align="right">Price</TableCell><TableCell>Status</TableCell><TableCell align="right">Actions</TableCell>
+                <TableCell>Name</TableCell>
+                <TableCell>Description</TableCell>
+                <TableCell align="right">Duration</TableCell>
+                <TableCell align="right">Price</TableCell>
+                <TableCell>Status</TableCell>
+                <TableCell>Membership</TableCell>
+                <TableCell align="right">Actions</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
@@ -236,7 +255,20 @@ export default function ServiceOverview() {
                   <TableCell>{serv.description}</TableCell>
                   <TableCell align="right">{serv.duration} min</TableCell>
                   <TableCell align="right">{formatCurrency(serv.price)}</TableCell>
-                  <TableCell>{serv.active ? 'Active' : 'Inactive'}</TableCell>
+                  <TableCell>
+                    <Chip 
+                      label={serv.active ? 'Active' : 'Inactive'} 
+                      color={serv.active ? 'success' : 'default'} 
+                      size="small" 
+                    />
+                  </TableCell>
+                  <TableCell>
+                    <Chip 
+                      label={serv.membership_eligible !== false ? 'Eligible' : 'Premium Only'} 
+                      color={serv.membership_eligible !== false ? 'primary' : 'warning'} 
+                      size="small" 
+                    />
+                  </TableCell>
                   <TableCell align="right">
                     <IconButton onClick={() => handleServEdit(serv)} size="small"><EditIcon /></IconButton>
                     <IconButton onClick={() => handleServDelete(serv.id)} size="small" color="error"><DeleteIcon /></IconButton>
@@ -298,6 +330,22 @@ export default function ServiceOverview() {
             <TextField label="Duration (min)" type="number" value={servFormData.duration} onChange={e => setServFormData({ ...servFormData, duration: parseInt(e.target.value, 10) || 0 })} required fullWidth margin="normal" />
             <TextField label="Price (₹)" type="number" value={servFormData.price} onChange={e => setServFormData({ ...servFormData, price: parseFloat(e.target.value) || 0 })} required fullWidth margin="normal" />
             <FormControlLabel control={<Switch checked={servFormData.active} onChange={e => setServFormData({ ...servFormData, active: e.target.checked })} />} label="Active" />
+            <FormControlLabel 
+              control={
+                <Switch 
+                  checked={servFormData.membership_eligible} 
+                  onChange={e => setServFormData({ ...servFormData, membership_eligible: e.target.checked })} 
+                  color="primary" 
+                />
+              } 
+              label="Membership Eligible" 
+            />
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1, ml: 4 }}>
+              {servFormData.membership_eligible 
+                ? "This service can be purchased using membership balance" 
+                : "This is a premium service - can only be purchased with regular payment methods"
+              }
+            </Typography>
           </DialogContent>
           <DialogActions>
             <Button onClick={handleServClose}>Cancel</Button><Button type="submit" variant="contained">{servEditingId ? 'Update' : 'Create'}</Button>

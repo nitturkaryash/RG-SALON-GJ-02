@@ -932,7 +932,8 @@ export function useDashboardAnalytics({ startDate, endDate }: UseDashboardAnalyt
           .select(`
             *,
             services!inner(*),
-            stylists!inner(*)
+            stylists!inner(*),
+            clients!inner(*)
           `)
           .gte('start_time', new Date().toISOString())
           .lte('start_time', new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString())
@@ -968,9 +969,12 @@ export function useDashboardAnalytics({ startDate, endDate }: UseDashboardAnalyt
               timeUntilAppointment = `${days} day(s)`;
             }
 
+            // Fix client name retrieval to use the proper client data
+            const clientName = apt.clients?.full_name || apt.client_name || 'Unknown Client';
+
             const appointment: UpcomingAppointment = {
               id: apt.id,
-              clientName: apt.client_name || 'Unknown Client',
+              clientName: clientName,
               serviceName: apt.services?.name || 'Unknown Service',
               stylistName: apt.stylists?.name || 'Unknown Stylist',
               appointmentTime: apt.start_time,

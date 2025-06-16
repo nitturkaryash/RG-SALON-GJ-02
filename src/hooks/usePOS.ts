@@ -124,6 +124,7 @@ export interface CreateServiceData {
   type?: 'service' | 'product';
   gst_percentage?: number;
   hsn_code?: string;
+  category?: string;
 }
 
 // Define a more accurate type for the data structure used in pos_orders table
@@ -1035,6 +1036,13 @@ export function usePOS() {
       
       // Ensure all services have proper data fields and preserve multi-expert metadata
       const enhancedServices = data.services?.map(s => {
+        console.log('🔍 usePOS - Processing service for order:', {
+          service_id: s.service_id,
+          service_name: s.service_name,
+          type: s.type,
+          experts: (s as any).experts
+        });
+        
         // Common fields for both product and service
         const baseFields = {
           service_id: s.service_id,

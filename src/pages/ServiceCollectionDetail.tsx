@@ -44,6 +44,7 @@ const initialFormData = {
   price: 0,
   duration: 30,
   active: true,
+  membership_eligible: true, // Default to true for backward compatibility
 }
 
 export default function ServiceCollectionDetail() {
@@ -96,6 +97,7 @@ export default function ServiceCollectionDetail() {
       price: service.price,
       duration: service.duration,
       active: service.active,
+      membership_eligible: service.membership_eligible ?? true, // Default to true if not set
     })
     setEditingId(service.id)
     setOpen(true)
@@ -149,24 +151,13 @@ export default function ServiceCollectionDetail() {
     }
     
     try {
-      // Create a copy of formData to ensure we don't modify the state directly
-      const serviceData = { ...formData };
-      
-      // Ensure collection_id is set correctly
-      if (!editingId) {
-        serviceData.collection_id = collectionId;
-      }
-      
+      // Create service data with collection_id
       if (editingId) {
-        await updateService({
-          ...serviceData,
-          id: editingId 
-        })
+        const serviceData = { ...formData, id: editingId, collection_id: collectionId! }
+        await updateService(serviceData)
       } else {
-        await createService({ 
-          ...serviceData,
-          collection_id: collectionId 
-        })
+        const serviceData = { ...formData, collection_id: collectionId! }
+        await createService(serviceData)
       }
       
       // Manually refetch after successful mutation
@@ -254,6 +245,7 @@ export default function ServiceCollectionDetail() {
                 <TableCell align="right">Duration</TableCell>
                 <TableCell align="right">Price</TableCell>
                 <TableCell>Status</TableCell>
+                <TableCell>Membership</TableCell>
                 <TableCell align="right">Actions</TableCell>
               </TableRow>
             </TableHead>
@@ -279,6 +271,13 @@ export default function ServiceCollectionDetail() {
                       label={service.active ? 'Active' : 'Inactive'}
                       color={service.active ? 'success' : 'default'}
                       size="small"
+                    />
+                  </TableCell>
+                  <TableCell>
+                    <Chip 
+                      label={service.membership_eligible !== false ? 'Eligible' : 'Premium Only'} 
+                      color={service.membership_eligible !== false ? 'primary' : 'warning'} 
+                      size="small" 
                     />
                   </TableCell>
                   <TableCell align="right">
@@ -367,6 +366,22 @@ export default function ServiceCollectionDetail() {
                 }
                 label="Active"
               />
+              <FormControlLabel 
+                control={
+                  <Switch 
+                    checked={formData.membership_eligible} 
+                    onChange={(e) => setFormData({ ...formData, membership_eligible: e.target.checked })} 
+                    color="primary" 
+                  />
+                } 
+                label="Membership Eligible" 
+              />
+              <Typography variant="caption" color="text.secondary" sx={{ mt: -1, ml: 4 }}>
+                {formData.membership_eligible 
+                  ? "This service can be purchased using membership balance" 
+                  : "This is a premium service - can only be purchased with regular payment methods"
+                }
+              </Typography>
             </Box>
           </DialogContent>
           <DialogActions>

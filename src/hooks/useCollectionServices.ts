@@ -44,6 +44,7 @@ export function useCollectionServices(collectionId?: string) {
           duration: typeof service.duration === 'number' ? service.duration : 30,
           active: service.active === true, // Ensure boolean
           collection_id: service.collection_id, // Keep collection_id
+          membership_eligible: service.membership_eligible ?? true, // Add membership_eligible field
           created_at: service.created_at || new Date().toISOString(),
           // Add any other fields from the 'services' table that ServiceItem requires
         })) as ServiceItem[];
@@ -77,6 +78,7 @@ export function useCollectionServices(collectionId?: string) {
         price: typeof newService.price === 'number' ? newService.price : 0,
         duration: typeof newService.duration === 'number' ? newService.duration : 30,
         active: newService.active === true, // Ensure boolean
+        membership_eligible: newService.membership_eligible ?? true, // Add membership_eligible field
         created_at: timestamp,
         updated_at: timestamp // Set updated_at on creation
         // Add any other required fields for the 'services' table
@@ -117,15 +119,18 @@ export function useCollectionServices(collectionId?: string) {
     mutationFn: async (updates: Partial<ServiceItem> & { id: string }) => {
       const { id, ...serviceUpdates } = updates; // Separate id from the rest of the updates
       
-      // Add updated_at timestamp
-      serviceUpdates.updated_at = new Date().toISOString();
+      // Add updated_at timestamp - create a proper object with the field
+      const updateData = {
+        ...serviceUpdates,
+        updated_at: new Date().toISOString()
+      };
       
-      console.log(`Updating service ${id} in services table:`, serviceUpdates);
+      console.log(`Updating service ${id} in services table:`, updateData);
 
       // Update directly in the 'services' table
       const { data, error } = await supabase
         .from('services')
-        .update(serviceUpdates)
+        .update(updateData)
         .eq('id', id)
         .select();
       
