@@ -108,7 +108,7 @@ const SectionWrapper = ({ title, icon, children }: { title: string, icon: React.
 const CardWrapper = ({ children }: { children: React.ReactNode }) => (
   <Box sx={{ 
     height: '100%', 
-    minHeight: 330,
+    minHeight: 400,
     display: 'flex',
     flexDirection: 'column'
   }}>
@@ -605,10 +605,11 @@ export default function Dashboard() {
                               flexDirection: 'column',
                               alignItems: 'center',
                               justifyContent: 'center',
-                              height: 320,
-                              px: 2,
-                              py: 1,
-                              gap: 1
+                              height: 370,
+                              px: 4,
+                              py: 3,
+                              pb: 4,
+                              gap: 2
                             }}>
                               <OrdersVsProductsChart
                                 serviceRevenue={analyticsSummary.revenueAnalytics.serviceRevenue}
@@ -619,7 +620,7 @@ export default function Dashboard() {
                                 productGrowth={analyticsSummary.revenueAnalytics.revenueGrowthRate}
                                 period={`${format(new Date(startDate), 'MMM d')} - ${format(new Date(endDate), 'MMM d, yyyy')}`}
                                 chartType="doughnut"
-                                height={280}
+                                height={320}
                               />
                             </Box>
                           </DownloadableCard>
@@ -632,8 +633,8 @@ export default function Dashboard() {
                       <Grid item xs={12} md={6}>
                         <CardWrapper>
                           <DownloadableCard
-                            title="Staff Utilization"
-                            subtitle=""
+                            title="Staff Performance & Utilization"
+                            subtitle="Individual staff revenue and performance metrics"
                             data={analyticsSummary.staffPerformance.topPerformers}
                             downloadType="staff-revenue"
                             icon={<PeopleIcon color="primary" />}
@@ -641,160 +642,216 @@ export default function Dashboard() {
                             <Box sx={{ 
                               display: 'flex', 
                               flexDirection: 'column',
-                              height: 320,
+                              height: 370,
                               px: 3,
                               py: 2,
-                              gap: 2
+                              gap: 1
                             }}>
-                              {/* Average Utilization Rate Gauge */}
+                              {/* Staff Performance Overview */}
                               <Box textAlign="center" mb={2}>
-                                <Box sx={{ position: 'relative', display: 'inline-block' }}>
-                                  <svg width="200" height="120" viewBox="0 0 200 120">
-                                    {/* Background Arc - Semicircle */}
-                                    <path
-                                      d="M 30 100 A 70 70 0 0 1 170 100"
-                                      fill="none"
-                                      stroke="#f0f0f0"
-                                      strokeWidth="20"
-                                      strokeLinecap="round"
-                                    />
-                                    
-                                    {/* Progress Arc */}
-                                    {(() => {
-                                      const averageUtilization = analyticsSummary.staffPerformance.topPerformers.length > 0 
-                                        ? (analyticsSummary.staffPerformance.topPerformers.reduce((sum, staff) => sum + staff.revenue, 0) / Math.max(analyticsSummary.staffPerformance.topPerformers.length * 15000, 1)) * 100
-                                        : 19; // Default to match the image
-                                      
-                                      const clampedUtilization = Math.min(Math.max(averageUtilization, 0), 100);
-                                      const circumference = Math.PI * 140; // π * diameter
-                                      const strokeDasharray = (clampedUtilization / 100) * circumference;
-                                      
-                                      // Determine color based on utilization rate
-                                      const gaugeColor = clampedUtilization >= 70 ? '#4caf50' :
-                                                        clampedUtilization >= 40 ? '#ff9800' : '#e74c3c';
-                                      
-                                      return (
-                                        <path
-                                          d="M 30 100 A 70 70 0 0 1 170 100"
-                                          fill="none"
-                                          stroke={gaugeColor}
-                                          strokeWidth="20"
-                                          strokeLinecap="round"
-                                          strokeDasharray={`${strokeDasharray} ${circumference}`}
-                                          style={{
-                                            transition: 'stroke-dasharray 1s ease-in-out'
-                                          }}
-                                        />
-                                      );
-                                    })()}
-                                  </svg>
-                                  
-                                  {/* Center Text */}
-                                  <Box sx={{ 
-                                    position: 'absolute',
-                                    top: '45%',
-                                    left: '50%',
-                                    transform: 'translate(-50%, -50%)',
-                                    textAlign: 'center'
-                                  }}>
-                                    <Typography variant="h2" sx={{ 
-                                      fontWeight: 'bold',
-                                      color: '#e74c3c',
-                                      fontSize: '48px',
-                                      lineHeight: 1
+                                <Grid container spacing={2}>
+                                  <Grid item xs={4}>
+                                    <Typography variant="h6" sx={{ 
+                                      color: 'primary.main',
+                                      fontWeight: 'bold'
                                     }}>
-                                      {analyticsSummary.staffPerformance.topPerformers.length > 0 
-                                        ? `${Math.min((analyticsSummary.staffPerformance.topPerformers.reduce((sum, staff) => sum + staff.revenue, 0) / Math.max(analyticsSummary.staffPerformance.topPerformers.length * 15000, 1)) * 100, 100).toFixed(0)}%`
-                                        : '19%'
-                                      }
+                                      {analyticsSummary.staffPerformance.totalStaff || 0}
                                     </Typography>
-                                    <Typography variant="body2" sx={{ 
+                                    <Typography variant="caption" sx={{ 
                                       color: 'text.secondary',
-                                      fontWeight: 500,
-                                      mt: 0.5
+                                      display: 'block'
+                                    }}>
+                                      Total Staff
+                                    </Typography>
+                                  </Grid>
+                                  <Grid item xs={4}>
+                                    <Typography variant="h6" sx={{ 
+                                      color: 'success.main',
+                                      fontWeight: 'bold'
+                                    }}>
+                                      {formatCurrency(analyticsSummary.staffPerformance.averageRevenue || 0)}
+                                    </Typography>
+                                    <Typography variant="caption" sx={{ 
+                                      color: 'text.secondary',
+                                      display: 'block'
+                                    }}>
+                                      Avg Revenue
+                                    </Typography>
+                                  </Grid>
+                                  <Grid item xs={4}>
+                                    <Typography variant="h6" sx={{ 
+                                      color: analyticsSummary.staffPerformance.topPerformers.length >= 3 ? 'success.main' : 
+                                             analyticsSummary.staffPerformance.topPerformers.length >= 1 ? 'warning.main' : 'error.main',
+                                      fontWeight: 'bold'
                                     }}>
                                       {(() => {
-                                        const rate = analyticsSummary.staffPerformance.topPerformers.length > 0 
-                                          ? (analyticsSummary.staffPerformance.topPerformers.reduce((sum, staff) => sum + staff.revenue, 0) / Math.max(analyticsSummary.staffPerformance.topPerformers.length * 15000, 1)) * 100
-                                          : 19;
-                                        return rate >= 70 ? 'High' : rate >= 40 ? 'Medium' : 'Low';
-                                      })()}
+                                        const avgRevenue = analyticsSummary.staffPerformance.averageRevenue || 0;
+                                        const highPerformers = analyticsSummary.staffPerformance.topPerformers.filter(
+                                          staff => staff.revenue >= avgRevenue * 1.2
+                                        ).length;
+                                        const totalStaff = analyticsSummary.staffPerformance.totalStaff || 1;
+                                        return Math.round((highPerformers / totalStaff) * 100);
+                                      })()}%
                                     </Typography>
-                                  </Box>
-                                </Box>
-                                
-                                <Typography variant="body1" sx={{ 
-                                  color: 'text.secondary',
-                                  fontWeight: 500,
-                                  mt: 1
-                                }}>
-                                  Average Utilization Rate
-                                </Typography>
+                                    <Typography variant="caption" sx={{ 
+                                      color: 'text.secondary',
+                                      display: 'block'
+                                    }}>
+                                      High Performers
+                                    </Typography>
+                                  </Grid>
+                                </Grid>
                               </Box>
 
                               <Divider sx={{ my: 1 }} />
 
-                              {/* Individual Staff Utilization */}
-                              <Box sx={{ flex: 1 }}>
-                                <Typography variant="h6" sx={{ 
+                              {/* Individual Staff Performance List */}
+                              <Box sx={{ 
+                                flex: 1,
+                                display: 'flex',
+                                flexDirection: 'column'
+                              }}>
+                                <Typography variant="subtitle1" sx={{ 
                                   color: 'text.primary',
                                   fontWeight: 600,
-                                  mb: 2
+                                  mb: 1
                                 }}>
-                                  Individual Staff Utilization
+                                  Individual Performance
                                 </Typography>
                                 
                                 <Box sx={{ 
                                   display: 'flex',
                                   flexDirection: 'column',
-                                  gap: 2,
-                                  maxHeight: 140,
-                                  overflowY: 'auto'
+                                  gap: 1.5,
+                                  maxHeight: 220,
+                                  overflowY: 'auto',
+                                  overflowX: 'hidden',
+                                  pr: 1,
+                                  '&::-webkit-scrollbar': {
+                                    width: '4px',
+                                  },
+                                  '&::-webkit-scrollbar-track': {
+                                    background: '#f1f1f1',
+                                    borderRadius: '4px',
+                                  },
+                                  '&::-webkit-scrollbar-thumb': {
+                                    background: '#6B8E23',
+                                    borderRadius: '4px',
+                                  },
+                                  '&::-webkit-scrollbar-thumb:hover': {
+                                    background: '#5a7a1e',
+                                  },
                                 }}>
-                                  {analyticsSummary.staffPerformance.topPerformers.slice(0, 3).map((staff, index) => {
-                                    const totalRevenue = analyticsSummary.staffPerformance.topPerformers.reduce((sum, s) => sum + s.revenue, 0);
-                                    const averageRevenue = totalRevenue / Math.max(analyticsSummary.staffPerformance.topPerformers.length, 1);
-                                    const utilizationRate = Math.min((staff.revenue / Math.max(averageRevenue, 1)) * 50, 100); // Scaled to be more realistic
-                                    
-                                    return (
-                                      <Box key={index} sx={{ width: '100%' }}>
-                                        <Box sx={{ 
-                                          display: 'flex', 
-                                          justifyContent: 'space-between', 
-                                          alignItems: 'center',
-                                          mb: 0.5
-                                        }}>
-                                          <Typography variant="body2" sx={{ 
-                                            fontWeight: 500,
-                                            color: 'text.primary'
-                                          }}>
-                                            {staff.stylistName}
-                                          </Typography>
-                                          <Typography variant="body2" sx={{ 
-                                            fontWeight: 'bold',
-                                            color: 'text.primary'
-                                          }}>
-                                            {utilizationRate.toFixed(0)}%
-                                          </Typography>
-                                        </Box>
-                                        
-                                        <LinearProgress
-                                          variant="determinate"
-                                          value={utilizationRate}
-                                          sx={{
-                                            height: 8,
-                                            borderRadius: 4,
-                                            backgroundColor: '#f0f0f0',
-                                            '& .MuiLinearProgress-bar': {
-                                              borderRadius: 4,
-                                              backgroundColor: utilizationRate >= 70 ? '#4caf50' :
-                                                             utilizationRate >= 50 ? '#ff9800' : '#e74c3c'
-                                            }
+                                  {analyticsSummary.staffPerformance.topPerformers.length > 0 ? (
+                                    analyticsSummary.staffPerformance.topPerformers.slice(0, 6).map((staff, index) => {
+                                      const averageRevenue = analyticsSummary.staffPerformance.averageRevenue || 1;
+                                      const performancePercentage = Math.min((staff.revenue / Math.max(averageRevenue, 1)) * 100, 150);
+                                      const isHighPerformer = staff.revenue >= averageRevenue * 1.2;
+                                      
+                                      return (
+                                        <Box 
+                                          key={staff.stylistId || index} 
+                                          sx={{ 
+                                            width: '100%',
+                                            p: 2,
+                                            borderRadius: 2,
+                                            border: '1px solid',
+                                            borderColor: isHighPerformer ? 'success.light' : 'divider',
+                                            backgroundColor: isHighPerformer ? 'success.lighter' : 'background.paper'
                                           }}
-                                        />
-                                      </Box>
-                                    );
-                                  })}
+                                        >
+                                          <Box sx={{ 
+                                            display: 'flex', 
+                                            justifyContent: 'space-between', 
+                                            alignItems: 'center',
+                                            mb: 1
+                                          }}>
+                                            <Typography variant="body2" sx={{ 
+                                              fontWeight: 600,
+                                              color: 'text.primary'
+                                            }}>
+                                              {staff.stylistName || `Staff ${index + 1}`}
+                                            </Typography>
+                                            <Chip
+                                              label={`${formatCurrency(staff.revenue)}`}
+                                              size="small"
+                                              color={isHighPerformer ? 'success' : 'default'}
+                                              sx={{
+                                                fontWeight: 'bold',
+                                                fontSize: '0.75rem'
+                                              }}
+                                            />
+                                          </Box>
+                                          
+                                          <Box sx={{ 
+                                            display: 'flex', 
+                                            justifyContent: 'space-between', 
+                                            alignItems: 'center',
+                                            mb: 0.5
+                                          }}>
+                                            <Typography variant="caption" sx={{ 
+                                              color: 'text.secondary'
+                                            }}>
+                                              Performance vs Average
+                                            </Typography>
+                                            <Typography variant="caption" sx={{ 
+                                              fontWeight: 'bold',
+                                              color: performancePercentage >= 120 ? 'success.main' :
+                                                     performancePercentage >= 80 ? 'warning.main' : 'error.main'
+                                            }}>
+                                              {performancePercentage.toFixed(0)}%
+                                            </Typography>
+                                          </Box>
+                                          
+                                          <LinearProgress
+                                            variant="determinate"
+                                            value={Math.min(performancePercentage, 100)}
+                                            sx={{
+                                              height: 6,
+                                              borderRadius: 3,
+                                              backgroundColor: '#f0f0f0',
+                                              '& .MuiLinearProgress-bar': {
+                                                borderRadius: 3,
+                                                backgroundColor: performancePercentage >= 120 ? '#4caf50' :
+                                                               performancePercentage >= 80 ? '#ff9800' : '#e74c3c'
+                                              }
+                                            }}
+                                          />
+                                          
+                                          <Box sx={{ 
+                                            display: 'flex', 
+                                            justifyContent: 'space-between',
+                                            mt: 0.5
+                                          }}>
+                                            <Typography variant="caption" sx={{ 
+                                              color: 'text.secondary'
+                                            }}>
+                                              {staff.appointmentCount || 0} appointments
+                                            </Typography>
+                                            <Typography variant="caption" sx={{ 
+                                              color: 'text.secondary'
+                                            }}>
+                                              {staff.efficiency ? `${staff.efficiency.toFixed(1)}% efficient` : 'Calculating...'}
+                                            </Typography>
+                                          </Box>
+                                        </Box>
+                                      );
+                                    })
+                                  ) : (
+                                    <Box sx={{ 
+                                      textAlign: 'center',
+                                      py: 4,
+                                      color: 'text.secondary'
+                                    }}>
+                                      <PeopleIcon sx={{ fontSize: 48, mb: 2, opacity: 0.5 }} />
+                                      <Typography variant="body2">
+                                        No staff performance data available
+                                      </Typography>
+                                      <Typography variant="caption">
+                                        Data will appear once appointments are completed
+                                      </Typography>
+                                    </Box>
+                                  )}
                                 </Box>
                               </Box>
                             </Box>
@@ -963,52 +1020,142 @@ export default function Dashboard() {
                         <CardWrapper>
                           <DownloadableCard
                             title="Upcoming Appointments"
-                            subtitle={`${analyticsSummary.upcomingAppointments.length} appointments scheduled`}
+                            subtitle={`${analyticsSummary.upcomingAppointments.length} appointments scheduled in next 7 days`}
                             data={analyticsSummary.upcomingAppointments}
                             downloadType="appointments"
                             showDataCount={false}
                             icon={<ScheduleIcon color="primary" />}
                           >
-                            <Box sx={{ height: 330, overflowY: 'auto' }}>
-                              <List>
-                                {analyticsSummary.upcomingAppointments.slice(0, 10).map((appointment, index) => (
-                                  <ListItem key={appointment.id} divider>
-                                    <ListItemIcon>
-                                      {appointment.isToday ? (
-                                        <Badge badgeContent="Today" color="error">
-                                          <CalendarIcon color="primary" />
-                                        </Badge>
-                                      ) : appointment.isTomorrow ? (
-                                        <Badge badgeContent="Tomorrow" color="warning">
-                                          <CalendarIcon color="secondary" />
-                                        </Badge>
-                                      ) : (
-                                        <CalendarIcon color="action" />
-                                      )}
-                                    </ListItemIcon>
-                                    <ListItemText
-                                      primary={
-                                        <Box display="flex" justifyContent="space-between" alignItems="center">
-                                          <Typography variant="subtitle2">{appointment.clientName}</Typography>
-                                          <Typography variant="caption" color="text.secondary">
-                                            {appointment.timeUntilAppointment}
-                                          </Typography>
-                                        </Box>
-                                      }
-                                      secondary={
-                                        <Box>
-                                          <Typography variant="caption" display="block">
-                                            Service: {appointment.serviceName} | Stylist: {appointment.stylistName}
-                                          </Typography>
-                                          <Typography variant="caption" display="block">
-                                            Time: {appointment.appointmentTime} | Duration: {appointment.duration}min | {formatCurrency(appointment.price)}
-                                          </Typography>
-                                        </Box>
-                                      }
-                                    />
-                                  </ListItem>
-                                ))}
+                            <Box sx={{ 
+                              height: 370,
+                              overflowY: 'auto',
+                              overflowX: 'hidden',
+                              pb: 3,
+                              pr: 1,
+                              '&::-webkit-scrollbar': {
+                                width: '6px',
+                              },
+                              '&::-webkit-scrollbar-track': {
+                                background: '#f1f1f1',
+                                borderRadius: '6px',
+                              },
+                              '&::-webkit-scrollbar-thumb': {
+                                background: '#6B8E23',
+                                borderRadius: '6px',
+                              },
+                              '&::-webkit-scrollbar-thumb:hover': {
+                                background: '#5a7a1e',
+                              },
+                            }}>
+                              <List sx={{ p: 0 }}>
+                                {analyticsSummary.upcomingAppointments.slice(0, 10).map((appointment, index) => {
+                                  // Enhanced client name display with better fallback logic
+                                  const getDisplayClientName = (appointment: any) => {
+                                    // Try multiple fallback sources for client name
+                                    if (appointment.clientName && appointment.clientName !== 'Walk-in Customer') {
+                                      return appointment.clientName;
+                                    }
+                                    if (appointment.client_name && appointment.client_name !== 'Walk-in Customer') {
+                                      return appointment.client_name;
+                                    }
+                                    if (appointment.booker_name && appointment.is_for_someone_else) {
+                                      return `${appointment.booker_name} (Booking for someone else)`;
+                                    }
+                                    // If still no valid name, show a more descriptive fallback
+                                    return 'Walk-in Customer';
+                                  };
+
+                                  const clientName = getDisplayClientName(appointment);
+                                  const isValidClient = clientName !== 'Walk-in Customer';
+
+                                  return (
+                                    <ListItem key={appointment.id} divider sx={{ py: 2, px: 2 }}>
+                                      <ListItemIcon sx={{ minWidth: 48 }}>
+                                        {appointment.isToday ? (
+                                          <Badge badgeContent="Today" color="error" variant="standard">
+                                            <CalendarIcon color="primary" />
+                                          </Badge>
+                                        ) : appointment.isTomorrow ? (
+                                          <Badge badgeContent="Tomorrow" color="warning" variant="standard">
+                                            <CalendarIcon color="secondary" />
+                                          </Badge>
+                                        ) : (
+                                          <CalendarIcon color="action" />
+                                        )}
+                                      </ListItemIcon>
+                                      <ListItemText
+                                        primary={
+                                          <Box display="flex" justifyContent="space-between" alignItems="center" sx={{ mb: 0.5 }}>
+                                            <Typography 
+                                              variant="subtitle1" 
+                                              sx={{ 
+                                                fontWeight: 600,
+                                                color: isValidClient ? 'text.primary' : 'text.secondary'
+                                              }}
+                                            >
+                                              {clientName}
+                                              {!isValidClient && (
+                                                <Chip 
+                                                  label="Walk-in" 
+                                                  size="small" 
+                                                  color="default" 
+                                                  sx={{ ml: 1, fontSize: '0.7rem' }}
+                                                />
+                                              )}
+                                            </Typography>
+                                            <Typography variant="caption" color="text.secondary" sx={{ 
+                                              backgroundColor: appointment.isToday ? 'error.light' : 
+                                                              appointment.isTomorrow ? 'warning.light' : 'primary.light',
+                                              color: appointment.isToday ? 'error.contrastText' : 
+                                                     appointment.isTomorrow ? 'warning.contrastText' : 'primary.contrastText',
+                                              px: 1,
+                                              py: 0.5,
+                                              borderRadius: 1,
+                                              fontWeight: 500
+                                            }}>
+                                              {appointment.timeUntilAppointment}
+                                            </Typography>
+                                          </Box>
+                                        }
+                                        secondary={
+                                          <Box sx={{ mt: 1 }}>
+                                            <Typography variant="body2" display="block" sx={{ mb: 0.5 }}>
+                                              <strong>Service:</strong> {appointment.serviceName || 'Service Consultation'} | 
+                                              <strong> Stylist:</strong> {appointment.stylistName || 'Staff Member'}
+                                            </Typography>
+                                            <Typography variant="body2" display="block" color="text.secondary">
+                                              <strong>Time:</strong> {format(new Date(appointment.appointmentTime), 'MMM dd, yyyy - hh:mm a')} | 
+                                              <strong> Duration:</strong> {appointment.duration || 60}min | 
+                                              <strong> Price:</strong> {formatCurrency(appointment.price || 0)}
+                                            </Typography>
+                                            <Typography variant="caption" display="block" sx={{ 
+                                              mt: 0.5,
+                                              color: appointment.status === 'scheduled' ? 'success.main' : 
+                                                     appointment.status === 'confirmed' ? 'primary.main' : 'text.secondary'
+                                            }}>
+                                              Status: {appointment.status?.charAt(0).toUpperCase() + (appointment.status?.slice(1) || '')}
+                                            </Typography>
+                                          </Box>
+                                        }
+                                      />
+                                    </ListItem>
+                                  );
+                                })}
                               </List>
+                              
+                              {analyticsSummary.upcomingAppointments.length > 10 && (
+                                <Box sx={{ 
+                                  textAlign: 'center', 
+                                  pt: 2, 
+                                  borderTop: '1px solid',
+                                  borderColor: 'divider',
+                                  mt: 2
+                                }}>
+                                  <Typography variant="caption" color="text.secondary">
+                                    Showing 10 of {analyticsSummary.upcomingAppointments.length} upcoming appointments
+                                  </Typography>
+                                </Box>
+                              )}
                             </Box>
                           </DownloadableCard>
                         </CardWrapper>

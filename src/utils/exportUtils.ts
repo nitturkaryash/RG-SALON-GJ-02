@@ -151,15 +151,15 @@ export const exportToPDF = <T extends Record<string, any>>(
     headers: Object.keys(headers)
   });
 
-  // Create new PDF document
+  // Create new PDF document in landscape for better column width
   const doc = new jsPDF({
-    orientation: 'portrait',
+    orientation: 'landscape',
     unit: 'mm',
     format: 'a4'
   });
 
   // Add title
-  doc.setFontSize(16);
+  doc.setFontSize(18);
   doc.text(title, doc.internal.pageSize.getWidth() / 2, 15, { align: 'center' });
   doc.setFontSize(10);
   
@@ -231,12 +231,8 @@ export const exportToPDF = <T extends Record<string, any>>(
         return value.toLocaleDateString();
       }
       
-      // Handle long strings by truncating if necessary (for PDF table formatting)
+      // For PDF, we don't need to truncate as much since we're using landscape
       const stringValue = String(value);
-      if (stringValue.length > 50) {
-        return stringValue.substring(0, 47) + '...';
-      }
-      
       return stringValue;
     });
   });
@@ -247,7 +243,33 @@ export const exportToPDF = <T extends Record<string, any>>(
     firstRow: tableData[0]
   });
 
-  // Create the table
+  // Define column widths for proper display (landscape A4 is ~297mm width)
+  // Total usable width after margins is ~277mm
+  const columnWidths = {
+    'Order ID': 20,
+    'Date & Time': 35,
+    'Customer': 25,
+    'Stylist': 25,
+    'Services/Products Details': 60,
+    'Items Count': 15,
+    'Type': 20,
+    'Payment Method': 35,
+    'Status': 15,
+    'Total Amount': 22
+  };
+
+  // Create column styles mapping
+  const columnStyles: { [key: number]: any } = {};
+  Object.values(headers).forEach((header, index) => {
+    const width = columnWidths[header as keyof typeof columnWidths] || 20;
+    columnStyles[index] = {
+      cellWidth: width,
+      fontSize: header === 'Services/Products Details' ? 6 : 7, // Smaller font for long content
+      cellPadding: 2
+    };
+  });
+
+  // Create the table with proper column widths
   doc.autoTable({
     head: [tableHeaders],
     body: tableData,
@@ -256,24 +278,28 @@ export const exportToPDF = <T extends Record<string, any>>(
       fillColor: [107, 142, 35], // Olive green to match theme
       textColor: [255, 255, 255],
       fontStyle: 'bold',
-      fontSize: 8
+      fontSize: 8,
+      cellPadding: 3
     },
     bodyStyles: {
-      fontSize: 7
+      fontSize: 7,
+      cellPadding: 2,
+      lineColor: [200, 200, 200],
+      lineWidth: 0.1
     },
     styles: {
-      lineColor: [200, 200, 200],
-      lineWidth: 0.1,
-      cellPadding: 2
+      overflow: 'linebreak',
+      cellWidth: 'wrap',
+      halign: 'left',
+      valign: 'top'
     },
+    columnStyles: columnStyles,
     alternateRowStyles: {
       fillColor: [247, 247, 247]
     },
     margin: { top: 25, left: 10, right: 10 },
     tableWidth: 'auto',
-    columnStyles: {
-      // Auto-adjust column widths for better fit
-    }
+    theme: 'grid'
   });
 
   // Save PDF

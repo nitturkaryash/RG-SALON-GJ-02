@@ -17,6 +17,7 @@ export interface ServiceItem {
   duration: number;
   active: boolean;
   gender?: 'male' | 'female' | null;
+  membership_eligible?: boolean; // Controls if service can be purchased with membership balance
   created_at?: string;
 }
 

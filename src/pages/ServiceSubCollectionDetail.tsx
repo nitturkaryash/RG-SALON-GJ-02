@@ -44,6 +44,7 @@ const initialFormData = {
   price: 0,
   duration: 30,
   active: true,
+  membership_eligible: true, // Default to true for backward compatibility
 }
 
 export default function ServiceSubCollectionDetail() {
@@ -95,6 +96,7 @@ export default function ServiceSubCollectionDetail() {
       price: service.price,
       duration: service.duration,
       active: service.active,
+      membership_eligible: service.membership_eligible ?? true, // Default to true if not set
     })
     setEditingId(service.id)
     setOpen(true)
@@ -199,6 +201,7 @@ export default function ServiceSubCollectionDetail() {
                 <TableCell align="right">Duration</TableCell>
                 <TableCell align="right">Price</TableCell>
                 <TableCell>Status</TableCell>
+                <TableCell>Membership</TableCell>
                 <TableCell align="right">Actions</TableCell>
               </TableRow>
             </TableHead>
@@ -216,6 +219,13 @@ export default function ServiceSubCollectionDetail() {
                   <TableCell align="right">{formatCurrency(service.price)}</TableCell>
                   <TableCell>
                     <Chip label={service.active ? 'Active' : 'Inactive'} color={service.active ? 'success' : 'default'} size="small" />
+                  </TableCell>
+                  <TableCell>
+                    <Chip 
+                      label={service.membership_eligible !== false ? 'Eligible' : 'Premium Only'} 
+                      color={service.membership_eligible !== false ? 'primary' : 'warning'} 
+                      size="small" 
+                    />
                   </TableCell>
                   <TableCell align="right">
                     <IconButton onClick={() => handleEdit(service)} color="primary" size="small">
@@ -252,6 +262,22 @@ export default function ServiceSubCollectionDetail() {
               <TextField label="Duration (minutes)" type="number" value={formData.duration} onChange={handleDurationChange} required fullWidth InputProps={{ inputProps: { min: 5 } }} />
               <TextField label="Price (₹)" type="number" value={formData.price} onChange={handlePriceChange} required fullWidth InputProps={{ inputProps: { min: 0, step: 0.01 } }} />
               <FormControlLabel control={<Switch checked={formData.active} onChange={(e) => setFormData({ ...formData, active: e.target.checked })} color="primary" />} label="Active" />
+              <FormControlLabel 
+                control={
+                  <Switch 
+                    checked={formData.membership_eligible} 
+                    onChange={(e) => setFormData({ ...formData, membership_eligible: e.target.checked })} 
+                    color="primary" 
+                  />
+                } 
+                label="Membership Eligible" 
+              />
+              <Typography variant="caption" color="text.secondary" sx={{ mt: -1, ml: 4 }}>
+                {formData.membership_eligible 
+                  ? "This service can be purchased using membership balance" 
+                  : "This is a premium service - can only be purchased with regular payment methods"
+                }
+              </Typography>
             </Box>
           </DialogContent>
           <DialogActions>

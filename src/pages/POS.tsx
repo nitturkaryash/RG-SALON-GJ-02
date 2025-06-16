@@ -167,6 +167,7 @@ interface POSService {
 	gst_percentage?: number;
 	category?: string;
 	active?: boolean;
+	membership_eligible?: boolean; // Add membership eligibility flag
 }
 
 // Define POSMembership interface
@@ -623,6 +624,26 @@ export default function POS() {
 			// Determine the type - ensure it is always either 'product' or 'service', never undefined
 			const itemType = service.type === 'service' ? 'service' : 'product';
 			
+			// Assign currently selected stylists to service items
+			let expertsArray: any[] = [];
+			if (itemType === 'service') {
+				if (selectedStylists.length > 0) {
+					// Multi-stylist mode: use all selected stylists
+					expertsArray = selectedStylists
+						.filter(stylist => stylist !== null)
+						.map(stylist => ({
+							id: stylist!.id,
+							name: stylist!.name
+						}));
+				} else if (selectedStylist) {
+					// Single stylist mode: use the main selected stylist
+					expertsArray = [{
+						id: selectedStylist.id,
+						name: selectedStylist.name
+					}];
+				}
+			}
+			
 			const newItem: POSOrderItem = {
 				id: uuidv4(),
 				order_id: '',
@@ -636,7 +657,9 @@ export default function POS() {
 				gst_percentage: service.gst_percentage,
 				for_salon_use: false,
 				discount: 0, // Initialize discount to 0
-				discount_percentage: 0 // Initialize discount_percentage to 0
+				discount_percentage: 0, // Initialize discount_percentage to 0
+				// Add experts array for service items
+				...(itemType === 'service' && expertsArray.length > 0 && { experts: expertsArray })
 			};
 
 			console.log(`🛒 Created order item:`, newItem);
@@ -648,7 +671,7 @@ export default function POS() {
 
 			toast.success(`Added ${service.name} to order`);
 		}
-	}, [orderItems, toast]); // Keep dependencies for handleAddToOrder itself
+	}, [orderItems, toast, selectedStylists, selectedStylist]); // Keep dependencies for handleAddToOrder itself
 
 	// RESTORING fetchClientHistory HERE
 	const fetchClientHistory = useCallback(async (clientName: string) => {
@@ -1287,9 +1310,9 @@ export default function POS() {
           price: service.price || (serviceDetails?.price || 0),
           total: (service.price || (serviceDetails?.price || 0)) * (service.quantity || 1),
           type: service.type || (service.service_type) || 'service',
-          category: service.category || serviceDetails?.category || 'service',
-          hsn_code: service.hsn_code || serviceDetails?.hsn_code,
-          gst_percentage: service.gst_percentage || serviceDetails?.gst_percentage || 18,
+          category: service.category || (serviceDetails as any)?.category || 'service',
+          hsn_code: service.hsn_code || (serviceDetails as any)?.hsn_code,
+          gst_percentage: service.gst_percentage || (serviceDetails as any)?.gst_percentage || 18,
           for_salon_use: editOrderData.isSalonConsumption || service.for_salon_use || false,
           discount: service.discount || 0,
           discount_percentage: service.discount_percentage || 0,
@@ -1371,9 +1394,9 @@ export default function POS() {
           price: service.price || (serviceDetails?.price || 0),
           total: (service.price || (serviceDetails?.price || 0)) * (service.quantity || 1),
           type: 'service',
-          category: service.category || serviceDetails?.category || 'service',
-          hsn_code: (service as any).hsn_code || serviceDetails?.hsn_code,
-          gst_percentage: (service as any).gst_percentage || serviceDetails?.gst_percentage || 18,
+          category: service.category || (serviceDetails as any)?.category || 'service',
+          hsn_code: (service as any).hsn_code || (serviceDetails as any)?.hsn_code,
+          gst_percentage: (service as any).gst_percentage || (serviceDetails as any)?.gst_percentage || 18,
           for_salon_use: false,
           discount: 0,
           discount_percentage: 0,
@@ -2884,84 +2907,41 @@ export default function POS() {
 		const totalAmount = calculateTotalAmount();
 
 		try {
-			if (createOrder && typeof createOrder.mutateAsync === 'function') {
-				const baseOrderData: CreateOrderData = {
-					order_id: `order_${uuidv4()}`,
-					client_id: client.id,
-					client_name: client.full_name,
-					stylist_id: stylist.id,
-					items: itemsForOrder,
-					services: itemsForOrder.filter(i => i.type === 'service').map(i => ({ 
-						service_id: i.item_id,
-						service_name: i.item_name,
-						quantity: i.quantity,
-						price: i.price,
-					})), 
-					subtotal: calculateProductSubtotal() + calculateServiceSubtotal(), 
-					tax: gstAmount,
-					discount: walkInDiscount, 
-					total: totalAmount,
-					payment_method: isSplitPayment ? 'split' : walkInPaymentMethod,
-					split_payments: isSplitPayment ? splitPayments : [],
-					notes: appointment.notes || "",
-					gst_amount: gstAmount, 
-					total_amount: totalAmount,
-					status: 'completed', 
-					order_date: orderDate ? orderDate.toISOString() : new Date().toISOString(),
-					is_walk_in: false,
-				};
-
-				// Construct the object matching Partial<Order> based on its definition
-				const orderPayload: Partial<CreateOrderData> = {
-					order_id: baseOrderData.order_id,
-					client_id: baseOrderData.client_id,
-					client_name: baseOrderData.client_name, 
-					order_date: orderDate ? orderDate.toISOString() : baseOrderData.order_date,
-					items: baseOrderData.items,
-					services: baseOrderData.services,
-					subtotal: baseOrderData.subtotal,
-					tax: baseOrderData.tax,
-					discount: baseOrderData.discount,
-					total: baseOrderData.total,
-					payment_method: baseOrderData.payment_method,
-					split_payments: baseOrderData.split_payments,
-					notes: baseOrderData.notes,
-					gst_amount: baseOrderData.gst_amount,
-					total_amount: baseOrderData.total_amount,
-					status: baseOrderData.status,
-					is_walk_in: baseOrderData.is_walk_in,
-					stylist_id: baseOrderData.stylist_id,
-				};
-
-				await createOrder.mutateAsync(orderPayload);
-			} else if (typeof createOrder === 'function') {
-				const walkInOrderData: CreateOrderData = {
-					order_id: `order_${uuidv4()}`,
-					client_id: client.id,
-					client_name: client.full_name,
-					stylist_id: stylist.id,
-					items: itemsForOrder, 
-					services: itemsForOrder.filter(i => i.type === 'service').map(i => ({ 
-						service_id: i.item_id,
-						service_name: i.item_name,
-						quantity: i.quantity,
-						price: i.price,
-					})), 
-					subtotal: calculateProductSubtotal() + calculateServiceSubtotal(), 
-					tax: gstAmount,
-					discount: walkInDiscount, 
-					total: totalAmount,
-					payment_method: isSplitPayment ? 'split' : walkInPaymentMethod,
-					split_payments: isSplitPayment ? splitPayments : [],
-					notes: appointment.notes || "",
-					gst_amount: gstAmount, 
-					total_amount: totalAmount,
-					status: 'completed', 
-					order_date: orderDate ? orderDate.toISOString() : new Date().toISOString(),
-					is_walk_in: false,
-				};
-				await createWalkInOrderMutation.mutateAsync(walkInOrderData); // Call with CreateOrderData
-			}
+			// Use only the createWalkInOrderMutation to avoid duplicate orders
+			const walkInOrderData: CreateOrderData = {
+				order_id: `order_${uuidv4()}`,
+				client_id: client.id,
+				client_name: client.full_name,
+				stylist_id: stylist.id,
+				items: itemsForOrder, 
+				services: itemsForOrder.filter(i => i.type === 'service').map(i => ({ 
+					service_id: i.item_id,
+					service_name: i.item_name,
+					quantity: i.quantity,
+					price: i.price,
+					type: 'service',  // Ensure type is explicitly set
+					gst_percentage: i.gst_percentage || serviceGstRate,
+					hsn_code: i.hsn_code || '',
+					category: i.category || 'service'
+				})), 
+				subtotal: calculateProductSubtotal() + calculateServiceSubtotal(), 
+				tax: gstAmount,
+				discount: walkInDiscount, 
+				total: totalAmount,
+				payment_method: isSplitPayment ? 'split' : walkInPaymentMethod,
+				split_payments: isSplitPayment ? splitPayments : [],
+				notes: appointment.notes || "",
+				gst_amount: gstAmount, 
+				total_amount: totalAmount,
+				status: 'completed', 
+				order_date: orderDate ? orderDate.toISOString() : new Date().toISOString(),
+				is_walk_in: false,
+				appointment_id: appointmentId,  // Include appointment_id
+				appointment_time: appointment.start_time || appointment.appointmentTime,  // Include appointment_time
+			};
+			
+			console.log('Creating appointment order with services:', walkInOrderData.services);
+			await createWalkInOrderMutation.mutateAsync(walkInOrderData);
 			
 			toast.success("Order created successfully for appointment.");
 			
@@ -2971,22 +2951,22 @@ export default function POS() {
 			console.error("Failed to create order:", error);
 			toast.error(`Failed to create order: ${error?.message || 'Unknown error'}`);
 		}
-	}, [appointments, selectedClient, selectedStylist, orderItems, productGstRate, serviceGstRate, calculateProductGstAmount, calculateServiceGstAmount, calculateTotalAmount, calculateProductSubtotal, calculateServiceSubtotal, walkInDiscount, isSplitPayment, splitPayments, walkInPaymentMethod, createOrder, createWalkInOrderMutation, resetFormState, orderDate]);
+	}, [appointments, selectedClient, selectedStylist, orderItems, productGstRate, serviceGstRate, calculateProductGstAmount, calculateServiceGstAmount, calculateTotalAmount, calculateProductSubtotal, calculateServiceSubtotal, walkInDiscount, isSplitPayment, splitPayments, walkInPaymentMethod, createWalkInOrderMutation, resetFormState, orderDate]);
 
 	// Add this helper function to group services by category
 	const groupByCategory = (items: POSService[] | Service[]): Record<string, (POSService | Service)[]> => {
-		const groupedItems: Record<string, (POSService | Service)[]> = {};
+		const grouped: Record<string, (POSService | Service)[]> = {};
 		
-		// First pass: collect all categories
 		items.forEach(item => {
-			const category = item.category || 'Uncategorized';
-			if (!groupedItems[category]) {
-				groupedItems[category] = [];
+			// Use type assertion to access category property that may not exist on all Service types
+			const category = (item as any).category || 'Other';
+			if (!grouped[category]) {
+				grouped[category] = [];
 			}
-			groupedItems[category].push(item);
+			grouped[category].push(item);
 		});
 		
-		return groupedItems;
+		return grouped;
 	};
 
 	// Change renderServiceSelectionSection to return null
@@ -3541,6 +3521,13 @@ export default function POS() {
 											<Switch
 												checked={servicesMembershipPayment[item.id] || false}
 												onChange={(e) => {
+													// Check if service is eligible for membership payment
+													const service = services.find(s => s.id === item.item_id);
+													if (e.target.checked && service && service.membership_eligible === false) {
+														toast.error('This is a premium service and cannot be purchased with membership balance');
+														return;
+													}
+													
 													if (!activeClientMembership || !activeClientMembership.isActive) {
 														toast.error('No active membership found for this client');
 														return;
@@ -3562,7 +3549,12 @@ export default function POS() {
 												}}
 												size="small"
 												color="primary"
-												disabled={!activeClientMembership || !activeClientMembership.isActive}
+												disabled={(() => {
+													const service = services.find(s => s.id === item.item_id);
+													const isPremiumService = service && service.membership_eligible === false;
+													const noMembership = !activeClientMembership || !activeClientMembership.isActive;
+													return isPremiumService || noMembership;
+												})()}
 											/>
 										}
 										label={
@@ -3571,24 +3563,56 @@ export default function POS() {
 												<Typography variant="body2">
 													Pay with Membership Balance
 												</Typography>
-												{!activeClientMembership && (
-													<Typography variant="caption" color="text.secondary" sx={{ ml: 1 }}>
-														(No membership)
-													</Typography>
-												)}
+												{(() => {
+													const service = services.find(s => s.id === item.item_id);
+													const isPremiumService = service && service.membership_eligible === false;
+													if (isPremiumService) {
+														return (
+															<Typography variant="caption" color="warning.main" sx={{ ml: 1 }}>
+																(Premium Service)
+															</Typography>
+														);
+													}
+													if (!activeClientMembership) {
+														return (
+															<Typography variant="caption" color="text.secondary" sx={{ ml: 1 }}>
+																(No membership)
+															</Typography>
+														);
+													}
+													return null;
+												})()}
 											</Box>
 										}
 									/>
-									{servicesMembershipPayment[item.id] && activeClientMembership && (
-										<Chip
-											icon={<CheckIcon fontSize="small" />}
-											label={`Balance: ₹${activeClientMembership.currentBalance.toLocaleString()}`}
-											size="small"
-											color="primary"
-											variant="outlined"
-											sx={{ ml: 2 }}
-										/>
-									)}
+									{activeClientMembership && (() => {
+										const service = services.find(s => s.id === item.item_id);
+										const isPremiumService = service && service.membership_eligible === false;
+										return !isPremiumService && (
+											<Chip
+												icon={<CheckIcon fontSize="small" />}
+												label={`Balance: ₹${activeClientMembership.currentBalance.toLocaleString()}`}
+												size="small"
+												color="primary"
+												variant="outlined"
+												sx={{ ml: 2 }}
+											/>
+										);
+									})()}
+									{(() => {
+										const service = services.find(s => s.id === item.item_id);
+										const isPremiumService = service && (service as any).membership_eligible === false;
+										return isPremiumService && (
+											<Chip
+												icon={<InfoIcon fontSize="small" />}
+												label="Premium service - Regular payment only"
+												size="small"
+												color="warning"
+												variant="outlined"
+												sx={{ ml: 2 }}
+											/>
+										);
+									})()}
 								</Box>
 							)}
 							{/* Show info that products cannot be paid with membership */}
@@ -4226,39 +4250,62 @@ export default function POS() {
 										</Button>
 									</Grid>
 								)}
-								
-								{/* Remove Stylist Button (only show if more than 1 stylist) */}
-								{selectedStylists.length > 1 && (
-									<Grid item xs={12} sm={6} md={4}>
-										<Button
-											variant="outlined"
-											color="error"
-											fullWidth
-											onClick={() => {
-												const newStylists = selectedStylists.slice(0, -1);
-												setSelectedStylists(newStylists);
-												// Update the main stylist for backward compatibility
-												if (newStylists.length > 0) {
-													setSelectedStylist(newStylists[0]);
-												}
-											}}
-											startIcon={<RemoveIcon />}
-											sx={{ height: '40px' }}
-										>
-											Remove Expert
-										</Button>
-									</Grid>
-								)}
 							</Grid>
 							
-							{/* Display selected stylists summary */}
+							{/* Display selected stylists summary with individual remove buttons */}
 							{(selectedStylists.length > 0 ? selectedStylists : [selectedStylist]).filter(Boolean).length > 0 && (
 								<Box sx={{ mt: 2, p: 2, bgcolor: 'grey.50', borderRadius: 1 }}>
 									<Typography variant="subtitle2" gutterBottom>
 										Selected Experts:
 									</Typography>
 									<Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-										{(selectedStylists.length > 0 ? selectedStylists : [selectedStylist])
+										{selectedStylists.length > 0 ? (
+											// Multi-expert mode: Show chips with individual delete buttons
+											selectedStylists
+												.map((stylist, index) => stylist ? ({ stylist, index }) : null)
+												.filter((item): item is { stylist: Stylist; index: number } => item !== null)
+												.map(({ stylist, index }) => (
+													<Chip
+														key={stylist?.id || index}
+															label={stylist?.name}
+															variant="outlined"
+															color="primary"
+															size="small"
+															onDelete={selectedStylists.length > 1 ? () => {
+																const newStylists = selectedStylists.filter((_, i) => i !== index);
+																setSelectedStylists(newStylists);
+																// Update the main stylist for backward compatibility
+																if (newStylists.length > 0) {
+																	// Set the first remaining stylist as the main stylist
+																	const firstValidStylist = newStylists.find(s => s !== null);
+																	setSelectedStylist(firstValidStylist || null);
+																} else {
+																	setSelectedStylist(null);
+																}
+																
+																// Update order items to remove the deleted stylist from experts arrays
+																const removedStylistId = stylist.id;
+																setOrderItems(prevItems => 
+																	prevItems.map(item => {
+																		if (item.type === 'service' && (item as POSOrderItem).experts) {
+																			const updatedExperts = (item as POSOrderItem).experts!.filter(
+																				expert => expert.id !== removedStylistId
+																			);
+																			return {
+																				...item,
+																				experts: updatedExperts
+																			} as POSOrderItem;
+																		}
+																		return item;
+																	})
+																);
+															} : undefined}
+															deleteIcon={<RemoveIcon />}
+														/>
+												))
+										) : (
+											// Single stylist mode: Show single chip without delete option
+											[selectedStylist]
 											.filter(Boolean)
 											.map((stylist, index) => (
 												<Chip
@@ -4268,7 +4315,8 @@ export default function POS() {
 													color="primary"
 													size="small"
 												/>
-											))}
+												))
+										)}
 									</Box>
 								</Box>
 							)}
