@@ -41,6 +41,7 @@ interface ProductStockSummary {
   cgst: number;
   sgst: number;
   invoice_value: number;
+  reference_id?: string;
 }
 
 interface BalanceStockTabProps {
@@ -111,7 +112,8 @@ const BalanceStockTab: React.FC<BalanceStockTabProps> = ({ balanceStock, isLoadi
           igst: 0,
           cgst: 0,
           sgst: 0,
-          invoice_value: 0
+          invoice_value: 0,
+          reference_id: (purchase as any).order_id || purchase.id
         });
       }
       
@@ -122,6 +124,10 @@ const BalanceStockTab: React.FC<BalanceStockTabProps> = ({ balanceStock, isLoadi
       record.cgst += purchase.purchase_cgst || purchase.cgst || 0;
       record.sgst += purchase.purchase_sgst || purchase.sgst || 0;
       record.invoice_value += purchase.purchase_invoice_value_rs || purchase.invoice_value || 0;
+      // Update reference_id with the latest order_id if available
+      if ((purchase as any).order_id) {
+        record.reference_id = (purchase as any).order_id;
+      }
     });
     
     // Process sales with deduplication logic
@@ -130,7 +136,7 @@ const BalanceStockTab: React.FC<BalanceStockTabProps> = ({ balanceStock, isLoadi
     sales.forEach(sale => {
       const rawName = sale.product_name || 'Unknown Product';
       const productName = rawName.trim();
-      const orderId = sale.order_id || sale.invoice_no || sale.id;
+      const orderId = (sale as any).order_id || (sale as any).invoice_no || sale.id;
       const dedupeKey = `${orderId}-${productName}`;
       
       // Only keep the first occurrence of each order_id + product_name combination
@@ -159,7 +165,8 @@ const BalanceStockTab: React.FC<BalanceStockTabProps> = ({ balanceStock, isLoadi
           igst: 0,
           cgst: 0,
           sgst: 0,
-          invoice_value: 0
+          invoice_value: 0,
+          reference_id: (sale as any).order_id || sale.id
         });
       }
       
@@ -171,6 +178,10 @@ const BalanceStockTab: React.FC<BalanceStockTabProps> = ({ balanceStock, isLoadi
       record.cgst -= sale.cgst || 0;
       record.sgst -= sale.sgst || 0;
       record.invoice_value -= sale.invoice_value || 0;
+      // Update reference_id with the latest order_id if available
+      if ((sale as any).order_id) {
+        record.reference_id = (sale as any).order_id;
+      }
     });
     
     // Process consumption with deduplication logic
@@ -179,7 +190,7 @@ const BalanceStockTab: React.FC<BalanceStockTabProps> = ({ balanceStock, isLoadi
     consumption.forEach(cons => {
       const rawName = cons.product_name || 'Unknown Product';
       const productName = rawName.trim();
-      const orderId = cons.order_id || cons.requisition_voucher_no || cons.id;
+      const orderId = (cons as any).order_id || (cons as any).requisition_voucher_no || cons.id;
       const dedupeKey = `${orderId}-${productName}`;
       
       // Only keep the first occurrence of each order_id + product_name combination
@@ -208,7 +219,8 @@ const BalanceStockTab: React.FC<BalanceStockTabProps> = ({ balanceStock, isLoadi
           igst: 0,
           cgst: 0,
           sgst: 0,
-          invoice_value: 0
+          invoice_value: 0,
+          reference_id: (cons as any).order_id || cons.id
         });
       }
       
@@ -220,6 +232,10 @@ const BalanceStockTab: React.FC<BalanceStockTabProps> = ({ balanceStock, isLoadi
       record.cgst -= cons.cgst || 0;
       record.sgst -= cons.sgst || 0;
       record.invoice_value -= cons.invoice_value || 0;
+      // Update reference_id with the latest order_id if available
+      if ((cons as any).order_id) {
+        record.reference_id = (cons as any).order_id;
+      }
     });
     
     // Calculate balance
@@ -273,6 +289,7 @@ const BalanceStockTab: React.FC<BalanceStockTabProps> = ({ balanceStock, isLoadi
         'HSN Code': item.hsn_code || 'N/A',
         'Units': item.units || 'pcs',
         'Balance Qty': item.balance_quantity,
+        'Reference ID': item.reference_id || 'N/A',
         'Taxable Value (Rs.)': item.taxable_value,
         'IGST (Rs.)': item.igst,
         'CGST (Rs.)': item.cgst,
@@ -372,6 +389,7 @@ const BalanceStockTab: React.FC<BalanceStockTabProps> = ({ balanceStock, isLoadi
                     <StyledTableHeaderRow>
                       <StyledTableCell>Product Name</StyledTableCell>
                       <StyledTableCell align="right">Balance Qty.</StyledTableCell>
+                      <StyledTableCell align="center">Reference ID</StyledTableCell>
                       <StyledTableCell align="right">Taxable Value (Rs.)</StyledTableCell>
                       <StyledTableCell align="right">IGST (Rs.)</StyledTableCell>
                       <StyledTableCell align="right">CGST (Rs.)</StyledTableCell>
@@ -399,6 +417,7 @@ const BalanceStockTab: React.FC<BalanceStockTabProps> = ({ balanceStock, isLoadi
                         >
                           {item.balance_quantity}
                         </TableCell>
+                        <TableCell align="center">{item.reference_id || 'N/A'}</TableCell>
                         <TableCell align="right">{formatCurrency(item.taxable_value)}</TableCell>
                         <TableCell align="right">{formatCurrency(item.igst)}</TableCell>
                         <TableCell align="right">{formatCurrency(item.cgst)}</TableCell>

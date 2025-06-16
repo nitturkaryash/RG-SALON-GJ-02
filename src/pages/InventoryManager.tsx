@@ -50,8 +50,8 @@ import {
 } from '@mui/icons-material';
 import { styled } from '@mui/material/styles';
 import { useProducts, Product } from '../hooks/useProducts';
-import { usePurchaseHistory, PurchaseTransaction, InventoryUpdateData } from '../hooks/usePurchaseHistory';
-import { addPurchaseTransaction } from '../utils/inventoryUtils';
+import { usePurchaseHistory, PurchaseTransaction, OpeningBalanceData } from '../hooks/usePurchaseHistory';
+import { addPurchaseTransaction, editPurchaseTransaction } from '../utils/inventoryUtils';
 import { initialFormData, ProductFormData } from '../data/formData';
 import { supabase, handleSupabaseError } from '../utils/supabase/supabaseClient';
 import * as XLSX from 'xlsx';
@@ -206,7 +206,7 @@ export default function InventoryManager() {
     fetchPurchases: fetchPurchasesFromHook,
     deletePurchaseTransaction,
     updatePurchaseTransaction,
-    addInventoryUpdate
+    addOpeningBalance
   } = usePurchaseHistory();
 
   const [open, setOpen] = useState(false);
@@ -830,7 +830,7 @@ export default function InventoryManager() {
   const sortedPurchases = useMemo(() => {
     // First, filter out items that are regular purchases (not opening balance)
     const regularPurchases = filteredPurchases.filter(item => 
-      item.transaction_type !== 'stock_increment' && item.transaction_type !== 'inventory_update'
+      item.transaction_type !== 'stock_increment' && item.transaction_type !== 'opening_balance'
     );
     
     if (!purchaseSortConfig.key) {
@@ -843,7 +843,7 @@ export default function InventoryManager() {
       
       // Explicitly assign serial numbers in sorted data - only count regular purchases for numbering
       const withSerialNos = sorted.map(item => {
-        if (item.transaction_type === 'stock_increment' || item.transaction_type === 'inventory_update') {
+        if (item.transaction_type === 'stock_increment' || item.transaction_type === 'opening_balance') {
           return {
             ...item,
             serial_no: "OPENING BALANCE"
@@ -868,31 +868,42 @@ export default function InventoryManager() {
       return withSerialNos;
     }
     
-    // Rest of the existing sorting logic
+    // Sort by the specified key
     const sorted = [...filteredPurchases].sort((a, b) => {
-      if (a[purchaseSortConfig.key!] === null || a[purchaseSortConfig.key!] === undefined) return 1;
-      if (b[purchaseSortConfig.key!] === null || b[purchaseSortConfig.key!] === undefined) return -1;
+      const aValue = a[purchaseSortConfig.key as keyof PurchaseTransaction];
+      const bValue = b[purchaseSortConfig.key as keyof PurchaseTransaction];
       
-      const valueA = a[purchaseSortConfig.key!];
-      const valueB = b[purchaseSortConfig.key!];
+      if (aValue === null || aValue === undefined) return 1;
+      if (bValue === null || bValue === undefined) return -1;
       
-      if (valueA < valueB) {
-        return purchaseSortConfig.direction === 'asc' ? -1 : 1;
+      if (typeof aValue === 'string' && typeof bValue === 'string') {
+        return purchaseSortConfig.direction === 'asc' 
+          ? aValue.localeCompare(bValue)
+          : bValue.localeCompare(aValue);
       }
-      if (valueA > valueB) {
-        return purchaseSortConfig.direction === 'asc' ? 1 : -1;
+      
+      if (typeof aValue === 'number' && typeof bValue === 'number') {
+        return purchaseSortConfig.direction === 'asc' 
+          ? aValue - bValue
+          : bValue - aValue;
       }
+      
       return 0;
     });
-    
-    // Explicitly assign serial numbers in sorted data
+
+    // Assign serial numbers based on sorted data
     const withSerialNos = sorted.map(item => {
-      if (item.transaction_type === 'stock_increment' || item.transaction_type === 'inventory_update') {
+      if (item.transaction_type === 'stock_increment' || item.transaction_type === 'opening_balance') {
         return {
           ...item,
           serial_no: "OPENING BALANCE"
         };
       } else {
+        // Count only regular purchases for numbering
+        const regularPurchases = purchases.filter(p => 
+          !(p.transaction_type === 'stock_increment' || p.transaction_type === 'opening_balance')
+        );
+        
         // Sort regular purchases by date, newest first
         const sortedRegularPurchases = [...regularPurchases].sort((a, b) => {
           const dateA = new Date(a.date).getTime();
@@ -910,7 +921,7 @@ export default function InventoryManager() {
     });
     
     return withSerialNos;
-  }, [filteredPurchases, purchaseSortConfig]);
+  }, [filteredPurchases, purchaseSortConfig, purchases]);
   
   // Calculate filtered sales history data using useMemo for efficiency
   const filteredSalesHistory = useMemo(() => {
@@ -1297,10 +1308,10 @@ export default function InventoryManager() {
 
         // Get the serial number using the same logic as the display
         let serialNo = "OPENING BALANCE";
-        if (purchase.transaction_type !== 'stock_increment' && purchase.transaction_type !== 'inventory_update') {
+        if (purchase.transaction_type !== 'stock_increment' && purchase.transaction_type !== 'opening_balance') {
           // Get only regular purchases for counting
           const regularPurchases = sortedPurchases.filter(p => 
-            p.transaction_type !== 'stock_increment' && p.transaction_type !== 'inventory_update'
+            p.transaction_type !== 'stock_increment' && p.transaction_type !== 'opening_balance'
           );
           
           // Sort regular purchases by date, newest first
@@ -1329,17 +1340,17 @@ export default function InventoryManager() {
         const purchaseCostPerUnit = mrpExGst * (1 - (discountPercentage / 100));
 
         const rowData = {
-          'Serial No': purchase.transaction_type === 'stock_increment' || purchase.transaction_type === 'inventory_update' 
+          'Serial No': purchase.transaction_type === 'stock_increment' || purchase.transaction_type === 'opening_balance' || purchase.transaction_type === 'inventory_update'
             ? "OPENING BALANCE" 
             : serialNo,
           'Date': safeDate(purchase.date),
           'Product Name': safeString(purchase.product_name),
           'HSN Code': safeString(purchase.hsn_code),
           'UNITS': safeString(purchase.units),
-          'Vendor': purchase.transaction_type === 'stock_increment' || purchase.transaction_type === 'inventory_update' 
+          'Vendor': purchase.transaction_type === 'stock_increment' || purchase.transaction_type === 'opening_balance' 
             ? 'OPENING BALANCE' 
             : safeString(purchase.supplier),
-          'Purchase Invoice No.': purchase.transaction_type === 'stock_increment' || purchase.transaction_type === 'inventory_update' 
+          'Purchase Invoice No.': purchase.transaction_type === 'stock_increment' || purchase.transaction_type === 'opening_balance' 
             ? 'OPENING BALANCE' 
             : safeString(purchase.purchase_invoice_number),
           'Purchase Qty.': safeNumber(purchase.purchase_qty, 0),
@@ -1377,7 +1388,7 @@ export default function InventoryManager() {
         // Apply yellow highlighting to inventory update rows
         const inventoryUpdateRows: number[] = [];
         sortedPurchases.forEach((purchase, index) => {
-          if (purchase.transaction_type === 'inventory_update' || purchase.transaction_type === 'stock_increment') {
+          if (purchase.transaction_type === 'stock_increment' || purchase.transaction_type === 'opening_balance') {
             inventoryUpdateRows.push(index + 2); // +2 because Excel is 1-indexed and row 1 is headers
           }
         });
@@ -1607,11 +1618,11 @@ export default function InventoryManager() {
     setOpen(true);
   };
 
-  const handleOpenInventoryUpdate = () => {
+  const handleOpenOpeningBalance = () => {
     setDialogMode('inventory');
     setEditingId(null);
     setPurchaseFormData(extendedInitialFormData);
-    // Reset summary when opening for inventory update
+    // Reset summary when opening for opening balance
     setAddedProductsSummary([]);
     setCurrentSessionTotal({ totalProducts: 0, totalQuantity: 0, totalValue: 0 });
     setEditingSummaryIndex(null);
@@ -1619,8 +1630,8 @@ export default function InventoryManager() {
   };
 
   const handleEdit = (purchase: PurchaseTransaction) => {
-    const isInventoryUpdate = purchase.transaction_type === 'inventory_update' || purchase.transaction_type === 'stock_increment';
-    setDialogMode(isInventoryUpdate ? 'inventory' : 'purchase');
+    const isOpeningBalance = purchase.transaction_type === 'opening_balance';
+    setDialogMode(isOpeningBalance ? 'inventory' : 'purchase');
     setEditingId(purchase.purchase_id);
 
     const formattedDate = purchase.date?.split('T')[0] || new Date().toISOString().split('T')[0];
@@ -1632,27 +1643,27 @@ export default function InventoryManager() {
       product_id: purchase.product_id,
       date: formattedDate,
       product_name: purchase.product_name,
-      hsn_code: purchase.hsn_code,
-      units: purchase.units,
-      unit_type: purchase.units,
-      purchase_invoice_number: purchase.purchase_invoice_number,
-      purchase_qty: purchase.purchase_qty,
-      mrp_incl_gst: purchase.mrp_incl_gst,
-      mrp_excl_gst: purchase.mrp_excl_gst,
-      discount_on_purchase_percentage: purchase.discount_on_purchase_percentage,
+      hsn_code: purchase.hsn_code || '',
+      units: purchase.units || '',
+      unit_type: purchase.units || '',
+      purchase_invoice_number: purchase.purchase_invoice_number || '',
+      purchase_qty: purchase.purchase_qty || 0,
+      mrp_incl_gst: purchase.mrp_incl_gst || 0,
+      mrp_excl_gst: purchase.mrp_excl_gst || 0,
+      discount_on_purchase_percentage: purchase.discount_on_purchase_percentage || 0,
       purchase_excl_gst: purchaseExclGst,
-      gst_percentage: purchase.gst_percentage,
+      gst_percentage: purchase.gst_percentage || 18,
       purchase_cost_per_unit_ex_gst: purchaseExclGst,
-      purchase_cost_taxable_value: purchase.purchase_taxable_value,
-      purchase_igst: purchase.purchase_igst,
-      purchase_cgst: purchase.purchase_cgst,
-      purchase_sgst: purchase.purchase_sgst,
-      purchase_invoice_value: purchase.purchase_invoice_value_rs,
-      vendor: purchase.Vendor || purchase.supplier || '',
-      supplier: purchase.supplier || purchase.Vendor || '',
-      stock_after_purchase: purchase.stock_after_purchase,
+      purchase_cost_taxable_value: purchase.purchase_taxable_value || 0,
+      purchase_igst: purchase.purchase_igst || 0,
+      purchase_cgst: purchase.purchase_cgst || 0,
+      purchase_sgst: purchase.purchase_sgst || 0,
+      purchase_invoice_value: purchase.purchase_invoice_value_rs || 0,
+      vendor: purchase.supplier || '',
+      supplier: purchase.supplier || '',
+      stock_after_purchase: purchase.stock_after_purchase ?? undefined,
       is_interstate: (purchase.purchase_igst || 0) > 0,
-      mrp_per_unit_excl_gst: purchase.mrp_excl_gst,
+      mrp_per_unit_excl_gst: purchase.mrp_excl_gst || 0,
     });
 
     setAddedProductsSummary([]);
@@ -1666,55 +1677,30 @@ export default function InventoryManager() {
     if (editingId) {
       try {
         console.log("Updating purchase with ID:", editingId);
-        console.log("Date from form:", purchaseFormData.date);
+        console.log("Full form data for edit:", purchaseFormData);
         
-        // Ensure we have a valid date
-        if (!purchaseFormData.date) {
-          toast.error('Please select a valid date');
+        // Validate the form first
+        if (!validateForm()) {
           setIsSubmitting(false);
           return;
         }
         
-        // Format the date correctly for the database
-        let formattedDate;
-        try {
-          // Check if it's already in ISO format (contains T)
-          if (purchaseFormData.date.includes('T')) {
-            formattedDate = purchaseFormData.date;
-          } else {
-            // Create a date object from the string and convert to ISO
-            // Add the timezone offset to get the correct day
-            const date = new Date(purchaseFormData.date);
-            formattedDate = date.toISOString();
-          }
-          console.log("Formatted date for database:", formattedDate);
-        } catch (dateError) {
-          console.error("Error formatting date:", dateError);
-          toast.error('Invalid date format. Please try again.');
-          setIsSubmitting(false);
-          return;
-        }
-        
-        // Prepare the update data
-        const updateData = { 
-          date: formattedDate,
-          updated_at: new Date().toISOString()
-        };
-        console.log("Update data:", updateData);
-        
-        const result = await updatePurchaseTransaction(editingId, updateData);
-        console.log("Update result:", result);
+        // Use the comprehensive editPurchaseTransaction function from inventoryUtils
+        // This will handle all fields including quantity, prices, GST, etc.
+        const result = await editPurchaseTransaction(editingId, purchaseFormData);
+        console.log("Edit result:", result);
         
         if (result && result.success) {
-          toast.success('Purchase date updated successfully!');
+          toast.success('Purchase updated successfully!');
           handleClose();
           await fetchPurchasesData();
+          await fetchProducts(); // Refresh products to reflect stock changes
         } else {
-          console.error("Failed to update date:", result?.error);
-          toast.error(result?.error?.message || 'Failed to update purchase date.');
+          console.error("Failed to update purchase:", result?.error);
+          toast.error(result?.error?.message || 'Failed to update purchase.');
         }
       } catch (error) {
-        console.error("Error updating date:", error);
+        console.error("Error updating purchase:", error);
         toast.error(`An unexpected error occurred: ${error instanceof Error ? error.message : 'Unknown error'}`);
       } finally {
         setIsSubmitting(false);
@@ -1734,14 +1720,14 @@ export default function InventoryManager() {
       } else {
         // Handle adding new purchase or inventory update
         if (dialogMode === 'inventory') {
-          // Handle inventory update
-          const inventoryData: InventoryUpdateData = {
+          // Handle opening balance entry
+          const openingBalanceData: OpeningBalanceData = {
             product_id: purchaseFormData.product_id,
             date: purchaseFormData.date,
             product_name: purchaseFormData.product_name,
             hsn_code: purchaseFormData.hsn_code,
             units: purchaseFormData.unit_type,
-            update_qty: purchaseFormData.purchase_qty,
+            opening_qty: purchaseFormData.purchase_qty,
             mrp_incl_gst: purchaseFormData.mrp_incl_gst,
             mrp_excl_gst: purchaseFormData.mrp_excl_gst,
             discount_on_purchase_percentage: purchaseFormData.discount_on_purchase_percentage,
@@ -1755,7 +1741,7 @@ export default function InventoryManager() {
             is_interstate: purchaseFormData.is_interstate
           };
 
-          const result = await addInventoryUpdate(inventoryData);
+          const result = await addOpeningBalance(openingBalanceData);
 
           if (result.success) {
             // Add to summary instead of closing dialog
@@ -1773,7 +1759,7 @@ export default function InventoryManager() {
               totalValue: newTotalValue
             });
 
-            toast.success('Inventory updated! Add another product or close to finish.');
+            toast.success('Opening balance added! Add another product or close to finish.');
             
             // Reset form for next product but keep date
             const resetFormData = {
@@ -1786,8 +1772,8 @@ export default function InventoryManager() {
             await fetchPurchasesData();
             await fetchProducts();
           } else {
-            console.error("Failed to add inventory update:", result.error);
-            toast.error(`Error: ${result.error?.message || 'Failed to update inventory.'}`);
+            console.error("Failed to add opening balance:", result.error);
+            toast.error(`Error: ${result.error?.message || 'Failed to add opening balance.'}`);
           }
         } else {
           // Handle purchase
@@ -1867,7 +1853,7 @@ export default function InventoryManager() {
       return false;
     }
     
-    // Only validate vendor and invoice for purchases, not inventory updates
+    // Only validate vendor and invoice for purchases, not opening balance
     if (dialogMode === 'purchase') {
       if (!purchaseFormData.vendor?.trim()) {
         alert('Vendor name is required');
@@ -1880,7 +1866,7 @@ export default function InventoryManager() {
     }
     
     if (purchaseFormData.purchase_qty <= 0) {
-      alert(dialogMode === 'inventory' ? 'Inventory Update Quantity must be greater than 0' : 'Purchase Quantity must be greater than 0');
+      alert(dialogMode === 'inventory' ? 'Opening Balance Quantity must be greater than 0' : 'Purchase Quantity must be greater than 0');
       return false;
     }
     if (!purchaseFormData.mrp_incl_gst || purchaseFormData.mrp_incl_gst <= 0) {
@@ -1980,29 +1966,34 @@ export default function InventoryManager() {
   };
 
   const handleInputChange = (name: string, value: string | number | boolean) => {
-    console.log(`Field "${name}" changed to:`, value);
+    // Handle special case for product selection
+    if (name === 'product_id' && typeof value === 'string') {
+      const selectedProduct = productMasterList.find(p => p.id === value);
+      if (selectedProduct) {
+        handleProductSelect(selectedProduct);
+      }
+      return;
+    }
     
-    // Special handling for date field
-    if (name === 'date' && typeof value === 'string') {
-      console.log(`Setting date field to: ${value}`);
-      // No need to convert here, just use the string directly
+    // Handle simple updates for non-calculated fields
+    if (['vendor', 'supplier', 'purchase_invoice_number', 'date', 'unit_type', 'units'].includes(name)) {
       setPurchaseFormData(prev => ({ ...prev, [name]: value }));
       return;
     }
     
     setPurchaseFormData(prev => {
-      // Create updated form data
-      const updatedData = { ...prev, [name]: value };
+      // Create updated form data with proper typing
+      const updatedData = { ...prev };
       
-      // Handle special cases for certain fields
+      // Handle special cases for certain fields with proper type checking
       if (name === 'is_interstate') {
         updatedData.is_interstate = value as boolean;
-      } else if (name in prev && typeof prev[name] === 'number') {
-        updatedData[name] = parseNumericInput(value as string | number);
-      } else if (name in prev && typeof prev[name] === 'string') {
-        updatedData[name] = String(value);
+      } else if (name in prev && typeof prev[name as keyof ExtendedProductFormData] === 'number') {
+        (updatedData as any)[name] = parseNumericInput(value as string | number);
+      } else if (name in prev && typeof prev[name as keyof ExtendedProductFormData] === 'string') {
+        (updatedData as any)[name] = String(value);
       } else {
-        updatedData[name] = value;
+        (updatedData as any)[name] = value;
       }
       
       // Recalculate values when key fields change
@@ -2060,7 +2051,7 @@ export default function InventoryManager() {
     const mrp = product.mrp_incl_gst || 0;
     const gst = product.gst_percentage || 18;
     const hsnCode = product.hsn_code || '';
-    const productType = product.product_type || product.units || 'pcs'; // First try product_type, fallback to units
+    const productType = (product as any).product_type || product.units || 'pcs'; // First try product_type, fallback to units
 
     setPurchaseFormData(prev => ({
       ...prev,
@@ -2471,13 +2462,13 @@ export default function InventoryManager() {
       return (item as any).serial_no;
     }
     
-    if (item.transaction_type === 'stock_increment' || item.transaction_type === 'inventory_update') {
+    if (item.transaction_type === 'opening_balance' && item.supplier === 'OPENING BALANCE') {
       return "OPENING BALANCE";
     }
     
     // Count only regular purchases (not opening balance)
     const regularPurchases = purchases.filter(p => 
-      p.transaction_type !== 'stock_increment' && p.transaction_type !== 'inventory_update'
+      !(p.transaction_type === 'opening_balance' && p.supplier === 'OPENING BALANCE')
     );
     
     // Sort regular purchases by date, newest first
@@ -2623,9 +2614,9 @@ export default function InventoryManager() {
                 variant="contained"
                 color="warning"
                 startIcon={<SpeedIcon />}
-                onClick={handleOpenInventoryUpdate}
+                onClick={handleOpenOpeningBalance}
               >
-                Update Inventory
+                Add Opening Balance
               </Button>
             </>
           )}
@@ -2955,7 +2946,24 @@ export default function InventoryManager() {
                             {purchase.product_name}
                             {purchase.transaction_type === 'stock_increment' && (
                               <Chip 
-                                label="Inventory Update" 
+                                label="Opening Balance" 
+                                size="small"
+                                sx={{ 
+                                  ml: 1,
+                                  backgroundColor: '#ff6b00',
+                                  color: 'white',
+                                  fontWeight: 500,
+                                  fontSize: '0.75rem',
+                                  height: '24px',
+                                  '& .MuiChip-label': {
+                                    px: 1
+                                  }
+                                }}
+                              />
+                            )}
+                            {purchase.transaction_type === 'opening_balance' && (
+                              <Chip 
+                                label="Opening Balance" 
                                 size="small"
                                 sx={{ 
                                   ml: 1,
@@ -2974,14 +2982,14 @@ export default function InventoryManager() {
                           <TableCell>{purchase.hsn_code || '-'}</TableCell>
                           <TableCell>{purchase.units || '-'}</TableCell>
                           <TableCell>
-                            {purchase.transaction_type === 'inventory_update' 
-                              ? 'INVENTORY UPDATE' 
+                            {purchase.transaction_type === 'opening_balance' 
+                              ? 'OPENING BALANCE' 
                               : (purchase.supplier || '-')
                             }
                           </TableCell>
                           <TableCell>
-                            {purchase.transaction_type === 'inventory_update' 
-                              ? 'INV-UPDATE' 
+                            {purchase.transaction_type === 'opening_balance' 
+                              ? 'OPENING BALANCE' 
                               : (purchase.purchase_invoice_number || '-')
                             }
                           </TableCell>
@@ -3934,7 +3942,7 @@ export default function InventoryManager() {
       <Dialog open={open} onClose={handleClose} maxWidth="lg" fullWidth>
         <DialogTitle>
           {editingId 
-            ? 'Edit Purchase Date'
+            ? 'Edit Purchase Details'
             : (dialogMode === 'inventory' ? 'Add Opening Balance' : 'Add New Product Purchase')
           }
         </DialogTitle>
@@ -3964,7 +3972,6 @@ export default function InventoryManager() {
             
             <Grid item xs={12} sm={6} md={8}>
                <Autocomplete
-                 disabled={!!editingId}
                  options={productMasterList}
                  getOptionLabel={(option) => option?.name || ""}
                  renderInput={(params) => (
@@ -4122,7 +4129,6 @@ export default function InventoryManager() {
                     fullWidth
                     required
                     placeholder="Enter supplier name"
-                    disabled={!!editingId}
                   />
                 </Grid>
                 
@@ -4133,7 +4139,6 @@ export default function InventoryManager() {
                     onChange={(e) => handleInputChange('purchase_invoice_number', e.target.value)}
                     fullWidth
                     required
-                    disabled={!!editingId}
                   />
                 </Grid>
               </>
@@ -4213,7 +4218,7 @@ export default function InventoryManager() {
             
             <Grid item xs={12} sm={6} md={4}>
               <TextField
-                label={dialogMode === 'inventory' ? 'Inventory Update Qty. *' : 'Purchase Qty. *'}
+                label={dialogMode === 'inventory' ? 'Opening Balance Qty. *' : 'Purchase Qty. *'}
                 type="number"
                 value={purchaseFormData.purchase_qty}
                 onChange={(e) => handleInputChange('purchase_qty', parseFloat(e.target.value) || 0)}
@@ -4224,7 +4229,6 @@ export default function InventoryManager() {
                   inputProps: { min: 1, step: 1 }
                 }}
                 helperText={dialogMode === 'inventory' ? 'Quantity to add to inventory' : 'Quantity purchased'}
-                disabled={!!editingId}
               />
             </Grid>
             
@@ -4235,7 +4239,6 @@ export default function InventoryManager() {
                     checked={purchaseFormData.is_interstate || false}
                     onChange={(e) => handleInputChange('is_interstate', e.target.checked)}
                     color="primary"
-                    disabled={!!editingId}
                   />
                 }
                 label="Inter-State Purchase (IGST)"
@@ -4253,7 +4256,6 @@ export default function InventoryManager() {
                   endAdornment: <InputAdornment position="end">%</InputAdornment>,
                   inputProps: { min: 0, max: 100, step: 0.01 }
                 }}
-                disabled={!!editingId}
               />
             </Grid>
             
@@ -4381,7 +4383,7 @@ export default function InventoryManager() {
                   onClick={handleSubmit}
                   disabled={isSubmitting || !purchaseFormData.date}
                 >
-                  Update Date
+                  Update Purchase
                 </Button>
                 {/* Alternative direct update button */}
                 <Button 
@@ -4455,7 +4457,7 @@ export default function InventoryManager() {
                   }}
                   disabled={isSubmitting}
                 >
-                  Direct Update
+                  Direct Date Update
                 </Button>
               </>
             )}
@@ -4505,7 +4507,7 @@ export default function InventoryManager() {
                       }
                     >
                       {editingId 
-                        ? 'Update Date'
+                        ? 'Update Purchase'
                         : addedProductsSummary.length > 0 
                           ? (dialogMode === 'inventory' ? 'Add Another Opening Balance' : 'Add Another Product')
                           : (dialogMode === 'inventory' ? 'Add Opening Balance' : 'Save Purchase')
