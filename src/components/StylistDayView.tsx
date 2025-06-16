@@ -126,6 +126,8 @@ const ScheduleGrid = styled(Box)(({ theme }) => ({
   position: 'relative',
   width: '100%', // Ensure it takes full width
   height: '100%', // Ensure fixed height for sticky positioning
+  margin: 0,
+  padding: 0,
   // Better scrolling behavior and responsive width utilization
   scrollBehavior: 'smooth',
   // Ensure the grid utilizes all available horizontal space
@@ -145,8 +147,8 @@ const TimeColumn = styled(Box)(({ theme }) => ({
   left: 0,
   backgroundColor: theme.palette.background.paper,
   zIndex: 2,
-  paddingTop: 0, // Remove padding to ensure alignment
-  marginTop: 0, // Remove margin to ensure alignment
+  padding: 0, // Remove all padding
+  margin: 0, // Remove all margin
   height: 'fit-content',
   minHeight: '100%',
   // Responsive adjustments for time column
@@ -2527,6 +2529,8 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
       flexDirection: 'column',
       flexGrow: 1,
       overflow: 'hidden',
+      margin: 0,
+      padding: 0,
       // Responsive adjustments for better space utilization
       '@media (max-width: 768px)': {
         minHeight: 'calc(100vh - 64px)', // Account for mobile header

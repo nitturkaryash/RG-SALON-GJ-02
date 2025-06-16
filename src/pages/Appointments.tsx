@@ -1877,11 +1877,18 @@ export default function Appointments() {
   return (
     <Box sx={{ 
       display: 'flex', 
-      height: 'calc(100vh - 64px)', 
+      height: 'calc(100vh)', 
       width: '100%',
-      position: 'relative', 
+      position: 'relative',
       overflow: 'hidden',
-      flexDirection: 'column'
+      flexDirection: 'column',
+      margin: 0,
+      padding: 0,
+      // Remove the Layout's default padding to make calendar edge-to-edge
+      marginTop: { xs: '-16px', md: '-24px' },
+      marginLeft: { xs: '-16px', md: '-24px' },
+      marginRight: { xs: '-16px', md: '-24px' },
+      marginBottom: { xs: '-16px', md: '-24px' },
     }}>
       {/* Header with view toggle */}
       <Box
@@ -1923,6 +1930,9 @@ export default function Appointments() {
           position: 'relative',
           flex: 1,
           overflow: 'hidden',
+          width: '100%',
+          margin: 0,
+          padding: 0
         }}
       >
         <Box 
@@ -1936,6 +1946,9 @@ export default function Appointments() {
             transition: 'right 0.3s ease',
             width: showDrawer ? `calc(100% - ${drawerWidth}px)` : '100%',
             maxWidth: '100vw',
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'stretch'
           }}
         >
           {viewMode === 'calendar' ? (
