@@ -33,45 +33,86 @@ export const exportToCSV = <T extends Record<string, any>>(
     return;
   }
 
-  // Round ALL numeric values in the data to integers
-  const roundedData = data.map(item => {
+  console.log('🚀 Starting CSV export:', {
+    dataLength: data.length,
+    fileName,
+    sampleData: data[0],
+    headers: Object.keys(headers)
+  });
+
+  // Round ALL numeric values in the data to integers but preserve original structure
+  const roundedData = data.map((item, index) => {
     const newItem: Record<string, any> = { ...item };
+    
+    // Log first item for debugging
+    if (index === 0) {
+      console.log('🔍 First item before processing:', item);
+    }
+    
     Object.keys(newItem).forEach(key => {
-      if (typeof newItem[key] === 'number') {
+      const value = newItem[key];
+      
+      if (typeof value === 'number') {
         // Round ALL numbers to integers, not just monetary ones
-        newItem[key] = Math.round(newItem[key]);
-      } else if (typeof newItem[key] === 'string' && !isNaN(parseFloat(newItem[key]))) {
-        // Round string numbers as well
-        const numValue = parseFloat(newItem[key]);
-        if (!isNaN(numValue)) {
+        newItem[key] = Math.round(value);
+      } else if (typeof value === 'string' && !isNaN(parseFloat(value)) && value.trim() !== '') {
+        // Round string numbers as well, but only if they're valid numbers
+        const numValue = parseFloat(value);
+        if (!isNaN(numValue) && isFinite(numValue)) {
           newItem[key] = Math.round(numValue).toString();
         }
+      } else if (value === null || value === undefined) {
+        // Convert null/undefined to empty string for better CSV handling
+        newItem[key] = '';
       }
     });
+    
+    // Log first item after processing
+    if (index === 0) {
+      console.log('✅ First item after processing:', newItem);
+    }
+    
     return newItem as T;
   });
 
+  // Build CSV with proper escaping
   const headerRow = Object.values(headers).join(',');
-  const rows = roundedData.map(item => {
+  const rows = roundedData.map((item, rowIndex) => {
     return Object.keys(headers)
       .map(key => {
         const value = item[key as keyof T];
+        
+        if (value === null || value === undefined || value === '') {
+          return '';
+        }
+        
         if (typeof value === 'number') {
           // Ensure all numbers are rounded to integers
           return Math.round(value).toString();
         }
-        if (value === null || value === undefined) {
-          return '';
+        
+        const stringValue = String(value);
+        
+        // Properly escape CSV values that contain commas, quotes, or newlines
+        if (stringValue.includes(',') || stringValue.includes('"') || stringValue.includes('\n') || stringValue.includes('\r')) {
+          // Escape quotes by doubling them and wrap in quotes
+          return `"${stringValue.replace(/"/g, '""')}"`;
         }
-        if (typeof value === 'string' && value.includes(',')) {
-          return `"${value}"`;
-        }
-        return String(value);
+        
+        return stringValue;
       })
       .join(',');
   });
 
   const csv = [headerRow, ...rows].join('\n');
+  
+  console.log('📊 CSV export completed:', {
+    totalRows: rows.length + 1, // +1 for header
+    csvLength: csv.length,
+    headerRow,
+    firstDataRow: rows[0]
+  });
+
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
@@ -102,6 +143,14 @@ export const exportToPDF = <T extends Record<string, any>>(
     return;
   }
 
+  console.log('🚀 Starting PDF export:', {
+    dataLength: data.length,
+    fileName,
+    title,
+    sampleData: data[0],
+    headers: Object.keys(headers)
+  });
+
   // Create new PDF document
   const doc = new jsPDF({
     orientation: 'portrait',
@@ -125,32 +174,48 @@ export const exportToPDF = <T extends Record<string, any>>(
 
   // Prepare header and data for table
   const tableHeaders = Object.values(headers);
-  const tableData = data.map(item => {
-    // Round ALL numeric values to integers
+  const tableData = data.map((item, index) => {
+    // Log first item for debugging
+    if (index === 0) {
+      console.log('🔍 PDF: First item before processing:', item);
+    }
+    
+    // Round ALL numeric values to integers but preserve structure
     const roundedItem: Record<string, any> = { ...item };
     Object.keys(roundedItem).forEach(key => {
-      if (typeof roundedItem[key] === 'number') {
+      const value = roundedItem[key];
+      
+      if (typeof value === 'number') {
         // Round ALL numbers to integers, not just monetary ones
-        roundedItem[key] = Math.round(roundedItem[key]);
-      } else if (typeof roundedItem[key] === 'string' && !isNaN(parseFloat(roundedItem[key]))) {
-        // Round string numbers as well
-        const numValue = parseFloat(roundedItem[key]);
-        if (!isNaN(numValue)) {
+        roundedItem[key] = Math.round(value);
+      } else if (typeof value === 'string' && !isNaN(parseFloat(value)) && value.trim() !== '') {
+        // Round string numbers as well, but only if they're valid numbers
+        const numValue = parseFloat(value);
+        if (!isNaN(numValue) && isFinite(numValue)) {
           roundedItem[key] = Math.round(numValue);
         }
+      } else if (value === null || value === undefined) {
+        // Convert null/undefined to empty string
+        roundedItem[key] = '';
       }
     });
+    
+    // Log first item after processing
+    if (index === 0) {
+      console.log('✅ PDF: First item after processing:', roundedItem);
+    }
     
     return Object.keys(headers).map(key => {
       const value = roundedItem[key];
       
-      // Format based on data type
+      // Format based on data type and key name
       if (typeof value === 'number') {
         // Check if it might be a currency value by key name
         const keyStr = key.toString().toLowerCase();
         if (keyStr.includes('price') || keyStr.includes('total') || keyStr.includes('tax') || 
             keyStr.includes('subtotal') || keyStr.includes('discount') || keyStr.includes('cost') ||
-            keyStr.includes('cgst') || keyStr.includes('sgst') || keyStr.includes('amount')) {
+            keyStr.includes('cgst') || keyStr.includes('sgst') || keyStr.includes('amount') ||
+            keyStr.includes('igst') || keyStr.includes('value')) {
           // Format currency values with rupee symbol (already rounded)
           return `₹${value}`;
         }
@@ -158,7 +223,7 @@ export const exportToPDF = <T extends Record<string, any>>(
         return value.toString();
       }
       
-      if (value === null || value === undefined) {
+      if (value === null || value === undefined || value === '') {
         return '';
       }
       
@@ -166,8 +231,20 @@ export const exportToPDF = <T extends Record<string, any>>(
         return value.toLocaleDateString();
       }
       
-      return String(value);
+      // Handle long strings by truncating if necessary (for PDF table formatting)
+      const stringValue = String(value);
+      if (stringValue.length > 50) {
+        return stringValue.substring(0, 47) + '...';
+      }
+      
+      return stringValue;
     });
+  });
+
+  console.log('📊 PDF data prepared:', {
+    tableHeaders,
+    rowCount: tableData.length,
+    firstRow: tableData[0]
   });
 
   // Create the table
@@ -178,20 +255,31 @@ export const exportToPDF = <T extends Record<string, any>>(
     headStyles: {
       fillColor: [107, 142, 35], // Olive green to match theme
       textColor: [255, 255, 255],
-      fontStyle: 'bold'
+      fontStyle: 'bold',
+      fontSize: 8
+    },
+    bodyStyles: {
+      fontSize: 7
     },
     styles: {
       lineColor: [200, 200, 200],
-      lineWidth: 0.1
+      lineWidth: 0.1,
+      cellPadding: 2
     },
     alternateRowStyles: {
       fillColor: [247, 247, 247]
     },
-    margin: { top: 25 }
+    margin: { top: 25, left: 10, right: 10 },
+    tableWidth: 'auto',
+    columnStyles: {
+      // Auto-adjust column widths for better fit
+    }
   });
 
   // Save PDF
   doc.save(`${fileName}.pdf`);
+  
+  console.log('✅ PDF export completed successfully');
 };
 
 // Helper type (simplified version of ExtendedOrder from Orders.tsx)
