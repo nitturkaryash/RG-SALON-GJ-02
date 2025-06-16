@@ -62,6 +62,7 @@ import {
   CardMembership as CardMembershipIcon,
   Info as InfoIcon,
   Edit as EditIcon,
+  AccountBalanceWallet as AccountBalanceWalletIcon,
 } from '@mui/icons-material'
 import { useOrders } from '../hooks/useOrders'
 import { formatCurrency } from '../utils/format'
@@ -1563,7 +1564,26 @@ export default function Orders() {
                       <TableCell>
                         {order.stylist_name || 'No stylist'}
                       </TableCell>
-                      <TableCell>{order.services?.length || 0}</TableCell>
+                      <TableCell>
+                        {(() => {
+                          const itemCount = order.services?.length || 0;
+                          const totalQuantity = order.services?.reduce((sum: number, service: any) => sum + (service.quantity || 1), 0) || 0;
+                          
+                          if (itemCount === 0) return '0 items';
+                          if (itemCount === 1) return `${totalQuantity} item${totalQuantity > 1 ? 's' : ''}`;
+                          
+                          return (
+                            <Box>
+                              <Typography variant="body2" component="div">
+                                {itemCount} types
+                              </Typography>
+                              <Typography variant="caption" color="text.secondary" component="div">
+                                {totalQuantity} total qty
+                              </Typography>
+                            </Box>
+                          );
+                        })()}
+                      </TableCell>
                       <TableCell>
                         {renderPurchaseTypeChip(getPurchaseType(order), order)}
                       </TableCell>
@@ -1936,8 +1956,10 @@ export default function Orders() {
                     }
                   })()}
                   
-                  {/* Show payment details for split payments */}
-                  {(selectedOrder.is_split_payment || (selectedOrder as any).aggregated_multi_expert) && selectedOrder.payments && selectedOrder.payments.length > 0 && (
+                  {/* Show payment details for split payments OR when there are membership payments */}
+                  {((selectedOrder.is_split_payment || (selectedOrder as any).aggregated_multi_expert) || 
+                    (selectedOrder.payments && selectedOrder.payments.some((payment: any) => payment.payment_method === 'membership'))) && 
+                   selectedOrder.payments && selectedOrder.payments.length > 0 && (
                     <Box sx={{ mt: 2 }}>
                       <Typography variant="subtitle2" gutterBottom>Payment Details</Typography>
                       <TableContainer component={Paper} variant="outlined">
@@ -1955,7 +1977,17 @@ export default function Orders() {
                               
                               return (
                                 <TableRow key={payment.id}>
-                                  <TableCell>{PAYMENT_METHOD_LABELS[payment.payment_method as PaymentMethod]}</TableCell>
+                                  <TableCell>
+                                    <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                                      {payment.payment_method === 'membership' && (
+                                        <AccountBalanceWalletIcon fontSize="small" sx={{ mr: 1, color: 'primary.main' }} />
+                                      )}
+                                      {PAYMENT_METHOD_LABELS[payment.payment_method as PaymentMethod]}
+                                      {payment.payment_method === 'membership' && (
+                                        <Chip size="small" label="Balance Used" color="primary" variant="outlined" sx={{ ml: 1 }} />
+                                      )}
+                                    </Box>
+                                  </TableCell>
                                   <TableCell align="right">{formatCurrency(displayAmount)}</TableCell>
                                 </TableRow>
                               );
@@ -1986,24 +2018,95 @@ export default function Orders() {
                       <TableRow>
                         <TableCell>Item</TableCell>
                         <TableCell>Type</TableCell>
-                        <TableCell align="right">Price</TableCell>
+                        <TableCell align="center">Quantity</TableCell>
+                        <TableCell align="right">Unit Price</TableCell>
+                        <TableCell align="right">Total</TableCell>
+                        <TableCell align="center">Membership Details</TableCell>
                       </TableRow>
                     </TableHead>
                     <TableBody>
                       {selectedOrder.services.map((service: any, index: number) => (
                         <TableRow key={index}>
-                          <TableCell>{service.service_name}</TableCell>
+                          <TableCell>{service.service_name || service.item_name || service.name}</TableCell>
                           <TableCell>
                             <Chip 
                               size="small" 
-                              label={service.type || 'Service'} 
-                              color={service.type === 'product' ? 'secondary' : 'primary'}
+                              label={(() => {
+                                // Check if it's a membership item
+                                if (service.type === 'membership' || 
+                                    (service.service_name && ['Silver', 'Gold', 'Platinum', 'Diamond'].some(tier => 
+                                      service.service_name.toLowerCase().includes(tier.toLowerCase())))) {
+                                  return 'Membership';
+                                }
+                                return service.type || 'Service';
+                              })()} 
+                              color={(() => {
+                                if (service.type === 'product') return 'secondary';
+                                if (service.type === 'membership' || 
+                                    (service.service_name && ['Silver', 'Gold', 'Platinum', 'Diamond'].some(tier => 
+                                      service.service_name.toLowerCase().includes(tier.toLowerCase())))) {
+                                  return 'success';
+                                }
+                                return 'primary';
+                              })()}
                             />
-                            {service.forSalonUse && (
+                            {(service.forSalonUse || service.for_salon_use) && (
                               <Chip size="small" label="Salon Use" color="warning" sx={{ ml: 0.5 }} />
                             )}
                           </TableCell>
-                          <TableCell align="right">{formatCurrency(service.price)}</TableCell>
+                          <TableCell align="center">
+                            <Typography variant="body2" fontWeight="medium">
+                              {service.quantity || 1}
+                            </Typography>
+                          </TableCell>
+                          <TableCell align="right">{formatCurrency(service.price || 0)}</TableCell>
+                          <TableCell align="right">
+                            <Typography variant="body2" fontWeight="medium">
+                              {formatCurrency((service.price || 0) * (service.quantity || 1))}
+                            </Typography>
+                          </TableCell>
+                          <TableCell align="center">
+                            {/* Show membership consumption details */}
+                            {(service.type === 'membership' || 
+                              (service.service_name && ['Silver', 'Gold', 'Platinum', 'Diamond'].some(tier => 
+                                service.service_name.toLowerCase().includes(tier.toLowerCase())))) && 
+                             (service.benefit_amount || service.benefitAmount) && (
+                              <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                                <Chip
+                                  icon={<AccountBalanceWalletIcon fontSize="small" />}
+                                  label={`Benefit: ₹${(service.benefit_amount || service.benefitAmount || 0).toLocaleString()}`}
+                                  size="small"
+                                  color="success"
+                                  variant="outlined"
+                                />
+                              </Box>
+                            )}
+                            {/* Show if service was paid with membership balance */}
+                            {service.type === 'service' && service.paid_with_membership && (
+                              <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                                <Chip
+                                  icon={<CheckIcon fontSize="small" />}
+                                  label="Paid via Membership"
+                                  size="small"
+                                  color="primary"
+                                  variant="outlined"
+                                />
+                                <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5 }}>
+                                  (GST Excluded)
+                                </Typography>
+                              </Box>
+                            )}
+                            {/* Show if no membership details */}
+                            {!((service.type === 'membership' || 
+                                (service.service_name && ['Silver', 'Gold', 'Platinum', 'Diamond'].some(tier => 
+                                  service.service_name.toLowerCase().includes(tier.toLowerCase())))) && 
+                               (service.benefit_amount || service.benefitAmount)) && 
+                             !(service.type === 'service' && service.paid_with_membership) && (
+                              <Typography variant="body2" color="text.secondary">
+                                -
+                              </Typography>
+                            )}
+                          </TableCell>
                         </TableRow>
                       ))}
                     </TableBody>

@@ -32,15 +32,17 @@ export interface PurchaseTransaction {
   current_stock_sgst?: number;
   current_stock_igst?: number;
   current_stock_total_amount_incl_gst?: number;
-  // New field to distinguish inventory updates from purchases
-  is_inventory_update?: boolean;
-  transaction_type?: 'purchase' | 'inventory_update';
+  // New field to distinguish opening balance from purchases
+  is_opening_balance?: boolean;
+  transaction_type?: 'purchase' | 'opening_balance' | 'stock_increment' | 'stock_decrement' | 'pos_sale';
 }
 
 // Interface for updating purchase transactions
 export interface UpdatePurchaseTransactionData {
   date?: string;
+  product_name?: string;
   Vendor?: string;
+  supplier?: string;
   purchase_invoice_number?: string;
   hsn_code?: string;
   units?: string;
@@ -50,21 +52,32 @@ export interface UpdatePurchaseTransactionData {
   mrp_excl_gst?: number;
   discount_on_purchase_percentage?: number;
   purchase_igst?: number;
-  purchase_cost_per_unit_ex_gst?: number;
-  purchase_taxable_value?: number;
   purchase_cgst?: number;
   purchase_sgst?: number;
+  purchase_cost_per_unit_ex_gst?: number;
+  purchase_taxable_value?: number;
   purchase_invoice_value_rs?: number;
+  // Add fields for stock calculations
+  current_stock_at_purchase?: number;
+  computed_stock_taxable_value?: number;
+  computed_stock_cgst?: number;
+  computed_stock_sgst?: number;
+  computed_stock_igst?: number;
+  computed_stock_total_value?: number;
+  "Purchase_Cost/Unit(Ex.GST)"?: number;
+  price_inlcuding_disc?: number;
+  transaction_type?: 'purchase' | 'opening_balance' | 'stock_increment' | 'stock_decrement' | 'pos_sale';
+  updated_at?: string;
 }
 
-// New interface for inventory update data
-export interface InventoryUpdateData {
+// New interface for opening balance data (renamed from InventoryUpdateData)
+export interface OpeningBalanceData {
   product_id: string;
   date: string;
   product_name: string;
   hsn_code: string;
   units: string;
-  update_qty: number;
+  opening_qty: number; // renamed from update_qty
   mrp_incl_gst: number;
   mrp_excl_gst: number;
   discount_on_purchase_percentage: number;
@@ -87,7 +100,7 @@ export const usePurchaseHistory = () => {
     setIsLoading(true);
     setError(null);
     try {
-      // Fetch enriched purchase history from backend table with precomputed stock values
+      // Fetch enriched purchase history from purchase_history_with_stock table with precomputed stock values
       const { data: purchaseRecords, error: fetchError } = await supabase
         .from(TABLES.PURCHASE_HISTORY_WITH_STOCK)
         .select(
@@ -97,14 +110,13 @@ export const usePurchaseHistory = () => {
           'supplier,current_stock_at_purchase,computed_stock_taxable_value,computed_stock_cgst,' +
           'computed_stock_sgst,computed_stock_igst,computed_stock_total_value,"Purchase_Cost/Unit(Ex.GST)",created_at,updated_at,transaction_type'
         )
-        .order('date', { ascending: true });
+        .order('date', { ascending: false });
 
       if (fetchError) throw handleSupabaseError(fetchError);
 
-      // We no longer need separate stock fetch; backend table includes current_stock_at_purchase and computed_* values
-
+      // Transform data from purchase_history_with_stock table
       const transformedData: PurchaseTransaction[] = (purchaseRecords as any[]).map(item => {
-        // Map directly from stored fields in purchase_history_with_stock
+        // Map fields from purchase_history_with_stock
         const currentStockQty = item.current_stock_at_purchase;
         const currentTaxable = item.computed_stock_taxable_value;
         const currentCgst = item.computed_stock_cgst;
@@ -142,9 +154,9 @@ export const usePurchaseHistory = () => {
           current_stock_sgst: currentSgst,
           current_stock_igst: currentIgst,
           current_stock_total_amount_incl_gst: currentTotal,
-          // Add transaction type to distinguish inventory updates
+          // Add transaction type to distinguish opening balance
           transaction_type: item.transaction_type || 'purchase',
-          is_inventory_update: item.transaction_type === 'inventory_update'
+          is_opening_balance: item.transaction_type === 'opening_balance' && item.supplier === 'OPENING BALANCE'
         };
       });
 
@@ -170,7 +182,7 @@ export const usePurchaseHistory = () => {
   // Delete a purchase transaction by ID from both history and purchases tables
   const deletePurchaseTransaction = useCallback(async (purchaseId: string): Promise<boolean> => {
     try {
-      // Remove from history table
+      // Remove from purchase_history_with_stock table
       const { error: histError } = await supabase
         .from(TABLES.PURCHASE_HISTORY_WITH_STOCK)
         .delete()
@@ -179,15 +191,17 @@ export const usePurchaseHistory = () => {
         console.error('Error deleting purchase history record:', histError);
         return false;
       }
-      // Remove original purchase
+      
+      // Also remove from original inventory_purchases table to keep both in sync
       const { error: purchaseError } = await supabase
         .from('inventory_purchases')
         .delete()
         .eq('purchase_id', purchaseId);
       if (purchaseError) {
         console.error('Error deleting purchase record:', purchaseError);
-        return false;
+        // Don't return false here as the main operation succeeded
       }
+      
       // Update local state to reflect deletion
       setPurchases(prev => prev.filter(p => p.purchase_id !== purchaseId));
       return true;
@@ -207,26 +221,26 @@ export const usePurchaseHistory = () => {
       console.log('Updates to apply:', JSON.stringify(updateData));
       
       // Log the exact SQL query we're about to execute (for debugging)
-      console.log(`SQL (equivalent): UPDATE inventory_purchases SET date='${updateData.date}', updated_at='${updateData.updated_at}' WHERE purchase_id='${purchaseId}'`);
+      console.log(`SQL (equivalent): UPDATE purchase_history_with_stock SET date='${updateData.date}' WHERE purchase_id='${purchaseId}'`);
       
-      // Update the purchase in inventory_purchases table
-      const { data, error: updateError } = await supabase
-        .from('inventory_purchases')
+      // Update the purchase in purchase_history_with_stock table
+      const { data: historyData, error: historyUpdateError } = await supabase
+        .from(TABLES.PURCHASE_HISTORY_WITH_STOCK)
         .update(updateData)
         .eq('purchase_id', purchaseId)
         .select(); // Add select to get the returned data
       
-      if (updateError) {
-        console.error('Error updating purchase transaction:', updateError);
-        console.error('Error details:', JSON.stringify(updateError));
+      if (historyUpdateError) {
+        console.error('Error updating purchase history:', historyUpdateError);
+        console.error('Error details:', JSON.stringify(historyUpdateError));
         return { 
           success: false, 
-          error: { message: updateError.message || 'Failed to update purchase' }
+          error: { message: historyUpdateError.message || 'Failed to update purchase history' }
         };
       }
       
       console.log('Purchase transaction updated successfully');
-      console.log('Updated record:', data);
+      console.log('Updated history record:', historyData);
 
       // Update local state to reflect the changes
       setPurchases(prev => prev.map(purchase => 
@@ -254,95 +268,103 @@ export const usePurchaseHistory = () => {
     }
   }, [setPurchases, fetchPurchases]);
 
-  // New function to add inventory update
-  const addInventoryUpdate = useCallback(async (inventoryData: InventoryUpdateData): Promise<{ success: boolean; error?: any }> => {
+  // New function to add opening balance - Insert directly into purchase_history_with_stock
+  const addOpeningBalance = useCallback(async (openingData: OpeningBalanceData): Promise<{ success: boolean; error?: any }> => {
     try {
-      console.log('Adding inventory update:', inventoryData);
+      console.log('Adding opening balance:', openingData);
 
-      // Prepare the inventory update data for insertion
-      // Note: purchase_id will be auto-generated by the database as UUID
-      const inventoryUpdatePayload = {
-        // purchase_id: auto-generated by database
-        product_id: inventoryData.product_id,
-        date: new Date(inventoryData.date).toISOString(),
-        product_name: inventoryData.product_name,
-        hsn_code: inventoryData.hsn_code,
-        units: inventoryData.units,
-        purchase_invoice_number: "OPENING BALANCE", // Changed to just OPENING BALANCE without timestamp
-        purchase_qty: inventoryData.update_qty,
-        mrp_incl_gst: inventoryData.mrp_incl_gst,
-        mrp_excl_gst: inventoryData.mrp_excl_gst,
-        discount_on_purchase_percentage: inventoryData.discount_on_purchase_percentage,
-        gst_percentage: inventoryData.gst_percentage,
-        purchase_cost_per_unit_ex_gst: inventoryData.purchase_cost_per_unit_ex_gst,
-        purchase_taxable_value: inventoryData.purchase_taxable_value,
-        purchase_igst: inventoryData.purchase_igst,
-        purchase_cgst: inventoryData.purchase_cgst,
-        purchase_sgst: inventoryData.purchase_sgst,
-        purchase_invoice_value_rs: inventoryData.purchase_invoice_value_rs,
-        "Vendor": 'OPENING BALANCE', // Changed to OPENING BALANCE
-        transaction_type: 'stock_increment', // Changed from 'inventory_update' to 'stock_increment'
+      // Generate a UUID for the purchase_id
+      const purchaseId = crypto.randomUUID();
+
+      // First get current stock to calculate the correct current_stock_at_purchase
+      const { data: currentProduct, error: fetchError } = await supabase
+        .from('products')
+        .select('stock_quantity')
+        .eq('id', openingData.product_id)
+        .single();
+        
+      if (fetchError) {
+        console.error('Error fetching current product stock:', fetchError);
+        throw handleSupabaseError(fetchError);
+      }
+
+      // Calculate the total stock after adding opening balance
+      const currentStock = currentProduct?.stock_quantity || 0;
+      const totalStockAfterOpening = currentStock + openingData.opening_qty;
+
+      console.log(`Current stock: ${currentStock}, Opening balance: ${openingData.opening_qty}, Total after opening: ${totalStockAfterOpening}`);
+
+      // Insert directly into purchase_history_with_stock table
+      const openingBalancePayload = {
+        purchase_id: purchaseId,
+        product_id: openingData.product_id,
+        date: new Date(openingData.date).toISOString(),
+        product_name: openingData.product_name,
+        hsn_code: openingData.hsn_code,
+        units: openingData.units,
+        purchase_invoice_number: "OPENING BALANCE",
+        purchase_qty: openingData.opening_qty,
+        mrp_incl_gst: openingData.mrp_incl_gst,
+        mrp_excl_gst: openingData.mrp_excl_gst,
+        discount_on_purchase_percentage: openingData.discount_on_purchase_percentage,
+        gst_percentage: openingData.gst_percentage,
+        purchase_taxable_value: openingData.purchase_taxable_value,
+        purchase_igst: openingData.purchase_igst,
+        purchase_cgst: openingData.purchase_cgst,
+        purchase_sgst: openingData.purchase_sgst,
+        purchase_invoice_value_rs: openingData.purchase_invoice_value_rs,
+        supplier: 'OPENING BALANCE',
+        current_stock_at_purchase: totalStockAfterOpening, // Use total stock, not just opening qty
+        computed_stock_taxable_value: 0,
+        computed_stock_cgst: 0,
+        computed_stock_sgst: 0,
+        computed_stock_igst: 0,
+        computed_stock_total_value: 0,
+        "Purchase_Cost/Unit(Ex.GST)": openingData.purchase_cost_per_unit_ex_gst,
+        price_inlcuding_disc: openingData.purchase_cost_per_unit_ex_gst,
+        transaction_type: 'opening_balance',
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       };
 
-      console.log('Inventory update payload:', inventoryUpdatePayload);
+      console.log('Opening balance payload for purchase_history_with_stock:', openingBalancePayload);
 
-      // Insert into inventory_purchases table with transaction_type = 'inventory_update'
+      // Insert directly into purchase_history_with_stock table
       const { data: insertedData, error: insertError } = await supabase
-        .from('inventory_purchases')
-        .insert([inventoryUpdatePayload])
+        .from('purchase_history_with_stock')
+        .insert([openingBalancePayload])
         .select()
         .single();
 
       if (insertError) {
-        console.error('Error inserting inventory update:', insertError);
+        console.error('Error inserting opening balance into purchase_history_with_stock:', insertError);
         throw handleSupabaseError(insertError);
       }
 
-      console.log('Inventory update inserted successfully:', insertedData);
+      console.log('Opening balance inserted into purchase_history_with_stock:', insertedData);
 
-      // Update the product stock in the products table
-      const { error: stockUpdateError } = await supabase.rpc('increment_product_stock', {
-        p_product_id: inventoryData.product_id,
-        p_increment_quantity: inventoryData.update_qty
-      });
-      
-      // If RPC doesn't exist, update manually by fetching current stock first
-      if (stockUpdateError && stockUpdateError.message?.includes('function')) {
-        const { data: currentProduct, error: fetchError } = await supabase
-          .from('products')
-          .select('stock_quantity')
-          .eq('id', inventoryData.product_id)
-          .single();
-          
-        if (!fetchError && currentProduct) {
-          const newStock = (currentProduct.stock_quantity || 0) + inventoryData.update_qty;
-          const { error: updateError } = await supabase
-            .from('products')
-            .update({ 
-              stock_quantity: newStock,
-              updated_at: new Date().toISOString()
-            })
-            .eq('id', inventoryData.product_id);
-            
-          if (updateError) {
-            console.error('Error updating product stock manually:', updateError);
-          }
-        }
-      }
-
-      if (stockUpdateError) {
-        console.error('Error updating product stock:', stockUpdateError);
-        // Don't throw here, just log the error as the inventory record is already created
+      // Update the product stock directly in the products table
+      const { error: updateError } = await supabase
+        .from('products')
+        .update({ 
+          stock_quantity: totalStockAfterOpening,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', openingData.product_id);
+        
+      if (updateError) {
+        console.error('Error updating product stock:', updateError);
+        // Don't throw here, just log the error as the opening balance record is already created
+      } else {
+        console.log(`Product stock updated: ${currentStock} -> ${totalStockAfterOpening}`);
       }
 
       return { success: true };
     } catch (err) {
-      console.error('Error adding inventory update:', err);
+      console.error('Error adding opening balance:', err);
       return { 
         success: false, 
-        error: err instanceof Error ? err : new Error('Failed to add inventory update')
+        error: err instanceof Error ? err : new Error('Failed to add opening balance')
       };
     }
   }, []);
@@ -354,6 +376,6 @@ export const usePurchaseHistory = () => {
     fetchPurchases,
     deletePurchaseTransaction,
     updatePurchaseTransaction,
-    addInventoryUpdate
+    addOpeningBalance
   };
 }; 

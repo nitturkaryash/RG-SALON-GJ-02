@@ -1,16 +1,20 @@
-import { createClient } from '@supabase/supabase-js';
+const { createClient } = require('@supabase/supabase-js');
 
-// Read environment variables or provide default values for development
-const supabaseUrl = process.env.VITE_SUPABASE_URL || 'https://cpkxkoosykyahuezxela.supabase.co';
-const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY || '';
+// NEW Supabase configuration - Updated credentials
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://mtyudylsozncvilibxda.supabase.co';
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im10eXVkeWxzb3puY3ZpbGlieGRhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDk4OTE0MTIsImV4cCI6MjA2NTQ2NzQxMn0.KJP6Pu3jaheEj8wTPioZsRUNRnkKH88hcRgvS97FOZA';
 
-if (!supabaseKey) {
-  console.error('Error: Supabase key is required. Set the VITE_SUPABASE_ANON_KEY environment variable.');
-  process.exit(1);
+console.log('🔧 Direct Table Creation using NEW Supabase credentials');
+console.log('📡 URL:', supabaseUrl);
+
+if (supabaseUrl.includes('mtyudylsozncvilibxda')) {
+  console.log('✅ Using NEW Supabase database');
+} else {
+  console.warn('⚠️ WARNING: Still using old database!');
 }
 
 // Initialize Supabase client
-const supabase = createClient(supabaseUrl, supabaseKey);
+const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 async function createTable() {
   try {
@@ -53,8 +57,8 @@ async function createTable() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${supabaseKey}`,
-          'apikey': supabaseKey,
+          'Authorization': `Bearer ${supabaseAnonKey}`,
+          'apikey': supabaseAnonKey,
           'Prefer': 'return=minimal'
         },
         body: JSON.stringify({

@@ -599,33 +599,55 @@ export default function POS() {
 			}
 		}
 
-		// Determine the type - ensure it is always either 'product' or 'service', never undefined
-		const itemType = service.type === 'service' ? 'service' : 'product';
+		// Check if the item already exists in the order
+		const existingItemIndex = orderItems.findIndex(item => item.item_id === service.id);
 		
-		const newItem: POSOrderItem = {
-			id: uuidv4(),
-			order_id: '',
-			item_id: service.id,
-			item_name: service.name,
-			quantity: quantity,
-			price: customPrice !== undefined ? customPrice : service.price,
-			total: (customPrice !== undefined ? customPrice : service.price) * quantity,
-			type: itemType, // Ensure type is never undefined
-			hsn_code: service.hsn_code,
-			gst_percentage: service.gst_percentage,
-			for_salon_use: false,
-			discount: 0, // Initialize discount to 0
-			discount_percentage: 0 // Initialize discount_percentage to 0
-		};
+		if (existingItemIndex >= 0) {
+			// Item already exists, increase quantity
+			const updatedItems = [...orderItems];
+			const existingItem = updatedItems[existingItemIndex];
+			const newQuantity = existingItem.quantity + quantity;
+			const itemPrice = customPrice !== undefined ? customPrice : existingItem.price; // Keep existing price unless custom price is provided
+			
+			updatedItems[existingItemIndex] = {
+				...existingItem,
+				quantity: newQuantity,
+				price: itemPrice,
+				total: itemPrice * newQuantity
+			};
+			
+			setOrderItems(updatedItems);
+			toast.success(`Increased ${service.name} quantity to ${newQuantity}`);
+		} else {
+			// Item doesn't exist, create new item
+			// Determine the type - ensure it is always either 'product' or 'service', never undefined
+			const itemType = service.type === 'service' ? 'service' : 'product';
+			
+			const newItem: POSOrderItem = {
+				id: uuidv4(),
+				order_id: '',
+				item_id: service.id,
+				item_name: service.name,
+				quantity: quantity,
+				price: customPrice !== undefined ? customPrice : service.price,
+				total: (customPrice !== undefined ? customPrice : service.price) * quantity,
+				type: itemType, // Ensure type is never undefined
+				hsn_code: service.hsn_code,
+				gst_percentage: service.gst_percentage,
+				for_salon_use: false,
+				discount: 0, // Initialize discount to 0
+				discount_percentage: 0 // Initialize discount_percentage to 0
+			};
 
-		console.log(`🛒 Created order item:`, newItem);
+			console.log(`🛒 Created order item:`, newItem);
 
-		setOrderItems((prev) => {
-			const newState = [...prev, newItem];
-			return newState;
-		});
+			setOrderItems((prev) => {
+				const newState = [...prev, newItem];
+				return newState;
+			});
 
-		toast.success(`Added ${service.name} to order`);
+			toast.success(`Added ${service.name} to order`);
+		}
 	}, [orderItems, toast]); // Keep dependencies for handleAddToOrder itself
 
 	// RESTORING fetchClientHistory HERE
@@ -2508,12 +2530,12 @@ export default function POS() {
 			const consumptionDateToUse = orderDate ? orderDate.toISOString() : currentDate;
 
 			// Record results for each product
-			const updateResults = [];
+			const processResults = [];
 
-			// Process each product one by one - DIRECT DATABASE ACCESS
+			// Process each product one by one - CONSUMPTION RECORDING ONLY (NO STOCK REDUCTION)
 			for (const product of salonProducts) {
 				try {
-					// 1. First get the CURRENT stock value
+					// 1. Get the CURRENT stock value for consumption record only
 					const { data: currentProductData, error: fetchError } = await supabase
 						.from('products')
 						.select('id, name, stock_quantity')
@@ -2523,7 +2545,7 @@ export default function POS() {
 					if (fetchError) {
 						console.error(`Error fetching current stock for ${product.item_name}:`, fetchError);
 						toast.error(`Could not retrieve stock for ${product.item_name}`);
-						updateResults.push({
+						processResults.push({
 							product: product.item_name,
 							success: false,
 							error: 'Failed to fetch current stock'
@@ -2531,9 +2553,9 @@ export default function POS() {
 						continue;
 					}
 
-					// Log the current stock
+					// Log the current stock (for record keeping only - NO REDUCTION)
 					const currentStock = currentProductData?.stock_quantity || 0;
-					console.log(`Current stock for ${product.item_name}: ${currentStock}`);
+					console.log(`Current stock for ${product.item_name}: ${currentStock} (No stock reduction applied)`);
 
 					// Calculate tax values based on current stock
 					const price = product.price || 0;
@@ -2556,100 +2578,54 @@ export default function POS() {
 						sgst
 					});
 
-					// 2. DIRECTLY calculate new stock by subtracting the exact quantity
-					const targetStock = Math.max(0, currentStock - product.quantity);
-					console.log(`Setting new stock for ${product.item_name} to ${targetStock} (reducing by ${product.quantity})`);
+					// REMOVED: Stock reduction logic - keeping stock unchanged
+					console.log(`Salon consumption recorded for ${product.item_name} - Stock remains unchanged at ${currentStock}`);
 
-					// 3. Update the stock directly without any adjustment factors
-					const { data: updateData, error: updateError } = await supabase
-						.from('products')
-						.update({ stock_quantity: targetStock })
-						.eq('id', product.item_id)
-						.select('id, name, stock_quantity');
-
-					if (updateError) {
-						console.error(`Error setting stock for ${product.item_name}:`, updateError);
-						updateResults.push({
-							product: product.item_name,
-							success: false,
-							error: 'Failed to update stock'
-						});
+					// Record success (no stock update attempted)
+					processResults.push({
+						product: product.item_name,
+						success: true,
+						initialStock: currentStock,
+						finalStock: currentStock, // Stock remains the same
+						consumed: product.quantity
+					});
+					
+					// Add consumption record with tax details
+					const salonConsumptionEntry = {
+						id: uuidv4(),
+						date: consumptionDateToUse, // Use selected date
+						created_at: consumptionDateToUse, // Use selected date for consistency
+						product_name: product.item_name,
+						hsn_code: product.hsn_code || '',
+						units: product.units || '',              // Added units (Product Type)
+						quantity: product.quantity,
+						purpose: consumptionPurpose,
+						price_per_unit: price,                   // Use numeric value
+						gst_percentage: gstPercentage,           // Use numeric percentage
+						// Map to the new column names in inventory_salon_consumption
+						current_stock: currentStock,
+						current_stock_taxable_value: parseFloat((currentStock * price).toFixed(2)), // Renamed
+						current_stock_igst: 0, // Added (always 0 for local consumption)
+						current_stock_sgst: parseFloat(sgst.toFixed(2)), // Renamed
+						current_stock_cgst: parseFloat(cgst.toFixed(2)), // Renamed
+						current_stock_total_value: parseFloat(totalTax.toFixed(2)) // Renamed
+					};
+					
+					const { error: consumptionError } = await supabase
+						.from('inventory_salon_consumption')
+						.insert(salonConsumptionEntry);
+					
+					if (consumptionError) {
+						console.error(`Error inserting salon consumption record for ${product.item_name}:`, consumptionError);
+						processResults[processResults.length - 1].success = false;
+						processResults[processResults.length - 1].error = 'Failed to record consumption';
 					} else {
-						// 4. Log success
-						console.log(`Successfully set stock for ${product.item_name} to ${targetStock}`);
-						updateResults.push({
-							product: product.item_name,
-							success: true,
-							initialStock: currentStock,
-							finalStock: targetStock,
-							consumed: product.quantity
-						});
-						
-						// 5. Add consumption record with tax details
-						const salonConsumptionEntry = {
-							id: uuidv4(),
-							date: consumptionDateToUse, // Use selected date
-							created_at: consumptionDateToUse, // Use selected date for consistency
-							product_name: product.item_name,
-							hsn_code: product.hsn_code || '',
-							units: product.units || '',              // Added units (Product Type)
-							quantity: product.quantity,
-							purpose: consumptionPurpose,
-							price_per_unit: price,                   // Use numeric value
-							gst_percentage: gstPercentage,           // Use numeric percentage
-							// Map to the new column names in inventory_salon_consumption
-							current_stock: currentStock,
-							current_stock_taxable_value: parseFloat((currentStock * price).toFixed(2)), // Renamed
-							current_stock_igst: 0, // Added (always 0 for local consumption)
-							current_stock_sgst: parseFloat(sgst.toFixed(2)), // Renamed
-							current_stock_cgst: parseFloat(cgst.toFixed(2)), // Renamed
-							current_stock_total_value: parseFloat(totalTax.toFixed(2)) // Renamed
-						};
-						
-						const { error: consumptionError } = await supabase
-							.from('inventory_salon_consumption')
-							.insert(salonConsumptionEntry);
-						
-						if (consumptionError) {
-							console.error(`Error inserting salon consumption record for ${product.item_name}:`, consumptionError);
-						} else {
-							console.log(`Added salon consumption record for ${product.item_name} with tax details`);
-						}
+						console.log(`Added salon consumption record for ${product.item_name} with tax details`);
 					}
 
-					// 6. Verify the final stock matches what we expect
-					const { data: verifyData, error: verifyError } = await supabase
-						.from('products')
-						.select('id, name, stock_quantity')
-						.eq('id', product.item_id)
-						.single();
-
-					if (verifyError) {
-						console.error(`Error verifying final stock for ${product.item_name}:`, verifyError);
-					} else {
-						const finalStock = verifyData?.stock_quantity || 0;
-						console.log(`Verified final stock for ${product.item_name}: ${finalStock}`);
-
-						if (finalStock !== targetStock) {
-							console.error(`Stock mismatch for ${product.item_name}! Expected ${targetStock} but got ${finalStock}`);
-
-							// If there's a mismatch, try one more time to set it correctly
-							console.log(`Attempting to fix stock mismatch for ${product.item_name}...`);
-							const { error: fixError } = await supabase
-								.from('products')
-								.update({ stock_quantity: targetStock })
-								.eq('id', product.item_id);
-
-							if (fixError) {
-								console.error(`Failed to fix stock mismatch for ${product.item_name}:`, fixError);
-							} else {
-								console.log(`Fixed stock mismatch for ${product.item_name}`);
-							}
-						}
-					}
 				} catch (err) {
 					console.error(`Error processing ${product.item_name}:`, err);
-					updateResults.push({
+					processResults.push({
 						product: product.item_name,
 						success: false,
 						error: err instanceof Error ? err.message : String(err)
@@ -2692,8 +2668,11 @@ export default function POS() {
 					is_salon_consumption: true,
 					status: 'completed',
 					payment_method: 'internal',
-					services: salonProducts.map((product) => ({
-						id: uuidv4(),
+					services: salonProducts.map(product => ({
+						service_id: product.item_id, // Add service_id for reference
+						service_name: product.item_name, // Add service_name for consistency
+						product_id: product.item_id, // Add product_id for reference
+						product_name: product.item_name, // Add product_name for display
 						name: product.item_name,
 						price: product.price,
 						quantity: product.quantity,
@@ -2707,18 +2686,33 @@ export default function POS() {
 					requisition_voucher_no: requisitionVoucherNo || null
 				};
 				
-				// Add stock snapshot to track inventory
+				// Add stock snapshot to track inventory (current stock without reduction)
 				const stockSnapshot: Record<string, number> = {};
 				let firstProductStock = 0;
 				
-				// Get the initial stock quantities before the updates (from previous queries)
-				for (const result of updateResults) {
-					if (result.success && result.initialStock !== undefined) {
-						const product = salonProducts.find(p => p.item_name === result.product);
-						if (product) {
-							stockSnapshot[product.item_id] = result.initialStock;
+				// FIXED: Query the correct table - products instead of product_master
+				for (const product of salonProducts) {
+					try {
+						const { data: productData } = await supabase
+							.from('products')
+							.select('stock_quantity')
+							.eq('id', product.item_id)
+							.single();
+						
+						if (productData && productData.stock_quantity !== undefined) {
+							stockSnapshot[product.item_id] = productData.stock_quantity;
 							
-							// Use the first product's stock for the current_stock integer field
+							// FIXED: Set first product stock exactly like walk-in orders (no condition)
+							if (firstProductStock === 0) {
+								firstProductStock = productData.stock_quantity;
+							}
+						}
+					} catch (err) {
+						console.warn(`Failed to get stock for salon consumption product ${product.item_id}:`, err);
+						// Try to get from processResults as fallback
+						const result = processResults.find(r => r.product === product.item_name);
+						if (result && result.success && result.initialStock !== undefined) {
+							stockSnapshot[product.item_id] = result.initialStock;
 							if (firstProductStock === 0) {
 								firstProductStock = result.initialStock;
 							}
@@ -2726,11 +2720,9 @@ export default function POS() {
 					}
 				}
 				
-				// Add stock snapshot and current_stock to the order data
-				if (Object.keys(stockSnapshot).length > 0) {
-					orderData.stock_snapshot = JSON.stringify(stockSnapshot);
-					orderData.current_stock = String(firstProductStock);
-				}
+				// Always add stock snapshot and current_stock to the order data (exactly like walk-in orders)
+				orderData.stock_snapshot = JSON.stringify(stockSnapshot);
+				orderData.current_stock = String(firstProductStock);
 
 				console.log('Creating order record with data:', orderData);
 
@@ -2786,9 +2778,8 @@ export default function POS() {
 				window.dispatchEvent(new CustomEvent('refresh-orders'));
 			} catch (orderError) {
 				console.error('Error recording consumption order:', orderError);
-				// We don't throw here to ensure the stock updates are kept even if order creation fails
-				toast.warning('Stock updated but consumption record creation failed.');
-				// Continue execution rather than returning here, so other cleanup tasks can run
+				// Continue execution rather than throwing error
+				toast.warning('Consumption recorded but order creation failed.');
 			}
 
 			// Log consumption details
@@ -2799,7 +2790,8 @@ export default function POS() {
 				products: salonProducts.map(p => ({
 					name: p.item_name,
 					quantity: p.quantity
-				}))
+				})),
+				note: 'Stock levels were NOT reduced - consumption tracking only'
 			});
 
 			// Refresh UI
@@ -2816,7 +2808,7 @@ export default function POS() {
 			await fetchBalanceStockData();
 
 			// Success message
-			toast.success('Salon consumption recorded successfully');
+			toast.success('Salon consumption recorded successfully (stock levels unchanged)');
 			
 			// Save order for printing - create a simple order object for salon consumption
 			const orderForPrinting = {
@@ -2826,6 +2818,10 @@ export default function POS() {
 				created_at: new Date().toISOString(),
 				total: salonProducts.reduce((sum, product) => sum + product.total, 0),
 				services: salonProducts.map(product => ({
+					service_id: product.item_id, // Add service_id for reference
+					service_name: product.item_name, // Add service_name for consistency
+					product_id: product.item_id, // Add product_id for reference
+					product_name: product.item_name, // Add product_name for display
 					name: product.item_name,
 					price: product.price,
 					quantity: product.quantity,
@@ -2845,7 +2841,7 @@ export default function POS() {
 		} finally {
 			setProcessing(false);
 		}
-	}, [currentAppointmentId, updateAppointment, orderItems, isOrderValid, calculateProductSubtotal, calculateServiceSubtotal, calculateProductGstAmount, calculateServiceGstAmount, walkInDiscount, getAmountPaid, selectedClient, selectedStylist, customerName, createWalkInOrderMutation, createOrder, isSplitPayment, splitPayments, productGstRate, serviceGstRate, salonProducts, consumptionPurpose, consumptionNotes, requisitionVoucherNo, fetchBalanceStockData, resetFormState, navigate, queryClient, directUpdateStockQuantity, createClientAsync, newClientPhone, newClientEmail, orderDate]); // Changed createClient to createClientAsync here as well
+	}, [isSalonConsumptionValid, orderDate, salonProducts, consumptionPurpose, consumptionNotes, requisitionVoucherNo, fetchBalanceStockData, resetFormState, navigate, queryClient, createClientAsync, newClientPhone, newClientEmail, setLastCreatedOrder, setPrintDialogOpen]);
 
 	const handleRemoveFromOrder = useCallback((itemId: string) => {
 		setOrderItems((prevItems) => prevItems.filter((item) => item.id !== itemId));
@@ -3306,9 +3302,56 @@ export default function POS() {
 										{item.type === 'product' && <Inventory fontSize="inherit" sx={{ verticalAlign: 'middle', mr: 0.5, color: 'secondary.main' }} />}
 										{item.type === 'membership' && <CardMembershipIcon fontSize="inherit" sx={{ verticalAlign: 'middle', mr: 0.5, color: 'success.main' }} />}
 										{item.item_name}
-										<Typography component="span" variant="body2" color="text.secondary" sx={{ ml: 0.5 }}>
-											(x{item.quantity})
-										</Typography>
+										<TextField
+											size="small"
+											variant="standard"
+											type="number"
+											label="Qty"
+											value={item.quantity}
+											onChange={(e) => {
+												const newQuantity = Math.max(1, parseInt(e.target.value) || 1);
+												
+												// For products, check stock availability
+												if (item.type === 'product') {
+													const product = allProducts.find(p => p.id === item.item_id);
+													if (product && product.stock_quantity !== undefined) {
+														// Check if new quantity exceeds available stock
+														if (newQuantity > product.stock_quantity) {
+															toast.warning(`Cannot set quantity to ${newQuantity} - Only ${product.stock_quantity} available in stock`);
+															return;
+														}
+													}
+												}
+												
+												const updatedItems = orderItems.map(i => {
+													if (i.id === item.id) {
+														// Calculate proportional discount adjustment
+														const oldQuantity = i.quantity;
+														const quantityRatio = newQuantity / oldQuantity;
+														
+														// Adjust discount amount proportionally if it exists
+														const newDiscountAmount = (i.discount || 0) * quantityRatio;
+														
+														return { 
+															...i, 
+															quantity: newQuantity,
+															total: i.price * newQuantity,
+															discount: newDiscountAmount,
+															// Recalculate discount percentage based on new quantity
+															discount_percentage: newDiscountAmount > 0 ? 
+																Math.min(100, (newDiscountAmount / (i.price * newQuantity)) * 100) : 
+																(i.discount_percentage || 0)
+														};
+													}
+													return i;
+												});
+												setOrderItems(updatedItems);
+											}}
+											sx={{ width: '60px', ml: 1 }}
+											InputProps={{
+												inputProps: { min: 1, style: { textAlign: 'center' } }
+											}}
+										/>
 									</Typography>
 									{/* Show experts for service items */}
 									{item.type === 'service' && (item as POSOrderItem).experts && (item as POSOrderItem).experts!.length > 0 && (
