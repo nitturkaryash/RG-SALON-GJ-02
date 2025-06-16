@@ -75,7 +75,6 @@ import { DatePicker } from '@mui/x-date-pickers/DatePicker'
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider'
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns'
 import { toast } from 'react-toastify'
-import DateRangeCalendar from '../components/dashboard/DateRangeCalendar'
 import ErrorBoundary from '../components/ErrorBoundary'
 import { useNavigate } from 'react-router-dom'
 import { Order as BaseOrder } from '../models/orderTypes'
@@ -142,10 +141,6 @@ export default function Orders() {
   })
   const [isSalonPurchaseFilter, setIsSalonPurchaseFilter] = useState<string>('all')
   
-  // Date range calendar state
-  const [dateRangeAnchorEl, setDateRangeAnchorEl] = useState<HTMLElement | null>(null)
-  const [isDateRangeOpen, setIsDateRangeOpen] = useState(false)
-  
   // Delete confirmation dialog
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [orderToDelete, setOrderToDelete] = useState<any | null>(null)
@@ -185,6 +180,9 @@ export default function Orders() {
     if (!orders) return [];
 
     const result: ExtendedOrder[] = [];
+    const aggMap: Record<string, ExtendedOrder> = {};
+
+    console.log('[Orders Aggregation] Processing orders:', orders.length);
     
     // Group orders by appointment_id to find potential multi-expert orders
     const ordersByAppointment: Record<string, ExtendedOrder[]> = {};
@@ -192,6 +190,14 @@ export default function Orders() {
     
     orders.forEach(raw => {
       const order = normalizeOrder(raw);
+      console.log('[Orders Aggregation] Order:', {
+        id: order.id,
+        client: order.client_name,
+        stylist: order.stylist_name,
+        multi_expert: order.multi_expert,
+        appointment_id: order.appointment_id,
+        total: order.total
+      });
       
       if (order.appointment_id) {
         if (!ordersByAppointment[order.appointment_id]) {
@@ -207,82 +213,70 @@ export default function Orders() {
     Object.entries(ordersByAppointment).forEach(([appointmentId, appointmentOrders]) => {
       if (appointmentOrders.length > 1) {
         // This is a multi-expert appointment - aggregate the orders
+        console.log('[Orders Aggregation] Aggregating multi-expert orders for appointment:', appointmentId, 'orders:', appointmentOrders.length);
         
+        // Use the first order as the base
         const baseOrder = appointmentOrders[0];
         
+        // Check if we have split orders (partial amounts) or if there's an original order with full amounts
+        // If all orders have the same total, they might be individual split orders
+        // If one order has a much larger total, it's likely the original
         const totals = appointmentOrders.map(order => order.total || order.total_amount || 0);
         const maxTotal = Math.max(...totals);
         const minTotal = Math.min(...totals);
         const totalSum = totals.reduce((sum, total) => sum + total, 0);
         
-        const sameTotalExperts = appointmentOrders.every(o => (o as any).total_experts && (o as any).total_experts === (appointmentOrders[0] as any).total_experts);
-        const allHaveMultiExpertFlag = appointmentOrders.every(o => (o as any).multi_expert === true);
-        const similarTotals = (maxTotal - minTotal) < (maxTotal * 0.1);
-        const isAllSplitOrders = sameTotalExperts || allHaveMultiExpertFlag || similarTotals;
+        // If all totals are similar (split orders), sum them up
+        // If there's a significant difference, use the largest (original order)
+        const isAllSplitOrders = (maxTotal - minTotal) < (maxTotal * 0.1); // Less than 10% difference means likely all split
         
         let finalTotal, finalSubtotal, finalTax;
         
         if (isAllSplitOrders) {
+          // All orders are split orders - sum them up to get the original amount
           finalTotal = totalSum;
           finalSubtotal = appointmentOrders.reduce((sum, order) => sum + (order.subtotal || 0), 0);
           finalTax = appointmentOrders.reduce((sum, order) => sum + (order.tax || 0), 0);
+          console.log('[Orders Aggregation] Detected split orders, summing amounts. Total:', finalTotal);
         } else {
+          // There's likely an original order with full amounts - use the largest
           const originalOrder = appointmentOrders.find(order => (order.total || order.total_amount || 0) === maxTotal) || baseOrder;
           finalTotal = originalOrder.total || originalOrder.total_amount || 0;
           finalSubtotal = originalOrder.subtotal || 0;
           finalTax = originalOrder.tax || 0;
+          console.log('[Orders Aggregation] Detected original order with full amounts. Total:', finalTotal);
         }
         
         const aggregatedOrder: ExtendedOrder & { stylist_names: string[] } = {
           ...baseOrder,
+          // Use calculated amounts based on whether we have split orders or original order
           total: finalTotal,
           total_amount: finalTotal,
           subtotal: finalSubtotal,
           tax: finalTax,
+          // Keep original payment method from base order
           payment_method: baseOrder.payment_method,
           stylist_names: [],
-          payments: (() => {
-            if (isAllSplitOrders) {
-              const combined: any[] = [];
-              appointmentOrders.forEach(order => {
-                if (order.payments && Array.isArray(order.payments)) {
-                  order.payments.forEach(pay => {
-                    const existing = combined.find(p => p.payment_method === pay.payment_method);
-                    if (existing) {
-                      existing.amount = (existing.amount || 0) + (pay.amount || 0);
-                    } else {
-                      combined.push({ ...pay });
-                    }
-                  });
-                }
-              });
-              return combined;
-            }
-            return baseOrder.payments || [];
-          })(),
-          services: isAllSplitOrders ?
+          // Keep original payments from base order - don't duplicate split payments
+          payments: baseOrder.payments || [],
+          // For multi-expert orders, we need to aggregate services properly
+          // If all orders are split, combine unique services; otherwise use base order services
+          services: isAllSplitOrders ? 
+            // Combine all unique services from all orders
             appointmentOrders.reduce((allServices: any[], order) => {
               if (order.services && Array.isArray(order.services)) {
                 order.services.forEach(service => {
-                  const existingService = allServices.find(s => {
-                    const nameMatch = s.service_name && service.service_name && s.service_name === service.service_name;
-                    const sidMatch  = (s as any).service_id && (service as any).service_id && (s as any).service_id === (service as any).service_id;
-                    const idMatch   = s.id && service.id && s.id === service.id;
-                    return nameMatch || sidMatch || idMatch;
-                  });
-
+                  // Check if service already exists (by name or id)
+                  const existingService = allServices.find(s => 
+                    s.service_name === service.service_name || s.id === service.id
+                  );
                   if (!existingService) {
-                    // Restore original price by multiplying by the service-specific expert count
-                    const serviceMultiplier = (service as any).experts?.length;
-                    if (serviceMultiplier && serviceMultiplier > 0) {
-                      const originalPrice = service.price * serviceMultiplier;
-                      allServices.push({
-                        ...service,
-                        price: originalPrice,
-                      });
-                    } else {
-                      allServices.push(service);
-                    }
+                    // For split orders, restore original price by multiplying by number of experts
+                    const originalPrice = service.price * appointmentOrders.length;
+                    allServices.push({
+                      ...service,
+                      price: originalPrice
+                    });
                   }
                 });
               }
@@ -292,24 +286,35 @@ export default function Orders() {
           aggregated_multi_expert: true as any
         };
 
+        // Aggregate stylist names from all orders
         appointmentOrders.forEach(order => {
           if (order.stylist_name && !aggregatedOrder.stylist_names.includes(order.stylist_name)) {
             aggregatedOrder.stylist_names.push(order.stylist_name);
           }
         });
 
+        // Update stylist_name to show all stylists
         aggregatedOrder.stylist_name = aggregatedOrder.stylist_names.filter(Boolean).join(', ');
+        
+        console.log('[Orders Aggregation] Created aggregate for appointment:', appointmentId, 'stylists:', aggregatedOrder.stylist_name, 'total:', aggregatedOrder.total, 'items:', aggregatedOrder.services?.length);
         
         result.push(aggregatedOrder as ExtendedOrder);
       } else {
+        // Single order for this appointment
+        console.log('[Orders Aggregation] Added single appointment order:', appointmentOrders[0].id);
         result.push(appointmentOrders[0]);
       }
     });
 
+    // Add standalone orders (no appointment_id)
     standaloneOrders.forEach(order => {
+      console.log('[Orders Aggregation] Added standalone order:', order.id);
       result.push(order);
     });
 
+    console.log('[Orders Aggregation] Final result count:', result.length, 'from original:', orders.length);
+
+    // Sort by created_at desc to match previous behaviour
     return result.sort((a, b) => {
       const da = new Date(a.created_at || '').getTime();
       const db = new Date(b.created_at || '').getTime();
@@ -350,6 +355,15 @@ export default function Orders() {
     }
   }, [aggregatedOrders]);
 
+  // When orders are loaded from the API, normalize them (commented out to prevent recursion)
+  /*
+  useEffect(() => {
+    if (rawOrders?.length) {
+      setOrders(rawOrders.map(normalizeOrder));
+    }
+  }, [rawOrders]);
+  */
+
   const handleViewDetails = (order: any) => {
     setSelectedOrder(order)
     setDetailsOpen(true)
@@ -357,6 +371,7 @@ export default function Orders() {
 
   const handleCloseDetails = () => {
     setDetailsOpen(false)
+    // Clear the selected order after dialog closes
     setTimeout(() => setSelectedOrder(null), 300)
   }
   
@@ -385,12 +400,18 @@ export default function Orders() {
       const success = await deleteOrderById(orderId)
       
       if (success) {
+        // The secondary delete for salon_consumption_products is assumed to be handled by the backend
+        // or within deleteOrderById. Removing the explicit client-side attempt.
+        
         setDeleteConfirmOpen(false)
         setOrderToDelete(null)
         if (filteredOrders.length <= rowsPerPage && page > 0) {
           setPage(0)
         }
+        // Invalidate clients query to refetch client data
         queryClient.invalidateQueries({ queryKey: ['clients'] })
+        // Ensure a success toast for the primary deletion is shown if not handled by deleteOrderById.
+        // For example: toast.success('Order deleted successfully');
       }
     } catch (error) {
       console.error('Error in confirmDeleteOrder:', error)
@@ -404,24 +425,30 @@ export default function Orders() {
 
   const confirmDeleteAllOrders = async () => {
     try {
+      // Show loading toast
       const loadingToast = toast.info('Deleting all orders...', {
         autoClose: false,
         closeButton: false
       });
       
+      // Disable the dialog buttons
       const deleteAllConfirmButton = document.querySelector('button[color="error"]');
       if (deleteAllConfirmButton) {
         (deleteAllConfirmButton as HTMLButtonElement).disabled = true;
         (deleteAllConfirmButton as HTMLButtonElement).innerHTML = 'Deleting...';
       }
       
+      // Attempt to delete all orders
       const success = await deleteAllOrders();
       
+      // Close the loading toast
       toast.dismiss(loadingToast);
       
       if (success) {
         toast.success('All orders have been deleted successfully');
+        // Close the dialog
         setDeleteAllConfirmOpen(false);
+        // Reset to first page
         setPage(0);
       } else {
         toast.error('Failed to delete all orders. Please try again.');
@@ -430,6 +457,7 @@ export default function Orders() {
       console.error('Error in confirmDeleteAllOrders:', error);
       toast.error('An error occurred: ' + (error instanceof Error ? error.message : 'Unknown error'));
     } finally {
+      // Re-enable the dialog buttons if needed
       const deleteAllConfirmButton = document.querySelector('button[color="error"]');
       if (deleteAllConfirmButton) {
         (deleteAllConfirmButton as HTMLButtonElement).disabled = false;
@@ -439,101 +467,32 @@ export default function Orders() {
   }
 
   const handleExportCSV = () => {
-    if (!aggregatedOrders || aggregatedOrders.length === 0) {
-      toast.warning('No orders available to export');
-      return;
-    }
+    if (!aggregatedOrders || aggregatedOrders.length === 0) return;
     
-    if (filteredOrders.length === 0) {
-      toast.warning('No orders match the current filters');
-      return;
-    }
-    
-    try {
-      console.log('🚀 Starting Orders CSV export:', {
-        filteredOrdersCount: filteredOrders.length,
-        aggregatedOrdersCount: aggregatedOrders.length,
-        firstFilteredOrder: filteredOrders[0]?.id?.substring(0, 8)
-      });
-      
-      // Format orders for export using the utility function
-      let formattedOrders = formatOrdersForExport(filteredOrders, aggregatedOrders);
-      
-      // Apply the custom order ID formatting that matches the frontend display
-      formattedOrders = formattedOrders.map((item, index) => {
-        const originalOrder = filteredOrders[index];
-        const customOrderId = formatOrderId(originalOrder);
-        
-        console.log(`🔄 Order ${index + 1}: ${originalOrder.id?.substring(0, 8)} -> ${customOrderId}`);
-        
-        return {
-          ...item,
-          id: customOrderId // Override with the custom formatted ID
-        };
-      });
-      
-      console.log('📊 Final formatted orders sample:', {
-        count: formattedOrders.length,
-        firstOrder: formattedOrders[0],
-        headers: Object.keys(orderExportHeaders)
-      });
-      
-      exportToCSV(formattedOrders, 'salon-orders-export', orderExportHeaders);
-      toast.success(`Successfully exported ${filteredOrders.length} orders to CSV`);
-    } catch (error) {
-      console.error('Error exporting to CSV:', error);
-      toast.error('Failed to export orders to CSV: ' + (error instanceof Error ? error.message : 'Unknown error'));
-    }
+    // Pass `aggregatedOrders` as the second argument for context and override ID to match display
+    let formattedOrders = formatOrdersForExport(filteredOrders, aggregatedOrders);
+    formattedOrders = formattedOrders.map((item, index) => ({
+      ...item,
+      id: formatOrderId(filteredOrders[index])
+    }));
+    exportToCSV(formattedOrders, 'salon-orders-export', orderExportHeaders);
   }
 
   const handleExportPDF = () => {
-    if (!aggregatedOrders || aggregatedOrders.length === 0) {
-      toast.warning('No orders available to export');
-      return;
-    }
+    if (!aggregatedOrders || aggregatedOrders.length === 0) return;
     
-    if (filteredOrders.length === 0) {
-      toast.warning('No orders match the current filters');
-      return;
-    }
-    
-    try {
-      console.log('🚀 Starting Orders PDF export:', {
-        filteredOrdersCount: filteredOrders.length,
-        aggregatedOrdersCount: aggregatedOrders.length,
-        firstFilteredOrder: filteredOrders[0]?.id?.substring(0, 8)
-      });
-      
-      // Format orders for export using the utility function
-      let formattedOrdersPDF = formatOrdersForExport(filteredOrders, aggregatedOrders);
-      
-      // Apply the custom order ID formatting that matches the frontend display
-      formattedOrdersPDF = formattedOrdersPDF.map((item, index) => {
-        const originalOrder = filteredOrders[index];
-        const customOrderId = formatOrderId(originalOrder);
-        
-        return {
-          ...item,
-          id: customOrderId // Override with the custom formatted ID
-        };
-      });
-      
-      console.log('📊 Final formatted orders for PDF:', {
-        count: formattedOrdersPDF.length,
-        firstOrder: formattedOrdersPDF[0]
-      });
-      
-      exportToPDF(
-        formattedOrdersPDF, 
-        'salon-orders-export', 
-        orderExportHeaders, 
-        'Salon Orders Report'
-      );
-      toast.success(`Successfully exported ${filteredOrders.length} orders to PDF`);
-    } catch (error) {
-      console.error('Error exporting to PDF:', error);
-      toast.error('Failed to export orders to PDF: ' + (error instanceof Error ? error.message : 'Unknown error'));
-    }
+    // Pass `aggregatedOrders` as the second argument for context and override ID to match display
+    let formattedOrdersPDF = formatOrdersForExport(filteredOrders, aggregatedOrders);
+    formattedOrdersPDF = formattedOrdersPDF.map((item, index) => ({
+      ...item,
+      id: formatOrderId(filteredOrders[index])
+    }));
+    exportToPDF(
+      formattedOrdersPDF, 
+      'salon-orders-export', 
+      orderExportHeaders, 
+      'Salon Orders Report'
+    );
   }
 
   // Determine purchase type for an order
@@ -591,11 +550,12 @@ export default function Orders() {
 
   // Function to detect if an order is a salon consumption order
   const isSalonConsumptionOrder = (order: ExtendedOrder) => {
+    // Check all possible ways an order can be marked as salon consumption
     return (
       order.is_salon_consumption === true || 
-      order.consumption_purpose ||
-      order.client_name === 'Salon Consumption' ||
-      (order.services && order.services.some((s: any) => s.for_salon_use === true))
+      order.consumption_purpose || // Check for consumption_purpose field we added
+      order.client_name === 'Salon Consumption' || // Match the client_name we set in handleCreateSalonConsumption
+      (order.services && order.services.some((s: any) => s.for_salon_use === true)) // Check if any service is marked for salon use
     );
   };
 
@@ -607,6 +567,7 @@ export default function Orders() {
 
   // Handler for processing the payment update
   const handlePaymentUpdate = async (orderId: string, paymentDetails: PaymentDetail) => {
+    // Assuming updateOrderPayment is a react-query mutation object
     await updateOrderPayment.mutateAsync({ orderId, paymentDetails }) 
   }
   
@@ -618,6 +579,8 @@ export default function Orders() {
   // Handle tab change
   const handleTabChange = (event: React.SyntheticEvent, newValue: OrderTab) => {
     setActiveTab(newValue);
+    
+    // Reset pagination when changing tabs
     setPage(0);
     
     // Apply appropriate filters based on the selected tab
@@ -656,24 +619,6 @@ export default function Orders() {
     });
   };
   
-  // Handle date range calendar
-  const handleDateRangeCalendarChange = (startDate: Date, endDate: Date) => {
-    setDateRange({
-      startDate,
-      endDate,
-    });
-  };
-  
-  const handleOpenDateRangeCalendar = (event: React.MouseEvent<HTMLElement>) => {
-    setDateRangeAnchorEl(event.currentTarget);
-    setIsDateRangeOpen(true);
-  };
-  
-  const handleCloseDateRangeCalendar = () => {
-    setIsDateRangeOpen(false);
-    setDateRangeAnchorEl(null);
-  };
-  
   // Handle pagination change
   const handleChangePage = (event: unknown, newPage: number) => {
     setPage(newPage);
@@ -697,8 +642,8 @@ export default function Orders() {
         order.status = 'completed';
       }
       
-      return order;
-    }).filter((order) => {
+      return order; // order is now ExtendedOrder
+    }).filter((order) => { // order here is ExtendedOrder
       // Text search
       const searchLower = searchQuery.toLowerCase();
       const matchesSearch = 
@@ -713,8 +658,7 @@ export default function Orders() {
       const matchesPayment = 
         paymentFilter === 'all' || 
         order.payment_method === paymentFilter ||
-        (paymentFilter === 'split' && (order.payment_method === 'split' || (Array.isArray(order.payments) && order.payments.length > 0))) ||
-        (paymentFilter === 'membership' && (order.payment_method === 'membership' || (Array.isArray(order.payments) && order.payments.some((p: any) => p.payment_method === 'membership'))));
+        (paymentFilter === 'split' && Array.isArray(order.payments) && order.payments.length > 0);
       
       // Status filter  
       const matchesStatus = statusFilter === 'all' || order.status === statusFilter;
@@ -993,10 +937,7 @@ export default function Orders() {
     // Check if this is an aggregated multi-expert order
     const isAggregatedOrder = (order as any).aggregated_multi_expert;
     
-    // Check if this is a split payment order (either has payments array or payment_method is 'split')
-    const isSplitPayment = (order.payments && order.payments.length > 0) || order.payment_method === 'split';
-    
-    if (isSplitPayment && order.payments && order.payments.length > 0) {
+    if (order.payments && order.payments.length > 0) {
       // Group payments by method and sum up the amounts
       const paymentSummary: Record<string, number> = {};
       order.payments.forEach(payment => {
@@ -1009,23 +950,13 @@ export default function Orders() {
           {Object.entries(paymentSummary).map(([method, amount], index) => {
             // Show the actual payment amount, not the full order total
             const displayAmount = amount;
-            const isMembership = method === 'membership';
             
             return (
               <Box key={index} sx={{ mb: 0.5 }}>
                 <Chip
                   size="small"
                   label={`${PAYMENT_METHOD_LABELS[method as PaymentMethod] || method}: ${formatCurrency(displayAmount)}`}
-                  color={isMembership ? 'secondary' : 'default'}
-                  variant={isMembership ? 'filled' : 'outlined'}
-                  sx={{ 
-                    mr: 0.5,
-                    ...(isMembership && {
-                      backgroundColor: 'secondary.main',
-                      color: 'secondary.contrastText',
-                      fontWeight: 'medium'
-                    })
-                  }}
+                  sx={{ mr: 0.5 }}
                 />
               </Box>
             );
@@ -1044,43 +975,17 @@ export default function Orders() {
       );
     }
     
-    // For orders with payment_method as 'split' but no payments array, show split indicator
-    if (order.payment_method === 'split') {
-      return (
-        <Box>
-          <Chip
-            size="small"
-            label="Split Payment"
-            color="info"
-            variant="outlined"
-            sx={{ mr: 0.5 }}
-          />
-          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
-            Total: {formatCurrency(order.total || order.total_amount || 0)}
-          </Typography>
-        </Box>
-      );
-    }
-    
     // For single payment orders, show payment method with total amount
     const paymentMethod = PAYMENT_METHOD_LABELS[order.payment_method as PaymentMethod] || order.payment_method || 'Unknown';
     const totalAmount = order.total || order.total_amount || 0;
-    const isMembership = order.payment_method === 'membership';
     
     return (
       <Box>
         <Chip
           size="small"
           label={`${paymentMethod}: ${formatCurrency(totalAmount)}`}
-          color={isMembership ? 'secondary' : 'primary'}
-          variant={isMembership ? 'filled' : 'outlined'}
-          sx={{
-            ...(isMembership && {
-              backgroundColor: 'secondary.main',
-              color: 'secondary.contrastText',
-              fontWeight: 'medium'
-            })
-          }}
+          color="primary"
+          variant="outlined"
         />
                  {(order.pending_amount || 0) > 0 && order.status !== 'completed' && (
            <Box sx={{ mt: 0.5 }}>
@@ -1135,31 +1040,7 @@ export default function Orders() {
       <Box sx={{ mb: 4 }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
           <Typography variant="h1">Orders</Typography>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <Tooltip title={`Export ${filteredOrders.length} filtered orders to CSV. Includes: Order details, customer & stylist info, service breakdown, payment details, tax calculations (CGST/SGST), appointment info, multi-expert indicators, and salon consumption data.`}>
-              <Button 
-                variant="outlined" 
-                color="primary"
-                startIcon={<CsvIcon />}
-                onClick={handleExportCSV}
-                size="small"
-                disabled={!orders || orders.length === 0}
-              >
-                Export CSV
-              </Button>
-            </Tooltip>
-            <Tooltip title={`Export ${filteredOrders.length} filtered orders to PDF. Includes: Order details, customer & stylist info, service breakdown, payment details, tax calculations (CGST/SGST), appointment info, multi-expert indicators, and salon consumption data.`}>
-              <Button 
-                variant="outlined" 
-                color="primary"
-                startIcon={<PdfIcon />}
-                onClick={handleExportPDF}
-                size="small"
-                disabled={!orders || orders.length === 0}
-              >
-                Export PDF
-              </Button>
-            </Tooltip>
+          <Box sx={{ display: 'flex', alignItems: 'center' }}>
             <Button 
               variant="contained" 
               color="error"
@@ -1337,16 +1218,6 @@ export default function Orders() {
           </Tabs>
         </Paper>
         
-        {/* Export Info Box */}
-        {orders && orders.length > 0 && filteredOrders.length > 0 && (
-          <Box sx={{ mb: 2, p: 2, bgcolor: 'success.lighter', borderRadius: 1, border: '1px solid', borderColor: 'success.main' }}>
-            <Typography variant="body2" color="success.dark" sx={{ display: 'flex', alignItems: 'center' }}>
-              <FileDownloadIcon fontSize="small" sx={{ mr: 1 }} />
-              <strong>Ready to Export:</strong> {filteredOrders.length} orders available for export with comprehensive data including customer details, services, payments, tax breakdown (CGST/SGST), appointment information, and salon consumption status.
-            </Typography>
-          </Box>
-        )}
-
         {/* Search and filter controls */}
         {orders && orders.length > 0 && (
           <Box mb={3}>
@@ -1386,7 +1257,6 @@ export default function Orders() {
                             {PAYMENT_METHOD_LABELS[method]}
                           </MenuItem>
                         ))}
-                        <MenuItem value="split">Split Payment</MenuItem>
                       </Select>
                     </FormControl>
                   </Grid>
@@ -1446,32 +1316,45 @@ export default function Orders() {
               
               {/* Date Range Filter */}
               <Grid item xs={12}>
-                <Grid container spacing={2} alignItems="center">
-                  <Grid item xs={12} sm={6} md={4}>
-                    <Button
-                      variant="outlined"
-                      size="small"
-                      fullWidth
-                      startIcon={<DateRangeIcon />}
-                      onClick={handleOpenDateRangeCalendar}
-                      sx={{
-                        justifyContent: 'flex-start',
-                        textTransform: 'none',
-                        color: dateRange.startDate || dateRange.endDate ? 'primary.main' : 'text.secondary',
-                        borderColor: dateRange.startDate || dateRange.endDate ? 'primary.main' : 'divider',
-                      }}
-                    >
-                      {dateRange.startDate && dateRange.endDate
-                        ? `${dateRange.startDate.toLocaleDateString()} - ${dateRange.endDate.toLocaleDateString()}`
-                        : dateRange.startDate
-                        ? `${dateRange.startDate.toLocaleDateString()} - Select end date`
-                        : dateRange.endDate
-                        ? `Select start date - ${dateRange.endDate.toLocaleDateString()}`
-                        : 'Select Date Range'}
-                    </Button>
+                <Grid container spacing={2}>
+                  <Grid item xs={12} sm={6} md={3}>
+                    <ErrorBoundary>
+                      <LocalizationProvider dateAdapter={AdapterDateFns}>
+                        <DatePicker
+                          label="Start Date"
+                          value={dateRange.startDate}
+                          onChange={(newValue) => handleDateRangeChange('startDate', newValue)}
+                          slotProps={{
+                            textField: {
+                              size: "small",
+                              fullWidth: true,
+                            },
+                          }}
+                        />
+                      </LocalizationProvider>
+                    </ErrorBoundary>
                   </Grid>
                   
-                  <Grid item xs={12} sm={6} md={2}>
+                  <Grid item xs={12} sm={6} md={3}>
+                    <ErrorBoundary>
+                      <LocalizationProvider dateAdapter={AdapterDateFns}>
+                        <DatePicker
+                          label="End Date"
+                          value={dateRange.endDate}
+                          onChange={(newValue) => handleDateRangeChange('endDate', newValue)}
+                          slotProps={{
+                            textField: {
+                              size: "small",
+                              fullWidth: true,
+                            },
+                          }}
+                          minDate={dateRange.startDate || undefined}
+                        />
+                      </LocalizationProvider>
+                    </ErrorBoundary>
+                  </Grid>
+                  
+                  <Grid item xs={12} md={6} display="flex" alignItems="center">
                     <Button
                       variant="outlined"
                       size="small"
@@ -1480,12 +1363,10 @@ export default function Orders() {
                     >
                       Clear Dates
                     </Button>
-                  </Grid>
-                  
-                  <Grid item xs={12} md={6} display="flex" alignItems="center">
+                    
                     {filteredOrders.length > 0 && (
-                      <Typography variant="body2" color="text.secondary">
-                        Showing {filteredOrders.length} orders • Export will include all {filteredOrders.length} filtered orders
+                      <Typography variant="body2" color="text.secondary" sx={{ ml: 2 }}>
+                        Showing {filteredOrders.length} orders
                       </Typography>
                     )}
                   </Grid>
@@ -1518,7 +1399,9 @@ export default function Orders() {
                 </TableHead>
                 <TableBody>
                   {paginatedOrders.map((order) => {
+                    // Check if this is a salon consumption order
                     const isSalonOrder = isSalonConsumptionOrder(order);
+                    // Check if this is an aggregated multi-expert order
                     const isAggregatedOrder = (order as any).aggregated_multi_expert;
                     
                     return (
@@ -1552,7 +1435,7 @@ export default function Orders() {
                       </TableCell>
                       <TableCell>
                         {order.client_name || 'Unknown client'}
-                        {selectedOrder && isSalonConsumptionOrder(selectedOrder) && (
+                        {isSalonOrder && (
                           <Chip 
                             size="small" 
                             label="Salon Use" 
@@ -1603,29 +1486,26 @@ export default function Orders() {
                       </TableCell>
                       <TableCell>
                         {(() => {
+                          // Calculate total from actual payments for accuracy
                           let displayTotal = order.total_amount || order.total || 0;
-                          
-                          if (!isAggregatedOrder && order.payments && order.payments.length > 0) {
+                          if (order.payments && order.payments.length > 0) {
+                            // Calculate total payments excluding membership payments
                             const regularPaymentTotal = order.payments
                               .filter((payment: any) => payment.payment_method !== 'membership')
                               .reduce((sum: number, payment: any) => sum + (payment.amount || 0), 0);
                             
+                            // If there are any regular payments, use that as the display total
+                            // Otherwise, fall back to the original total amount
                             if (regularPaymentTotal > 0) {
                               displayTotal = regularPaymentTotal;
                             }
                           }
-                          
                           return (
                             <Typography 
                               fontWeight="medium" 
                               color={isSalonOrder ? '#FF6B00' : 'text.primary'}
                             >
                               ₹{Math.round(displayTotal)}
-                              {isAggregatedOrder && (
-                                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.7rem' }}>
-                                  (Aggregated Total)
-                                </Typography>
-                              )}
                             </Typography>
                           );
                         })()}
@@ -1753,12 +1633,12 @@ export default function Orders() {
                   </Typography>
                   <Typography variant="body2">
                     <strong>Customer:</strong> {selectedOrder.client_name}
-                    {selectedOrder && isSalonConsumptionOrder(selectedOrder) && (
+                    {isSalonConsumptionOrder(selectedOrder) && (
                       <Chip 
                         size="small" 
-                        label="Salon Use" 
+                        label="Salon Consumption" 
                         color="warning" 
-                        sx={{ ml: 1, backgroundColor: '#FF6B00', color: 'white' }} 
+                        sx={{ ml: 1 }} 
                       />
                     )}
                   </Typography>
@@ -1812,6 +1692,7 @@ export default function Orders() {
                     </Box>
                   )}
                   
+                  {/* Check if this order has membership payments */}
                   {(() => {
                     const hasMembershipPayment = selectedOrder.payments && selectedOrder.payments.some((payment: any) => payment.payment_method === 'membership');
                     const membershipAmount = selectedOrder.payments 
@@ -2178,15 +2059,6 @@ export default function Orders() {
             </Button>
           </DialogActions>
         </Dialog>
-        
-        {/* Date Range Calendar */}
-        <DateRangeCalendar
-          startDate={dateRange.startDate || new Date()}
-          endDate={dateRange.endDate || new Date()}
-          onDateRangeChange={handleDateRangeCalendarChange}
-          onClose={handleCloseDateRangeCalendar}
-          anchorEl={dateRangeAnchorEl}
-        />
       </Box>
     </Container>
   );
