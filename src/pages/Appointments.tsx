@@ -1878,7 +1878,6 @@ export default function Appointments() {
     <Box sx={{ 
       display: 'flex', 
       height: 'calc(100vh)', 
-      width: '100%',
       position: 'absolute',
       top: 0,
       left: 0,
@@ -1888,12 +1887,27 @@ export default function Appointments() {
       flexDirection: 'column',
       margin: 0,
       padding: 0,
-      maxWidth: '100vw',
-      // Override parent Layout padding
+      // Override parent Layout padding and make responsive to sidebar
       marginTop: { xs: '-16px', md: '-24px' },
-      marginLeft: { xs: '-16px', md: '-24px' },
+      marginLeft: { 
+        xs: '-16px', 
+        md: 'calc(-24px + 240px)' // 240px is the default sidebar width
+      },
       marginRight: { xs: '-16px', md: '-24px' },
       marginBottom: { xs: '-16px', md: '-24px' },
+      // Responsive width to account for sidebar (240px expanded, 64px collapsed)
+      width: {
+        xs: '100%',
+        md: 'calc(100% - 240px)' // Default expanded sidebar width
+      },
+      // Smooth transition for sidebar collapse/expand
+      transition: 'all 0.3s ease',
+      // Media query for collapsed sidebar using CSS-in-JS
+      '@media (min-width: 900px)': {
+        // This will be overridden by CSS custom properties when available
+        marginLeft: 'calc(-24px + var(--sidebar-width, 240px))',
+        width: 'calc(100% - var(--sidebar-width, 240px))',
+      }
     }}>
       {/* Header with view toggle */}
       <Box
