@@ -449,16 +449,39 @@ export default function Orders() {
     }
     
     try {
+      console.log('🚀 Starting Orders CSV export:', {
+        filteredOrdersCount: filteredOrders.length,
+        aggregatedOrdersCount: aggregatedOrders.length,
+        firstFilteredOrder: filteredOrders[0]?.id?.substring(0, 8)
+      });
+      
+      // Format orders for export using the utility function
       let formattedOrders = formatOrdersForExport(filteredOrders, aggregatedOrders);
-      formattedOrders = formattedOrders.map((item, index) => ({
-        ...item,
-        id: formatOrderId(filteredOrders[index])
-      }));
+      
+      // Apply the custom order ID formatting that matches the frontend display
+      formattedOrders = formattedOrders.map((item, index) => {
+        const originalOrder = filteredOrders[index];
+        const customOrderId = formatOrderId(originalOrder);
+        
+        console.log(`🔄 Order ${index + 1}: ${originalOrder.id?.substring(0, 8)} -> ${customOrderId}`);
+        
+        return {
+          ...item,
+          id: customOrderId // Override with the custom formatted ID
+        };
+      });
+      
+      console.log('📊 Final formatted orders sample:', {
+        count: formattedOrders.length,
+        firstOrder: formattedOrders[0],
+        headers: Object.keys(orderExportHeaders)
+      });
+      
       exportToCSV(formattedOrders, 'salon-orders-export', orderExportHeaders);
       toast.success(`Successfully exported ${filteredOrders.length} orders to CSV`);
     } catch (error) {
       console.error('Error exporting to CSV:', error);
-      toast.error('Failed to export orders to CSV');
+      toast.error('Failed to export orders to CSV: ' + (error instanceof Error ? error.message : 'Unknown error'));
     }
   }
 
@@ -474,11 +497,31 @@ export default function Orders() {
     }
     
     try {
+      console.log('🚀 Starting Orders PDF export:', {
+        filteredOrdersCount: filteredOrders.length,
+        aggregatedOrdersCount: aggregatedOrders.length,
+        firstFilteredOrder: filteredOrders[0]?.id?.substring(0, 8)
+      });
+      
+      // Format orders for export using the utility function
       let formattedOrdersPDF = formatOrdersForExport(filteredOrders, aggregatedOrders);
-      formattedOrdersPDF = formattedOrdersPDF.map((item, index) => ({
-        ...item,
-        id: formatOrderId(filteredOrders[index])
-      }));
+      
+      // Apply the custom order ID formatting that matches the frontend display
+      formattedOrdersPDF = formattedOrdersPDF.map((item, index) => {
+        const originalOrder = filteredOrders[index];
+        const customOrderId = formatOrderId(originalOrder);
+        
+        return {
+          ...item,
+          id: customOrderId // Override with the custom formatted ID
+        };
+      });
+      
+      console.log('📊 Final formatted orders for PDF:', {
+        count: formattedOrdersPDF.length,
+        firstOrder: formattedOrdersPDF[0]
+      });
+      
       exportToPDF(
         formattedOrdersPDF, 
         'salon-orders-export', 
@@ -488,7 +531,7 @@ export default function Orders() {
       toast.success(`Successfully exported ${filteredOrders.length} orders to PDF`);
     } catch (error) {
       console.error('Error exporting to PDF:', error);
-      toast.error('Failed to export orders to PDF');
+      toast.error('Failed to export orders to PDF: ' + (error instanceof Error ? error.message : 'Unknown error'));
     }
   }
 

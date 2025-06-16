@@ -1229,6 +1229,15 @@ export default function InventoryManager() {
   const handleExport = async () => {
     if (isExporting) return;
     setIsExporting(true);
+    
+    console.log('🚀 Starting Inventory Excel export:', {
+      activeTab,
+      sortedPurchasesCount: sortedPurchases.length,
+      sortedSalesHistoryCount: sortedSalesHistory.length,
+      sortedSalonConsumptionCount: sortedSalonConsumption.length,
+      sortedBalanceStockCount: sortedBalanceStock.length
+    });
+    
     try {
       const workbook = XLSX.utils.book_new();
       
@@ -1254,8 +1263,7 @@ export default function InventoryManager() {
         }
       };
       
-      // Purchase History sheet - All columns as in frontend
-      // Use sortedPurchases instead of filteredPurchases to match the frontend display order
+      // Purchase History sheet - All columns as in frontend with validation
       const purchaseData = sortedPurchases.map((purchase, index) => {
         // Use the stock_after_purchase directly from the purchase record
         const stockAfterPurchaseDisplay = typeof purchase.stock_after_purchase === 'number' 
@@ -1320,7 +1328,7 @@ export default function InventoryManager() {
         const discountPercentage = purchase.discount_on_purchase_percentage ?? 0;
         const purchaseCostPerUnit = mrpExGst * (1 - (discountPercentage / 100));
 
-        return {
+        const rowData = {
           'Serial No': purchase.transaction_type === 'stock_increment' || purchase.transaction_type === 'inventory_update' 
             ? "OPENING BALANCE" 
             : serialNo,
@@ -1353,9 +1361,17 @@ export default function InventoryManager() {
           'Total Amount (Incl. GST Current Stock Rs.)': safeNumber(totalValueMRP + totalCGST + totalSGST + totalIGST),
           'Transaction Type': safeString(purchase.transaction_type || 'purchase')
         };
+        
+        // Log first row for validation
+        if (index === 0) {
+          console.log('📊 Purchase data first row:', rowData);
+        }
+        
+        return rowData;
       });
       
       if (purchaseData.length) {
+        console.log(`✅ Creating Purchase History sheet with ${purchaseData.length} rows`);
         const ws = XLSX.utils.json_to_sheet(purchaseData);
         
         // Apply yellow highlighting to inventory update rows
@@ -1368,6 +1384,7 @@ export default function InventoryManager() {
         
         // Apply yellow background to inventory update rows
         if (inventoryUpdateRows.length > 0) {
+          console.log(`🎨 Applying highlighting to ${inventoryUpdateRows.length} inventory update rows`);
           const range = XLSX.utils.decode_range(ws['!ref'] || 'A1');
           
           for (const rowIndex of inventoryUpdateRows) {
@@ -1387,7 +1404,7 @@ export default function InventoryManager() {
         XLSX.utils.book_append_sheet(workbook, ws, 'Purchase History');
       }
 
-      // Sales History sheet - All columns as in frontend
+      // Sales History sheet - All columns as in frontend with validation
       const salesData = sortedSalesHistory.map((sale, index) => {
         const unitPriceInclGst = sale.unit_price_incl_gst || sale.unit_price_ex_gst * (1 + sale.gst_percentage / 100);
         const discountPercentage = sale.discount_percentage || 0;
@@ -1401,7 +1418,7 @@ export default function InventoryManager() {
         const stockSgst = sale.stock_sgst || (stockTaxableValue * (sale.gst_percentage / 200));
         const stockTotalValue = sale.stock_total_value || (stockTaxableValue + stockCgst + stockSgst);
 
-        return {
+        const rowData = {
           'Serial No': safeString(sale.serial_no),
           'Date': safeDate(sale.date),
           'Product Name': safeString(sale.product_name),
@@ -1429,13 +1446,22 @@ export default function InventoryManager() {
           'Stock Total Value': safeNumber(stockTotalValue),
           'Order ID': safeString(sale.order_id)
         };
+        
+        // Log first row for validation
+        if (index === 0) {
+          console.log('📊 Sales data first row:', rowData);
+        }
+        
+        return rowData;
       });
+      
       if (salesData.length) {
+        console.log(`✅ Creating Sales History sheet with ${salesData.length} rows`);
         const ws = XLSX.utils.json_to_sheet(salesData);
         XLSX.utils.book_append_sheet(workbook, ws, 'Sales History');
       }
 
-      // Salon Consumption sheet - All columns as in frontend
+      // Salon Consumption sheet - All columns as in frontend with validation
       const salonData = sortedSalonConsumption.map((item, index) => {
         const taxableValueCurrentStock = Number(item.current_stock) * Number(item.purchase_cost_per_unit_ex_gst || 0);
         const cgstCurrentStock = taxableValueCurrentStock * (Number(item.purchase_gst_percentage || 0) / 200);
@@ -1443,7 +1469,7 @@ export default function InventoryManager() {
         const igstCurrentStock = item.purchase_igst > 0 ? taxableValueCurrentStock * (Number(item.purchase_gst_percentage || 0) / 100) : 0;
         const totalValueCurrentStock = taxableValueCurrentStock + cgstCurrentStock + sgstCurrentStock + igstCurrentStock;
 
-        return {
+        const rowData = {
           'Serial No': safeString((item as any).serial_no || `SALON-${sortedSalonConsumption.length - index}`),
           'Date': safeDate(item.date),
           'Voucher No': safeString(item.requisition_voucher_no),
@@ -1466,37 +1492,71 @@ export default function InventoryManager() {
           'SGST (Current Stock Rs.)': safeNumber(sgstCurrentStock),
           'Total Value (Current Stock Rs.)': safeNumber(totalValueCurrentStock)
         };
+        
+        // Log first row for validation
+        if (index === 0) {
+          console.log('📊 Salon consumption data first row:', rowData);
+        }
+        
+        return rowData;
       });
+      
       if (salonData.length) {
+        console.log(`✅ Creating Salon Consumption sheet with ${salonData.length} rows`);
         const ws = XLSX.utils.json_to_sheet(salonData);
         XLSX.utils.book_append_sheet(workbook, ws, 'Salon Consumption');
       }
 
-      // Balance Stock sheet - All columns as in frontend
-      const balanceData = sortedBalanceStock.map((item, index) => ({
-        'Serial No': safeString(item.serial_no || `STOCK-${sortedBalanceStock.length - index}`),
-        'Date': safeDate(item.date),
-        'Product Name': safeString(item.product_name),
-        'HSN Code': safeString(item.hsn_code),
-        'Units': safeString(item.units),
-        'Change Type': item.change_type === 'addition' ? 'Addition' : 'Reduction',
-        'Source': safeString(item.source),
-        'Reference ID': safeString(item.reference_id),
-        'Quantity Change': item.change_type === 'addition'
-          ? safeNumber(Math.abs(Number(item.quantity_change)), 0)
-          : safeNumber(-Math.abs(Number(item.quantity_change)), 0),
-        'Quantity After': safeNumber(item.quantity_after_change, 0)
-      }));
+      // Balance Stock sheet - All columns as in frontend with validation
+      const balanceData = sortedBalanceStock.map((item, index) => {
+        const rowData = {
+          'Serial No': safeString(item.serial_no || `STOCK-${sortedBalanceStock.length - index}`),
+          'Date': safeDate(item.date),
+          'Product Name': safeString(item.product_name),
+          'HSN Code': safeString(item.hsn_code),
+          'Units': safeString(item.units),
+          'Change Type': item.change_type === 'addition' ? 'Addition' : 'Reduction',
+          'Source': safeString(item.source),
+          'Reference ID': safeString(item.reference_id),
+          'Quantity Change': item.change_type === 'addition'
+            ? safeNumber(Math.abs(Number(item.quantity_change)), 0)
+            : safeNumber(-Math.abs(Number(item.quantity_change)), 0),
+          'Quantity After': safeNumber(item.quantity_after_change, 0)
+        };
+        
+        // Log first row for validation
+        if (index === 0) {
+          console.log('📊 Balance stock data first row:', rowData);
+        }
+        
+        return rowData;
+      });
+      
       if (balanceData.length) {
+        console.log(`✅ Creating Balance Stock sheet with ${balanceData.length} rows`);
         const ws = XLSX.utils.json_to_sheet(balanceData);
         XLSX.utils.book_append_sheet(workbook, ws, 'Balance Stock');
       }
 
       // Generate and save workbook
+      console.log('📁 Generating Excel workbook...');
       const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
       const blob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;charset=UTF-8' });
-      saveAs(blob, `inventory_export_${new Date().toISOString().split('T')[0]}.xlsx`);
-      toast.success('Exported all tables successfully with all columns!');
+      
+      const fileName = `inventory_export_${new Date().toISOString().split('T')[0]}.xlsx`;
+      saveAs(blob, fileName);
+      
+      console.log('✅ Excel export completed successfully:', {
+        fileName,
+        sheetsCreated: [
+          purchaseData.length > 0 ? 'Purchase History' : null,
+          salesData.length > 0 ? 'Sales History' : null,
+          salonData.length > 0 ? 'Salon Consumption' : null,
+          balanceData.length > 0 ? 'Balance Stock' : null
+        ].filter(Boolean)
+      });
+      
+      toast.success(`Exported all tables successfully with all columns! File: ${fileName}`);
     } catch (error) {
       console.error('Export error:', error);
       toast.error(`Export failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
