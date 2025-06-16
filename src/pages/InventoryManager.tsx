@@ -60,6 +60,7 @@ import { toast } from 'react-hot-toast';
 import { calculatePriceExcludingGST, calculateGSTAmount } from '../utils/gstCalculations';
 import { SelectChangeEvent } from '@mui/material';
 import { v4 as uuidv4 } from 'uuid';
+import DateRangeCalendar from '../components/dashboard/DateRangeCalendar';
 
 const StyledTableCell = styled(TableCell)(({ theme }) => ({
   fontWeight: 'bold',
@@ -296,14 +297,17 @@ export default function InventoryManager() {
   
   // Date filter state - simplified for purchase history only
   const [dateFilter, setDateFilter] = useState<{
-    startDate: string;
-    endDate: string;
+    startDate: Date;
+    endDate: Date;
     isActive: boolean;
   }>({
-    startDate: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0], // First day of current month
-    endDate: new Date().toISOString().split('T')[0], // Today
+    startDate: new Date(new Date().getFullYear(), new Date().getMonth(), 1), // First day of current month
+    endDate: new Date(), // Today
     isActive: false
   });
+
+  // State for managing date range calendar
+  const [dateRangeAnchorEl, setDateRangeAnchorEl] = useState<HTMLElement | null>(null);
 
   // Add this after the existing state declarations around line 240
   // State for managing multiple product additions in current session
@@ -743,7 +747,7 @@ export default function InventoryManager() {
       return data;
     }
     
-    // Parse date strings into Date objects for comparison
+    // Clone the dates and set hours for proper comparison
     const startDate = new Date(dateFilter.startDate);
     startDate.setHours(0, 0, 0, 0); // Start of day
     
@@ -2043,14 +2047,25 @@ export default function InventoryManager() {
   };
   
   // Function to handle date filter changes
-  const handleDateFilterChange = (field: 'startDate' | 'endDate', value: string) => {
+  const handleDateFilterChange = (startDate: Date, endDate: Date) => {
     setDateFilter(prev => ({
       ...prev,
-      [field]: value
+      startDate,
+      endDate
     }));
     
     // Reset to page 1 when changing dates
     setPage(0);
+  };
+  
+  // Function to handle opening the date range calendar
+  const handleOpenDateRangeCalendar = (event: React.MouseEvent<HTMLElement>) => {
+    setDateRangeAnchorEl(event.currentTarget);
+  };
+  
+  // Function to handle closing the date range calendar
+  const handleCloseDateRangeCalendar = () => {
+    setDateRangeAnchorEl(null);
   };
   
   // Fix the calculatePriceBreakdown function to match expected property names
@@ -2598,39 +2613,37 @@ export default function InventoryManager() {
           </Typography>
         </Box>
         
-        <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
-          <TextField
-            label="Start Date"
-            type="date"
-            size="small"
-            value={dateFilter.startDate}
-            onChange={(e) => handleDateFilterChange('startDate', e.target.value)}
-            InputLabelProps={{ shrink: true }}
-            disabled={!dateFilter.isActive}
-            sx={{ minWidth: 170 }}
-          />
-          
-          <TextField
-            label="End Date"
-            type="date"
-            size="small"
-            value={dateFilter.endDate}
-            onChange={(e) => handleDateFilterChange('endDate', e.target.value)}
-            InputLabelProps={{ shrink: true }}
-            disabled={!dateFilter.isActive}
-            sx={{ minWidth: 170 }}
-          />
-          
-          <Button
-            variant={dateFilter.isActive ? "contained" : "outlined"}
-            color={dateFilter.isActive ? "success" : "primary"}
-            onClick={toggleDateFilter}
-            startIcon={dateFilter.isActive ? <FilterOffIcon /> : <FilterIcon />}
-            size="small"
-          >
-            {dateFilter.isActive ? 'Disable Filter' : 'Enable Filter'}
-          </Button>
-        </Box>
+                  <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
+            <Button
+              variant="outlined"
+              color="primary"
+              onClick={handleOpenDateRangeCalendar}
+              startIcon={<DateRangeIcon />}
+              size="small"
+            >
+              {dateFilter.isActive 
+                ? `${dateFilter.startDate.toLocaleDateString()} - ${dateFilter.endDate.toLocaleDateString()}` 
+                : 'Select Date Range'}
+            </Button>
+            
+            <Button
+              variant={dateFilter.isActive ? "contained" : "outlined"}
+              color={dateFilter.isActive ? "success" : "primary"}
+              onClick={toggleDateFilter}
+              startIcon={dateFilter.isActive ? <FilterOffIcon /> : <FilterIcon />}
+              size="small"
+            >
+              {dateFilter.isActive ? 'Disable Filter' : 'Enable Filter'}
+            </Button>
+            
+            <DateRangeCalendar
+              startDate={dateFilter.startDate}
+              endDate={dateFilter.endDate}
+              onDateRangeChange={handleDateFilterChange}
+              onClose={handleCloseDateRangeCalendar}
+              anchorEl={dateRangeAnchorEl}
+            />
+          </Box>
       </Paper>
 
       <Tabs 

@@ -74,6 +74,7 @@ import { DatePicker } from '@mui/x-date-pickers/DatePicker'
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider'
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns'
 import { toast } from 'react-toastify'
+import DateRangeCalendar from '../components/dashboard/DateRangeCalendar'
 import ErrorBoundary from '../components/ErrorBoundary'
 import { useNavigate } from 'react-router-dom'
 import { Order as BaseOrder } from '../models/orderTypes'
@@ -139,6 +140,10 @@ export default function Orders() {
     endDate: null,
   })
   const [isSalonPurchaseFilter, setIsSalonPurchaseFilter] = useState<string>('all')
+  
+  // Date range calendar state
+  const [dateRangeAnchorEl, setDateRangeAnchorEl] = useState<HTMLElement | null>(null)
+  const [isDateRangeOpen, setIsDateRangeOpen] = useState(false)
   
   // Delete confirmation dialog
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
@@ -433,30 +438,58 @@ export default function Orders() {
   }
 
   const handleExportCSV = () => {
-    if (!aggregatedOrders || aggregatedOrders.length === 0) return;
+    if (!aggregatedOrders || aggregatedOrders.length === 0) {
+      toast.warning('No orders available to export');
+      return;
+    }
     
-    let formattedOrders = formatOrdersForExport(filteredOrders, aggregatedOrders);
-    formattedOrders = formattedOrders.map((item, index) => ({
-      ...item,
-      id: formatOrderId(filteredOrders[index])
-    }));
-    exportToCSV(formattedOrders, 'salon-orders-export', orderExportHeaders);
+    if (filteredOrders.length === 0) {
+      toast.warning('No orders match the current filters');
+      return;
+    }
+    
+    try {
+      let formattedOrders = formatOrdersForExport(filteredOrders, aggregatedOrders);
+      formattedOrders = formattedOrders.map((item, index) => ({
+        ...item,
+        id: formatOrderId(filteredOrders[index])
+      }));
+      exportToCSV(formattedOrders, 'salon-orders-export', orderExportHeaders);
+      toast.success(`Successfully exported ${filteredOrders.length} orders to CSV`);
+    } catch (error) {
+      console.error('Error exporting to CSV:', error);
+      toast.error('Failed to export orders to CSV');
+    }
   }
 
   const handleExportPDF = () => {
-    if (!aggregatedOrders || aggregatedOrders.length === 0) return;
+    if (!aggregatedOrders || aggregatedOrders.length === 0) {
+      toast.warning('No orders available to export');
+      return;
+    }
     
-    let formattedOrdersPDF = formatOrdersForExport(filteredOrders, aggregatedOrders);
-    formattedOrdersPDF = formattedOrdersPDF.map((item, index) => ({
-      ...item,
-      id: formatOrderId(filteredOrders[index])
-    }));
-    exportToPDF(
-      formattedOrdersPDF, 
-      'salon-orders-export', 
-      orderExportHeaders, 
-      'Salon Orders Report'
-    );
+    if (filteredOrders.length === 0) {
+      toast.warning('No orders match the current filters');
+      return;
+    }
+    
+    try {
+      let formattedOrdersPDF = formatOrdersForExport(filteredOrders, aggregatedOrders);
+      formattedOrdersPDF = formattedOrdersPDF.map((item, index) => ({
+        ...item,
+        id: formatOrderId(filteredOrders[index])
+      }));
+      exportToPDF(
+        formattedOrdersPDF, 
+        'salon-orders-export', 
+        orderExportHeaders, 
+        'Salon Orders Report'
+      );
+      toast.success(`Successfully exported ${filteredOrders.length} orders to PDF`);
+    } catch (error) {
+      console.error('Error exporting to PDF:', error);
+      toast.error('Failed to export orders to PDF');
+    }
   }
 
   // Determine purchase type for an order
@@ -579,6 +612,24 @@ export default function Orders() {
     });
   };
   
+  // Handle date range calendar
+  const handleDateRangeCalendarChange = (startDate: Date, endDate: Date) => {
+    setDateRange({
+      startDate,
+      endDate,
+    });
+  };
+  
+  const handleOpenDateRangeCalendar = (event: React.MouseEvent<HTMLElement>) => {
+    setDateRangeAnchorEl(event.currentTarget);
+    setIsDateRangeOpen(true);
+  };
+  
+  const handleCloseDateRangeCalendar = () => {
+    setIsDateRangeOpen(false);
+    setDateRangeAnchorEl(null);
+  };
+  
   // Handle pagination change
   const handleChangePage = (event: unknown, newPage: number) => {
     setPage(newPage);
@@ -618,7 +669,8 @@ export default function Orders() {
       const matchesPayment = 
         paymentFilter === 'all' || 
         order.payment_method === paymentFilter ||
-        (paymentFilter === 'split' && Array.isArray(order.payments) && order.payments.length > 0);
+        (paymentFilter === 'split' && (order.payment_method === 'split' || (Array.isArray(order.payments) && order.payments.length > 0))) ||
+        (paymentFilter === 'membership' && (order.payment_method === 'membership' || (Array.isArray(order.payments) && order.payments.some((p: any) => p.payment_method === 'membership'))));
       
       // Status filter  
       const matchesStatus = statusFilter === 'all' || order.status === statusFilter;
@@ -897,7 +949,10 @@ export default function Orders() {
     // Check if this is an aggregated multi-expert order
     const isAggregatedOrder = (order as any).aggregated_multi_expert;
     
-    if (order.payments && order.payments.length > 0) {
+    // Check if this is a split payment order (either has payments array or payment_method is 'split')
+    const isSplitPayment = (order.payments && order.payments.length > 0) || order.payment_method === 'split';
+    
+    if (isSplitPayment && order.payments && order.payments.length > 0) {
       // Group payments by method and sum up the amounts
       const paymentSummary: Record<string, number> = {};
       order.payments.forEach(payment => {
@@ -910,13 +965,23 @@ export default function Orders() {
           {Object.entries(paymentSummary).map(([method, amount], index) => {
             // Show the actual payment amount, not the full order total
             const displayAmount = amount;
+            const isMembership = method === 'membership';
             
             return (
               <Box key={index} sx={{ mb: 0.5 }}>
                 <Chip
                   size="small"
                   label={`${PAYMENT_METHOD_LABELS[method as PaymentMethod] || method}: ${formatCurrency(displayAmount)}`}
-                  sx={{ mr: 0.5 }}
+                  color={isMembership ? 'secondary' : 'default'}
+                  variant={isMembership ? 'filled' : 'outlined'}
+                  sx={{ 
+                    mr: 0.5,
+                    ...(isMembership && {
+                      backgroundColor: 'secondary.main',
+                      color: 'secondary.contrastText',
+                      fontWeight: 'medium'
+                    })
+                  }}
                 />
               </Box>
             );
@@ -935,17 +1000,43 @@ export default function Orders() {
       );
     }
     
+    // For orders with payment_method as 'split' but no payments array, show split indicator
+    if (order.payment_method === 'split') {
+      return (
+        <Box>
+          <Chip
+            size="small"
+            label="Split Payment"
+            color="info"
+            variant="outlined"
+            sx={{ mr: 0.5 }}
+          />
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+            Total: {formatCurrency(order.total || order.total_amount || 0)}
+          </Typography>
+        </Box>
+      );
+    }
+    
     // For single payment orders, show payment method with total amount
     const paymentMethod = PAYMENT_METHOD_LABELS[order.payment_method as PaymentMethod] || order.payment_method || 'Unknown';
     const totalAmount = order.total || order.total_amount || 0;
+    const isMembership = order.payment_method === 'membership';
     
     return (
       <Box>
         <Chip
           size="small"
           label={`${paymentMethod}: ${formatCurrency(totalAmount)}`}
-          color="primary"
-          variant="outlined"
+          color={isMembership ? 'secondary' : 'primary'}
+          variant={isMembership ? 'filled' : 'outlined'}
+          sx={{
+            ...(isMembership && {
+              backgroundColor: 'secondary.main',
+              color: 'secondary.contrastText',
+              fontWeight: 'medium'
+            })
+          }}
         />
                  {(order.pending_amount || 0) > 0 && order.status !== 'completed' && (
            <Box sx={{ mt: 0.5 }}>
@@ -1000,7 +1091,31 @@ export default function Orders() {
       <Box sx={{ mb: 4 }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
           <Typography variant="h1">Orders</Typography>
-          <Box sx={{ display: 'flex', alignItems: 'center' }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Tooltip title={`Export ${filteredOrders.length} filtered orders to CSV. Includes: Order details, customer & stylist info, service breakdown, payment details, tax calculations (CGST/SGST), appointment info, multi-expert indicators, and salon consumption data.`}>
+              <Button 
+                variant="outlined" 
+                color="primary"
+                startIcon={<CsvIcon />}
+                onClick={handleExportCSV}
+                size="small"
+                disabled={!orders || orders.length === 0}
+              >
+                Export CSV
+              </Button>
+            </Tooltip>
+            <Tooltip title={`Export ${filteredOrders.length} filtered orders to PDF. Includes: Order details, customer & stylist info, service breakdown, payment details, tax calculations (CGST/SGST), appointment info, multi-expert indicators, and salon consumption data.`}>
+              <Button 
+                variant="outlined" 
+                color="primary"
+                startIcon={<PdfIcon />}
+                onClick={handleExportPDF}
+                size="small"
+                disabled={!orders || orders.length === 0}
+              >
+                Export PDF
+              </Button>
+            </Tooltip>
             <Button 
               variant="contained" 
               color="error"
@@ -1178,6 +1293,16 @@ export default function Orders() {
           </Tabs>
         </Paper>
         
+        {/* Export Info Box */}
+        {orders && orders.length > 0 && filteredOrders.length > 0 && (
+          <Box sx={{ mb: 2, p: 2, bgcolor: 'success.lighter', borderRadius: 1, border: '1px solid', borderColor: 'success.main' }}>
+            <Typography variant="body2" color="success.dark" sx={{ display: 'flex', alignItems: 'center' }}>
+              <FileDownloadIcon fontSize="small" sx={{ mr: 1 }} />
+              <strong>Ready to Export:</strong> {filteredOrders.length} orders available for export with comprehensive data including customer details, services, payments, tax breakdown (CGST/SGST), appointment information, and salon consumption status.
+            </Typography>
+          </Box>
+        )}
+
         {/* Search and filter controls */}
         {orders && orders.length > 0 && (
           <Box mb={3}>
@@ -1217,6 +1342,7 @@ export default function Orders() {
                             {PAYMENT_METHOD_LABELS[method]}
                           </MenuItem>
                         ))}
+                        <MenuItem value="split">Split Payment</MenuItem>
                       </Select>
                     </FormControl>
                   </Grid>
@@ -1276,45 +1402,32 @@ export default function Orders() {
               
               {/* Date Range Filter */}
               <Grid item xs={12}>
-                <Grid container spacing={2}>
-                  <Grid item xs={12} sm={6} md={3}>
-                    <ErrorBoundary>
-                      <LocalizationProvider dateAdapter={AdapterDateFns}>
-                        <DatePicker
-                          label="Start Date"
-                          value={dateRange.startDate}
-                          onChange={(newValue) => handleDateRangeChange('startDate', newValue)}
-                          slotProps={{
-                            textField: {
-                              size: "small",
-                              fullWidth: true,
-                            },
-                          }}
-                        />
-                      </LocalizationProvider>
-                    </ErrorBoundary>
+                <Grid container spacing={2} alignItems="center">
+                  <Grid item xs={12} sm={6} md={4}>
+                    <Button
+                      variant="outlined"
+                      size="small"
+                      fullWidth
+                      startIcon={<DateRangeIcon />}
+                      onClick={handleOpenDateRangeCalendar}
+                      sx={{
+                        justifyContent: 'flex-start',
+                        textTransform: 'none',
+                        color: dateRange.startDate || dateRange.endDate ? 'primary.main' : 'text.secondary',
+                        borderColor: dateRange.startDate || dateRange.endDate ? 'primary.main' : 'divider',
+                      }}
+                    >
+                      {dateRange.startDate && dateRange.endDate
+                        ? `${dateRange.startDate.toLocaleDateString()} - ${dateRange.endDate.toLocaleDateString()}`
+                        : dateRange.startDate
+                        ? `${dateRange.startDate.toLocaleDateString()} - Select end date`
+                        : dateRange.endDate
+                        ? `Select start date - ${dateRange.endDate.toLocaleDateString()}`
+                        : 'Select Date Range'}
+                    </Button>
                   </Grid>
                   
-                  <Grid item xs={12} sm={6} md={3}>
-                    <ErrorBoundary>
-                      <LocalizationProvider dateAdapter={AdapterDateFns}>
-                        <DatePicker
-                          label="End Date"
-                          value={dateRange.endDate}
-                          onChange={(newValue) => handleDateRangeChange('endDate', newValue)}
-                          slotProps={{
-                            textField: {
-                              size: "small",
-                              fullWidth: true,
-                            },
-                          }}
-                          minDate={dateRange.startDate || undefined}
-                        />
-                      </LocalizationProvider>
-                    </ErrorBoundary>
-                  </Grid>
-                  
-                  <Grid item xs={12} md={6} display="flex" alignItems="center">
+                  <Grid item xs={12} sm={6} md={2}>
                     <Button
                       variant="outlined"
                       size="small"
@@ -1323,10 +1436,12 @@ export default function Orders() {
                     >
                       Clear Dates
                     </Button>
-                    
+                  </Grid>
+                  
+                  <Grid item xs={12} md={6} display="flex" alignItems="center">
                     {filteredOrders.length > 0 && (
-                      <Typography variant="body2" color="text.secondary" sx={{ ml: 2 }}>
-                        Showing {filteredOrders.length} orders
+                      <Typography variant="body2" color="text.secondary">
+                        Showing {filteredOrders.length} orders • Export will include all {filteredOrders.length} filtered orders
                       </Typography>
                     )}
                   </Grid>
@@ -1917,6 +2032,15 @@ export default function Orders() {
             </Button>
           </DialogActions>
         </Dialog>
+        
+        {/* Date Range Calendar */}
+        <DateRangeCalendar
+          startDate={dateRange.startDate || new Date()}
+          endDate={dateRange.endDate || new Date()}
+          onDateRangeChange={handleDateRangeCalendarChange}
+          onClose={handleCloseDateRangeCalendar}
+          anchorEl={dateRangeAnchorEl}
+        />
       </Box>
     </Container>
   );
