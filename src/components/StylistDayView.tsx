@@ -2805,7 +2805,29 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
       {/* Edit Appointment Drawer */}
       <Drawer anchor="right" variant="persistent" open={editDialogOpen} onClose={handleEditDialogClose}
               ModalProps={{ keepMounted: true }}
-              PaperProps={{ sx: { width: 500, display: 'flex', flexDirection: 'column' } }}>
+              PaperProps={{ 
+                sx: { 
+                  width: { xs: '100vw', sm: '90vw', md: 500 }, // Responsive width
+                  maxWidth: 500,
+                  display: 'flex', 
+                  flexDirection: 'column',
+                  height: '100vh',
+                  top: 0,
+                  right: { xs: 0, sm: 16, md: 16 }, // Add margin from right edge
+                  position: 'fixed',
+                  margin: { xs: 0, sm: '0 16px 0 0', md: '0 16px 0 0' }, // Add margin on larger screens
+                  boxShadow: 3, // Add shadow for better visual separation
+                  zIndex: 1300, // Ensure it stays above other elements
+                  // Match the calendar's visual structure
+                  '& > *': {
+                    flex: 'none' // Prevent flex children from stretching
+                  },
+                  '& > *:nth-of-type(2)': {
+                    flex: 1, // Only the content area should flex
+                    overflow: 'auto'
+                  }
+                } 
+              }}>
         
         {/* Header */}
         <Box sx={{ p: 3, pb: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid', borderColor: 'divider' }}>

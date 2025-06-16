@@ -1880,7 +1880,7 @@ export default function Appointments() {
       height: 'calc(100vh)', 
       position: 'absolute',
       top: 0,
-      left: 0,
+      left: 25,
       right: 0,
       bottom: 0,
       overflow: 'hidden',
