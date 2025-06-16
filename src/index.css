@@ -1,8 +1,8 @@
-@import "tailwindcss/preflight";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
 @custom-variant dark (&:is(.dark *));
-
-@tailwind utilities;
 
 :root {
   --primary-color: #6B8E23;
