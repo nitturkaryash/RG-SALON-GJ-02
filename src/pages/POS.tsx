@@ -2251,8 +2251,8 @@ export default function POS() {
 					id: currentAppointmentId, 
 					status: 'completed', 
 					paid: true, 
-					checked_in: false, // Auto check-out when completing order
-					clientDetails: [] 
+					checked_in: false // Auto check-out when completing order
+					// IMPORTANT: Don't pass clientDetails here to preserve stylist associations
 				});
 				console.log(`Appointment ${currentAppointmentId} marked as completed, paid, and checked out.`);
 			} catch (updateError) {

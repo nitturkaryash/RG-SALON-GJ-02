@@ -401,7 +401,7 @@ export function useAppointments() {
           { data: appointmentStylistsData, error: astError }
         ] = await Promise.all([
           supabase.from('appointment_clients').select('appointment_id, client_id').in('appointment_id', appointmentIds),
-          supabase.from('appointment_services').select('appointment_id, client_id, service_id').in('appointment_id', appointmentIds),
+          supabase.from('appointment_services').select('appointment_id, client_id, service_id, stylist_id').in('appointment_id', appointmentIds),
           supabase.from('appointment_stylists').select('appointment_id, client_id, stylist_id').in('appointment_id', appointmentIds)
         ]);
 
@@ -455,10 +455,22 @@ export function useAppointments() {
               .filter((service): service is Service => !!service); // Type guard to filter out nulls and assert type
 
             // Find stylists for this specific client in this appointment
-            const stylistsForThisClient = (appointmentStylistsData || [])
+            // Combine stylists from both appointment_services (new way) and appointment_stylists (old way)
+            const stylistsFromServices = (appointmentServicesData || [])
+              .filter(as => as.appointment_id === appointment.id && as.client_id === link.client_id && as.stylist_id)
+              .map(as => stylistsMap.get(as.stylist_id))
+              .filter((stylist): stylist is Pick<Stylist, 'id' | 'name'> => !!stylist);
+              
+            const stylistsFromStylistsTable = (appointmentStylistsData || [])
               .filter(ast => ast.appointment_id === appointment.id && ast.client_id === link.client_id)
               .map(ast => stylistsMap.get(ast.stylist_id))
-              .filter((stylist): stylist is Pick<Stylist, 'id' | 'name'> => !!stylist); // Type guard
+              .filter((stylist): stylist is Pick<Stylist, 'id' | 'name'> => !!stylist);
+
+            // Combine and deduplicate stylists by ID
+            const allStylists = [...stylistsFromServices, ...stylistsFromStylistsTable];
+            const stylistsForThisClient = Array.from(
+              new Map(allStylists.map(s => [s.id, s])).values()
+            );
 
             return {
               // Spread the client details (id, full_name, phone, etc.)
@@ -580,11 +592,26 @@ export function useAppointments() {
           console.log(` -> Linked client ${clientId}`);
 
           // 2b: Insert into appointment_services (Appt+Client <-> Service link)
-          const serviceInserts = serviceIds.map(serviceId => ({
-            appointment_id: newAppointmentId,
-            client_id: clientId, // Include client_id
-            service_id: serviceId
-          }));
+          // For multi-expert appointments, we need to create appointment_services records
+          // for each expert assigned to each service
+          const serviceInserts: Array<{
+            appointment_id: string;
+            client_id: string;
+            service_id: string;
+            stylist_id: string;
+          }> = [];
+          
+          // Create service-expert combinations
+          serviceIds.forEach(serviceId => {
+            stylistIds.forEach(stylistId => {
+              serviceInserts.push({
+                appointment_id: newAppointmentId,
+                client_id: clientId,
+                service_id: serviceId,
+                stylist_id: stylistId
+              });
+            });
+          });
           if (serviceInserts.length > 0) {
             console.log(` -> Linking ${serviceInserts.length} services for client ${clientId}`);
             const { error: asError } = await supabase.from('appointment_services').insert(serviceInserts);
@@ -805,7 +832,24 @@ export function useAppointments() {
             console.log(`    - Linked client ${clientId}`);
 
             // 3b: Insert into appointment_services
-            const serviceInserts = serviceIds.map(serviceId => ({ appointment_id: appointmentId, client_id: clientId, service_id: serviceId }));
+            // For multi-expert appointments, create service-expert combinations
+            const serviceInserts: Array<{
+              appointment_id: string;
+              client_id: string;
+              service_id: string;
+              stylist_id: string;
+            }> = [];
+            
+            serviceIds.forEach(serviceId => {
+              stylistIds.forEach(stylistId => {
+                serviceInserts.push({
+                  appointment_id: appointmentId,
+                  client_id: clientId,
+                  service_id: serviceId,
+                  stylist_id: stylistId
+                });
+              });
+            });
             if (serviceInserts.length > 0) {
               const { error: asError } = await supabase.from('appointment_services').insert(serviceInserts);
               // Handle potential duplicate key error if constraints were not properly handled by delete
