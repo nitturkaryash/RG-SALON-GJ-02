@@ -79,8 +79,6 @@ import { Order as BaseOrder } from '../models/orderTypes'
 import { useServiceCollections } from '../hooks/useServiceCollections'
 import { supabase, TABLES } from '../utils/supabase/supabaseClient'
 import { useQueryClient } from '@tanstack/react-query'
-import jsPDF from 'jspdf'
-import 'jspdf-autotable'
 
 // Extended Order interface that encapsulates all the properties we need
 type ExtendedOrder = {
@@ -646,197 +644,190 @@ export default function Orders() {
     exportToCSV(formattedOrders, 'salon-orders-export', headers);
   }
 
-  // Custom PDF export function using jsPDF
-  const generatePDFReport = (orders: ExtendedOrder[]) => {
-    const doc = new jsPDF('landscape', 'mm', 'a4'); // Use landscape for better table fit
+  const handleExportPDF = () => {
+    if (!aggregatedOrders || aggregatedOrders.length === 0) return;
     
-    // Add title
-    doc.setFontSize(18);
-    doc.setFont('helvetica', 'bold');
-    doc.text('Salon Orders Report', doc.internal.pageSize.getWidth() / 2, 20, { align: 'center' });
-    
-    // Add metadata
-    doc.setFontSize(10);
-    doc.setFont('helvetica', 'normal');
-    doc.text(`Generated on: ${new Date().toLocaleString()}`, 20, 30);
-    doc.text(`Period: ${startDate.toLocaleDateString()} - ${endDate.toLocaleDateString()}`, 20, 35);
-    doc.text(`Total Records: ${orders.length}`, 20, 40);
-
-    // Add summary statistics
-    doc.setFontSize(12);
-    doc.setFont('helvetica', 'bold');
-    doc.text('Summary Statistics:', 20, 50);
-    
-    doc.setFontSize(9);
-    doc.setFont('helvetica', 'normal');
-    const summaryData = [
-      ['Total Orders', orderStats.total.toString()],
-      ['Completed Orders', orderStats.completed.toString()],
-      ['Pending Orders', orderStats.pending.toString()],
-      ['Salon Consumption Orders', orderStats.salonPurchases.toString()],
-      ['Service Orders', orderStats.services.toString()],
-      ['Product Orders', orderStats.products.toString()],
-      ['Total Revenue', formatCurrency(orderStats.totalRevenue)]
-    ];
-
-    // Create summary table
-    (doc as any).autoTable({
-      startY: 55,
-      head: [['Metric', 'Value']],
-      body: summaryData,
-      theme: 'grid',
-      styles: { fontSize: 8, cellPadding: 2 },
-      headStyles: { fillColor: [66, 165, 245], textColor: 255 },
-      columnStyles: {
-        0: { cellWidth: 40 },
-        1: { cellWidth: 25, halign: 'right' }
-      },
-      margin: { left: 20, right: 20 }
-    });
-
-    // Prepare orders data for the table
-    const ordersData = orders.map((order) => {
-      const isAggregatedOrder = (order as any).aggregated_multi_expert;
-      
-      // Calculate display total
-      let displayTotal = order.total_amount || order.total || 0;
-      if (isAggregatedOrder && order.services && order.services.length > 0) {
-        const serviceAggregation: Record<string, { total_price: number }> = {};
+    // Use exactly the same format as CSV export
+    const formattedOrdersPDF = filteredOrders.map((order) => ({
+      'Order ID': formatOrderId(order),
+      'Date': order.created_at ? new Date(order.created_at).toLocaleString() : 'Unknown date',
+      'Customer': order.client_name || 'Unknown client',
+      'Stylist': order.stylist_name || 'No stylist',
+      'Services/Products': (() => {
+        if (!order.services || order.services.length === 0) return 'No items';
         
-        order.services.forEach((service: any) => {
-          const serviceName = service.service_name || service.item_name || service.name;
-          const quantity = service.quantity || 1;
-          const price = service.price || 0;
-
-          if (!serviceAggregation[serviceName]) {
-            serviceAggregation[serviceName] = { total_price: 0 };
-          }
-          serviceAggregation[serviceName].total_price += (price * quantity);
-        });
-
-        const correctSubtotal = Object.values(serviceAggregation).reduce((sum, item) => sum + item.total_price, 0);
-        const correctTax = correctSubtotal * 0.18;
-        displayTotal = correctSubtotal + correctTax - (order.discount || 0);
-      }
-
-      // Calculate items count
-      let itemsCount = '0';
-      if (order.services && order.services.length > 0) {
-        if (isAggregatedOrder) {
+        // For multi-expert orders, aggregate services by name to get correct details
+        if ((order as any).aggregated_multi_expert) {
+          const serviceAggregation: Record<string, { quantity: number; type: string; price: number }> = {};
+          
+          order.services.forEach((service: any) => {
+            const serviceName = service.service_name || service.item_name || service.name;
+            const quantity = service.quantity || 1;
+            const price = service.price || 0;
+            const type = service.type || 'service';
+            
+            if (!serviceAggregation[serviceName]) {
+              serviceAggregation[serviceName] = { 
+                quantity: quantity, 
+                type: type,
+                price: price 
+              };
+            }
+          });
+          
+          return Object.entries(serviceAggregation)
+            .map(([name, details]) => `${name} (${details.type}) - Qty: ${details.quantity}`)
+            .join('; ');
+        }
+        
+        // For regular orders
+        return order.services
+          .map((service: any) => {
+            const name = service.service_name || service.item_name || service.name;
+            const quantity = service.quantity || 1;
+            const type = service.type || 'service';
+            return `${name} (${type}) - Qty: ${quantity}`;
+          })
+          .join('; ');
+      })(),
+      'Items Count': (() => {
+        if (!order.services || order.services.length === 0) return '0';
+        
+        if ((order as any).aggregated_multi_expert) {
           const serviceAggregation: Record<string, boolean> = {};
           order.services.forEach((service: any) => {
             const serviceName = service.service_name || service.item_name || service.name;
             serviceAggregation[serviceName] = true;
           });
-          itemsCount = Object.keys(serviceAggregation).length.toString();
-        } else {
-          itemsCount = order.services.length.toString();
+          return Object.keys(serviceAggregation).length.toString();
         }
-      }
-
-      // Determine type
-      const isSalonConsumption = isSalonConsumptionOrder(order);
-      let orderType = 'Unknown';
-      if (isSalonConsumption) {
-        orderType = 'Salon Consumption';
-      } else {
+        
+        return order.services.length.toString();
+      })(),
+      'Type': (() => {
+        const isSalonConsumption = isSalonConsumptionOrder(order);
+        if (isSalonConsumption) return 'Salon Consumption';
+        
         const type = getPurchaseType(order);
         switch (type) {
-          case 'service': orderType = 'Service'; break;
-          case 'product': orderType = 'Product'; break;
-          case 'membership': orderType = 'Membership'; break;
-          case 'both': orderType = 'Service & Product'; break;
+          case 'service': return 'Service';
+          case 'product': return 'Product';
+          case 'membership': return 'Membership';
+          case 'both': return 'Service & Product';
+          default: return 'Unknown';
         }
-      }
+      })(),
+      'Payment Method': (() => {
+        const isAggregatedOrder = (order as any).aggregated_multi_expert;
+        
+        if (order.payments && order.payments.length > 0) {
+          const paymentSummary: Record<string, number> = {};
+          
+          if (isAggregatedOrder) {
+            const expertCount = order.services 
+              ? [...new Set(order.services.map((s: any) => s.stylist_name).filter(Boolean))].length 
+              : 1;
+            
+            order.payments.forEach(payment => {
+              const method = payment.payment_method;
+              paymentSummary[method] = (paymentSummary[method] || 0) + (payment.amount * expertCount);
+            });
+          } else {
+            order.payments.forEach(payment => {
+              const method = payment.payment_method;
+              paymentSummary[method] = (paymentSummary[method] || 0) + payment.amount;
+            });
+          }
 
-      // Get payment methods
-      let paymentMethods = '';
-      if (order.payments && order.payments.length > 0) {
-        const methods = order.payments.map(p => 
-          PAYMENT_METHOD_LABELS[p.payment_method as PaymentMethod] || p.payment_method
-        );
-        paymentMethods = methods.join(', ');
-      } else {
-        paymentMethods = PAYMENT_METHOD_LABELS[order.payment_method as PaymentMethod] || order.payment_method || 'Cash';
-      }
+          return Object.entries(paymentSummary).map(([method, amount]) => 
+            `${PAYMENT_METHOD_LABELS[method as PaymentMethod] || method}: ${Math.round(amount)}`
+          ).join(', ');
+        }
+        
+        const paymentMethod = PAYMENT_METHOD_LABELS[order.payment_method as PaymentMethod] || order.payment_method || 'Unknown';
+        let totalAmount = order.total || order.total_amount || 0;
+        
+        if (isAggregatedOrder && order.services && order.services.length > 0) {
+          const serviceAggregation: Record<string, { total_price: number }> = {};
+          
+          order.services.forEach((service: any) => {
+            const serviceName = service.service_name || service.item_name || service.name;
+            const quantity = service.quantity || 1;
+            const price = service.price || 0;
 
-      return [
-        formatOrderId(order),
-        order.created_at ? new Date(order.created_at).toLocaleDateString() : 'Unknown',
-        order.client_name || 'Unknown client',
-        order.stylist_name || 'No stylist',
-        itemsCount,
-        orderType,
-        paymentMethods,
-        order.status || 'unknown',
-        `₹${Math.round(displayTotal)}`
-      ];
-    });
+            if (!serviceAggregation[serviceName]) {
+              serviceAggregation[serviceName] = { total_price: 0 };
+            }
+            serviceAggregation[serviceName].total_price += (price * quantity);
+          });
 
-    // Create main orders table
-    (doc as any).autoTable({
-      startY: (doc as any).lastAutoTable.finalY + 10,
-      head: [['Order ID', 'Date', 'Customer', 'Stylist', 'Items', 'Type', 'Payment Method', 'Status', 'Total']],
-      body: ordersData,
-      theme: 'striped',
-      styles: { 
-        fontSize: 7, 
-        cellPadding: 1.5,
-        overflow: 'linebreak',
-        cellWidth: 'wrap'
-      },
-      headStyles: { 
-        fillColor: [76, 175, 80], 
-        textColor: 255,
-        fontStyle: 'bold'
-      },
-      columnStyles: {
-        0: { cellWidth: 20 }, // Order ID
-        1: { cellWidth: 20 }, // Date
-        2: { cellWidth: 25 }, // Customer
-        3: { cellWidth: 25 }, // Stylist
-        4: { cellWidth: 12, halign: 'center' }, // Items
-        5: { cellWidth: 25 }, // Type
-        6: { cellWidth: 30 }, // Payment Method
-        7: { cellWidth: 15, halign: 'center' }, // Status
-        8: { cellWidth: 20, halign: 'right' } // Total
-      },
-      alternateRowStyles: { fillColor: [245, 245, 245] },
-      margin: { left: 10, right: 10 }
-    });
+          const correctSubtotal = Object.values(serviceAggregation).reduce((sum, item) => sum + item.total_price, 0);
+          const correctTax = correctSubtotal * 0.18;
+          totalAmount = correctSubtotal + correctTax - (order.discount || 0);
+        }
+        
+        return `${paymentMethod}: ${Math.round(totalAmount)}`;
+      })(),
+      'Status': order.status || 'unknown',
+      'Total Amount': (() => {
+        const isAggregatedOrder = (order as any).aggregated_multi_expert;
+        
+        let displayTotal = order.total_amount || order.total || 0;
+        
+        if (isAggregatedOrder) {
+          if (order.services && order.services.length > 0) {
+            const serviceAggregation: Record<string, { total_price: number }> = {};
+            
+            order.services.forEach((service: any) => {
+              const serviceName = service.service_name || service.item_name || service.name;
+              const quantity = service.quantity || 1;
+              const price = service.price || 0;
 
-    // Add footer
-    const pageCount = (doc as any).getNumberOfPages();
-    for (let i = 1; i <= pageCount; i++) {
-      doc.setPage(i);
-      doc.setFontSize(8);
-      doc.setFont('helvetica', 'normal');
-      doc.text(
-        `Page ${i} of ${pageCount} | Generated by Salon Management System`,
-        doc.internal.pageSize.getWidth() / 2,
-        doc.internal.pageSize.getHeight() - 10,
-        { align: 'center' }
-      );
-    }
+              if (!serviceAggregation[serviceName]) {
+                serviceAggregation[serviceName] = { total_price: 0 };
+              }
+              serviceAggregation[serviceName].total_price += (price * quantity);
+            });
 
-    // Save the PDF
-    doc.save(`salon-orders-report-${new Date().toISOString().split('T')[0]}.pdf`);
-  };
-
-  const handleExportPDF = () => {
-    if (!aggregatedOrders || aggregatedOrders.length === 0) {
-      toast.error('No orders to export');
-      return;
-    }
+            const correctSubtotal = Object.values(serviceAggregation).reduce((sum, item) => sum + item.total_price, 0);
+            const correctTax = correctSubtotal * 0.18;
+            displayTotal = correctSubtotal + correctTax - (order.discount || 0);
+          }
+        } else if (order.payments && order.payments.length > 0) {
+          const regularPaymentTotal = order.payments
+            .filter((payment: any) => payment.payment_method !== 'membership')
+            .reduce((sum: number, payment: any) => sum + (payment.amount || 0), 0);
+          
+          if (regularPaymentTotal > 0) {
+            displayTotal = regularPaymentTotal;
+          }
+        }
+        
+        return Math.round(displayTotal).toString();
+      })()
+    }));
     
-    try {
-      toast.info('Generating PDF report...');
-      generatePDFReport(filteredOrders);
-      toast.success('PDF report generated successfully');
-    } catch (error) {
-      console.error('Error generating PDF:', error);
-      toast.error('Failed to generate PDF report');
-    }
+    // Create headers mapping for PDF export - same as CSV
+    const headers = {
+      'Order ID': 'Order ID',
+      'Date': 'Date & Time',
+      'Customer': 'Customer',
+      'Stylist': 'Stylist',
+      'Services/Products': 'Services/Products Details',
+      'Items Count': 'Items Count',
+      'Type': 'Type',
+      'Payment Method': 'Payment Method',
+      'Status': 'Status',
+      'Total Amount': 'Total Amount'
+    };
+    
+    // Use landscape orientation for better column width
+    exportToPDF(
+      formattedOrdersPDF, 
+      'salon-orders-export', 
+      headers, 
+      'Salon Orders Report'
+    );
   }
 
   // Determine purchase type for an order

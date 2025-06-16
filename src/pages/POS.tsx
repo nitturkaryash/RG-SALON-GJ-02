@@ -1796,783 +1796,3085 @@ export default function POS() {
 		}
 	}, [paymentAmounts, isSplitPayment, calculateTotalAmount]);
 
-	return (
-		<ErrorBoundary>
-			<Container maxWidth={false} disableGutters sx={{ height: '100vh', overflow: 'hidden' }}>
-				<Box sx={{ 
-					height: '100%', 
-					display: 'flex', 
-					flexDirection: 'column',
-					bgcolor: 'background.default'
-				}}>
-					{/* Header */}
-					<Paper 
-						elevation={1} 
-						sx={{ 
-							borderRadius: 0, 
-							borderBottom: 1, 
-							borderColor: 'divider',
-							position: 'sticky',
-							top: 0,
-							zIndex: 1000
-						}}
-					>
-						<Box sx={{ p: 2, pb: 0 }}>
-							<Typography variant="h4" sx={{ fontWeight: 600, mb: 2 }}>
-								Point of Sale
-							</Typography>
-							<Tabs 
-								value={tabValue} 
-								onChange={(e, newValue) => setTabValue(newValue)}
-								sx={{ 
-									'& .MuiTab-root': { 
-										textTransform: 'none',
-										fontSize: '1rem',
-										fontWeight: 500
-									}
-								}}
-							>
-								<Tab 
-									label="Walk-in Order" 
-									icon={<ShoppingBag />} 
-									iconPosition="start"
-								/>
-								<Tab 
-									label="Salon Purchase" 
-									icon={<Inventory />} 
-									iconPosition="start"
-								/>
-							</Tabs>
-						</Box>
-					</Paper>
+	// Quick fill helper functions
+	const quickFillPayment = useCallback((method: PaymentMethod) => {
+		const currentTotal = calculateTotalAmount();
+		const currentPayments = { ...paymentAmounts };
+		const totalOtherPayments = Object.entries(currentPayments)
+			.filter(([m]) => m !== method)
+			.reduce((sum, [_, amt]) => sum + amt, 0);
+		
+		const remainingAmount = Math.max(0, currentTotal - totalOtherPayments);
+		
+		setPaymentAmounts(prev => ({
+			...prev,
+			[method]: remainingAmount
+		}));
+	}, [calculateTotalAmount, paymentAmounts]);
 
-					{/* Tab Content */}
-					<Box sx={{ 
-						flexGrow: 1, 
-						overflow: 'hidden',
-						display: 'flex',
-						flexDirection: 'column'
-					}}>
-						{/* Walk-in Order Tab */}
-						<TabPanel value={tabValue} index={0}>
-							<Grid container spacing={2} sx={{ height: '100%' }}>
-								{/* Left Panel - Customer & Services */}
-								<Grid item xs={12} md={8} sx={{ 
-									height: '100%',
-									display: 'flex',
-									flexDirection: 'column'
-								}}>
-									<Box sx={{ 
-										flexGrow: 1, 
-										overflow: 'auto',
-										pr: 1
-									}}>
-										{/* Customer Selection */}
-										<Paper sx={{ p: 2, mb: 2 }}>
-											<Typography variant="h6" sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
-												<PersonIcon />
-												Customer Information
-											</Typography>
-											
-											<Grid container spacing={2}>
-												<Grid item xs={12} md={6}>
-													<Autocomplete
-														options={clients || []}
-														getOptionLabel={(option) => option.full_name || ''}
-														value={selectedClient}
-														onChange={(e, newValue) => handleClientSelect(newValue)}
-														loading={loadingClients}
-														renderInput={(params) => (
-															<TextField
-																{...params}
-																label="Search Client"
-																fullWidth
-																InputProps={{
-																	...params.InputProps,
-																	endAdornment: (
-																		<>
-																			{loadingClients ? <CircularProgress color="inherit" size={20} /> : null}
-																			{params.InputProps.endAdornment}
-																		</>
-																	),
-																}}
-															/>
-														)}
-													/>
-												</Grid>
-												<Grid item xs={12} md={6}>
-													<TextField
-														label="Customer Name"
-														value={customerName}
-														onChange={(e) => setCustomerName(e.target.value)}
-														fullWidth
-														required
-													/>
-												</Grid>
-												{!selectedClient && customerName && (
-													<>
-														<Grid item xs={12} md={6}>
-															<TextField
-																label="Phone Number"
-																value={newClientPhone}
-																onChange={(e) => setNewClientPhone(e.target.value)}
-																fullWidth
-																placeholder="Enter phone number"
-															/>
-														</Grid>
-														<Grid item xs={12} md={6}>
-															<TextField
-																label="Email"
-																value={newClientEmail}
-																onChange={(e) => setNewClientEmail(e.target.value)}
-																fullWidth
-																placeholder="Enter email address"
-															/>
-														</Grid>
-													</>
-												)}
-											</Grid>
+	const clearAllPayments = useCallback(() => {
+		setPaymentAmounts({
+			cash: 0,
+			credit_card: 0,
+			debit_card: 0,
+			upi: 0,
+			bnpl: 0,
+			membership: 0
+		});
+	}, []);
 
-											{/* Stylist Selection */}
-											<Box sx={{ mt: 2 }}>
-												<FormControl fullWidth>
-													<InputLabel>Select Stylist</InputLabel>
-													<Select
-														value={selectedStylist?.id || ''}
-														onChange={(e) => {
-															const stylist = stylists?.find(s => s.id === e.target.value);
-															setSelectedStylist(stylist || null);
-														}}
-														label="Select Stylist"
-													>
-														{stylists?.map((stylist) => (
-															<MenuItem key={stylist.id} value={stylist.id}>
-																{stylist.name}
-															</MenuItem>
-														))}
-													</Select>
-												</FormControl>
-											</Box>
-										</Paper>
+	const distributeEqually = useCallback(() => {
+		const totalAmount = calculateTotalAmount();
+		const activeMethods = ['cash', 'credit_card', 'debit_card', 'upi'] as PaymentMethod[];
+		const amountPerMethod = Math.floor(totalAmount / activeMethods.length);
+		const remainder = totalAmount % activeMethods.length;
+		
+		const newPayments: Record<PaymentMethod, number> = {
+			cash: 0,
+			credit_card: 0,
+			debit_card: 0,
+			upi: 0,
+			bnpl: 0,
+			membership: 0
+		};
+		
+		activeMethods.forEach((method, index) => {
+			newPayments[method] = amountPerMethod + (index === 0 ? remainder : 0);
+		});
+		
+		setPaymentAmounts(newPayments);
+	}, [calculateTotalAmount]);
 
-										{/* Services & Products */}
-										<Paper sx={{ p: 2, mb: 2 }}>
-											<Typography variant="h6" sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
-												<ContentCutIcon />
-												Services & Products
-											</Typography>
+	// Modify handleCreateWalkInOrder to use the isOrderValid function
+	const handleCreateWalkInOrder = useCallback(async () => {
+		if (!isOrderValid()) {
+			const paymentValidation = getPaymentValidation();
+			let errorMessage = "Please complete all required fields.";
+			
+			if (!paymentValidation.isValid) {
+				if (paymentValidation.isUnderpaid) {
+					errorMessage = `Payment incomplete. Remaining amount: ₹${paymentValidation.remaining.toFixed(2)}`;
+				} else if (paymentValidation.isOverpaid) {
+					errorMessage = `Payment exceeds bill amount by ₹${Math.abs(paymentValidation.remaining).toFixed(2)}. Please adjust the payment amounts.`;
+				}
+			}
+			
+			setSnackbarMessage(errorMessage);
+			setSnackbarOpen(true);
+			return;
+		}
+		
+		const totalAmount = calculateTotalAmount();
+		const amountPaid = Object.values(paymentAmounts).reduce((a, b) => a + b, 0);
+		const membershipPayableAmount = getMembershipPayableAmount();
+		
+		// Enhanced payment validation
+		const paymentValidation = getPaymentValidation();
+		if (!paymentValidation.isValid) {
+			if (paymentValidation.isOverpaid) {
+				setSnackbarMessage(`Payment exceeds bill amount by ₹${Math.abs(paymentValidation.remaining).toFixed(2)}. Please adjust the payment amounts.`);
+			} else if (paymentValidation.isUnderpaid) {
+				setSnackbarMessage(`Payment incomplete. Remaining amount: ₹${paymentValidation.remaining.toFixed(2)}`);
+			}
+			setSnackbarOpen(true);
+			return;
+		}
+		
+		// If there are membership services but no active membership, show error
+		if (membershipPayableAmount > 0 && !activeClientMembership) {
+			setSnackbarMessage("Client needs an active membership to pay for selected services via membership.");
+			setSnackbarOpen(true);
+			return;
+		}
+		
+		// If membership balance is insufficient, show error
+		if (membershipPayableAmount > 0 && activeClientMembership && activeClientMembership.currentBalance < membershipPayableAmount) {
+			setSnackbarMessage(`Insufficient membership balance. Required: ₹${membershipPayableAmount.toLocaleString()}, Available: ₹${activeClientMembership.currentBalance.toLocaleString()}`);
+			setSnackbarOpen(true);
+			return;
+		}
+		
+		// Allow orders where everything is paid via membership (totalAmount = 0)
+		// Only require payment amount if there's an amount left for the client to pay
+		if (totalAmount > 0 && amountPaid <= 0) {
+			setSnackbarMessage("Please enter a payment amount.");
+			setSnackbarOpen(true);
+			return;
+		}
+		
+		setProcessing(true);
+		
+		try {
+			let clientIdToUse = selectedClient?.id;
+			let clientNameToUse = selectedClient?.full_name || customerName.trim();
+			let isNewClient = false;
 
-											{/* Services Section */}
-											<Accordion defaultExpanded>
-												<AccordionSummary expandIcon={<ExpandMoreIcon />}>
-													<Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
-														Services
-													</Typography>
-												</AccordionSummary>
-												<AccordionDetails>
-													<Box sx={{ mb: 2 }}>
-														<TextField
-															label="Search Services"
-															value={serviceSearchTerm}
-															onChange={(e) => setServiceSearchTerm(e.target.value)}
-															fullWidth
-															size="small"
-															InputProps={{
-																startAdornment: (
-																	<InputAdornment position="start">
-																		<Search />
-																	</InputAdornment>
-																)
-															}}
-														/>
-													</Box>
-													<Grid container spacing={2}>
-														{filteredServices?.map((service) => (
-															<Grid item xs={12} sm={6} md={4} key={service.id}>
-																<Card sx={{ 
-																	height: '100%',
-																	display: 'flex',
-																	flexDirection: 'column',
-																	cursor: 'pointer',
-																	'&:hover': {
-																		boxShadow: 3
-																	}
-																}}>
-																	<CardContent sx={{ flexGrow: 1 }}>
-																		<Typography variant="h6" sx={{ fontWeight: 600 }}>
-																			{service.name}
-																		</Typography>
-																		<Typography color="text.secondary" sx={{ mb: 1 }}>
-																			₹{service.price}
-																		</Typography>
-																		<Typography variant="body2" color="text.secondary">
-																			{service.description}
-																		</Typography>
-																	</CardContent>
-																	<CardActions>
-																		<Button
-																			variant="contained"
-																			size="small"
-																			onClick={() => handleAddToOrder(service as POSService)}
-																			fullWidth
-																		>
-																			Add
-																		</Button>
-																	</CardActions>
-																</Card>
-															</Grid>
-														))}
-													</Grid>
-												</AccordionDetails>
-											</Accordion>
+			// If no existing client is selected and a customer name is provided, create a new client
+			if (!selectedClient && customerName.trim() !== "") {
+				isNewClient = true;
+				console.log("Attempting to create new client:", customerName.trim());
+				try {
+					const newClientData = {
+						full_name: customerName.trim(),
+						phone: newClientPhone.trim(),
+						email: newClientEmail.trim(),
+						notes: 'Added via POS' // Default note
+					};
+					// Assume createClient is async and returns the created client object or relevant part
+					const createdClient = await createClientAsync(newClientData); // Use createClientAsync 
+					if (createdClient && createdClient.id) {
+						clientIdToUse = createdClient.id;
+						clientNameToUse = createdClient.full_name; // Use the name from the created client
+						toast.success(`New client '${clientNameToUse}' created successfully!`);
+						// queryClient.invalidateQueries({ queryKey: ['clients'] }); // Example for TanStack Query
+					} else {
+						// This case might indicate createClient didn't return expected data or failed silently before throwing
+						throw new Error('New client was processed but ID is missing.'); 
+					}
+				} catch (error) {
+					console.error("Error creating new client:", error);
+					const message = error instanceof Error ? error.message : "Unknown error creating client";
+					setSnackbarMessage(`Error creating client: ${message}`);
+					setSnackbarOpen(true);
+					setProcessing(false);
+					return; // Stop order processing if client creation fails
+				}
+			}
 
-											{/* Products Section */}
-											<Accordion>
-												<AccordionSummary expandIcon={<ExpandMoreIcon />}>
-													<Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
-														Products
-													</Typography>
-												</AccordionSummary>
-												<AccordionDetails>
-													<Box sx={{ mb: 2 }}>
-														<TextField
-															label="Search Products"
-															value={productSearchTerm}
-															onChange={(e) => setProductSearchTerm(e.target.value)}
-															fullWidth
-															size="small"
-															InputProps={{
-																startAdornment: (
-																	<InputAdornment position="start">
-																		<Search />
-																	</InputAdornment>
-																)
-															}}
-														/>
-													</Box>
-													<Grid container spacing={2}>
-														{filteredProducts?.map((product) => (
-															<Grid item xs={12} sm={6} md={4} key={product.id}>
-																{renderProductCard(product, handleAddToOrder)}
-															</Grid>
-														))}
-													</Grid>
-												</AccordionDetails>
-											</Accordion>
-										</Paper>
-									</Box>
-								</Grid>
+			// Log order items for inventory tracking
+			const productItems = orderItems.filter(item => item.type === 'product');
+			const serviceItems = orderItems.filter(item => item.type === 'service');
+			
+			console.log(`📦 Creating order with ${orderItems.length} total items, including ${productItems.length} products that will reduce inventory:`);
+			if (productItems.length > 0) {
+				productItems.forEach(product => {
+					console.log(`📦 Product: ${product.item_name}, ID: ${product.item_id}, Quantity: ${product.quantity}`);
+				});
+			}
 
-								{/* Right Panel - Order Summary & Payment */}
-								<Grid item xs={12} md={4} sx={{ 
-									height: '100%',
-									display: 'flex',
-									flexDirection: 'column'
-								}}>
-									<Box sx={{ 
-										flexGrow: 1, 
-										overflow: 'auto',
-										pl: 1
-									}}>
-										{/* Order Summary */}
-										<Paper sx={{ p: 2, mb: 2 }}>
-											<Typography variant="h6" sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
-												<CartIcon />
-												Order Summary
-											</Typography>
+			// Correct arguments for updateClientFromOrder 
+			// We need the actual total amount and payment method for the order
+			const actualTotalAmount = calculateTotalAmount();
+			const actualPaymentMethod = isSplitPayment ? 'split' : walkInPaymentMethod;
+			
+			// Only update client if a name is available
+			const finalClientNameToUpdate = clientNameToUse; 
+			if (finalClientNameToUpdate && finalClientNameToUpdate !== 'Walk-in Customer') { 
+				await updateClientFromOrder(
+					finalClientNameToUpdate,
+					actualTotalAmount,      
+					actualPaymentMethod,    
+					new Date().toISOString() 
+				);
+			} else {
+				console.log('Skipping client update for generic Walk-in Customer or missing name.');
+			}
+			
+			// Rather than using the orderData CreateOrderData object directly,
+			// transform it to match the parameters expected by the standalone createWalkInOrder function
+			
+			// Convert services to format expected by standalone function
+			const formattedServices = serviceItems.map(service => ({
+				id: service.item_id,
+				service_id: service.item_id,
+				service_name: service.item_name,
+				name: service.item_name,
+				price: service.price,
+				quantity: service.quantity,
+				gst_percentage: service.gst_percentage || 0,
+				hsn_code: service.hsn_code || '',
+				type: 'service' as const,
+				product_id: service.item_id,
+				product_name: service.item_name,
+				category: service.category,
+				discount: service.discount || 0,
+				discount_percentage: service.discount_percentage || 0,
+				// Preserve experts array for revenue splitting
+				experts: (service as any).experts || []
+			}));
+			
+			// Convert products to format expected by standalone function
+			const formattedProducts = productItems.map(item => ({
+				id: item.item_id,
+				name: item.item_name,
+				price: item.price,
+				quantity: item.quantity,
+				type: 'product' as const,
+				gst_percentage: item.gst_percentage || 0,
+				hsn_code: item.hsn_code || '',
+				service_id: item.item_id,
+				service_name: item.item_name,
+				product_id: item.item_id,
+				product_name: item.item_name,
+				category: item.category,
+				discount: item.discount || 0,
+				discount_percentage: item.discount_percentage || 0
+			}));
+			
+			// Convert memberships to format expected by standalone function
+			const membershipItems = orderItems.filter(item => item.type === 'membership');
+			const formattedMemberships = membershipItems.map(item => ({
+				id: item.item_id,
+				name: item.item_name,
+				price: item.price,
+				quantity: item.quantity,
+				type: 'membership' as const,
+				gst_percentage: 18, // Memberships typically have 18% GST
+				hsn_code: item.hsn_code || '',
+				service_id: item.item_id,
+				service_name: item.item_name,
+				product_id: item.item_id,
+				product_name: item.item_name,
+				category: 'membership',
+				discount: item.discount || 0,
+				discount_percentage: item.discount_percentage || 0,
+				duration_months: item.duration_months || 12
+			}));
+			
+			// Format selected stylist
+			const staffInfo = selectedStylist ? {
+				id: selectedStylist.id,
+				name: selectedStylist.name
+			} : null;
+			
+			// Generate invoice number if needed
+			const invoiceNumber = `INV-${Date.now().toString().slice(-6)}`;
+			
+			console.log(`📦 Calling standalone createWalkInOrder with:`, {
+				customerName: clientNameToUse, 
+				products: formattedProducts.length,
+				services: formattedServices.length,
+				memberships: formattedMemberships.length,
+				staffInfo
+			});
+			
+			// Call the standalone function with the correct parameters
+			const subtotal = calculateProductSubtotal() + calculateServiceSubtotal() + calculateMembershipSubtotal();
+			const tax = calculateProductGstAmount(calculateProductSubtotal()) + calculateServiceGstAmount(calculateServiceSubtotal()) + calculateMembershipGstAmount(calculateMembershipSubtotal());
+			// Always use the full amount regardless of payment method
+			const totalAmount = subtotal + tax - walkInDiscount;
+			
+					// Check if this is a multi-expert appointment
+		const isMultiExpert = selectedStylists && selectedStylists.length > 1 && selectedStylists.every(s => s !== null);
+		const expertsToProcess = isMultiExpert ? selectedStylists.filter(s => s !== null) : [staffInfo];
+		const numberOfExperts = expertsToProcess.length;
+		
+		console.log(`[Multi-Expert Debug] selectedStylists:`, selectedStylists);
+		console.log(`[Multi-Expert Debug] isMultiExpert:`, isMultiExpert);
+		console.log(`[Multi-Expert Debug] expertsToProcess:`, expertsToProcess);
+		console.log(`[Multi-Expert Debug] numberOfExperts:`, numberOfExperts);
+		
+		console.log(`[Multi-Expert Order] Creating ${numberOfExperts} orders for ${numberOfExperts} experts:`, expertsToProcess.map(e => e?.name));
+		
+		// Create orders for each expert (split revenue among them)
+		const orderResults = [];
+		
+		for (let i = 0; i < expertsToProcess.length; i++) {
+			const expert = expertsToProcess[i];
+			if (!expert) continue;
 
-											{orderItems.length === 0 ? (
-												<Box sx={{ 
-													textAlign: 'center', 
-													py: 4,
-													color: 'text.secondary'
-												}}>
-													<ShoppingBasketIcon sx={{ fontSize: 48, mb: 1, opacity: 0.5 }} />
-													<Typography>No items in order</Typography>
-												</Box>
-											) : (
-												<>
-													<List dense>
-														{orderItems.map((item, index) => (
-															<React.Fragment key={item.id}>
-																<ListItem sx={{ px: 0 }}>
-																	<ListItemText
-																		primary={item.item_name}
-																		secondary={`₹${item.price} × ${item.quantity}`}
-																	/>
-																	<ListItemSecondaryAction>
-																		<Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-																			<Typography variant="body2" sx={{ fontWeight: 600 }}>
-																				₹{item.total}
-																			</Typography>
-																			<IconButton
-																				size="small"
-																				onClick={() => {
-																					setOrderItems(prev => prev.filter((_, i) => i !== index));
-																				}}
-																			>
-																				<DeleteIcon fontSize="small" />
-																			</IconButton>
-																		</Box>
-																	</ListItemSecondaryAction>
-																</ListItem>
-																{index < orderItems.length - 1 && <Divider />}
-															</React.Fragment>
-														))}
-													</List>
+			// ---------- NEW: decide whether this expert gets products / memberships ----------
+			const includeProductsAndMemberships = !(isMultiExpert && i !== 0); // only the primary expert (index 0) gets these
 
-													<Divider sx={{ my: 2 }} />
+			// --- New per-service revenue split ---
+			const expertServicesOriginal = formattedServices.filter(service => {
+			  const expArr = (service as any).experts as any[] | undefined;
+			  console.log(`[Multi-Expert Billing] Service ${service.name}, Expert ${expert.name}, Experts array:`, expArr);
+			  
+			  if (expArr && expArr.length > 0) {
+			    const hasExpert = expArr.some(ex => ex.id === expert.id);
+			    console.log(`[Multi-Expert Billing] Service ${service.name} - Expert ${expert.name} assigned: ${hasExpert}`);
+			    return hasExpert;
+			  }
+			  
+			  // FIXED: Only give services with no experts array to the primary expert (first expert)
+			  const isPrimaryExpert = i === 0;
+			  console.log(`[Multi-Expert Billing] Service ${service.name} has no experts array - assigning to primary expert only (${expert.name} is primary: ${isPrimaryExpert})`);
+			  return isPrimaryExpert;
+			});
 
-													{/* Order Totals */}
-													<Box sx={{ mb: 2 }}>
-														<Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-															<Typography>Subtotal:</Typography>
-															<Typography>₹{(calculateProductSubtotal() + calculateServiceSubtotal()).toFixed(2)}</Typography>
-														</Box>
-														<Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-															<Typography>GST:</Typography>
-															<Typography>₹{(calculateProductGstAmount(calculateProductSubtotal()) + calculateServiceGstAmount(calculateServiceSubtotal())).toFixed(2)}</Typography>
-														</Box>
-														{walkInDiscount > 0 && (
-															<Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-																<Typography color="success.main">Discount:</Typography>
-																<Typography color="success.main">-₹{walkInDiscount.toFixed(2)}</Typography>
-															</Box>
-														)}
-														<Divider sx={{ my: 1 }} />
-														<Box sx={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold' }}>
-															<Typography variant="h6">Total:</Typography>
-															<Typography variant="h6">₹{calculateTotalAmount().toFixed(2)}</Typography>
-														</Box>
-													</Box>
-												</>
-											)}
-										</Paper>
+			console.log(`[Multi-Expert Billing] Expert ${expert.name} gets ${expertServicesOriginal.length} services:`, expertServicesOriginal.map(s => s.name));
 
-										{/* Payment Section */}
-										{orderItems.length > 0 && (
-											<>
-												{/* Discount Section */}
-												<Paper sx={{ p: 2, mb: 2 }}>
-													<Typography variant="h6" sx={{ mb: 2 }}>
-														Discount
-													</Typography>
-													<TextField
-														label="Discount Amount"
-														type="number"
-														value={walkInDiscount}
-														onChange={(e) => setWalkInDiscount(Math.max(0, parseFloat(e.target.value) || 0))}
-														fullWidth
-														InputProps={{
-															startAdornment: <InputAdornment position="start">₹</InputAdornment>
-														}}
-														helperText="Enter discount amount to be applied to the total"
-													/>
-												</Paper>
+			// For each service, determine share count and adjust price
+			const splitServicesForExpert = expertServicesOriginal.map(service => {
+			  const expArr = ((service as any).experts || []) as any[];
+			  const shareCount = expArr && expArr.length > 0 ? expArr.length : numberOfExperts;
+			  const splitPrice = service.price / shareCount;
+			  return {
+			    ...service,
+			    price: splitPrice,
+			    total: splitPrice * service.quantity,
+			    split_revenue: true,
+			    total_experts: shareCount,
+			    expert_index: (expArr && expArr.length > 0) ? expArr.findIndex(ex => ex.id === expert.id) + 1 : (i + 1)
+			  } as any;
+			});
 
-												<PaymentSection
-													paymentAmounts={paymentAmounts}
-													setPaymentAmounts={setPaymentAmounts}
-													isSplitPayment={isSplitPayment}
-													setIsSplitPayment={setIsSplitPayment}
-													walkInPaymentMethod={walkInPaymentMethod}
-													setWalkInPaymentMethod={setWalkInPaymentMethod}
-													calculateTotalAmount={calculateTotalAmount}
-													activeClientMembership={activeClientMembership}
-												/>
-											</>
-										)}
+			// Calculate service subtotals & tax for this expert based on split services
+			const splitServiceSubtotal = splitServicesForExpert.reduce((sum, s) => sum + s.price * s.quantity, 0);
+			const splitServiceTax      = splitServicesForExpert.reduce((sum, s) => sum + calculateServiceGstAmount(s.price * s.quantity), 0);
 
-										{/* Action Buttons */}
-										<Box sx={{ mt: 2, display: 'flex', gap: 1 }}>
-											<Button
-												variant="outlined"
-												fullWidth
-												onClick={() => {
-													setOrderItems([]);
-													setCustomerName('');
-													setSelectedClient(null);
-													setSelectedStylist(null);
-													setWalkInDiscount(0);
-													setPaymentAmounts({
-														cash: 0,
-														credit_card: 0,
-														debit_card: 0,
-														upi: 0,
-														bnpl: 0,
-														membership: 0
-													});
-												}}
-												disabled={orderItems.length === 0}
-											>
-												Clear
-											</Button>
-											<Button
-												variant="contained"
-												fullWidth
-												onClick={async () => {
-													// Handle order creation
-													console.log('Creating order...');
-												}}
-												disabled={!isOrderValid() || processing}
-											>
-												{processing ? (
-													<CircularProgress size={20} color="inherit" />
-												) : (
-													'Process Order'
-												)}
-											</Button>
-										</Box>
-									</Box>
-								</Grid>
-							</Grid>
-						</TabPanel>
+			// Product / membership portions (only primary gets them)
+			const productSubForExpert      = includeProductsAndMemberships ? calculateProductSubtotal()      : 0;
+			const membershipSubForExpert   = includeProductsAndMemberships ? calculateMembershipSubtotal()  : 0;
+			const productTaxForExpert      = includeProductsAndMemberships ? calculateProductGstAmount(calculateProductSubtotal())     : 0;
+			const membershipTaxForExpert   = includeProductsAndMemberships ? calculateMembershipGstAmount(calculateMembershipSubtotal()) : 0;
 
-						{/* Salon Purchase Tab */}
-						<TabPanel value={tabValue} index={1}>
-							<Grid container spacing={2} sx={{ height: '100%' }}>
-								{/* Left Panel - Product Selection */}
-								<Grid item xs={12} md={8} sx={{ 
-									height: '100%',
-									display: 'flex',
-									flexDirection: 'column'
-								}}>
-									<Box sx={{ 
-										flexGrow: 1, 
-										overflow: 'auto',
-										pr: 1
-									}}>
-										<Paper sx={{ p: 2, mb: 2 }}>
-											<Typography variant="h6" sx={{ mb: 2 }}>
-												Salon Consumption - Product Selection
-											</Typography>
-											
-											<Box sx={{ mb: 2 }}>
-												<TextField
-													label="Search Products"
-													value={productSearchTerm}
-													onChange={(e) => setProductSearchTerm(e.target.value)}
-													fullWidth
-													size="small"
-													InputProps={{
-														startAdornment: (
-															<InputAdornment position="start">
-																<Search />
-															</InputAdornment>
-														)
-													}}
-												/>
-											</Box>
+			// Final totals for this expert --------------------------------------------
+			const expertSubtotal = productSubForExpert + membershipSubForExpert + splitServiceSubtotal;
+			const expertTax      = productTaxForExpert + membershipTaxForExpert + splitServiceTax;
+			const expertTotal    = expertSubtotal + expertTax - (isMultiExpert ? (walkInDiscount / numberOfExperts) : walkInDiscount);
 
-											<Grid container spacing={2}>
-												{filteredProducts?.map((product) => (
-													<Grid item xs={12} sm={6} md={4} key={product.id}>
-														{renderProductCard(product, (prod) => {
-															// Add to salon products instead of order items
-															const newItem: OrderItem = {
-																id: uuidv4(),
-																order_id: '',
-																item_id: prod.id,
-																item_name: prod.name,
-																quantity: 1,
-																price: getPurchaseCostForProduct(prod.id, prod.name, prod.price),
-																total: getPurchaseCostForProduct(prod.id, prod.name, prod.price),
-																type: 'product',
-																hsn_code: prod.hsn_code,
-																gst_percentage: prod.gst_percentage,
-																for_salon_use: true,
-																discount: 0,
-																discount_percentage: 0
-															};
-															setSalonProducts(prev => [...prev, newItem]);
-															toast.success(`Added ${prod.name} to salon consumption`);
-														})}
-													</Grid>
-												))}
-											</Grid>
-										</Paper>
-									</Box>
-								</Grid>
+			// Build item arrays --------------------------------------------------------
+			const expertProducts      = includeProductsAndMemberships ? formattedProducts : [];
+			const expertMemberships   = includeProductsAndMemberships ? formattedMemberships : [];
+			const expertServicesFinal = isMultiExpert ? 
+				splitServicesForExpert : formattedServices;
 
-								{/* Right Panel - Consumption Summary */}
-								<Grid item xs={12} md={4} sx={{ 
-									height: '100%',
-									display: 'flex',
-									flexDirection: 'column'
-								}}>
-									<Box sx={{ 
-										flexGrow: 1, 
-										overflow: 'auto',
-										pl: 1
-									}}>
-										<Paper sx={{ p: 2, mb: 2 }}>
-											<Typography variant="h6" sx={{ mb: 2 }}>
-												Consumption Summary
-											</Typography>
+			const itemsForOrder = [...expertProducts, ...expertServicesFinal, ...expertMemberships].map(item => ({
+				...item,
+				discount: item.discount || 0,
+				discount_percentage: item.discount_percentage || 0
+			})) as any[];
 
-											{salonProducts.length === 0 ? (
-												<Box sx={{ 
-													textAlign: 'center', 
-													py: 4,
-													color: 'text.secondary'
-												}}>
-													<Inventory sx={{ fontSize: 48, mb: 1, opacity: 0.5 }} />
-													<Typography>No products selected</Typography>
-												</Box>
-											) : (
-												<>
-													<List dense>
-														{salonProducts.map((item, index) => (
-															<React.Fragment key={item.id}>
-																<ListItem sx={{ px: 0 }}>
-																	<ListItemText
-																		primary={item.item_name}
-																		secondary={`₹${item.price} × ${item.quantity}`}
-																	/>
-																	<ListItemSecondaryAction>
-																		<Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-																			<Typography variant="body2" sx={{ fontWeight: 600 }}>
-																				₹{item.total}
-																			</Typography>
-																			<IconButton
-																				size="small"
-																				onClick={() => {
-																					setSalonProducts(prev => prev.filter((_, i) => i !== index));
-																				}}
-																			>
-																				<DeleteIcon fontSize="small" />
-																			</IconButton>
-																		</Box>
-																	</ListItemSecondaryAction>
-																</ListItem>
-																{index < salonProducts.length - 1 && <Divider />}
-															</React.Fragment>
-														))}
-													</List>
+			// -------------------------------------------------------------------------
+			// Use the correct amountPaid calculation from paymentAmounts
+			const totalAmountPaid = Object.values(paymentAmounts).reduce((a, b) => a + b, 0);
+			
+			// Calculate payment amounts first
+			const membershipPayableAmount = getMembershipPayableAmount();
+			const regularPayableAmount = getRegularPayableAmount();
+			
+			// Determine payment method variables early
+			const paymentMethodsUsed = Object.entries(paymentAmounts).filter(([_, amount]) => amount > 0);
+			const hasMembershipPayment = membershipPayableAmount > 0 && paymentMethodsUsed.some(([method]) => method === 'membership');
+			const hasRegularPayment = regularPayableAmount > 0 && paymentMethodsUsed.some(([method]) => method !== 'membership');
+			
+			// Also check if services are being paid via membership toggle (even if paymentAmounts doesn't show it)
+			const hasServicesPaidViaMembership = Object.values(servicesMembershipPayment).some(Boolean);
+			const hasProductsOrOtherItems = orderItems.some(item => item.type === 'product' || item.type === 'membership');
+			
+			// Build payments array from paymentAmounts instead of splitPayments
+			// Ensure membership payment only applies to services, not products
+			let paymentsArray = Object.entries(paymentAmounts)
+				.filter(([_, amount]) => amount > 0)
+				.map(([method, amount]) => {
+					// For membership payment, ensure it only covers services
+					if (method === 'membership') {
+						const maxMembershipAmount = membershipPayableAmount;
+						const actualAmount = Math.min(amount, maxMembershipAmount);
+						return {
+							id: uuidv4(),
+							amount: isMultiExpert ? actualAmount / numberOfExperts : actualAmount,
+							payment_method: method as PaymentMethodWithSplit,
+							payment_date: orderDate ? orderDate.toISOString() : new Date().toISOString()
+						};
+					}
+					return {
+						id: uuidv4(),
+						amount: isMultiExpert ? amount / numberOfExperts : amount,
+						payment_method: method as PaymentMethodWithSplit,
+						payment_date: orderDate ? orderDate.toISOString() : new Date().toISOString()
+					};
+				});
+			
+			// If we have services paid via membership but membership isn't in paymentAmounts, add it
+			if (hasServicesPaidViaMembership && membershipPayableAmount > 0) {
+				const existingMembershipPayment = paymentsArray.find(p => p.payment_method === 'membership');
+				if (!existingMembershipPayment) {
+					paymentsArray.push({
+						id: uuidv4(),
+						amount: isMultiExpert ? membershipPayableAmount / numberOfExperts : membershipPayableAmount,
+						payment_method: 'membership' as PaymentMethodWithSplit,
+						payment_date: orderDate ? orderDate.toISOString() : new Date().toISOString()
+					});
+				}
+			}
+			
+			// If no payment amounts are set but we have membership payment, add it
+			if (paymentsArray.length === 0 && membershipPayableAmount > 0) {
+				paymentsArray = [{
+					id: uuidv4(),
+					amount: isMultiExpert ? membershipPayableAmount / numberOfExperts : membershipPayableAmount,
+					payment_method: 'membership' as PaymentMethodWithSplit,
+					payment_date: orderDate ? orderDate.toISOString() : new Date().toISOString()
+				}];
+			}
+			
+			let primaryPaymentMethod: PaymentMethodWithSplit;
+			
+			// Force split payment method when there are both membership and regular payments
+			// OR when services are paid via membership AND there are products/other items
+			if ((hasMembershipPayment && hasRegularPayment) || (hasServicesPaidViaMembership && hasProductsOrOtherItems)) {
+				primaryPaymentMethod = 'split';
+			} else if (paymentMethodsUsed.length === 1) {
+				// Single payment method
+				primaryPaymentMethod = paymentMethodsUsed[0][0] as PaymentMethodWithSplit;
+			} else if (paymentMethodsUsed.length > 1) {
+				// Multiple payment methods - split payment
+				primaryPaymentMethod = 'split' as PaymentMethodWithSplit;
+			} else if (membershipPayableAmount > 0 && regularPayableAmount === 0) {
+				// Only membership payment, no regular payment needed
+				primaryPaymentMethod = 'membership' as PaymentMethodWithSplit;
+			} else {
+				// Fallback to default payment method
+				primaryPaymentMethod = walkInPaymentMethod;
+			}
 
-													<Divider sx={{ my: 2 }} />
+			const orderResult = await createWalkInOrderMutation.mutateAsync({
+				order_id: uuidv4(),
+				client_id: clientIdToUse || '',
+				client_name: clientNameToUse,
+				stylist_id: expert.id || '',
+				stylist_name: expert.name || '',
+				appointment_id: currentAppointmentId || undefined,
+				items: [],
+				services: itemsForOrder,
+				payment_method: primaryPaymentMethod,
+				split_payments: (paymentMethodsUsed.length > 1 || (hasMembershipPayment && hasRegularPayment) || (hasServicesPaidViaMembership && hasProductsOrOtherItems)) ? paymentsArray : undefined,
+				discount: isMultiExpert ? (walkInDiscount / numberOfExperts) : walkInDiscount,
+				discount_percentage: walkInDiscountPercentage,
+				subtotal: expertSubtotal,
+				tax: expertTax,
+				total: expertTotal,
+				total_amount: expertTotal,
+				status: 'completed',
+				order_date: orderDate ? orderDate.toISOString() : new Date().toISOString(),
+				is_walk_in: true,
+				is_salon_consumption: false,
+				// Calculate expert's share of payment correctly
+				pending_amount: 0, // Always 0 for completed orders - no pending amounts
+				payments: paymentsArray,
+				// Always set multi_expert fields when we have multiple experts
+				...(numberOfExperts > 1 && {
+					multi_expert: true,
+					total_experts: numberOfExperts,
+					expert_index: i + 1
+				})
+			});
 
-													<Box sx={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold' }}>
-														<Typography variant="h6">Total:</Typography>
-														<Typography variant="h6">₹{salonProductsSubtotal.toFixed(2)}</Typography>
-													</Box>
-												</>
-											)}
-										</Paper>
+			orderResults.push(orderResult);
+			
+			if (!orderResult.success) {
+				throw new Error(`Failed to create order for ${expert.name}: ${orderResult.error?.message || 'Unknown error'}`);
+			}
+			
+			console.log(`[Multi-Expert Order] Created order for ${expert.name}: ${orderResult.order?.id}`);
+		}
+		
+		// Use the first order result for the rest of the logic (they should all be successful)
+		const orderResult = orderResults[0];
+			
+			if (!orderResult.success) {
+				throw new Error(orderResult.error?.message || 'Failed to create order');
+			}
 
-										{/* Consumption Details */}
-										{salonProducts.length > 0 && (
-											<Paper sx={{ p: 2, mb: 2 }}>
-												<Typography variant="h6" sx={{ mb: 2 }}>
-													Consumption Details
-												</Typography>
-												
-												<TextField
-													label="Purpose"
-													value={consumptionPurpose}
-													onChange={(e) => setConsumptionPurpose(e.target.value)}
-													fullWidth
-													multiline
-													rows={2}
-													sx={{ mb: 2 }}
-													placeholder="e.g., Client service, salon maintenance, staff training"
-												/>
-												
-												<TextField
-													label="Notes"
-													value={consumptionNotes}
-													onChange={(e) => setConsumptionNotes(e.target.value)}
-													fullWidth
-													multiline
-													rows={2}
-													placeholder="Additional notes or details"
-												/>
-											</Paper>
-										)}
+					// --- Update Appointment Status if Applicable ---
+		if (currentAppointmentId && updateAppointment) {
+			try {
+				// Update all created orders with the appointment_id if needed
+				for (const result of orderResults) {
+					if (result.order && result.order.id) {
+						console.log(`DEBUG: Updating order ${result.order.id} with appointment_id ${currentAppointmentId}`);
+						
+						// Update the order with the appointment ID
+						const { error: updateOrderError } = await supabase
+							.from('pos_orders')
+							.update({ appointment_id: currentAppointmentId })
+							.eq('id', result.order.id);
+							
+						if (updateOrderError) {
+							console.error('Error updating order with appointment_id:', updateOrderError);
+						} else {
+							console.log(`Successfully linked order ${result.order.id} to appointment ${currentAppointmentId}`);
+						}
+					}
+				}
+				
+				// Update the appointment status
+				await updateAppointment({ 
+					id: currentAppointmentId, 
+					status: 'completed', 
+					paid: true, 
+					checked_in: false // Auto check-out when completing order
+					// IMPORTANT: Don't pass clientDetails here to preserve stylist associations
+				});
+				console.log(`Appointment ${currentAppointmentId} marked as completed, paid, and checked out.`);
+			} catch (updateError) {
+				console.error(`Failed to update appointment status for ${currentAppointmentId}:`, updateError);
+				toast.error('Order created, but failed to update appointment status.');
+			}
+		}
 
-										{/* Action Buttons */}
-										<Box sx={{ mt: 2, display: 'flex', gap: 1 }}>
-											<Button
-												variant="outlined"
-												fullWidth
-												onClick={() => {
-													setSalonProducts([]);
-													setConsumptionPurpose('');
-													setConsumptionNotes('');
-												}}
-												disabled={salonProducts.length === 0}
-											>
-												Clear
-											</Button>
-											<Button
-												variant="contained"
-												fullWidth
-												onClick={async () => {
-													// Handle salon consumption
-													console.log('Recording salon consumption...');
-												}}
-												disabled={salonProducts.length === 0 || !consumptionPurpose.trim() || processing}
-											>
-												{processing ? (
-													<CircularProgress size={20} color="inherit" />
-												) : (
-													'Record Consumption'
-												)}
-											</Button>
-										</Box>
-									</Box>
-								</Grid>
-							</Grid>
-						</TabPanel>
+					const successMessage = isMultiExpert ? 
+			`${orderResults.length} orders created successfully for ${numberOfExperts} experts!` : 
+			"Order created successfully!";
+		setSnackbarMessage(successMessage);
+		setSnackbarOpen(true);
+		
+		// Store the created order for printing (use the first order)
+		if (orderResult.order) {
+			setLastCreatedOrder(orderResult.order);
+			setPrintDialogOpen(true);
+		}
+			
+			resetFormState();
+			
+			if (orderResult.success) {
+				console.log('🔍 DEBUG: Order created successfully, checking product stock quantities...');
+				
+				// Replace the existing timeout block with this one
+				setTimeout(async () => {
+					let stockUpdateNeeded = false;
+					
+					for (const product of formattedProducts) {
+						if (product.id) {
+							const stockQty = await debugStockQuantity(product.id);
+							console.log(`🔍 DEBUG: After order - Product ${product.name} (${product.id}) stock quantity: ${stockQty}`);
+							
+							// Check if the quantity has actually changed
+							if (stockQty === null || typeof stockQty === 'number') {
+								const initialStockQty = allProducts.find(p => p.id === product.id)?.stock_quantity;
+								console.log(`🔍 DEBUG: Initial stock was: ${initialStockQty}, current is: ${stockQty}`);
+								
+								if (initialStockQty && stockQty !== null && stockQty >= initialStockQty) {
+									console.log(`🔍 DEBUG: Stock not reduced for ${product.name}, applying direct update fallback`);
+									stockUpdateNeeded = true;
+									
+									// Apply direct stock update
+									await directUpdateStockQuantity(product.id, product.quantity || 1);
+									
+									// Verify after direct update
+									const updatedStock = await debugStockQuantity(product.id);
+									console.log(`🔍 DEBUG: After direct update - Product ${product.name} stock: ${updatedStock}`);
+								}
+							}
+						}
+					}
+					
+					if (stockUpdateNeeded) {
+						console.log('🔍 DEBUG: Direct stock updates applied. Refreshing UI...');
+						// Trigger inventory refresh
+						window.dispatchEvent(new CustomEvent('inventory-updated'));
+						fetchBalanceStockData();
+					}
+				}, 1000);
+			}
+			
+			// Process membership payment and update balance
+			if (membershipPayableAmount > 0 && activeClientMembership) {
+				// Deduct the membership payment amount from the membership balance
+				const newBalance = activeClientMembership.currentBalance - membershipPayableAmount;
+				const { error } = await supabase
+					.from('members')
+					.update({ current_balance: newBalance })
+					.eq('id', activeClientMembership.id);
+				if (error) {
+					toast.error('Failed to update membership balance');
+					console.error('Membership balance update error:', error);
+				} else {
+					setActiveClientMembership({ ...activeClientMembership, currentBalance: newBalance });
+					toast.success(`Membership balance updated. Deducted: ₹${membershipPayableAmount.toLocaleString()}`);
+				}
+			}
+
+			// Initialize balance for new memberships
+			const membershipItemsForProcessing = orderItems.filter(i => i.type === 'membership' || i.category === 'membership');
+			for (const item of membershipItemsForProcessing) {
+				// Check if membership already exists for this client
+				const { data: existingMembership } = await supabase
+					.from('members')
+					.select('id')
+					.eq('client_id', clientIdToUse)
+					.eq('tier_id', item.item_id)
+					.single();
+
+				if (existingMembership) {
+					// Update existing membership
+					const { error: updateError } = await supabase
+						.from('members')
+						.update({
+							current_balance: item.price + (item.benefitAmount || 0),
+							total_membership_amount: item.price,
+							benefit_amount: item.benefitAmount || 0,
+							expires_at: new Date(Date.now() + (item.duration_months || 12) * 30 * 24 * 60 * 60 * 1000).toISOString()
+						})
+						.eq('id', existingMembership.id);
+
+					if (updateError) {
+						toast.error('Failed to update membership');
+						console.error('Membership update error:', updateError);
+					} else {
+						toast.success('Membership renewed');
+					}
+				} else {
+					// Create new membership
+					const { error: insertError } = await supabase
+						.from('members')
+						.insert({
+							client_id: clientIdToUse,
+							client_name: clientNameToUse,
+							tier_id: item.item_id,
+							purchase_date: new Date().toISOString(),
+							expires_at: new Date(Date.now() + (item.duration_months || 12) * 30 * 24 * 60 * 60 * 1000).toISOString(),
+							current_balance: item.price + (item.benefitAmount || 0),
+							total_membership_amount: item.price,
+							benefit_amount: item.benefitAmount || 0
+						});
+
+					if (insertError) {
+						toast.error('Failed to record membership purchase');
+						console.error('Membership insert error:', insertError);
+					} else {
+						toast.success('Membership activated');
+					}
+				}
+			}
+		} catch (error) {
+			console.error("Error creating walk-in order:", error);
+			const message = error instanceof Error ? error.message : "Unknown error";
+			setSnackbarMessage(`Error creating order: ${message}`);
+			setSnackbarOpen(true);
+		} finally {
+			setProcessing(false);
+		}
+	}, [currentAppointmentId, updateAppointment, orderItems, isOrderValid, calculateProductSubtotal, calculateServiceSubtotal, calculateProductGstAmount, calculateServiceGstAmount, walkInDiscount, getAmountPaid, selectedClient, selectedStylist, customerName, createWalkInOrderMutation, createOrder, isSplitPayment, splitPayments, productGstRate, serviceGstRate, calculateTotalAmount, allProducts, fetchBalanceStockData, directUpdateStockQuantity, createClientAsync, newClientPhone, newClientEmail, useMembershipPayment, activeClientMembership, paymentAmounts]);
+
+	const resetFormState = useCallback(() => {
+		// Remove activeStep reset since we don't use steps anymore
+		// setActiveStep(0);
+		setCustomerName("");
+		setSelectedClient(null);
+		setSelectedStylist(null);
+		setAppointmentDate(new Date());
+		setAppointmentTime(new Date());
+		setOrderItems([]);
+		setWalkInPaymentMethod("cash");
+		setIsSplitPayment(false);
+		setSplitPayments([]); // Keep for any remaining logic, though paymentAmounts is primary
+
+		setWalkInDiscount(0);
+		setWalkInDiscountPercentage(0); // Reset percentage discount
+		setCurrentAppointmentId(null); // <-- Reset appointment ID
+		// Reset new client fields as well
+		setNewClientPhone("");
+		setNewClientEmail("");
+		// Reset salon consumption state if it exists
+		setSalonProducts([]);
+		setConsumptionPurpose("");
+		setConsumptionNotes("");
+		setRequisitionVoucherNo("");
+		// Reset search terms
+		setProductSearchTerm("");
+		setServiceSearchTerm("");
+		setMembershipSearchTerm("");
+		// Reset dropdown values
+		setServiceDropdownValue(null);
+		setProductDropdownValue(null);
+		setMembershipDropdownValue(null);
+		// Reset paymentAmounts to default (e.g., cash covering total, others 0)
+		// This will be handled by the total recalculation and paymentAmounts useEffects
+		// For explicit reset:
+		setPaymentAmounts({ cash: 0, credit_card: 0, debit_card: 0, upi: 0, bnpl: 0, membership: 0 });
+		// Reset order date
+		setOrderDate(new Date());
+		// Reset service-specific membership payment tracking
+		setServicesMembershipPayment({});
+
+		// Clear persisted state from localStorage
+		try {
+			localStorage.removeItem(POS_STATE_STORAGE_KEY);
+			console.log("Persisted POS state cleared from localStorage.");
+		} catch (error) {
+			console.error("Error clearing POS state from localStorage:", error);
+		}
+	}, []);
+
+	const handleAddSalonProduct = useCallback((service: POSService, quantity: number = 1) => {
+		// Check if product already exists in salon products
+		const existingProductIndex = salonProducts.findIndex(
+			(item) => item.item_id === service.id
+		);
+
+		// Get the purchase cost from product_master table, fallback to service price
+		const purchaseCost = getPurchaseCostForProduct(service.id, service.name, service.price);
+		console.log(`Using purchase cost for ${service.name}: ₹${purchaseCost} (from product_master)`);
+
+		if (existingProductIndex >= 0) {
+			// Product already exists, increase quantity
+			const updatedProducts = [...salonProducts];
+			updatedProducts[existingProductIndex].quantity += quantity;
+			updatedProducts[existingProductIndex].total =
+				updatedProducts[existingProductIndex].quantity * purchaseCost;
+			// Update price to use purchase cost
+			updatedProducts[existingProductIndex].price = purchaseCost;
+			setSalonProducts(updatedProducts);
+		} else {
+			// Create a new order item for salon use
+			const newItem: OrderItem = {
+				id: uuidv4(),
+				order_id: '',
+				item_id: service.id,
+				item_name: service.name,
+				quantity: quantity,
+				price: purchaseCost, // Use purchase cost from product_master
+				total: purchaseCost * quantity,
+				type: 'product', // Always set as product for salon use
+				gst_percentage: service.gst_percentage,
+				hsn_code: service.hsn_code,
+				for_salon_use: true,
+				purpose: consumptionPurpose,
+				discount: 0,
+				discount_percentage: 0
+			};
+
+			setSalonProducts((prev) => [...prev, newItem]);
+		}
+	}, [salonProducts, consumptionPurpose, getPurchaseCostForProduct]);
+
+	const handleRemoveSalonProduct = useCallback((serviceId: string) => {
+		setSalonProducts((prev) => prev.filter((item) => item.item_id !== serviceId));
+	}, []);
+
+	const isSalonConsumptionValid = useCallback(() => {
+		// Check all requirements at once
+		return salonProducts.length > 0 && consumptionPurpose.trim() !== '';
+	}, [salonProducts, consumptionPurpose]);
+
+	const handleCreateSalonConsumptionWorkaround = useCallback(async () => {
+		if (!isSalonConsumptionValid()) {
+			toast.error('Please add products and provide a purpose for consumption');
+			return;
+		}
+
+		try {
+			setProcessing(true);
+			const currentDate = new Date().toISOString();
+			const consumptionDateToUse = orderDate ? orderDate.toISOString() : currentDate;
+
+			// Record results for each product
+			const processResults = [];
+
+			// Process each product one by one - CONSUMPTION RECORDING ONLY (NO STOCK REDUCTION)
+			for (const product of salonProducts) {
+				try {
+					// 1. Get the CURRENT stock value for consumption record only
+					const { data: currentProductData, error: fetchError } = await supabase
+						.from('products')
+						.select('id, name, stock_quantity')
+						.eq('id', product.item_id)
+						.single();
+
+					if (fetchError) {
+						console.error(`Error fetching current stock for ${product.item_name}:`, fetchError);
+						toast.error(`Could not retrieve stock for ${product.item_name}`);
+						processResults.push({
+							product: product.item_name,
+							success: false,
+							error: 'Failed to fetch current stock'
+						});
+						continue;
+					}
+
+					// Log the current stock (for record keeping only - NO REDUCTION)
+					const currentStock = currentProductData?.stock_quantity || 0;
+					console.log(`Current stock for ${product.item_name}: ${currentStock} (No stock reduction applied)`);
+
+					// Calculate tax values based on current stock
+					const price = product.price || 0;
+					const gstPercentage = product.gst_percentage || 0;
+					const currentStockValue = currentStock * price;
+					
+					// Calculate CGST and SGST (half of total GST each)
+					const gstRate = gstPercentage / 100;
+					const totalTax = currentStockValue * gstRate;
+					const cgst = totalTax / 2;
+					const sgst = totalTax / 2;
+					
+					console.log(`Tax calculation for ${product.item_name}:`, {
+						currentStock,
+						price,
+						currentStockValue,
+						gstRate,
+						totalTax,
+						cgst,
+						sgst
+					});
+
+					// REMOVED: Stock reduction logic - keeping stock unchanged
+					console.log(`Salon consumption recorded for ${product.item_name} - Stock remains unchanged at ${currentStock}`);
+
+					// Record success (no stock update attempted)
+					processResults.push({
+						product: product.item_name,
+						success: true,
+						initialStock: currentStock,
+						finalStock: currentStock, // Stock remains the same
+						consumed: product.quantity
+					});
+					
+					// Add consumption record with tax details
+					const salonConsumptionEntry = {
+						id: uuidv4(),
+						date: consumptionDateToUse, // Use selected date
+						created_at: consumptionDateToUse, // Use selected date for consistency
+						product_name: product.item_name,
+						hsn_code: product.hsn_code || '',
+						units: product.units || '',              // Added units (Product Type)
+						quantity: product.quantity,
+						purpose: consumptionPurpose,
+						price_per_unit: price,                   // Use numeric value
+						gst_percentage: gstPercentage,           // Use numeric percentage
+						// Map to the new column names in inventory_salon_consumption
+						current_stock: currentStock,
+						current_stock_taxable_value: parseFloat((currentStock * price).toFixed(2)), // Renamed
+						current_stock_igst: 0, // Added (always 0 for local consumption)
+						current_stock_sgst: parseFloat(sgst.toFixed(2)), // Renamed
+						current_stock_cgst: parseFloat(cgst.toFixed(2)), // Renamed
+						current_stock_total_value: parseFloat(totalTax.toFixed(2)) // Renamed
+					};
+					
+					const { error: consumptionError } = await supabase
+						.from('inventory_salon_consumption')
+						.insert(salonConsumptionEntry);
+					
+					if (consumptionError) {
+						console.error(`Error inserting salon consumption record for ${product.item_name}:`, consumptionError);
+						processResults[processResults.length - 1].success = false;
+						processResults[processResults.length - 1].error = 'Failed to record consumption';
+					} else {
+						console.log(`Added salon consumption record for ${product.item_name} with tax details`);
+					}
+
+				} catch (err) {
+					console.error(`Error processing ${product.item_name}:`, err);
+					processResults.push({
+						product: product.item_name,
+						success: false,
+						error: err instanceof Error ? err.message : String(err)
+					});
+				}
+			}
+
+			// Now create a record in pos_orders to track this consumption
+			// Declare variables outside try-catch block so they're accessible later
+			const orderId = uuidv4();
+			const orderDateToUse = orderDate ? orderDate.toISOString() : new Date().toISOString();
+			const orderTotal = salonProducts.reduce((sum, product) => sum + product.total, 0);
+			
+			try {
+				// Format the products for order items - ENSURE CORRECT QUANTITIES
+				const orderItems = salonProducts.map((product, idx) => ({
+					id: uuidv4(),
+					service_id: product.item_id,
+					service_name: product.item_name,
+					service_type: 'product',
+					price: product.price,
+					quantity: product.quantity, // Use the EXACT quantity, no division
+					gst_percentage: product.gst_percentage,
+					hsn_code: product.hsn_code,
+					created_at: orderDateToUse, // Use selected or current date
+					pos_order_id: orderId
+				}));
+
+				// Create order record with fields exactly matching the pos_orders table schema
+				const orderData: any = {
+					id: orderId,
+					created_at: orderDateToUse,
+					client_name: 'Salon Consumption',
+					customer_name: 'Salon Consumption', // Add for consistency
+					consumption_purpose: consumptionPurpose,
+					consumption_notes: consumptionNotes,
+					total: orderTotal,
+					total_amount: orderTotal, // Add for consistency
+					type: 'salon_consumption',
+					is_salon_consumption: true,
+					status: 'completed',
+					payment_method: 'internal',
+					services: salonProducts.map(product => ({
+						service_id: product.item_id, // Add service_id for reference
+						service_name: product.item_name, // Add service_name for consistency
+						product_id: product.item_id, // Add product_id for reference
+						product_name: product.item_name, // Add product_name for display
+						name: product.item_name,
+						price: product.price,
+						quantity: product.quantity,
+						type: 'product',
+						gst_percentage: product.gst_percentage,
+						hsn_code: product.hsn_code,
+						discount: product.discount || 0,
+						discount_percentage: product.discount_percentage || 0,
+						total: product.total
+					})),
+					requisition_voucher_no: requisitionVoucherNo || null
+				};
+				
+				// Add stock snapshot to track inventory (current stock without reduction)
+				const stockSnapshot: Record<string, number> = {};
+				let firstProductStock = 0;
+				
+				// FIXED: Query the correct table - products instead of product_master
+				for (const product of salonProducts) {
+					try {
+						const { data: productData } = await supabase
+							.from('products')
+							.select('stock_quantity')
+							.eq('id', product.item_id)
+							.single();
+						
+						if (productData && productData.stock_quantity !== undefined) {
+							stockSnapshot[product.item_id] = productData.stock_quantity;
+							
+							// FIXED: Set first product stock exactly like walk-in orders (no condition)
+							if (firstProductStock === 0) {
+								firstProductStock = productData.stock_quantity;
+							}
+						}
+					} catch (err) {
+						console.warn(`Failed to get stock for salon consumption product ${product.item_id}:`, err);
+						// Try to get from processResults as fallback
+						const result = processResults.find(r => r.product === product.item_name);
+						if (result && result.success && result.initialStock !== undefined) {
+							stockSnapshot[product.item_id] = result.initialStock;
+							if (firstProductStock === 0) {
+								firstProductStock = result.initialStock;
+							}
+						}
+					}
+				}
+				
+				// Always add stock snapshot and current_stock to the order data (exactly like walk-in orders)
+				orderData.stock_snapshot = JSON.stringify(stockSnapshot);
+				orderData.current_stock = String(firstProductStock);
+
+				console.log('Creating order record with data:', orderData);
+
+				// Insert order record into pos_orders
+				const { data: orderResult, error: orderError } = await supabase
+					.from('pos_orders')
+					.insert(orderData)
+					.select();
+
+				if (orderError) {
+					console.error('Error creating consumption order record:', orderError);
+					throw new Error(`Failed to record consumption order: ${orderError.message}`);
+				}
+
+				console.log('Successfully inserted order record:', orderResult);
+
+				// Insert order items into pos_order_items AND update the local storage orders
+				const { data: itemsResult, error: itemsError } = await supabase
+					.from('pos_order_items')
+					.insert(orderItems)
+					.select();
+
+				if (itemsError) {
+					console.error('Error creating consumption order items:', itemsError);
+					throw new Error(`Failed to record consumption order items: ${itemsError.message}`);
+				}
+
+				// Also update localStorage orders for immediate access
+				try {
+					const existingOrders = JSON.parse(localStorage.getItem('orders') || '[]');
+					const newOrder = {
+						...orderData,
+						items: orderItems.map(item => ({
+							...item,
+							order_id: orderId,
+							created_at: orderDateToUse // Use selected or current date
+						}))
+					};
+
+					// Add to beginning of array for newest first
+					existingOrders.unshift(newOrder);
+					localStorage.setItem('orders', JSON.stringify(existingOrders));
+					console.log('Updated localStorage with new salon consumption order');
+				} catch (localStorageError) {
+					console.error('Error updating localStorage:', localStorageError);
+					// Non-critical error, continue execution
+				}
+
+				console.log('Successfully inserted order items:', itemsResult);
+				console.log('Successfully recorded salon consumption order');
+
+				// Refresh orders by dispatching a refresh-orders event
+				window.dispatchEvent(new CustomEvent('refresh-orders'));
+			} catch (orderError) {
+				console.error('Error recording consumption order:', orderError);
+				// Continue execution rather than throwing error
+				toast.warning('Consumption recorded but order creation failed.');
+			}
+
+			// Log consumption details
+			console.log('Salon consumption summary:', {
+				date: consumptionDateToUse, // Use consumptionDateToUse as it's in scope
+				purpose: consumptionPurpose,
+				notes: consumptionNotes,
+				products: salonProducts.map(p => ({
+					name: p.item_name,
+					quantity: p.quantity
+				})),
+				note: 'Stock levels were NOT reduced - consumption tracking only'
+			});
+
+			// Refresh UI
+			if (typeof queryClient !== 'undefined') {
+				queryClient.invalidateQueries({ queryKey: ['products'] });
+				queryClient.invalidateQueries({ queryKey: ['balance-stock'] });
+				queryClient.invalidateQueries({ queryKey: ['pos-orders'] });
+				// Refresh salon consumption data in Inventory Manager and SalonConsumptionTab
+				queryClient.invalidateQueries({ queryKey: ['inventory-salon-consumption'] });
+				queryClient.invalidateQueries({ queryKey: ['salon-consumption-products'] });
+			}
+
+			window.dispatchEvent(new CustomEvent('inventory-updated'));
+			await fetchBalanceStockData();
+
+			// Success message
+			toast.success('Salon consumption recorded successfully (stock levels unchanged)');
+			
+			// Save order for printing - create a simple order object for salon consumption
+			const orderForPrinting = {
+				id: `salon_${Date.now()}`,
+				order_id: `salon_${Date.now()}`,
+				client_name: 'Salon Consumption',
+				created_at: new Date().toISOString(),
+				total: salonProducts.reduce((sum, product) => sum + product.total, 0),
+				services: salonProducts.map(product => ({
+					service_id: product.item_id, // Add service_id for reference
+					service_name: product.item_name, // Add service_name for consistency
+					product_id: product.item_id, // Add product_id for reference
+					product_name: product.item_name, // Add product_name for display
+					name: product.item_name,
+					price: product.price,
+					quantity: product.quantity,
+					total: product.total
+					}))
+			};
+			setLastCreatedOrder(orderForPrinting);
+			setPrintDialogOpen(true);
+
+			// Reset form and navigate to orders page instead of inventory page
+			resetFormState();
+			navigate('/orders');
+
+		} catch (error: any) {
+			console.error('Error creating salon consumption:', error);
+			toast.error(`Error: ${error.message || 'Unknown error occurred'}`);
+		} finally {
+			setProcessing(false);
+		}
+	}, [isSalonConsumptionValid, orderDate, salonProducts, consumptionPurpose, consumptionNotes, requisitionVoucherNo, fetchBalanceStockData, resetFormState, navigate, queryClient, createClientAsync, newClientPhone, newClientEmail, setLastCreatedOrder, setPrintDialogOpen]);
+
+	const handleRemoveFromOrder = useCallback((itemId: string) => {
+		setOrderItems((prevItems) => prevItems.filter((item) => item.id !== itemId));
+		toast.info("Item removed from order.");
+	}, []);
+
+	const handleItemPriceChange = useCallback((itemId: string, newPrice: number) => {
+		setOrderItems(prevItems =>
+			prevItems.map(item =>
+				item.id === itemId ? { ...item, price: isNaN(newPrice) ? 0 : newPrice } : item
+			)
+		);
+	}, []);
+
+	// Ensure createAppointmentOrder is defined here (using useCallback)
+	const createAppointmentOrder = useCallback(async (appointmentId: string) => {
+		const appointment = appointments?.find(app => app.id === appointmentId); 
+		if (!appointment) { toast.error("Appointment details not found."); return; }
+
+		const client = selectedClient ?? { id: appointment.client_id, full_name: 'Unknown' };
+		const stylist = selectedStylist ?? { id: appointment.stylist_id, name: 'Unknown' };
+
+		const itemsForOrder = orderItems.map(item => ({ 
+			id: item.id,
+			item_id: item.item_id,
+			item_name: item.item_name,
+			quantity: item.quantity,
+			price: item.price,
+			total: item.price * item.quantity,
+			type: item.type,
+			hsn_code: item.hsn_code,
+			units: item.units,
+			category: item.category,
+			gst_percentage: item.type === 'product' ? productGstRate : serviceGstRate,
+			discount: item.discount || 0,
+			for_salon_use: item.for_salon_use
+		}));
+
+		const gstAmount = calculateProductGstAmount(calculateProductSubtotal()) + calculateServiceGstAmount(calculateServiceSubtotal());
+		const totalAmount = calculateTotalAmount();
+
+		try {
+			// Use only the createWalkInOrderMutation to avoid duplicate orders
+			const walkInOrderData: CreateOrderData = {
+				order_id: `order_${uuidv4()}`,
+				client_id: client.id,
+				client_name: client.full_name,
+				stylist_id: stylist.id,
+				items: itemsForOrder, 
+				services: itemsForOrder.filter(i => i.type === 'service').map(i => ({ 
+					service_id: i.item_id,
+					service_name: i.item_name,
+					quantity: i.quantity,
+					price: i.price,
+					type: 'service',  // Ensure type is explicitly set
+					gst_percentage: i.gst_percentage || serviceGstRate,
+					hsn_code: i.hsn_code || '',
+					category: i.category || 'service'
+				})), 
+				subtotal: calculateProductSubtotal() + calculateServiceSubtotal(), 
+				tax: gstAmount,
+				discount: walkInDiscount, 
+				total: totalAmount,
+				payment_method: isSplitPayment ? 'split' : walkInPaymentMethod,
+				split_payments: isSplitPayment ? splitPayments : [],
+				notes: appointment.notes || "",
+				gst_amount: gstAmount, 
+				total_amount: totalAmount,
+				status: 'completed', 
+				order_date: orderDate ? orderDate.toISOString() : new Date().toISOString(),
+				is_walk_in: false,
+				appointment_id: appointmentId,  // Include appointment_id
+				appointment_time: appointment.start_time || appointment.appointmentTime,  // Include appointment_time
+			};
+			
+			console.log('Creating appointment order with services:', walkInOrderData.services);
+			await createWalkInOrderMutation.mutateAsync(walkInOrderData);
+			
+			toast.success("Order created successfully for appointment.");
+			
+			// Reset form state
+			resetFormState();
+		} catch (error: any) {
+			console.error("Failed to create order:", error);
+			toast.error(`Failed to create order: ${error?.message || 'Unknown error'}`);
+		}
+	}, [appointments, selectedClient, selectedStylist, orderItems, productGstRate, serviceGstRate, calculateProductGstAmount, calculateServiceGstAmount, calculateTotalAmount, calculateProductSubtotal, calculateServiceSubtotal, walkInDiscount, isSplitPayment, splitPayments, walkInPaymentMethod, createWalkInOrderMutation, resetFormState, orderDate]);
+
+	// Add this helper function to group services by category
+	const groupByCategory = (items: POSService[] | Service[]): Record<string, (POSService | Service)[]> => {
+		const grouped: Record<string, (POSService | Service)[]> = {};
+		
+		items.forEach(item => {
+			// Use type assertion to access category property that may not exist on all Service types
+			const category = (item as any).category || 'Other';
+			if (!grouped[category]) {
+				grouped[category] = [];
+			}
+			grouped[category].push(item);
+		});
+		
+		return grouped;
+	};
+
+	// Change renderServiceSelectionSection to return null
+	const renderServiceSelectionSection = () => {
+		// Group services by category
+		// const groupedServices = groupByCategory(filteredServices as Service[]); // This line can be kept if other logic depends on it, or removed if not
+		
+		// Return null to hide this section as per user request to revert to dropdown-only UI for services
+		return null;
+
+		/* Original card rendering code - kept for reference if needed later
+		return (
+			<Box sx={{ p: 2 }}>
+				<Typography variant="h6" gutterBottom>
+					Services
+				</Typography>
+
+				<TextField ... />
+
+				{loadingStylists || loadingServices ? ( ... ) : ( ... )}
+			</Box>
+		);
+		*/
+	};
+
+	// Change renderProductsSelectionSection to return null
+	const renderProductsSelectionSection = () => {
+		// Group products by category
+		// const groupedProducts = groupByCategory(filteredProducts as POSService[]); // This line can be kept if other logic depends on it, or removed if not
+
+		// Return null to hide this section as per user request to revert to dropdown-only UI for products
+		return null;
+
+		/* Original card rendering code - kept for reference if needed later
+		return (
+			<Box sx={{ p: 2, mt: 1 }}>
+				<Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+					<Typography variant="h6">
+						Products
+					</Typography>
+					<Box sx={{ display: 'flex', alignItems: 'center' }}>
+						<RefreshInventoryButton ... />
 					</Box>
 				</Box>
 
-				{/* Snackbar for notifications */}
-				<Snackbar
-					open={snackbarOpen}
-					autoHideDuration={4000}
-					onClose={() => setSnackbarOpen(false)}
-					anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-				>
-					<Alert severity="success" onClose={() => setSnackbarOpen(false)}>
-						{snackbarMessage}
-					</Alert>
-				</Snackbar>
+				<TextField ... />
 
-				{/* Print Dialog */}
-				<Dialog
-					open={printDialogOpen}
-					onClose={() => setPrintDialogOpen(false)}
-					maxWidth="sm"
-					fullWidth
-				>
-					<DialogTitle>
-						<Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-							<ReceiptIcon />
-							Print Receipt
-						</Box>
-					</DialogTitle>
-					<DialogContent>
-						<Typography variant="body1" sx={{ mb: 2 }}>
-							Order created successfully! Would you like to print the receipt?
+				{loadingProducts ? ( ... ) : ( ... )}
+			</Box>
+		);
+		*/
+	};
+
+	const renderSalonProductSelection = () => {
+		// Filter to ensure only products (not services) are shown
+		const productsOnly = allProducts.filter(product =>
+			product.type === 'product' || !product.type
+		);
+
+		return (
+			<Box sx={{ p: 3 }}>
+				<Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+					<Typography variant="h6">
+						Select Products for Salon Use
+					</Typography>
+					<RefreshInventoryButton
+						onRefresh={async () => {
+							console.log("🔄 POS Salon: Forcefully refreshing product stock data and purchase costs");
+							try {
+								// First fetch balance stock for current stock quantities
+								await fetchBalanceStockData();
+								// Then reload all products to ensure everything is up to date
+								
+								await fetchAllProducts();
+								// Also refresh product master costs for salon consumption
+								const refreshedCosts = await fetchProductMasterCosts();
+								setProductMasterCosts(refreshedCosts.costs);
+								setProductMasterCostsByName(refreshedCosts.costsByName);
+								toast.success("Stock data and purchase costs refreshed successfully");
+								console.log("🔄 POS Salon: Stock data and purchase costs refresh complete");
+							} catch (error) {
+								console.error("🔄 POS Salon: Error refreshing stock data:", error);
+								
+								toast.error("Failed to refresh stock data");
+							}
+							return Promise.resolve();
+						}}
+						size="small"
+						buttonText="Refresh Stock"
+							variant="outlined"
+					/>
+				</Box>
+
+				<Grid container spacing={2}> {/* Add Grid container here */}
+					<Grid item xs={12} sm={6}>
+						<TextField
+							fullWidth
+							label="Consumption Purpose"
+							variant="outlined"
+								placeholder="E.g., Stylist workstation, Salon display, Client consultation"
+							value={consumptionPurpose || ""}
+							onChange={(e: React.ChangeEvent<HTMLInputElement>) => setConsumptionPurpose(e.target.value)}
+							helperText="Specify the purpose of this salon consumption"
+							required
+							sx={{ mb: 3, '& .MuiOutlinedInput-root': { borderRadius: '8px' } }}
+						/>
+					</Grid>
+					<Grid item xs={12} sm={6}>
+						<LocalizationProvider dateAdapter={AdapterDateFns}>
+							<DatePicker
+								label="Consumption Date"
+								value={orderDate}
+								onChange={(newDate) => setOrderDate(newDate)}
+								slotProps={{
+									textField: {
+										fullWidth: true,
+										variant: "outlined",
+										size: "small",
+										helperText: "Select the date for this consumption",
+										sx: { mb: 3, '& .MuiOutlinedInput-root': { borderRadius: '8px' } }
+									}
+								}}
+							/>
+						</LocalizationProvider>
+					</Grid>
+				</Grid> {/* Close Grid container */}
+
+				{/* Replace product cards with dropdown */}
+				<Box sx={{ mb: 4 }}>
+					<Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+						<Autocomplete
+							options={productsOnly}
+							getOptionLabel={(option) => {
+								const stockLabel = option.stock_quantity !== undefined ? 
+									` (${option.stock_quantity} in stock)` : '';
+								return `${option.name}${stockLabel}`;
+							}}
+							renderOption={(props, option) => {
+								// Get purchase cost from product_master table, fallback to option price (which is mrpExclGst from fetchAllProducts)
+								const purchaseCost = getPurchaseCostForProduct(option.id, option.name, option.price);
+								// Determine if the purchaseCost came from product_master or was a fallback
+								const actualPurchaseCostFromMaster = productMasterCosts[option.id] || productMasterCostsByName[option.name.toLowerCase().trim()];
+								const priceToDisplay = actualPurchaseCostFromMaster !== undefined ? actualPurchaseCostFromMaster : purchaseCost;
+								const priceSource = actualPurchaseCostFromMaster !== undefined ? 'Purchase Cost (Ex.GST)' : `MRP Ex.GST (Fallback)`;
+								
+								return (
+									<li {...props}>
+										<Box>
+											<Typography variant="body2">{option.name}</Typography>
+											<Typography variant="caption" color="text.secondary">
+												₹{priceToDisplay.toFixed(2)} ({priceSource}) • {option.stock_quantity !== undefined ? 
+													`${option.stock_quantity} in stock` : 'Stock not available'}
+											</Typography>
+										</Box>
+									</li>
+								);
+							}}
+							value={null}
+							onChange={(_, newProduct) => {
+								if (newProduct) {
+									if (newProduct.stock_quantity !== undefined && newProduct.stock_quantity <= 0) {
+										 toast.error(`${newProduct.name} is out of stock`);
+									} else {
+										handleAddSalonProduct(newProduct); // handleAddSalonProduct uses getPurchaseCostForProduct internally
+										const purchaseCostForToast = getPurchaseCostForProduct(newProduct.id, newProduct.name, newProduct.price);
+										const actualPurchaseCostFromMasterForToast = productMasterCosts[newProduct.id] || productMasterCostsByName[newProduct.name.toLowerCase().trim()];
+                						const priceSourceForToast = actualPurchaseCostFromMasterForToast !== undefined ? 'Purchase Cost (Ex.GST)' : `MRP Ex.GST (Fallback)`;
+										toast.success(`Added ${newProduct.name} for salon use at ₹${purchaseCostForToast.toFixed(2)} (${priceSourceForToast})`);
+									}
+								}
+							}}
+							renderInput={(params) => (
+								<TextField {...params} 
+									label="Select Product" 
+									variant="outlined" 
+									fullWidth 
+									size="small"
+									helperText="Prices shown are Purchase Cost/Unit (Ex.GST) from product master"
+								/>
+							)}
+							sx={{ flex: 1 }}
+						/>
+						<Button
+							variant="contained"
+							color="primary"
+							sx={{
+								bgcolor: 'rgb(94, 129, 34)',
+								'&:hover': {
+									bgcolor: 'rgb(75, 103, 27)'
+								}
+							}}
+						>
+							Add Product
+						</Button>
+					</Box>
+				</Box>
+
+				<Box sx={{ mt: 2 }}>
+					<Typography variant="subtitle2">Selected Products:</Typography>
+					{salonProducts.length === 0 ? (
+						<Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+							No products selected. Please select products using the dropdown above.
 						</Typography>
-						{lastCreatedOrder && (
-							<Box sx={{ 
-								bgcolor: 'grey.50', 
-								p: 2, 
-								borderRadius: 1,
-								border: 1,
-								borderColor: 'grey.200'
-							}}>
-								<Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1 }}>
-									Order Details:
-								</Typography>
-								<Typography variant="body2">
-									Order ID: {lastCreatedOrder.id?.slice(-8) || 'N/A'}
-								</Typography>
-								<Typography variant="body2">
-									Customer: {lastCreatedOrder.client_name || lastCreatedOrder.customer_name}
-								</Typography>
-								<Typography variant="body2">
-									Total: ₹{lastCreatedOrder.total?.toFixed(2) || '0.00'}
-								</Typography>
-								<Typography variant="body2">
-									Date: {lastCreatedOrder.created_at ? format(new Date(lastCreatedOrder.created_at), 'dd/MM/yyyy HH:mm') : 'N/A'}
+					) : (
+						<TableContainer component={Paper} variant="outlined" sx={{ mt: 1 }}>
+							<Table size="small">
+								<TableHead>
+									<TableRow>
+										<TableCell>Product</TableCell>
+										<TableCell align="right">Quantity</TableCell>
+										<TableCell align="right">Purchase Cost/Unit (Ex.GST)</TableCell>
+										<TableCell align="right">Total</TableCell>
+										<TableCell></TableCell>
+									</TableRow>
+								</TableHead>
+								<TableBody>
+									{salonProducts.map((product) => (
+										<TableRow key={product.id}>
+											<TableCell>{product.item_name}</TableCell>
+											<TableCell align="right">
+												<TextField
+													type="number"
+													size="small"
+													value={product.quantity}
+													onChange={(e) => {
+														const newQuantity = Math.max(1, parseInt(e.target.value) || 1);
+														// Get the purchase cost from product_master table, fallback to current price
+														const purchaseCost = getPurchaseCostForProduct(product.item_id, product.item_name, product.price);
+														const updatedProducts = salonProducts.map(p => 
+															p.id === product.id ? {
+																...p, 
+																quantity: newQuantity, 
+																price: purchaseCost, // Update price to use purchase cost
+																total: purchaseCost * newQuantity
+															} : p
+														);
+														setSalonProducts(updatedProducts);
+													}}
+													InputProps={{ inputProps: { min: 1, style: { textAlign: 'right' } } }}
+													sx={{ width: 70 }}
+												/>
+											</TableCell>
+											<TableCell align="right">{formatCurrency(product.price)}</TableCell>
+											<TableCell align="right">{formatCurrency(product.price * product.quantity)}</TableCell>
+											<TableCell align="right">
+												<IconButton
+													size="small"
+													color="error"
+													onClick={() => handleRemoveSalonProduct(product.item_id)}
+												>
+													<DeleteOutlineIcon fontSize="small" />
+												</IconButton>
+											</TableCell>
+										</TableRow>
+									))}
+								</TableBody>
+							</Table>
+						</TableContainer>
+					)}
+				</Box>
+			</Box>
+		);
+	};
+
+	const renderOrderSummary = () => {
+		const productSubtotal = calculateProductSubtotal();
+		const serviceSubtotal = calculateServiceSubtotal();
+		const membershipSubtotal = calculateMembershipSubtotal();
+		const combinedSubtotal = productSubtotal + serviceSubtotal + membershipSubtotal;
+		const productGstAmount = calculateProductGstAmount(productSubtotal);
+		const serviceGstAmount = calculateServiceGstAmount(serviceSubtotal);
+		const membershipGstAmount = calculateMembershipGstAmount(membershipSubtotal);
+		const combinedGstAmount = productGstAmount + serviceGstAmount + membershipGstAmount;
+		const subtotalIncludingGST = combinedSubtotal + combinedGstAmount;
+
+		// Calculate individual item discounts total (for display only)
+		const individualItemDiscounts = orderItems.reduce((sum, item) => sum + (item.discount || 0), 0);
+		
+		// Total discount for display (individual discounts already applied to subtotals)
+		const totalDiscount = individualItemDiscounts + walkInDiscount;
+		
+		// Calculate total amount by summing actual individual item amounts (matching display)
+		const totalAmount = orderItems.reduce((sum, item) => {
+			const gstPercentage = item.gst_percentage || (item.type === 'product' ? productGstRate : serviceGstRate) || 18;
+			const isGstApplied = item.type === 'product' ? isProductGstApplied : (item.type === 'service' ? isServiceGstApplied : true);
+			const gstMultiplier = isGstApplied ? (1 + (gstPercentage / 100)) : 1;
+			
+			// For services paid via membership, exclude GST
+			const isServicePaidViaMembership = item.type === 'service' && servicesMembershipPayment[item.id];
+			const finalMultiplier = isServicePaidViaMembership ? 1 : gstMultiplier;
+			const totalAmount = (item.price * item.quantity * finalMultiplier);
+			const finalAmount = Math.max(0, totalAmount - (item.discount || 0));
+			
+			return sum + finalAmount;
+		}, 0) - walkInDiscount; // Apply global discount to the total
+
+		return (
+			<Paper sx={{ p: 3, height: '100%' }}>
+				<Typography variant="h6" gutterBottom sx={{ mb: 2, fontWeight: 'bold' }}>
+						Order Summary
+				</Typography>
+				{/* Items List */}
+				<Box sx={{ maxHeight: '300px', overflowY: 'auto', mb: 2 }}>
+					{orderItems.length === 0 ? (
+						<Typography color="text.secondary">No items added yet.</Typography>
+					) : (
+						orderItems.map((item) => (
+							<React.Fragment key={item.id}>
+							<Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1.5, borderBottom: '1px dashed', borderColor: 'divider', pb: 1.5 }}>
+								<Box sx={{ flexGrow: 1, mr: 1 }}>
+									<Typography variant="body1" sx={{ fontWeight: 500, display: 'flex', alignItems: 'center' }}>
+										{item.type === 'service' && <ContentCutIcon fontSize="inherit" sx={{ verticalAlign: 'middle', mr: 0.5, color: 'primary.main' }} />}
+										{item.type === 'product' && <Inventory fontSize="inherit" sx={{ verticalAlign: 'middle', mr: 0.5, color: 'secondary.main' }} />}
+										{item.type === 'membership' && <CardMembershipIcon fontSize="inherit" sx={{ verticalAlign: 'middle', mr: 0.5, color: 'success.main' }} />}
+										{item.item_name}
+										<TextField
+											size="small"
+											variant="standard"
+											type="number"
+											label="Qty"
+											value={item.quantity}
+											onChange={(e) => {
+												const newQuantity = Math.max(1, parseInt(e.target.value) || 1);
+												
+												// For products, check stock availability
+												if (item.type === 'product') {
+													const product = allProducts.find(p => p.id === item.item_id);
+													if (product && product.stock_quantity !== undefined) {
+														// Check if new quantity exceeds available stock
+														if (newQuantity > product.stock_quantity) {
+															toast.warning(`Cannot set quantity to ${newQuantity} - Only ${product.stock_quantity} available in stock`);
+															return;
+														}
+													}
+												}
+												
+												const updatedItems = orderItems.map(i => {
+													if (i.id === item.id) {
+														// Calculate proportional discount adjustment
+														const oldQuantity = i.quantity;
+														const quantityRatio = newQuantity / oldQuantity;
+														
+														// Adjust discount amount proportionally if it exists
+														const newDiscountAmount = (i.discount || 0) * quantityRatio;
+														
+														return { 
+															...i, 
+															quantity: newQuantity,
+															total: i.price * newQuantity,
+															discount: newDiscountAmount,
+															// Recalculate discount percentage based on new quantity
+															discount_percentage: newDiscountAmount > 0 ? 
+																Math.min(100, (newDiscountAmount / (i.price * newQuantity)) * 100) : 
+																(i.discount_percentage || 0)
+														};
+													}
+													return i;
+												});
+												setOrderItems(updatedItems);
+											}}
+											sx={{ width: '60px', ml: 1 }}
+											InputProps={{
+												inputProps: { min: 1, style: { textAlign: 'center' } }
+											}}
+										/>
+									</Typography>
+									{/* Show experts for service items */}
+									{item.type === 'service' && (item as POSOrderItem).experts && (item as POSOrderItem).experts!.length > 0 && (
+										<Box sx={{ mt: 0.5, display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
+											{(item as POSOrderItem).experts!.map((expert: any, index: number) => (
+												<Chip
+													key={expert.id || index}
+													label={expert.name || 'Unknown'}
+													size="small"
+													variant="outlined"
+													sx={{ 
+														fontSize: '0.6rem', 
+														height: '18px', 
+														'& .MuiChip-label': { px: 0.5 },
+														color: 'primary.main',
+														borderColor: 'primary.main'
+													}}
+												/>
+											))}
+										</Box>
+									)}
+									<Box sx={{ display: 'flex', alignItems: 'center', mt: 1, gap: 2 }}>
+										{(() => {
+											// Calculate GST-inclusive price for display and discount calculations
+											const gstPercentage = item.gst_percentage || (item.type === 'product' ? productGstRate : serviceGstRate) || 18;
+											const isGstApplied = item.type === 'product' ? isProductGstApplied : (item.type === 'service' ? isServiceGstApplied : true);
+											const gstMultiplier = isGstApplied ? (1 + (gstPercentage / 100)) : 1;
+											const priceIncludingGst = item.price * gstMultiplier;
+											const totalIncludingGst = priceIncludingGst * item.quantity;
+											
+											return (
+												<>
+													<TextField
+														size="small"
+														variant="standard"
+														type="number"
+														label="Price (Inc. GST)"
+														value={priceIncludingGst.toFixed(2)}
+														onChange={(e) => {
+															const newPriceIncGst = parseFloat(e.target.value);
+															// Convert back to ex-GST price for storage
+															const newPriceExGst = isGstApplied ? newPriceIncGst / gstMultiplier : newPriceIncGst;
+															handleItemPriceChange(item.id, isNaN(newPriceExGst) ? 0 : newPriceExGst);
+														}}
+														sx={{ width: '100px' }}
+														InputProps={{
+															startAdornment: <InputAdornment position="start">₹</InputAdornment>,
+															inputProps: { step: 0.01, min: 0 }
+														}}
+													/>
+													
+													{/* Individual item discount fields - now working with GST-inclusive amounts */}
+													<Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+														<TextField
+															size="small"
+															variant="standard"
+															type="number"
+															label="Disc ₹"
+															value={item.discount || 0}
+															onChange={(e) => {
+																const discAmount = parseFloat(e.target.value);
+																const updatedItems = orderItems.map(i => 
+																	i.id === item.id 
+																		? { 
+																			...i, 
+																			discount: isNaN(discAmount) ? 0 : discAmount,
+																			// Calculate percentage based on GST-inclusive amount
+																			discount_percentage: isNaN(discAmount) ? 0 : 
+																				totalIncludingGst > 0 ? Math.min(100, (discAmount / totalIncludingGst) * 100) : 0
+																			// Don't modify total - keep it as original price × quantity
+																		} 
+																		: i
+																);
+																setOrderItems(updatedItems);
+															}}
+															sx={{ width: '70px' }}
+															InputProps={{
+																inputProps: { min: 0, max: totalIncludingGst }
+															}}
+														/>
+														<TextField
+															size="small"
+															variant="standard"
+															type="number"
+															label="Disc %"
+															value={item.discount_percentage || 0}
+															onChange={(e) => {
+																const discPercentage = parseFloat(e.target.value);
+																const validPercentage = isNaN(discPercentage) ? 0 : Math.max(0, Math.min(100, discPercentage));
+																// Calculate discount amount based on GST-inclusive total
+																const discAmount = (validPercentage / 100) * totalIncludingGst;
+																const updatedItems = orderItems.map(i => 
+																	i.id === item.id 
+																		? { 
+																			...i, 
+																			discount_percentage: validPercentage,
+																			discount: discAmount
+																			// Don't modify total - keep it as original price × quantity
+																		} 
+																		: i
+																);
+																setOrderItems(updatedItems);
+															}}
+															sx={{ width: '70px' }}
+															InputProps={{
+																endAdornment: <InputAdornment position="end">%</InputAdornment>,
+																inputProps: { min: 0, max: 100, step: 1 }
+															}}
+														/>
+													</Box>
+												</>
+											);
+										})()}
+									</Box>
+								</Box>
+								<Box sx={{ textAlign: 'right', minWidth: '100px' }}>
+									{(() => {
+										// Calculate display values with or without GST based on payment method
+										const gstPercentage = item.gst_percentage || (item.type === 'product' ? productGstRate : serviceGstRate) || 18;
+										const isGstApplied = item.type === 'product' ? isProductGstApplied : (item.type === 'service' ? isServiceGstApplied : true);
+										const gstMultiplier = isGstApplied ? (1 + (gstPercentage / 100)) : 1;
+										
+										// For services paid via membership, exclude GST
+										const isServicePaidViaMembership = item.type === 'service' && servicesMembershipPayment[item.id];
+										const finalMultiplier = isServicePaidViaMembership ? 1 : gstMultiplier;
+										const totalAmount = (item.price * item.quantity * finalMultiplier);
+										const finalAmount = Math.max(0, totalAmount - (item.discount || 0));
+										
+										return (
+											<>
+												<Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.75rem' }}>
+													{isServicePaidViaMembership ? 
+														'Ex. GST (Membership)' : 
+														`Inc. GST (${gstPercentage}%)`
+													}
+												</Typography>
+												<Typography variant="body1" sx={{ fontWeight: 500 }}>
+													{formatCurrency(finalAmount)}
+												</Typography>
+												{item.discount && item.discount > 0 && (
+													<Typography variant="body2" color="text.secondary" sx={{ textDecoration: 'line-through', fontSize: '0.75rem' }}>
+														{formatCurrency(totalAmount)}
+													</Typography>
+												)}
+											</>
+										);
+									})()}
+								</Box>
+								<Tooltip title="Remove Item">
+									<IconButton size="small" color="error" onClick={() => handleRemoveFromOrder(item.id)} sx={{ ml: 1 }}>
+										<CloseIcon fontSize="small" />
+									</IconButton>
+								</Tooltip>
+							</Box>
+							{item.type === 'membership' && (
+								<Box sx={{ pl: 4, pb: 2, display: 'flex', justifyContent: 'flex-start', alignItems: 'center' }}>
+										<TextField
+												size="small"
+												variant="outlined"
+												type="number"
+												label="Add Benefit Amount"
+												value={item.benefitAmount || ''}
+												onChange={(e) => {
+														const benefit = parseFloat(e.target.value);
+														const updatedItems = orderItems.map(i =>
+																i.id === item.id
+																		? {
+																				...i,
+																				benefitAmount: isNaN(benefit) ? 0 : benefit,
+																			}
+																		: i
+														);
+														setOrderItems(updatedItems);
+												}}
+												sx={{ width: '220px' }}
+												InputProps={{
+														startAdornment: <InputAdornment position="start">₹</InputAdornment>,
+												}}
+										/>
+								</Box>
+							)}
+							{/* Add membership payment toggle for services only - products cannot use membership payment */}
+							{item.type === 'service' && (
+								<Box sx={{ pl: 4, pb: 2, display: 'flex', justifyContent: 'flex-start', alignItems: 'center' }}>
+									<FormControlLabel
+										control={
+											<Switch
+												checked={servicesMembershipPayment[item.id] || false}
+												onChange={(e) => {
+													// Check if service is eligible for membership payment
+													const service = services.find(s => s.id === item.item_id);
+													if (e.target.checked && service && service.membership_eligible === false) {
+														toast.error('This is a premium service and cannot be purchased with membership balance');
+														return;
+													}
+													
+													if (!activeClientMembership || !activeClientMembership.isActive) {
+														toast.error('No active membership found for this client');
+														return;
+													}
+													setServicesMembershipPayment(prev => ({
+														...prev,
+														[item.id]: e.target.checked
+													}));
+													
+													// Show toast message about membership discount
+													if (e.target.checked) {
+														const gstPercentage = item.gst_percentage || serviceGstRate || 18;
+														const itemTotal = item.price * item.quantity;
+														const gstAmount = (itemTotal * gstPercentage) / (100 + gstPercentage);
+														toast.success(`Membership payment applied! GST discount of ₹${gstAmount.toFixed(2)} automatically applied.`);
+													} else {
+														toast.info('Membership payment removed. Regular pricing with GST will apply.');
+													}
+												}}
+												size="small"
+												color="primary"
+												disabled={(() => {
+													const service = services.find(s => s.id === item.item_id);
+													const isPremiumService = service && service.membership_eligible === false;
+													const noMembership = !activeClientMembership || !activeClientMembership.isActive;
+													return isPremiumService || noMembership;
+												})()}
+											/>
+										}
+										label={
+											<Box sx={{ display: 'flex', alignItems: 'center' }}>
+												<AccountBalanceWalletIcon fontSize="small" sx={{ mr: 0.5 }} />
+												<Typography variant="body2">
+													Pay with Membership Balance
+												</Typography>
+												{(() => {
+													const service = services.find(s => s.id === item.item_id);
+													const isPremiumService = service && service.membership_eligible === false;
+													if (isPremiumService) {
+														return (
+															<Typography variant="caption" color="warning.main" sx={{ ml: 1 }}>
+																(Premium Service)
+															</Typography>
+														);
+													}
+													if (!activeClientMembership) {
+														return (
+															<Typography variant="caption" color="text.secondary" sx={{ ml: 1 }}>
+																(No membership)
+															</Typography>
+														);
+													}
+													return null;
+												})()}
+											</Box>
+										}
+									/>
+									{activeClientMembership && (() => {
+										const service = services.find(s => s.id === item.item_id);
+										const isPremiumService = service && service.membership_eligible === false;
+										return !isPremiumService && (
+											<Chip
+												icon={<CheckIcon fontSize="small" />}
+												label={`Balance: ₹${activeClientMembership.currentBalance.toLocaleString()}`}
+												size="small"
+												color="primary"
+												variant="outlined"
+												sx={{ ml: 2 }}
+											/>
+										);
+									})()}
+									{(() => {
+										const service = services.find(s => s.id === item.item_id);
+										const isPremiumService = service && (service as any).membership_eligible === false;
+										return isPremiumService && (
+											<Chip
+												icon={<InfoIcon fontSize="small" />}
+												label="Premium service - Regular payment only"
+												size="small"
+												color="warning"
+												variant="outlined"
+												sx={{ ml: 2 }}
+											/>
+										);
+									})()}
+								</Box>
+							)}
+							{/* Show info that products cannot be paid with membership */}
+							{item.type === 'product' && (
+								<Box sx={{ pl: 4, pb: 2, display: 'flex', justifyContent: 'flex-start', alignItems: 'center' }}>
+									<Chip
+										icon={<InfoIcon fontSize="small" />}
+										label="Products must be paid with regular payment methods"
+										size="small"
+										color="info"
+										variant="outlined"
+									/>
+								</Box>
+							)}
+							</React.Fragment>
+						))
+					)}
+				</Box>
+				<Divider sx={{ my: 2 }} />
+				{/* Subtotals */}
+				<Box sx={{ mb: 1, display: 'flex', justifyContent: 'space-between' }}>
+					<Typography variant="body2">Product Subtotal (MRP Ex.GST):</Typography>
+					<Typography variant="body2" fontWeight="500">{formatCurrency(productSubtotal)}</Typography>
+				</Box>
+				<Box sx={{ mb: 1, display: 'flex', justifyContent: 'space-between' }}>
+					<Typography variant="body2">Service Subtotal:</Typography>
+					<Typography variant="body2" fontWeight="500">{formatCurrency(serviceSubtotal)}</Typography>
+				</Box>
+				{membershipSubtotal > 0 && (
+					<Box sx={{ mb: 1, display: 'flex', justifyContent: 'space-between' }}>
+						<Typography variant="body2">Membership Subtotal:</Typography>
+						<Typography variant="body2" fontWeight="500">{formatCurrency(membershipSubtotal)}</Typography>
+					</Box>
+				)}
+				
+				{/* Manual date selection */}
+				<Box sx={{ mb: 2, mt: 2 }}>
+					<Typography variant="body2" fontWeight="500" gutterBottom>Order Date:</Typography>
+					<LocalizationProvider dateAdapter={AdapterDateFns}>
+						<DatePicker
+							value={orderDate}
+							onChange={(newDate) => setOrderDate(newDate)}
+							slotProps={{
+								textField: {
+									fullWidth: true,
+									variant: "outlined",
+									size: "small",
+									helperText: "Manually set order date",
+									sx: { mb: 1, '& .MuiOutlinedInput-root': { borderRadius: '8px' } }
+								}
+							}}
+						/>
+					</LocalizationProvider>
+				</Box>
+
+				{/* GST Section */}
+				<Box sx={{ mb: 1, display: 'flex', justifyContent: 'space-between' }}>
+					<Typography>Subtotal (Excl. GST):</Typography>
+					<Typography fontWeight="medium">{formatCurrency(combinedSubtotal)}</Typography>
+				</Box>
+				{/* GST Section for Services */}
+				<Box sx={{ mb: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+					<Box sx={{ display: 'flex', alignItems: 'center' }}>
+						<FormControlLabel
+							control={
+								<Switch
+									checked={isServiceGstApplied}
+									onChange={(e) => setIsServiceGstApplied(e.target.checked)}
+									size="small"
+								/>
+							}
+							labelPlacement="start"
+							label={<Typography sx={{ mr: 0.5 }}>Service GST:</Typography>}
+							sx={{ ml: -1.5, mr: 0 }}
+						/>
+						{isServiceGstApplied && (
+							<TextField
+								type="number"
+								value={serviceGstRate}
+								onChange={(e) => {
+									const rate = parseFloat(e.target.value);
+									setServiceGstRate(isNaN(rate) ? 0 : Math.max(0, rate));
+								}}
+								size="small"
+								variant="outlined"
+								sx={{ width: '100px', ml: 0.5, '& .MuiInputBase-input': { fontSize: '1rem' } }}
+								InputProps={{
+									endAdornment: <InputAdornment position="end">%</InputAdornment>,
+									inputProps: { step: 0.01, min: 0 }
+									}}
+							/>
+						)}
+					</Box>
+					<Typography fontWeight="medium">{formatCurrency(serviceGstAmount)}</Typography>
+				</Box>
+				{/* GST Section for Products */}
+				<Box sx={{ mb: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+					<Box sx={{ display: 'flex', alignItems: 'center' }}>
+						<FormControlLabel
+							control={
+								<Switch
+									checked={isProductGstApplied}
+									onChange={(e) => setIsProductGstApplied(e.target.checked)}
+									size="small"
+								/>
+							}
+							labelPlacement="start"
+							label={<Typography sx={{ mr: 0.5 }}>Product GST:</Typography>}
+							sx={{ ml: -1.5, mr: 0 }}
+						/>
+						{isProductGstApplied && (
+							<TextField
+								type="number"
+								value={productGstRate}
+								onChange={(e) => {
+									const rate = parseFloat(e.target.value);
+									setProductGstRate(isNaN(rate) ? 0 : Math.max(0, rate));
+								}}
+								size="small"
+								variant="outlined"
+								sx={{ width: '100px', ml: 0.5, '& .MuiInputBase-input': { fontSize: '1rem' } }}
+								InputProps={{
+									endAdornment: <InputAdornment position="end">%</InputAdornment>,
+									inputProps: { step: 0.01, min: 0 }
+								}}
+							/>
+						)}
+					</Box>
+					<Typography fontWeight="medium">{formatCurrency(productGstAmount)}</Typography>
+				</Box>
+				{/* GST Section for Memberships */}
+				{membershipSubtotal > 0 && (
+					<Box sx={{ mb: 1, display: 'flex', justifyContent: 'space-between' }}>
+						<Typography variant="body2">Membership GST (18%):</Typography>
+						<Typography variant="body2" fontWeight="500">{formatCurrency(membershipGstAmount)}</Typography>
+					</Box>
+				)}
+				{/* Combined GST */}
+				<Box sx={{ mb: 1, display: 'flex', justifyContent: 'space-between' }}>
+					<Typography>Total GST:</Typography>
+					<Typography fontWeight="medium">{formatCurrency(combinedGstAmount)}</Typography>
+				</Box>
+				{/* Discount */}
+				<Box sx={{ mb: 1, display: 'flex', justifyContent: 'space-between' }}>
+					<Typography>Discount:</Typography>
+					<Typography fontWeight="medium" color="error.main">-{formatCurrency(totalDiscount)}</Typography>
+				</Box>
+				
+				{/* Show breakdown of discounts if there are different types */}
+				{(individualItemDiscounts > 0 || walkInDiscount > 0) && (
+					<Box sx={{ mb: 1, ml: 2 }}>
+						{individualItemDiscounts > 0 && (
+							<Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+								<Typography variant="body2" color="text.secondary">Item Discounts:</Typography>
+								<Typography variant="body2" color="text.secondary">-{formatCurrency(individualItemDiscounts)}</Typography>
+							</Box>
+						)}
+						{walkInDiscount > 0 && (
+							<Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+								<Typography variant="body2" color="text.secondary">Global Discount:</Typography>
+								<Typography variant="body2" color="text.secondary">-{formatCurrency(walkInDiscount)}</Typography>
+							</Box>
+						)}
+					</Box>
+				)}
+
+				<Divider sx={{ my: 2 }} />
+				{/* Payment Breakdown - Show if there are services marked for membership payment */}
+				{Object.values(servicesMembershipPayment).some(Boolean) && activeClientMembership && (
+					<>
+						<Typography variant="body2" fontWeight="bold" gutterBottom>
+							Payment Breakdown:
+						</Typography>
+						<Box sx={{ mb: 1, display: 'flex', justifyContent: 'space-between', ml: 2 }}>
+							<Typography variant="body2" color="primary.main">Services via Membership (Ex. GST):</Typography>
+							<Typography variant="body2" fontWeight="500" color="primary.main">
+								{formatCurrency(getMembershipPayableAmount())}
+							</Typography>
+						</Box>
+						<Box sx={{ mb: 1, display: 'flex', justifyContent: 'space-between', ml: 2 }}>
+							<Typography variant="body2">Products & Regular Services (Incl. GST):</Typography>
+							<Typography variant="body2" fontWeight="500">
+								{formatCurrency(getRegularPayableAmount())}
+							</Typography>
+						</Box>
+						<Box sx={{ mb: 2, ml: 2, p: 1, bgcolor: 'info.lighter', borderRadius: 1 }}>
+							<Typography variant="caption" color="text.secondary">
+								<InfoIcon fontSize="inherit" sx={{ verticalAlign: 'middle', mr: 0.5 }} />
+								Membership payments exclude GST • Products cannot be paid with membership balance
+							</Typography>
+						</Box>
+					</>
+				)}
+				{/* Total Amount */}
+				{Object.values(servicesMembershipPayment).some(Boolean) && activeClientMembership ? (
+					<>
+						{/* Show full total first */}
+						<Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+							<Typography variant="h6" fontWeight="bold">Total Amount (All Items):</Typography>
+							<Typography variant="h6" fontWeight="bold">
+								{formatCurrency(orderItems.reduce((sum, item) => {
+									const gstPercentage = item.gst_percentage || (item.type === 'product' ? productGstRate : serviceGstRate) || 18;
+									const isGstApplied = item.type === 'product' ? isProductGstApplied : (item.type === 'service' ? isServiceGstApplied : true);
+									const gstMultiplier = isGstApplied ? (1 + (gstPercentage / 100)) : 1;
+									const itemTotalAmount = (item.price * item.quantity * gstMultiplier);
+									const finalAmount = Math.max(0, itemTotalAmount - (item.discount || 0));
+									return sum + finalAmount;
+								}, 0))}
+							</Typography>
+						</Box>
+						
+						{/* Show membership GST discount */}
+						{(() => {
+							const membershipGSTDiscount = orderItems
+								.filter(item => item.type === 'service' && servicesMembershipPayment[item.id])
+								.reduce((sum, item) => {
+									const gstPercentage = item.gst_percentage || serviceGstRate || 18;
+									const itemTotal = item.price * item.quantity;
+									const discountIncl = item.discount || 0;
+									const discountExcl = discountIncl / (1 + gstPercentage / 100);
+									const subtotal = Math.max(0, itemTotal - discountExcl);
+									const gstAmount = (subtotal * gstPercentage) / 100;
+									return sum + gstAmount;
+								}, 0);
+							
+							return membershipGSTDiscount > 0 ? (
+								<Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1, ml: 2 }}>
+									<Typography variant="body2" color="success.main">Less: Membership GST Discount:</Typography>
+									<Typography variant="body2" color="success.main" fontWeight="medium">
+										-{formatCurrency(membershipGSTDiscount)}
+									</Typography>
+								</Box>
+							) : null;
+						})()}
+						
+						{/* Show membership payment deduction */}
+						<Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1, ml: 2 }}>
+							<Typography variant="body2" color="primary.main">Less: Membership Payment:</Typography>
+							<Typography variant="body2" color="primary.main" fontWeight="medium">
+								-{formatCurrency(getMembershipPayableAmount())}
+							</Typography>
+						</Box>
+						
+						{/* Show discount if any */}
+						{walkInDiscount > 0 && (
+							<Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1, ml: 2 }}>
+								<Typography variant="body2" color="warning.main">Less: Additional Discount:</Typography>
+								<Typography variant="body2" color="warning.main" fontWeight="medium">
+									-{formatCurrency(walkInDiscount)}
 								</Typography>
 							</Box>
 						)}
-					</DialogContent>
-					<DialogActions>
-						<Button onClick={() => setPrintDialogOpen(false)}>
-							Skip
-						</Button>
-						<Button 
-							variant="contained" 
-							onClick={() => {
-								if (lastCreatedOrder) {
-									printBill(lastCreatedOrder);
-								}
-								setPrintDialogOpen(false);
-							}}
-							startIcon={<ReceiptIcon />}
-						>
-							Print Receipt
-						</Button>
-					</DialogActions>
-				</Dialog>
+						
+						{/* Final amount to pay */}
+						<Divider sx={{ my: 1 }} />
+						<Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2, bgcolor: 'success.lighter', p: 1, borderRadius: 1 }}>
+							<Typography variant="h6" fontWeight="bold">Client to Pay:</Typography>
+							<Typography variant="h6" fontWeight="bold" color="success.main">{formatCurrency(calculateTotalAmount())}</Typography>
+						</Box>
+						
+						{/* Membership discount explanation */}
+						<Box sx={{ mb: 2, p: 1, bgcolor: 'info.lighter', borderRadius: 1, border: '1px solid', borderColor: 'info.main' }}>
+							<Typography variant="caption" color="info.main" sx={{ display: 'flex', alignItems: 'center' }}>
+								<InfoIcon fontSize="inherit" sx={{ mr: 0.5 }} />
+								Membership Discount Applied: GST is excluded when paying via membership balance. 
+								₹{formatCurrency(getMembershipPayableAmount())} will be deducted from membership balance.
+							</Typography>
+						</Box>
+					</>
+				) : (
+					<>
+						{/* Standard display when no membership payments */}
+						{walkInDiscount > 0 && (
+							<>
+								<Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+									<Typography variant="body2">Subtotal:</Typography>
+									<Typography variant="body2" fontWeight="medium">
+										{formatCurrency(totalAmount + walkInDiscount)}
+									</Typography>
+								</Box>
+								<Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1, ml: 2 }}>
+									<Typography variant="body2" color="warning.main">Less: Discount:</Typography>
+									<Typography variant="body2" color="warning.main" fontWeight="medium">
+										-{formatCurrency(walkInDiscount)}
+									</Typography>
+								</Box>
+								<Divider sx={{ my: 1 }} />
+							</>
+						)}
+						<Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
+							<Typography variant="h6" fontWeight="bold">Total (Incl. GST):</Typography>
+							<Typography variant="h6" fontWeight="bold">{formatCurrency(totalAmount)}</Typography>
+						</Box>
+					</>
+				)}
+				{/* Customer & Stylist Info */}
+				<Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, justifyContent: 'center', mb: 2 }}>
+					{selectedClient && (
+						<Chip 
+							icon={<PersonIcon fontSize="small" />} 
+							label={`Customer: ${selectedClient.full_name}`}
+							size="small"
+							variant="outlined"
+						/>
+					)}
+					{selectedStylist && (
+						<Chip 
+							icon={<ContentCutIcon fontSize="small" />} 
+							label={`Stylist: ${selectedStylist.name}`}
+							size="small"
+							variant="outlined"
+						/>
+					)}
+				</Box>
+				{/* Timestamp */}
+				<Typography variant="caption" color="text.secondary" sx={{ display: 'block', textAlign: 'center' }}>
+					<AccessTimeIcon fontSize="inherit" sx={{ verticalAlign: 'middle', mr: 0.5 }} />
+					{format(new Date(), "dd/MM/yyyy 'at' hh:mm a")}
+				</Typography>
+			</Paper>
+		);
+	};
 
-				{/* History Drawer */}
-				<Drawer
-					anchor="right"
-					open={historyDrawerOpen}
-					onClose={() => setHistoryDrawerOpen(false)}
-					sx={{
-						'& .MuiDrawer-paper': {
-							width: 400,
-							p: 2
-						}
-					}}
+	// Add a handler for adding memberships to order
+	const handleAddMembershipToOrder = useCallback((membership: POSMembership) => {
+		const newItem: POSOrderItem = {
+			id: uuidv4(),
+			order_id: '',
+			item_id: membership.id,
+			item_name: membership.name,
+			price: membership.price,
+			quantity: 1,
+			total: membership.price * 1,
+			type: 'membership',
+			category: 'membership',
+			duration_months: membership.duration_months,
+			benefitAmount: 0
+		};
+		
+		setOrderItems(prev => [...prev, newItem]);
+		toast.success(`Added ${membership.name} membership to order`);
+	}, []);
+
+	// Change renderMembershipSelectionSection to return null to remove the membership cards section
+	const renderMembershipSelectionSection = () => {
+		// Return null to hide the membership cards section as per user request
+		return null;
+	};
+
+	// ====================================================
+	// 5. LOADING CHECK (AFTER ALL HOOKS)
+	// ====================================================
+	const isInitialLoading = loadingClients || loadingStylists || loadingAppointments || loadingInventoryProducts || loadingServices || loadingMemberships || isLoadingOrders; // Added isLoadingOrders
+	// Add check for other essential data if needed
+
+	if (isInitialLoading) {
+		return (
+			<Box display="flex" justifyContent="center" alignItems="center" height="100vh">
+				<CircularProgress />
+				<Typography variant="h6" sx={{ ml: 2 }}>
+					Loading POS data...
+				</Typography>
+			</Box>
+		);
+	}
+
+	// ====================================================
+	// 6. RENDER OUTPUT (JSX)
+	// ====================================================
+	return (
+		<Box sx={{ flexGrow: 1, width: '100%', maxWidth: 1400, mx: 'auto', py: 2 }}>
+			{/* Tabs for Walk-in Order and Salon Purchase */}
+			<Box sx={{ mb: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+				<Tabs
+					value={tabValue}
+					onChange={(_, newValue) => setTabValue(newValue)}
+					variant="fullWidth"
+					indicatorColor="primary"
+					textColor="primary"
 				>
-					<Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-						<HistoryIcon />
-						<Typography variant="h6">Service History</Typography>
-						<IconButton
-							onClick={() => setHistoryDrawerOpen(false)}
-							sx={{ ml: 'auto' }}
-						>
+					<Tab 
+						label={
+							<Box sx={{ display: 'flex', alignItems: 'center' }}>
+								<ShoppingBasketIcon sx={{ mr: 1 }} />
+								Walk-in Order
+							</Box>
+						} 
+					/>
+					<Tab 
+						label={
+							<Box sx={{ display: 'flex', alignItems: 'center' }}>
+								<Inventory sx={{ mr: 1 }} />
+								Salon Purchase
+							</Box>
+						} 
+					/>
+				</Tabs>
+				<IconButton
+					color="primary"
+					onClick={() => setHistoryDrawerOpen(true)}
+					size="small"
+					sx={{ ml: 1 }}
+					title="View Client History"
+				>
+					<HistoryIcon />
+				</IconButton>
+			</Box>
+
+			{/* Tab Panels */}
+			<TabPanel value={tabValue} index={0}>
+				<Grid container spacing={2}>
+					{/* Customer Information */}
+					<Grid item xs={12}>
+						<Paper sx={{ p: 2, mb: 2 }}>
+							<Typography variant="h6" gutterBottom sx={{ borderBottom: '1px solid', borderColor: 'divider', pb: 1 }}>
+								Customer Information
+							</Typography>
+							
+							<Grid container spacing={2}>
+								<Grid item xs={12} sm={4}>
+									<Autocomplete
+										options={clients || []}
+										getOptionLabel={(option) => option.full_name || ""}
+										value={selectedClient}
+										onChange={(_, newValue) => {
+											handleClientSelect(newValue);
+											if (newValue && newValue.full_name) {
+												// Explicitly fetch client history when a client is selected
+												fetchClientHistory(newValue.full_name);
+											}
+										}}
+										renderInput={(params) => (
+											<TextField
+												{...params}
+												label="Select Client"
+												variant="outlined"
+												fullWidth
+												size="small"
+												helperText={clients && clients.length === 0 ? "No clients available. Type a name to add a new one." : "Select an existing client or type a new name below."}
+											/>
+										)}
+										renderOption={(props, option) => (
+											<li {...props} key={option.id}>
+												<Box>
+													<Typography variant="body2">{option.full_name}</Typography>
+													{option.phone && (
+														<Typography variant="caption" color="text.secondary">
+															{option.phone}
+														</Typography>
+													)}
+												</Box>
+											</li>
+										)}
+										size="small"
+									/>
+									{/* Add History button near the client autocomplete */}
+									{selectedClient && (
+										<Button
+											color="primary"
+											onClick={() => {
+												setHistoryDrawerOpen(true);
+												if (selectedClient.full_name) {
+													fetchClientHistory(selectedClient.full_name);
+												}
+											}}
+											size="small"
+											sx={{ mt: 1 }}
+											startIcon={<HistoryIcon />}
+										>
+											View History
+										</Button>
+									)}
+								</Grid>
+								<Grid item xs={12} sm={4}>
+									<TextField
+										fullWidth
+										label="Customer Name"
+										variant="outlined"
+										value={customerName}
+										onChange={(e) => {
+											setCustomerName(e.target.value);
+											// If name is changed manually, deselect client to allow new client entry
+											if (selectedClient && selectedClient.full_name !== e.target.value) {
+												setSelectedClient(null);
+											}
+										}}
+										required
+										error={customerName.trim() === ""}
+										size="small"
+									/>
+								</Grid>
+								{/* New Client Phone and Email - Conditionally Rendered */}
+								{!selectedClient && customerName.trim() !== "" && (
+									<>
+										<Grid item xs={12} sm={4}>
+											<TextField
+												fullWidth
+												label="New Client Phone"
+												variant="outlined"
+												value={newClientPhone}
+												onChange={(e) => setNewClientPhone(e.target.value)}
+												size="small"
+												placeholder='(Optional)'
+											/>
+										</Grid>
+										<Grid item xs={12} sm={4}>
+											<TextField
+												fullWidth
+												label="New Client Email"
+												variant="outlined"
+												value={newClientEmail}
+												onChange={(e) => setNewClientEmail(e.target.value)}
+												size="small"
+												placeholder='(Optional)'
+											/>
+										</Grid>
+									</>
+								)}
+							</Grid>
+						</Paper>
+					</Grid>
+
+					{/* Stylist Information */}
+					<Grid item xs={12}>
+						<Paper sx={{ p: 2, mb: 2 }}>
+							<Typography variant="h6" gutterBottom sx={{ borderBottom: '1px solid', borderColor: 'divider', pb: 1 }}>
+								Stylist Information
+							</Typography>
+							
+							<Grid container spacing={2}>
+								{/* Stylist Selection - Handle both single and multi-expert modes */}
+								{selectedStylists.length > 0 ? (
+									// Multi-expert mode: Show multiple stylist dropdowns
+									selectedStylists.map((stylist, index) => (
+										<Grid item xs={12} sm={6} md={4} key={index}>
+											<FormControl
+												fullWidth
+												required
+												error={stylist === null}
+												size="small"
+											>
+												<InputLabel id={`stylist-select-label-${index}`}>
+													Expert {index + 1}
+												</InputLabel>
+												<Select
+													labelId={`stylist-select-label-${index}`}
+													id={`stylist-select-${index}`}
+													value={stylist?.id || ""}
+													label={`Expert ${index + 1}`}
+													onChange={(e) => {
+														const stylistId = e.target.value;
+														const selectedStylistOption = stylists?.find(s => s.id === stylistId) || null;
+														const newStylists = [...selectedStylists];
+														newStylists[index] = selectedStylistOption;
+														setSelectedStylists(newStylists);
+														
+														// Set the first expert as the main stylist for backward compatibility
+														if (index === 0) {
+															setSelectedStylist(selectedStylistOption);
+														}
+													}}
+												>
+													<MenuItem value="">
+														<em>None</em>
+													</MenuItem>
+													{(stylists || [])?.map((stylistOption) => (
+														<MenuItem key={stylistOption.id} value={stylistOption.id}>
+															{stylistOption.name}
+														</MenuItem>
+													))}
+												</Select>
+												{stylist === null && (
+													<FormHelperText error>
+														Expert is required
+													</FormHelperText>
+												)}
+											</FormControl>
+										</Grid>
+									))
+								) : (
+									// Single stylist mode: Show original dropdown
+									<Grid item xs={12} sm={6} md={4}>
+										<FormControl
+											fullWidth
+											required
+											error={selectedStylist === null}
+											size="small"
+										>
+											<InputLabel id="stylist-select-label">
+												Select Stylist
+											</InputLabel>
+											<Select
+												labelId="stylist-select-label"
+												id="stylist-select"
+												value={selectedStylist?.id || ""}
+												label="Select Stylist"
+												onChange={(e) => {
+													const stylistId = e.target.value;
+													const stylist = stylists?.find(s => s.id === stylistId) || null;
+													setSelectedStylist(stylist);
+												}}
+											>
+												<MenuItem value="">
+													<em>None</em>
+												</MenuItem>
+												{(stylists || [])?.map((stylist) => (
+													<MenuItem key={stylist.id} value={stylist.id}>
+														{stylist.name}
+													</MenuItem>
+												))}
+											</Select>
+											{selectedStylist === null && (
+												<FormHelperText error>
+													Stylist is required
+												</FormHelperText>
+											)}
+										</FormControl>
+									</Grid>
+								)}
+								
+								{/* Add Stylist Button for Multi-Expert Mode */}
+								{selectedStylists.length > 0 && (
+									<Grid item xs={12} sm={6} md={4}>
+										<Button
+											variant="outlined"
+											color="primary"
+											fullWidth
+											onClick={() => {
+												setSelectedStylists([...selectedStylists, null]);
+											}}
+											startIcon={<AddIcon />}
+											sx={{ height: '40px' }}
+										>
+											Add Another Expert
+										</Button>
+									</Grid>
+								)}
+							</Grid>
+							
+							{/* Display selected stylists summary with individual remove buttons */}
+							{(selectedStylists.length > 0 ? selectedStylists : [selectedStylist]).filter(Boolean).length > 0 && (
+								<Box sx={{ mt: 2, p: 2, bgcolor: 'grey.50', borderRadius: 1 }}>
+									<Typography variant="subtitle2" gutterBottom>
+										Selected Experts:
+									</Typography>
+									<Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+										{selectedStylists.length > 0 ? (
+											// Multi-expert mode: Show chips with individual delete buttons
+											selectedStylists
+												.map((stylist, index) => stylist ? ({ stylist, index }) : null)
+												.filter((item): item is { stylist: Stylist; index: number } => item !== null)
+												.map(({ stylist, index }) => (
+													<Chip
+														key={stylist?.id || index}
+															label={stylist?.name}
+															variant="outlined"
+															color="primary"
+															size="small"
+															onDelete={selectedStylists.length > 1 ? () => {
+																const newStylists = selectedStylists.filter((_, i) => i !== index);
+																setSelectedStylists(newStylists);
+																// Update the main stylist for backward compatibility
+																if (newStylists.length > 0) {
+																	// Set the first remaining stylist as the main stylist
+																	const firstValidStylist = newStylists.find(s => s !== null);
+																	setSelectedStylist(firstValidStylist || null);
+																} else {
+																	setSelectedStylist(null);
+																}
+																
+																// Update order items to remove the deleted stylist from experts arrays
+																const removedStylistId = stylist.id;
+																setOrderItems(prevItems => 
+																	prevItems.map(item => {
+																		if (item.type === 'service' && (item as POSOrderItem).experts) {
+																			const updatedExperts = (item as POSOrderItem).experts!.filter(
+																				expert => expert.id !== removedStylistId
+																			);
+																			return {
+																				...item,
+																				experts: updatedExperts
+																			} as POSOrderItem;
+																		}
+																		return item;
+																	})
+																);
+															} : undefined}
+															deleteIcon={<RemoveIcon />}
+														/>
+												))
+										) : (
+											// Single stylist mode: Show single chip without delete option
+											[selectedStylist]
+											.filter(Boolean)
+											.map((stylist, index) => (
+												<Chip
+													key={stylist?.id || index}
+													label={stylist?.name}
+													variant="outlined"
+													color="primary"
+													size="small"
+												/>
+												))
+										)}
+									</Box>
+								</Box>
+							)}
+						</Paper>
+					</Grid>
+
+					{/* Services & Products */}
+					<Grid item xs={12}>
+						<Paper sx={{ p: 2, mb: 2 }}>
+							<Typography variant="h6" gutterBottom sx={{ borderBottom: '1px solid', borderColor: 'divider', pb: 1 }}>
+								Services & Products
+							</Typography>
+							
+							{/* Services & Products Autocomplete */}
+							<Box sx={{ display: 'flex', flexDirection: 'row', gap: 2, mb: 2, flexWrap: 'wrap' }}>
+								<Box sx={{ flex: 1, minWidth: '240px' }}>
+									<Autocomplete
+										options={filteredServices as Service[]}
+										getOptionLabel={(option) => `${option.name} (₹${option.price} • ${option.duration} min)`}
+										value={serviceDropdownValue}
+										onChange={(_, newService) => {
+											if (newService) handleAddToOrder({
+												id: newService.id,
+												name: newService.name,
+												price: newService.price,
+												duration: newService.duration,
+												type: 'service',
+												category: newService.category
+											});
+											setServiceDropdownValue(null);
+										}}
+										renderInput={(params) => (
+											<TextField {...params} label="Select Service" variant="outlined" size="small" />
+										)}
+									/>
+								</Box>
+								<Box sx={{ flex: 1, minWidth: '240px' }}>
+									<Autocomplete
+										options={filteredProducts}
+										getOptionLabel={(option) => {
+											const stockLabel = option.stock_quantity !== undefined ? 
+												` (${option.stock_quantity} in stock)` : '';
+											return `${option.name}${stockLabel}`;
+										}}
+										renderOption={(props, option) => (
+											<li {...props}>
+												<Box>
+													<Typography variant="body2">{option.name}</Typography>
+													<Typography variant="caption" color="text.secondary">
+														₹{option.price} • {option.stock_quantity !== undefined ? 
+															`${option.stock_quantity} in stock` : 'Stock not available'}
+													</Typography>
+												</Box>
+											</li>
+										)}
+										value={productDropdownValue}
+										onChange={(_, newProduct) => {
+											if (newProduct) {
+												if (newProduct.stock_quantity !== undefined && newProduct.stock_quantity <= 0) {
+													toast.error(`${newProduct.name} is out of stock`);
+												} else {
+													handleAddToOrder(newProduct);
+												}
+											}
+											setProductDropdownValue(null);
+										}}
+										renderInput={(params) => (
+											<TextField {...params} label="Select Product" variant="outlined" size="small" />
+										)}
+									/>
+								</Box>
+								<Box sx={{ flex: 1, minWidth: '240px' }}>
+									<Autocomplete
+										options={filteredMemberships}
+										getOptionLabel={(option) => `${option.name} (₹${option.price})`}
+										value={membershipDropdownValue}
+										onChange={(_, newMembership) => {
+											if (newMembership) handleAddMembershipToOrder({
+												id: newMembership.id,
+												name: newMembership.name,
+												price: newMembership.price,
+												duration_months: newMembership.duration_months,
+												benefits: newMembership.benefits || [],
+												description: newMembership.description,
+												type: 'membership'
+											});
+											setMembershipDropdownValue(null);
+										}}
+										renderInput={(params) => (
+											<TextField {...params} label="Select Membership" variant="outlined" size="small" />
+										)}
+									/>
+								</Box>
+							</Box>
+							{selectedClient && (
+								<>
+									<Divider sx={{ my: 2 }} />
+									<Accordion 
+										expanded={clientDetailsExpanded} 
+										onChange={(_, isExpanded) => setClientDetailsExpanded(isExpanded)}
+										sx={{ boxShadow: 'none', border: '1px solid', borderColor: 'divider' }}
+									>
+										<AccordionSummary
+											expandIcon={<ExpandMoreIcon />}
+											aria-controls="client-details-content"
+											id="client-details-header"
+											sx={{ 
+												bgcolor: 'grey.50', 
+												minHeight: 48,
+												'&.Mui-expanded': { minHeight: 48 }
+											}}
+										>
+											<Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', mr: 1 }}>
+												<Typography variant="h6">Client Details</Typography>
+												<IconButton
+													color="primary"
+													onClick={(e) => {
+														e.stopPropagation();
+														setHistoryDrawerOpen(true);
+													}}
+													size="small"
+													title="View Client History"
+												>
+													<HistoryIcon />
+												</IconButton>
+											</Box>
+										</AccordionSummary>
+										<AccordionDetails>
+											<Grid container spacing={2}>
+												<Grid item xs={12} sm={6}>
+													<Typography variant="subtitle2">Contact</Typography>
+													<Typography>{selectedClient.phone}{selectedClient.email ? ` • ${selectedClient.email}` : ''}</Typography>
+												</Grid>
+												<Grid item xs={12} sm={6}>
+													<Typography variant="subtitle2">Last Visit</Typography>
+													<Typography>{selectedClient.last_visit ? format(new Date(selectedClient.last_visit), 'dd/MM/yyyy') : 'Never'}</Typography>
+												</Grid>
+												<Grid item xs={12} sm={6}>
+													<Typography variant="subtitle2">Total Spent</Typography>
+													<Typography color="success.main">{formatCurrency(selectedClient.total_spent || 0)}</Typography>
+												</Grid>
+												<Grid item xs={12} sm={6}>
+													<Typography variant="subtitle2">Pending Payment</Typography>
+													{selectedClient.pending_payment && selectedClient.pending_payment > 0
+														? <Chip label={formatCurrency(selectedClient.pending_payment)} color="warning" />
+														: <Typography color="text.secondary">No pending amount</Typography>}
+												</Grid>
+												{/* Added Gender, Birth Date, Anniversary Date, Lifetime Visits */}
+												<Grid item xs={12} sm={6}>
+													<Typography variant="subtitle2">Gender</Typography>
+													<Typography>{selectedClient.gender || 'N/A'}</Typography>
+												</Grid>
+												<Grid item xs={12} sm={6}>
+													<Typography variant="subtitle2">Birth Date</Typography>
+													<Typography>{selectedClient.birth_date ? format(new Date(selectedClient.birth_date), 'dd/MM/yyyy') : 'N/A'}</Typography>
+												</Grid>
+												<Grid item xs={12} sm={6}>
+													<Typography variant="subtitle2">Anniversary Date</Typography>
+													<Typography>{selectedClient.anniversary_date ? format(new Date(selectedClient.anniversary_date), 'dd/MM/yyyy') : 'N/A'}</Typography>
+												</Grid>
+												<Grid item xs={12} sm={6}>
+													<Typography variant="subtitle2">Lifetime Visits</Typography>
+													<Typography>
+														{selectedClient && orders ? orders.filter(
+															order => 
+																((order as any).client_name === selectedClient.full_name || (order as any).customer_name === selectedClient.full_name) && 
+																(order as any).status !== 'cancelled' && 
+																!(order as any).consumption_purpose && 
+																(order as any).client_name !== 'Salon Consumption'
+														).length : 0}
+													</Typography>
+												</Grid>
+											</Grid>
+										</AccordionDetails>
+									</Accordion>
+								</>
+							)}
+							
+							{/* Service Selection Section */}
+							{renderServiceSelectionSection()}
+							
+							{/* Product Selection Section */}
+							{renderProductsSelectionSection()}
+							
+							{/* Membership Selection Section - Add this new section */}
+							{renderMembershipSelectionSection()}
+						</Paper>
+					</Grid>
+
+					{/* Order Summary */}
+					<Grid item xs={12}>
+						<Paper sx={{ p: 2, mb: 2 }}>
+							{renderOrderSummary()}
+						</Paper>
+					</Grid>
+
+					{/* Payment Details */}
+					<Grid item xs={12}>
+						<Paper sx={{ p: 2, mb: 2 }}>
+							<PaymentSection
+								paymentAmounts={paymentAmounts}
+								setPaymentAmounts={setPaymentAmounts}
+								isSplitPayment={isSplitPayment}
+								setIsSplitPayment={setIsSplitPayment}
+								walkInPaymentMethod={walkInPaymentMethod}
+								setWalkInPaymentMethod={setWalkInPaymentMethod}
+								calculateTotalAmount={calculateTotalAmount}
+								activeClientMembership={activeClientMembership}
+							/>
+							
+							{/* Discount Section */}
+							<Grid container spacing={2} sx={{ mt: 2 }}>
+								<Grid item xs={12} sm={6}>
+									<TextField
+											fullWidth
+										label="Fixed Discount"
+											variant="outlined"
+											type="number"
+											size="small"
+											value={walkInDiscount}
+											onChange={(e) => {
+											const fixedDiscount = parseFloat(e.target.value) || 0;
+												setWalkInDiscount(fixedDiscount);
+												// Calculate and set percentage discount based on total *after* item discounts but *before* global fixed discount
+												const subtotalAfterItemDiscounts = orderItems.reduce((sum, item) => sum + (item.price * item.quantity - (item.discount || 0)), 0);
+												const totalWithGST = subtotalAfterItemDiscounts + calculateProductGstAmount(calculateProductSubtotal()) + calculateServiceGstAmount(calculateServiceSubtotal()) + calculateMembershipGstAmount(calculateMembershipSubtotal());
+
+												if (totalWithGST > 0) {
+													const calculatedPercentageFromFixed = (fixedDiscount / totalWithGST) * 100;
+													setWalkInDiscountPercentage(Math.max(0, Math.min(100, parseFloat(calculatedPercentageFromFixed.toFixed(2)))));
+												} else {
+													setWalkInDiscountPercentage(0);
+												}
+											}}
+											InputProps={{
+												inputProps: { min: 0, step: 1 },
+												startAdornment: (
+													<InputAdornment position="start">
+														₹
+													</InputAdornment>
+												),
+											}}
+										/>
+								</Grid>
+								
+								<Grid item xs={12} sm={6}>
+									<TextField
+										fullWidth
+										label="Discount %"
+										variant="outlined"
+										type="number"
+										size="small"
+										value={walkInDiscountPercentage}
+										onChange={(e) => {
+											const percentage = parseFloat(e.target.value);
+											const validPercentage = isNaN(percentage) ? 0 : Math.max(0, Math.min(100, percentage));
+											setWalkInDiscountPercentage(validPercentage);
+											// Calculate and set fixed discount based on total *after* item discounts
+											const subtotalAfterItemDiscounts = orderItems.reduce((sum, item) => sum + (item.price * item.quantity - (item.discount || 0)), 0);
+											const totalWithGST = subtotalAfterItemDiscounts + calculateProductGstAmount(calculateProductSubtotal()) + calculateServiceGstAmount(calculateServiceSubtotal()) + calculateMembershipGstAmount(calculateMembershipSubtotal());
+											
+											const calculatedFixedDiscountFromPercentage = (totalWithGST * validPercentage) / 100;
+											setWalkInDiscount(parseFloat(calculatedFixedDiscountFromPercentage.toFixed(2)));
+										}}
+										InputProps={{
+											inputProps: { min: 0, max: 100, step: 0.1 },
+											endAdornment: (
+												<InputAdornment position="end">
+													%
+												</InputAdornment>
+											),
+										}}
+									/>
+								</Grid>
+							</Grid>
+							
+							{/* Auto Split Payment Indicator */}
+							{isSplitPayment && getMembershipPayableAmount() > 0 && getRegularPayableAmount() > 0 && (
+								<Box sx={{ mt: 2, p: 2, bgcolor: 'info.lighter', borderRadius: 1, border: '1px solid', borderColor: 'info.main' }}>
+									<Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+										<InfoIcon fontSize="small" sx={{ mr: 1, color: 'info.main' }} />
+										<Typography variant="body2" fontWeight="medium" color="info.main">
+											Split Payment Auto-Enabled
+										</Typography>
+									</Box>
+									<Typography variant="body2" color="text.secondary">
+										Services will be paid via membership balance, and products via regular payment methods.
+									</Typography>
+								</Box>
+							)}
+
+							{/* Complete Order Button */}
+							<Button
+								variant="contained"
+								color="primary"
+								fullWidth
+								sx={{ mt: 2 }}
+								onClick={async () => {
+									// Build payments array from paymentAmounts for split payment
+									if (isSplitPayment) {
+										const payments = Object.entries(paymentAmounts)
+											.filter(([_, amt]) => amt > 0)
+											.map(([method, amt]) => ({ 
+												id: uuidv4(), 
+												payment_method: method as PaymentMethodWithSplit, 
+												amount: amt 
+											}));
+										setSplitPayments(payments);
+									} else {
+										// For single payment, find the active payment method
+										const activePaymentMethod = Object.entries(paymentAmounts).find(([_, amt]) => amt > 0)?.[0] as PaymentMethod || 'cash';
+										setWalkInPaymentMethod(activePaymentMethod);
+									}
+									await handleCreateWalkInOrder();
+								}}
+								disabled={processing || !isOrderValid()}
+								startIcon={processing ? <CircularProgress size={20} /> : <CheckIcon />}
+							>
+								{processing ? 'Processing...' : 'Complete Order'}
+							</Button>
+						</Paper>
+					</Grid>
+				</Grid>
+			</TabPanel>
+
+			<TabPanel value={tabValue} index={1}>
+				<Grid container spacing={2}>
+					<Grid item xs={12}>
+						<Paper sx={{ p: 2, mb: 2 }}>
+							<Typography variant="h6" gutterBottom sx={{ borderBottom: '1px solid', borderColor: 'divider', pb: 1 }}>
+								Salon Consumption
+							</Typography>
+							
+							{renderSalonProductSelection()}
+							
+							{/* Salon Products Summary */}
+							<Box sx={{ mt: 4 }}>
+								<Typography variant="h6" gutterBottom>
+									Selected Products for Salon Use
+								</Typography>
+								
+								{salonProducts.length === 0 ? (
+									<Typography color="text.secondary" sx={{ py: 2, textAlign: 'center' }}>
+										No products selected for salon use yet
+									</Typography>
+								) : (
+									<>
+										<TableContainer component={Paper} variant="outlined" sx={{ mb: 2 }}>
+											<Table size="small">
+												<TableHead>
+													<TableRow>
+														<TableCell>Product</TableCell>
+														<TableCell align="right">Quantity</TableCell>
+														<TableCell align="right">Purchase Cost/Unit (Ex.GST)</TableCell>
+														<TableCell align="right">Total</TableCell>
+														<TableCell></TableCell>
+													</TableRow>
+												</TableHead>
+												<TableBody>
+													{salonProducts.map((product) => (
+														<TableRow key={product.id}>
+															<TableCell>{product.item_name}</TableCell>
+															<TableCell align="right">{product.quantity}</TableCell>
+															<TableCell align="right">{formatCurrency(product.price)}</TableCell>
+															<TableCell align="right">{formatCurrency(product.price * product.quantity)}</TableCell>
+															<TableCell align="right">
+																<IconButton
+																	size="small"
+																	color="error"
+																	onClick={() => handleRemoveSalonProduct(product.item_id)}
+																>
+																	<DeleteOutlineIcon fontSize="small" />
+																</IconButton>
+															</TableCell>
+														</TableRow>
+													))}
+													{/* Total Row */}
+													<TableRow>
+														<TableCell colSpan={3} align="right" sx={{ fontWeight: 'bold' }}>
+															Total:
+														</TableCell>
+														<TableCell align="right" sx={{ fontWeight: 'bold' }}>
+															{formatCurrency(salonProducts.reduce((sum, product) => sum + product.price * product.quantity, 0))}
+														</TableCell>
+														<TableCell></TableCell>
+													</TableRow>
+												</TableBody>
+											</Table>
+										</TableContainer>
+										
+										{/* Additional Notes */}
+										<Grid container spacing={2}>
+											<Grid item xs={12}>
+												<TextField
+													fullWidth
+													label="Consumption Notes (Optional)"
+													variant="outlined"
+													multiline
+													rows={3}
+													value={consumptionNotes}
+													onChange={(e) => setConsumptionNotes(e.target.value)}
+													sx={{ mb: 2 }}
+												/>
+											</Grid>
+										</Grid>
+										
+										{/* Consumption Button */}
+										<Button
+											variant="contained"
+											color="primary"
+											fullWidth
+											onClick={handleCreateSalonConsumptionWorkaround}
+											disabled={processing || !isSalonConsumptionValid()}
+											startIcon={processing ? <CircularProgress size={20} /> : null}
+										>
+											{processing ? "Processing..." : "Record Salon Consumption"}
+										</Button>
+									</>
+								)}
+							</Box>
+						</Paper>
+					</Grid>
+				</Grid>
+			</TabPanel>
+			{/* History Drawer */}
+			<Drawer anchor="right" open={historyDrawerOpen} onClose={() => setHistoryDrawerOpen(false)}>
+				<Box sx={{ width: 400, p: 2 }}>
+					<Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2, borderBottom: '1px solid rgba(0,0,0,0.12)', pb: 1 }}>
+						<Typography variant="h6" fontWeight="bold">{selectedClient?.full_name}'s Service History</Typography>
+						<IconButton onClick={() => setHistoryDrawerOpen(false)} size="small">
 							<CloseIcon />
 						</IconButton>
 					</Box>
 					
 					{isHistoryLoading ? (
-						<Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
-							<CircularProgress />
-						</Box>
+						<Box display="flex" justifyContent="center" p={3}><CircularProgress /></Box>
 					) : clientServiceHistory.length === 0 ? (
-						<Box sx={{ textAlign: 'center', p: 4, color: 'text.secondary' }}>
-							<HistoryIcon sx={{ fontSize: 48, mb: 1, opacity: 0.5 }} />
-							<Typography>No service history found</Typography>
+						<Box sx={{ p: 3, textAlign: 'center', bgcolor: 'background.paper', borderRadius: 1 }}>
+							<Typography color="text.secondary">No previous services found for this client.</Typography>
 						</Box>
 					) : (
-						<List>
-							{clientServiceHistory.map((item) => (
-								<ListItem key={item.id} sx={{ px: 0 }}>
-									<ListItemText
-										primary={item.service_name || item.item_name}
-										secondary={
-											<>
-												<Typography component="span" variant="body2">
-													₹{item.price} × {item.quantity}
-												</Typography>
-												<br />
-												<Typography component="span" variant="caption" color="text.secondary">
-													{item.pos_orders ? 
-														format(new Date(item.pos_orders.created_at), 'dd/MM/yyyy') :
-														item.appointment_data ?
-														format(new Date(item.appointment_data.created_at), 'dd/MM/yyyy') :
-														'Unknown date'
-													}
-												</Typography>
-											</>
-										}
-									/>
-									<Box sx={{ textAlign: 'right' }}>
-										<Typography variant="body2" sx={{ fontWeight: 600 }}>
-											₹{(item.price * item.quantity).toFixed(2)}
-										</Typography>
-										<Chip 
-											label={item.type || 'service'} 
-											size="small" 
-											variant="outlined"
-											sx={{ mt: 0.5 }}
-										/>
-									</Box>
-								</ListItem>
-							))}
-						</List>
+						<>
+							<List sx={{ 
+								maxHeight: 'calc(100vh - 120px)', 
+								overflowY: 'auto',
+								bgcolor: 'background.paper',
+								borderRadius: 1,
+								border: '1px solid rgba(0,0,0,0.12)'
+							}}>
+								{clientServiceHistory.map((item: any, index) => (
+									<React.Fragment key={item.id || `item-${index}`}>
+										<ListItem>
+											<ListItemText
+												primary={
+													<Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+														<Typography variant="body1" fontWeight="medium">
+															{item.service_name || item.item_name || 'Unknown Item'}
+															{item.quantity > 1 && <Typography component="span" variant="body2" sx={{ ml: 0.5 }}>
+																(x{item.quantity})
+															</Typography>}
+														</Typography>
+														<Typography fontWeight="medium">₹{item.price}</Typography>
+													</Box>
+												}
+												secondary={
+													<>
+														<Typography variant="body2">
+															{item.pos_orders?.created_at 
+																? format(new Date(item.pos_orders.created_at), 'dd/MM/yyyy') 
+																: item.appointment_data?.created_at 
+																	? format(new Date(item.appointment_data.created_at), 'dd/MM/yyyy')
+																	: 'N/A'}
+														</Typography>
+														<Typography variant="body2" color="textSecondary">
+															{item.pos_orders
+																? `POS Order - ${item.type === 'product' ? 'Product' : 'Service'}`
+																: item.appointment_data
+																	? `Appointment with ${item.appointment_data.stylist_name || 'Unknown Stylist'}`
+																	: ''}
+														</Typography>
+													</>
+												}
+											/>
+											<Chip 
+												size="small" 
+												color={
+													(item.pos_orders?.status === 'completed' || item.appointment_data?.status === 'completed') 
+														? 'success' 
+														: (item.pos_orders?.status === 'cancelled' || item.appointment_data?.status === 'cancelled') 
+															? 'error' 
+															: 'default'
+												}
+												label={item.pos_orders?.status || item.appointment_data?.status || 'N/A'}
+												sx={{ ml: 1 }}
+											/>
+										</ListItem>
+										<Divider />
+									</React.Fragment>
+								))}
+							</List>
+						</>
 					)}
-				</Drawer>
-			</Container>
-		</ErrorBoundary>
+				</Box>
+			</Drawer>
+			
+			{/* Print Bill Dialog */}
+			<Dialog
+				open={printDialogOpen}
+				onClose={() => setPrintDialogOpen(false)}
+				maxWidth="xs"
+				fullWidth
+			>
+				<DialogTitle>
+					<Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+						<Typography variant="h6">Bill Created</Typography>
+						<IconButton onClick={() => setPrintDialogOpen(false)} size="small">
+							<CloseIcon />
+						</IconButton>
+					</Box>
+				</DialogTitle>
+				<DialogContent>
+					<Box sx={{ mb: 2 }}>
+						<Typography variant="body1" paragraph>
+							Your order has been created successfully.
+						</Typography>
+						<Typography variant="body2">
+							Would you like to print the bill?
+						</Typography>
+					</Box>
+				</DialogContent>
+				<DialogActions>
+					<Button 
+						onClick={() => {
+							setPrintDialogOpen(false);
+							if (lastCreatedOrder) {
+								printBill(lastCreatedOrder);
+							}
+						}}
+						variant="contained"
+						color="primary"
+						startIcon={<ReceiptIcon />}
+					>
+						Print Bill
+					</Button>
+					<Button 
+						onClick={() => setPrintDialogOpen(false)}
+						variant="outlined"
+					>
+						Skip
+					</Button>
+				</DialogActions>
+			</Dialog>
+		</Box>
 	);
 }
+
+
+
+
+
+

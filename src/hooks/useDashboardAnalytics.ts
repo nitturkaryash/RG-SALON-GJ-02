@@ -930,10 +930,33 @@ export function useDashboardAnalytics({ startDate, endDate }: UseDashboardAnalyt
         const { data: futureAppointments, error: appointmentsError } = await supabase
           .from('appointments')
           .select(`
-            *,
-            services!inner(*),
-            stylists!inner(*),
-            clients!inner(*)
+            id,
+            start_time,
+            end_time,
+            duration,
+            status,
+            client_id,
+            client_name,
+            is_for_someone_else,
+            booker_name,
+            booker_phone,
+            booker_email,
+            clients!inner (
+              id,
+              full_name,
+              phone,
+              email
+            ),
+            services (
+              id,
+              name,
+              duration,
+              price
+            ),
+            stylists (
+              id,
+              name
+            )
           `)
           .gte('start_time', new Date().toISOString())
           .lte('start_time', new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString())
@@ -961,25 +984,43 @@ export function useDashboardAnalytics({ startDate, endDate }: UseDashboardAnalyt
             if (hoursUntil < 0) {
               timeUntilAppointment = 'Overdue';
             } else if (hoursUntil === 0) {
-              timeUntilAppointment = `${minutesUntil} minutes`;
+              timeUntilAppointment = `${minutesUntil}m`;
             } else if (hoursUntil < 24) {
               timeUntilAppointment = `${hoursUntil}h ${minutesUntil}m`;
             } else {
               const days = Math.floor(hoursUntil / 24);
-              timeUntilAppointment = `${days} day(s)`;
+              timeUntilAppointment = `${days} day${days > 1 ? 's' : ''}`;
             }
 
-            // Fix client name retrieval to use the proper client data
-            const clientName = apt.clients?.full_name || apt.client_name || 'Unknown Client';
+            // Enhanced client name resolution with better fallback logic
+            const getClientName = () => {
+              // First try from the joined clients table
+              if (apt.clients?.full_name) {
+                return apt.clients.full_name;
+              }
+              
+              // Then try direct client_name field
+              if (apt.client_name && apt.client_name !== 'Walk-in Customer') {
+                return apt.client_name;
+              }
+              
+              // For someone else bookings, use booker name
+              if (apt.is_for_someone_else && apt.booker_name) {
+                return `${apt.booker_name} (Booking for someone else)`;
+              }
+              
+              // Default fallback
+              return 'Walk-in Customer';
+            };
 
             const appointment: UpcomingAppointment = {
               id: apt.id,
-              clientName: clientName,
-              serviceName: apt.services?.name || 'Unknown Service',
-              stylistName: apt.stylists?.name || 'Unknown Stylist',
+              clientName: getClientName(),
+              serviceName: apt.services?.name || 'Service Consultation',
+              stylistName: apt.stylists?.name || 'Staff Member',
               appointmentTime: apt.start_time,
-              duration: apt.duration || 60,
-              price: apt.service_price || 0,
+              duration: apt.duration || apt.services?.duration || 60,
+              price: apt.services?.price || 0,
               status: apt.status || 'scheduled',
               isToday,
               isTomorrow,

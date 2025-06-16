@@ -1967,7 +1967,8 @@ export default function Appointments() {
             maxWidth: '100vw',
             display: 'flex',
             justifyContent: 'center',
-            alignItems: 'stretch'
+            alignItems: 'stretch',
+            minHeight: '600px' // Ensure minimum height for consistency
           }}
         >
           {viewMode === 'calendar' ? (
@@ -1993,17 +1994,25 @@ export default function Appointments() {
               clients={clients}
             />
           ) : (
-            <FutureAppointmentsList
-              appointments={allAppointments || []}
-              stylists={stylists || []}
-              services={services || []}
-              clients={clients || []}
-              onDeleteAppointment={deleteAppointment}
-              onEditAppointment={handleAppointmentClick}
-              onUpdateAppointment={async (appointmentId: string, updates: any) => {
-                await updateAppointment({ id: appointmentId, ...updates });
-              }}
-            />
+            <Box sx={{ 
+              width: '100%', 
+              height: '100%',
+              minHeight: '600px', // Ensure consistent list view height
+              display: 'flex',
+              flexDirection: 'column'
+            }}>
+              <FutureAppointmentsList
+                appointments={allAppointments || []}
+                stylists={stylists || []}
+                services={services || []}
+                clients={clients || []}
+                onDeleteAppointment={deleteAppointment}
+                onEditAppointment={handleAppointmentClick}
+                onUpdateAppointment={async (appointmentId: string, updates: any) => {
+                  await updateAppointment({ id: appointmentId, ...updates });
+                }}
+              />
+            </Box>
           )}
         </Box>
       </Box>
