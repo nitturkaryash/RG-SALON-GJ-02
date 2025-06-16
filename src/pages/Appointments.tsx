@@ -2019,17 +2019,23 @@ export default function Appointments() {
           zIndex: showDrawer ? 10 : -1,
           position: 'absolute',
           right: 0,
-          height: '100%',
+          top: '5vh', // Added top offset to start from 5% of viewport height
+          height: '90vh', // Changed from '100%' to '90vh' to fit within screen
+          maxHeight: '90vh', // Added maxHeight to ensure it doesn't exceed screen
           visibility: showDrawer ? 'visible' : 'hidden',
           pointerEvents: showDrawer ? 'auto' : 'none',
           '& .MuiDrawer-paper': { 
             width: drawerWidth, 
             boxSizing: 'border-box',
             position: 'absolute',
-            height: '100%',
+            top: 0, // Reset top for the paper element
+            height: '90vh', // Changed from '100%' to '90vh'
+            maxHeight: '90vh', // Added maxHeight constraint
             borderLeft: '1px solid',
             borderColor: 'divider',
             boxShadow: showDrawer ? '0px 0px 15px rgba(0, 0, 0, 0.1)' : 'none',
+            display: 'flex', // Added flex display
+            flexDirection: 'column', // Added column direction for proper layout
           },
         }}
       >
