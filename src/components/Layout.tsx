@@ -329,6 +329,12 @@ export default function Layout({ children }: LayoutProps) {
 
   const currentDrawerWidth = collapsed ? collapsedDrawerWidth : drawerWidth
 
+  // Set CSS custom properties for responsive design
+  React.useEffect(() => {
+    document.documentElement.style.setProperty('--sidebar-width', `${currentDrawerWidth}px`);
+    document.documentElement.style.setProperty('--sidebar-collapsed', collapsed ? 'true' : 'false');
+  }, [currentDrawerWidth, collapsed]);
+
   return (
     <Box sx={{ display: 'flex' }}>
       <AppBar
