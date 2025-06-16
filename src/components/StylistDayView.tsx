@@ -126,9 +126,14 @@ const ScheduleGrid = styled(Box)(({ theme }) => ({
   position: 'relative',
   width: '100%', // Ensure it takes full width
   height: '100%', // Ensure fixed height for sticky positioning
+  // Better scrolling behavior and responsive width utilization
+  scrollBehavior: 'smooth',
+  // Ensure the grid utilizes all available horizontal space
+  maxWidth: '100vw',
   '& > *': {  // This affects all direct children
     height: 'fit-content',  // Allow elements to grow beyond viewport
-    minHeight: '100%'       // But at minimum be full height
+    minHeight: '100%',      // But at minimum be full height
+    flex: '1 1 auto',       // Allow flexible growth
   }
 }));
 
@@ -143,14 +148,31 @@ const TimeColumn = styled(Box)(({ theme }) => ({
   paddingTop: 0, // Remove padding to ensure alignment
   marginTop: 0, // Remove margin to ensure alignment
   height: 'fit-content',
-  minHeight: '100%'
+  minHeight: '100%',
+  // Responsive adjustments for time column
+  [theme.breakpoints.down('sm')]: {
+    width: 60, // Smaller on mobile to save space
+  },
+  [theme.breakpoints.up('lg')]: {
+    width: 90, // Slightly wider on large screens
+  },
 }));
 
 const StylistColumn = styled(Box, { shouldForwardProp: (prop) => prop !== 'isOnHoliday' })<{ isOnHoliday?: boolean }>(({ theme, isOnHoliday }) => ({
   flex: 1,
-  minWidth: 200, // Increased from 180px to 200px for better spacing
+  minWidth: 200, // Base minimum width for better spacing
+  [theme.breakpoints.down('md')]: {
+    minWidth: 150, // Slightly smaller on medium screens
+  },
   [theme.breakpoints.down('sm')]: {
-    minWidth: 120,
+    minWidth: 120, // Compact on small screens
+  },
+  // Responsive width adjustment for better space utilization
+  [theme.breakpoints.up('lg')]: {
+    minWidth: 220, // Wider columns on large screens
+  },
+  [theme.breakpoints.up('xl')]: {
+    minWidth: 250, // Even wider on extra large screens
   },
   position: 'relative',
   backgroundColor: theme.palette.salon.offWhite,
@@ -2496,7 +2518,25 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
   };
 
   return (
-    <Box sx={{ height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+    <Box sx={{
+      width: '100%', // ensure full-width usage on any screen size
+      height: '100%', // flex-basis 100% of available parent height
+      minHeight: '100vh', // still guarantee full-viewport height as a baseline
+      maxWidth: '100vw', // ensure we don't exceed viewport width
+      display: 'flex',
+      flexDirection: 'column',
+      flexGrow: 1,
+      overflow: 'hidden',
+      // Responsive adjustments for better space utilization
+      '@media (max-width: 768px)': {
+        minHeight: 'calc(100vh - 64px)', // Account for mobile header
+      },
+      // Fullscreen mode adjustments
+      '@media (display-mode: fullscreen)': {
+        minHeight: '100vh',
+        height: '100vh',
+      },
+    }}>
       <DayViewHeader>
         <Box>
           <Box display="flex" alignItems="center">

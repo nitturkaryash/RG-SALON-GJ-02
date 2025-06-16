@@ -303,9 +303,21 @@ const generateDisplayOrderId = (
 
 /**
  * Helper function to format order data specifically for export
+ * 
+ * COMPREHENSIVE EXPORT INCLUDES:
+ * - Order identification (ID, creation date, appointment info)
+ * - Customer & Stylist details (names, IDs) 
+ * - Purchase classification (type, salon consumption status)
+ * - Service breakdown (names, types, individual prices, count)
+ * - Financial details (subtotal, CGST/SGST breakdown, tax, discount, total)
+ * - Payment information (method, detailed breakdown, pending amounts)
+ * - Order status and classification (completed/pending, walk-in/appointment)
+ * - Multi-expert order indicators and aggregation details
+ * - Notes and additional metadata
+ * 
  * @param ordersToExport - Array of order objects to be exported
  * @param allOrdersForContext - Full list of orders for generating sequential IDs
- * @returns Formatted array for export
+ * @returns Formatted array for export with all comprehensive data
  */
 export const formatOrdersForExport = (ordersToExport: any[], allOrdersForContext: any[]): any[] => {
   console.log('🚀 formatOrdersForExport called with:', {
@@ -323,6 +335,47 @@ export const formatOrdersForExport = (ordersToExport: any[], allOrdersForContext
       return isNaN(parsed) ? 0 : Math.round(parsed);
     }
     return 0;
+  };
+
+  // Helper function to determine purchase type
+  const getPurchaseType = (order: any) => {
+    if (!order || !order.services || !Array.isArray(order.services) || order.services.length === 0) {
+      return 'Unknown';
+    }
+    
+    const hasServices = order.services.some((service: any) => 
+      service && (!service.type || service.type === 'service')
+    );
+    const hasProducts = order.services.some((service: any) => 
+      service && service.type === 'product'
+    );
+    const hasMemberships = order.services.some((service: any) => 
+      service && (service.type === 'membership' || service.category === 'membership')
+    );
+    
+    // Return membership if only memberships are present
+    if (hasMemberships && !hasServices && !hasProducts) return 'Membership';
+    
+    // Return combined types if multiple types are present
+    const types = [];
+    if (hasServices) types.push('Service');
+    if (hasProducts) types.push('Product');
+    if (hasMemberships) types.push('Membership');
+    
+    if (types.length > 1) return types.join(' & ');
+    if (hasProducts) return 'Product';
+    if (hasMemberships) return 'Membership';
+    return 'Service';
+  };
+
+  // Helper function to check if order is salon consumption
+  const isSalonConsumption = (order: any) => {
+    return !!(
+      order.is_salon_consumption === true ||
+      order.consumption_purpose ||
+      order.client_name === 'Salon Consumption' ||
+      (order.services && order.services.some((s: any) => s.for_salon_use === true))
+    );
   };
 
   return ordersToExport.map((originalOrder, index) => {
@@ -356,20 +409,63 @@ export const formatOrdersForExport = (ordersToExport: any[], allOrdersForContext
       }
     }
 
+    // Get individual service details
+    const serviceNames = originalOrder.services && Array.isArray(originalOrder.services) 
+      ? originalOrder.services.map((s: any) => s.service_name).join(', ') 
+      : '';
+
+    const serviceTypes = originalOrder.services && Array.isArray(originalOrder.services)
+      ? originalOrder.services.map((s: any) => s.type || 'Service').join(', ')
+      : '';
+
+    const servicePrices = originalOrder.services && Array.isArray(originalOrder.services)
+      ? originalOrder.services.map((s: any) => `₹${safeGetNumber(s.price)}`).join(', ')
+      : '';
+
+    // Check if this is a multi-expert order
+    const isMultiExpert = (originalOrder as any).aggregated_multi_expert === true;
+
+    // Calculate accurate totals for display
+    let displayTotal = safeGetNumber(originalOrder.total || originalOrder.total_amount);
+    if (!isMultiExpert && originalOrder.payments && originalOrder.payments.length > 0) {
+      const regularPaymentTotal = originalOrder.payments
+        .filter((payment: any) => payment.payment_method !== 'membership')
+        .reduce((sum: number, payment: any) => sum + (payment.amount || 0), 0);
+      
+      if (regularPaymentTotal > 0) {
+        displayTotal = regularPaymentTotal;
+      }
+    }
+
     const result = {
       id: displayId, // Use the generated display ID
       created_at: new Date(originalOrder.created_at).toLocaleString(),
-      client_name: originalOrder.client_name || originalOrder.customer_name,
-      stylist_name: originalOrder.stylist_name,
+      client_name: originalOrder.client_name || originalOrder.customer_name || 'Unknown',
+      client_id: originalOrder.client_id || '',
+      stylist_name: originalOrder.stylist_name || 'No stylist assigned',
+      stylist_id: originalOrder.stylist?.id || originalOrder.stylist_id || '',
+      purchase_type: getPurchaseType(originalOrder),
+      is_salon_consumption: isSalonConsumption(originalOrder) ? 'Yes' : 'No',
+      consumption_purpose: originalOrder.consumption_purpose || '',
+      appointment_id: originalOrder.appointment_id || '',
+      appointment_time: originalOrder.appointment_time ? new Date(originalOrder.appointment_time).toLocaleString() : '',
+      is_multi_expert: isMultiExpert ? 'Yes' : 'No',
+      items_count: originalOrder.services?.length || 0,
+      service_names: serviceNames,
+      service_types: serviceTypes,
+      service_prices: servicePrices,
       subtotal: safeGetNumber(originalOrder.subtotal),
       cgst: cgst,
       sgst: sgst,
+      total_tax: totalTax,
       discount: safeGetNumber(originalOrder.discount),
-      total: safeGetNumber(originalOrder.total || originalOrder.total_amount),
+      total: displayTotal,
+      pending_amount: safeGetNumber(originalOrder.pending_amount),
+      payment_method: originalOrder.payment_method?.replace('_', ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()) || 'Cash',
       payment_details: paymentInfo,
-      status: originalOrder.status,
+      status: originalOrder.status || 'Pending',
       is_walk_in: originalOrder.is_walk_in ? 'Walk-in' : 'Appointment',
-      services: originalOrder.services && Array.isArray(originalOrder.services) ? originalOrder.services.map((s: any) => s.service_name).join(', ') : ''
+      notes: originalOrder.notes || ''
     };
 
     console.log(`✅ Final result for order ${index + 1}: ID = ${result.id}`);
@@ -378,20 +474,35 @@ export const formatOrdersForExport = (ordersToExport: any[], allOrdersForContext
 };
 
 /**
- * Order export header definitions
+ * Order export header definitions - Enhanced with all available data
  */
 export const orderExportHeaders = {
   id: 'Order ID',
   created_at: 'Date & Time',
-  client_name: 'Customer',
-  stylist_name: 'Stylist',
+  client_name: 'Customer Name',
+  client_id: 'Customer ID',
+  stylist_name: 'Stylist Name',
+  stylist_id: 'Stylist ID',
+  purchase_type: 'Purchase Type',
+  is_salon_consumption: 'Salon Consumption',
+  consumption_purpose: 'Consumption Purpose',
+  appointment_id: 'Appointment ID',
+  appointment_time: 'Appointment Time',
+  is_multi_expert: 'Multi-Expert Order',
+  items_count: 'Number of Items',
+  service_names: 'Service Names',
+  service_types: 'Service Types',
+  service_prices: 'Service Prices',
   subtotal: 'Subtotal (₹)',
   cgst: 'CGST 9% (₹)',
   sgst: 'SGST 9% (₹)',
+  total_tax: 'Total Tax (₹)',
   discount: 'Discount (₹)',
   total: 'Total (₹)',
+  pending_amount: 'Pending Amount (₹)',
+  payment_method: 'Primary Payment Method',
   payment_details: 'Payment Details',
   status: 'Status',
-  is_walk_in: 'Type',
-  services: 'Services'
+  is_walk_in: 'Order Type',
+  notes: 'Notes'
 }; 

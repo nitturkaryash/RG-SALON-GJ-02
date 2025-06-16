@@ -694,7 +694,34 @@ export default function Stylists() {
                           )}
                         </TableCell>
                         <TableCell>
-                          <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+                          <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
+                            <Tooltip title="Edit Stylist">
+                              <IconButton
+                                size="small"
+                                color="primary"
+                                onClick={() => handleEdit(stylist)}
+                                sx={{ 
+                                  bgcolor: 'rgba(25, 118, 210, 0.1)',
+                                  '&:hover': { bgcolor: 'rgba(25, 118, 210, 0.2)' }
+                                }}
+                              >
+                                <EditIcon />
+                              </IconButton>
+                            </Tooltip>
+                            <Tooltip title="Delete Stylist">
+                              <IconButton
+                                size="small"
+                                color="error"
+                                onClick={() => handleDelete(stylist.id)}
+                                sx={{ 
+                                  bgcolor: 'rgba(244, 67, 54, 0.1)',
+                                  '&:hover': { bgcolor: 'rgba(244, 67, 54, 0.2)' }
+                                }}
+                              >
+                                <DeleteIcon />
+                              </IconButton>
+                            </Tooltip>
+                            <Divider orientation="vertical" flexItem sx={{ mx: 0.5 }} />
                             <Tooltip title="Add Holiday">
                               <IconButton
                                 size="small"
@@ -712,18 +739,18 @@ export default function Stylists() {
                               <Tooltip title="Edit Holidays">
                                 <IconButton
                                   size="small"
-                                  color="primary"
+                                  color="warning"
                                   onClick={() => {
                                     // edit the first holiday in the list
                                     const firstHoliday = report.holidays[0];
                                     openHolidayDialog(stylist, firstHoliday);
                                   }}
                                   sx={{ 
-                                    bgcolor: 'rgba(25, 118, 210, 0.1)',
-                                    '&:hover': { bgcolor: 'rgba(25, 118, 210, 0.2)' }
+                                    bgcolor: 'rgba(255, 152, 0, 0.1)',
+                                    '&:hover': { bgcolor: 'rgba(255, 152, 0, 0.2)' }
                                   }}
                                 >
-                                  <EditIcon />
+                                  <CalendarMonth />
                                 </IconButton>
                               </Tooltip>
                             )}

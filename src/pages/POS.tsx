@@ -1092,6 +1092,34 @@ export default function POS() {
 		}
 	}, [activeClientMembership, isSplitPayment, getMembershipPayableAmount]);
 
+	// Automatic split payment logic: enable split payment when services use membership AND there are products
+	useEffect(() => {
+		const membershipPayableAmount = getMembershipPayableAmount();
+		const regularPayableAmount = getRegularPayableAmount();
+		const hasProductsOrMemberships = orderItems.some(item => item.type === 'product' || item.type === 'membership');
+		const hasServicesPaidViaMembership = Object.values(servicesMembershipPayment).some(Boolean);
+		
+		// Auto-enable split payment if:
+		// 1. There are services being paid via membership (membershipPayableAmount > 0)
+		// 2. There are products or other items that need regular payment (regularPayableAmount > 0)
+		// 3. Both conditions are true simultaneously
+		const shouldAutoEnableSplit = membershipPayableAmount > 0 && regularPayableAmount > 0 && hasServicesPaidViaMembership && hasProductsOrMemberships;
+		
+		if (shouldAutoEnableSplit && !isSplitPayment) {
+			console.log('[Auto Split Payment] Enabling split payment: membership services + regular items detected');
+			setIsSplitPayment(true);
+			
+			// Set up payment amounts
+			const maxMembershipPayment = activeClientMembership ? Math.min(membershipPayableAmount, activeClientMembership.currentBalance) : 0;
+			
+			setPaymentAmounts(prev => ({
+				...prev,
+				membership: maxMembershipPayment,
+				cash: regularPayableAmount // Default remaining to cash
+			}));
+		}
+	}, [getMembershipPayableAmount, getRegularPayableAmount, servicesMembershipPayment, orderItems, isSplitPayment, activeClientMembership]);
+
 	// =============== FILTERED MEMOS (restored) ===============
 	const filteredProducts = useMemo(() => {
 		if (!productSearchTerm.trim()) {
@@ -2090,21 +2118,85 @@ export default function POS() {
 			// Use the correct amountPaid calculation from paymentAmounts
 			const totalAmountPaid = Object.values(paymentAmounts).reduce((a, b) => a + b, 0);
 			
-			// Build payments array from paymentAmounts instead of splitPayments
-			const paymentsArray = Object.entries(paymentAmounts)
-				.filter(([_, amount]) => amount > 0)
-				.map(([method, amount]) => ({
-					id: uuidv4(),
-					amount: isMultiExpert ? amount / numberOfExperts : amount,
-					payment_method: method as PaymentMethodWithSplit,
-					payment_date: orderDate ? orderDate.toISOString() : new Date().toISOString()
-				}));
-
-			// Determine payment method based on actual payments used
+			// Calculate payment amounts first
+			const membershipPayableAmount = getMembershipPayableAmount();
+			const regularPayableAmount = getRegularPayableAmount();
+			
+			// Determine payment method variables early
 			const paymentMethodsUsed = Object.entries(paymentAmounts).filter(([_, amount]) => amount > 0);
-			const primaryPaymentMethod = paymentMethodsUsed.length === 1 ? 
-				paymentMethodsUsed[0][0] as PaymentMethodWithSplit : 
-				(paymentMethodsUsed.length > 1 ? 'split' as PaymentMethodWithSplit : walkInPaymentMethod);
+			const hasMembershipPayment = membershipPayableAmount > 0 && paymentMethodsUsed.some(([method]) => method === 'membership');
+			const hasRegularPayment = regularPayableAmount > 0 && paymentMethodsUsed.some(([method]) => method !== 'membership');
+			
+			// Also check if services are being paid via membership toggle (even if paymentAmounts doesn't show it)
+			const hasServicesPaidViaMembership = Object.values(servicesMembershipPayment).some(Boolean);
+			const hasProductsOrOtherItems = orderItems.some(item => item.type === 'product' || item.type === 'membership');
+			
+			// Build payments array from paymentAmounts instead of splitPayments
+			// Ensure membership payment only applies to services, not products
+			let paymentsArray = Object.entries(paymentAmounts)
+				.filter(([_, amount]) => amount > 0)
+				.map(([method, amount]) => {
+					// For membership payment, ensure it only covers services
+					if (method === 'membership') {
+						const maxMembershipAmount = membershipPayableAmount;
+						const actualAmount = Math.min(amount, maxMembershipAmount);
+						return {
+							id: uuidv4(),
+							amount: isMultiExpert ? actualAmount / numberOfExperts : actualAmount,
+							payment_method: method as PaymentMethodWithSplit,
+							payment_date: orderDate ? orderDate.toISOString() : new Date().toISOString()
+						};
+					}
+					return {
+						id: uuidv4(),
+						amount: isMultiExpert ? amount / numberOfExperts : amount,
+						payment_method: method as PaymentMethodWithSplit,
+						payment_date: orderDate ? orderDate.toISOString() : new Date().toISOString()
+					};
+				});
+			
+			// If we have services paid via membership but membership isn't in paymentAmounts, add it
+			if (hasServicesPaidViaMembership && membershipPayableAmount > 0) {
+				const existingMembershipPayment = paymentsArray.find(p => p.payment_method === 'membership');
+				if (!existingMembershipPayment) {
+					paymentsArray.push({
+						id: uuidv4(),
+						amount: isMultiExpert ? membershipPayableAmount / numberOfExperts : membershipPayableAmount,
+						payment_method: 'membership' as PaymentMethodWithSplit,
+						payment_date: orderDate ? orderDate.toISOString() : new Date().toISOString()
+					});
+				}
+			}
+			
+			// If no payment amounts are set but we have membership payment, add it
+			if (paymentsArray.length === 0 && membershipPayableAmount > 0) {
+				paymentsArray = [{
+					id: uuidv4(),
+					amount: isMultiExpert ? membershipPayableAmount / numberOfExperts : membershipPayableAmount,
+					payment_method: 'membership' as PaymentMethodWithSplit,
+					payment_date: orderDate ? orderDate.toISOString() : new Date().toISOString()
+				}];
+			}
+			
+			let primaryPaymentMethod: PaymentMethodWithSplit;
+			
+			// Force split payment method when there are both membership and regular payments
+			// OR when services are paid via membership AND there are products/other items
+			if ((hasMembershipPayment && hasRegularPayment) || (hasServicesPaidViaMembership && hasProductsOrOtherItems)) {
+				primaryPaymentMethod = 'split';
+			} else if (paymentMethodsUsed.length === 1) {
+				// Single payment method
+				primaryPaymentMethod = paymentMethodsUsed[0][0] as PaymentMethodWithSplit;
+			} else if (paymentMethodsUsed.length > 1) {
+				// Multiple payment methods - split payment
+				primaryPaymentMethod = 'split' as PaymentMethodWithSplit;
+			} else if (membershipPayableAmount > 0 && regularPayableAmount === 0) {
+				// Only membership payment, no regular payment needed
+				primaryPaymentMethod = 'membership' as PaymentMethodWithSplit;
+			} else {
+				// Fallback to default payment method
+				primaryPaymentMethod = walkInPaymentMethod;
+			}
 
 			const orderResult = await createWalkInOrderMutation.mutateAsync({
 				order_id: uuidv4(),
@@ -2116,7 +2208,7 @@ export default function POS() {
 				items: [],
 				services: itemsForOrder,
 				payment_method: primaryPaymentMethod,
-				split_payments: paymentMethodsUsed.length > 1 ? paymentsArray : undefined,
+				split_payments: (paymentMethodsUsed.length > 1 || (hasMembershipPayment && hasRegularPayment) || (hasServicesPaidViaMembership && hasProductsOrOtherItems)) ? paymentsArray : undefined,
 				discount: isMultiExpert ? (walkInDiscount / numberOfExperts) : walkInDiscount,
 				discount_percentage: walkInDiscountPercentage,
 				subtotal: expertSubtotal,
@@ -2247,7 +2339,6 @@ export default function POS() {
 			}
 			
 			// Process membership payment and update balance
-			const membershipPayableAmount = getMembershipPayableAmount();
 			if (membershipPayableAmount > 0 && activeClientMembership) {
 				// Deduct the membership payment amount from the membership balance
 				const newBalance = activeClientMembership.currentBalance - membershipPayableAmount;
@@ -3442,7 +3533,7 @@ export default function POS() {
 										/>
 								</Box>
 							)}
-							{/* Add membership payment toggle for services */}
+							{/* Add membership payment toggle for services only - products cannot use membership payment */}
 							{item.type === 'service' && (
 								<Box sx={{ pl: 4, pb: 2, display: 'flex', justifyContent: 'flex-start', alignItems: 'center' }}>
 									<FormControlLabel
@@ -3498,6 +3589,18 @@ export default function POS() {
 											sx={{ ml: 2 }}
 										/>
 									)}
+								</Box>
+							)}
+							{/* Show info that products cannot be paid with membership */}
+							{item.type === 'product' && (
+								<Box sx={{ pl: 4, pb: 2, display: 'flex', justifyContent: 'flex-start', alignItems: 'center' }}>
+									<Chip
+										icon={<InfoIcon fontSize="small" />}
+										label="Products must be paid with regular payment methods"
+										size="small"
+										color="info"
+										variant="outlined"
+									/>
 								</Box>
 							)}
 							</React.Fragment>
@@ -4442,6 +4545,21 @@ export default function POS() {
 								</Grid>
 							</Grid>
 							
+							{/* Auto Split Payment Indicator */}
+							{isSplitPayment && getMembershipPayableAmount() > 0 && getRegularPayableAmount() > 0 && (
+								<Box sx={{ mt: 2, p: 2, bgcolor: 'info.lighter', borderRadius: 1, border: '1px solid', borderColor: 'info.main' }}>
+									<Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+										<InfoIcon fontSize="small" sx={{ mr: 1, color: 'info.main' }} />
+										<Typography variant="body2" fontWeight="medium" color="info.main">
+											Split Payment Auto-Enabled
+										</Typography>
+									</Box>
+									<Typography variant="body2" color="text.secondary">
+										Services will be paid via membership balance, and products via regular payment methods.
+									</Typography>
+								</Box>
+							)}
+
 							{/* Complete Order Button */}
 							<Button
 								variant="contained"
