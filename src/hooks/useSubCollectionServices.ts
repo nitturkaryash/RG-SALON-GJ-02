@@ -33,7 +33,7 @@ export function useSubCollectionServices(collectionId?: string, subCollectionId?
         price: typeof service.price === 'number' ? service.price : 0,
         duration: typeof service.duration === 'number' ? service.duration : 30,
         active: service.active === true,
-        gender: service.gender || '',
+        gender: service.gender || null,
         created_at: service.created_at || new Date().toISOString(),
       })) as ServiceItem[]
     },
@@ -53,7 +53,7 @@ export function useSubCollectionServices(collectionId?: string, subCollectionId?
         price: typeof newService.price === 'number' ? newService.price : 0,
         duration: typeof newService.duration === 'number' ? newService.duration : 30,
         active: newService.active === true,
-        gender: newService.gender || '',
+        gender: newService.gender || null,
         created_at: timestamp,
         updated_at: timestamp,
       }

@@ -9,13 +9,13 @@ export interface Service {
   description?: string;
   duration: number;
   price: number;
-  category?: string;
+  type?: string;
   active?: boolean;
   collection_id?: string;
+  subcollection_id?: string;
   gender?: string;
-  hsn_code?: string; // Optional: Harmonized System of Nomenclature code for GST
-  gst_percentage?: number; // Optional: GST percentage applicable
-  // category?: string; // Already present, commented out to avoid duplication if accidental paste
+  created_at?: string;
+  updated_at?: string;
 }
 
 export function useServices() {
@@ -45,11 +45,13 @@ export function useServices() {
             description: service.description || '',
             duration: service.duration || 30,
             price: service.price || 0,
+            type: service.type,
+            active: service.active,
             collection_id: service.collection_id,
-            // Only include category if it exists in the database response
-            ...(service.hasOwnProperty('category') ? { category: service.category } : {}),
-            // Only include gender if it exists in the database response
-            ...(service.hasOwnProperty('gender') ? { gender: service.gender } : {})
+            subcollection_id: service.subcollection_id,
+            gender: service.gender,
+            created_at: service.created_at,
+            updated_at: service.updated_at
           })) as Service[];
         } else {
           console.warn('No services found in the database.');
@@ -73,10 +75,11 @@ export function useServices() {
         description: newService.description || '',
         duration: newService.duration,
         price: newService.price,
-        category: newService.category || '',
+        type: newService.type,
         collection_id: newService.collection_id,
-        gender: newService.gender || null,
-        // Omit active field to avoid schema conflicts
+        subcollection_id: newService.subcollection_id,
+        gender: newService.gender,
+        active: newService.active ?? true,
       };
       
       const { data, error } = await supabase
@@ -99,13 +102,9 @@ export function useServices() {
 
   const updateService = useMutation({
     mutationFn: async (updates: Partial<Service> & { id: string }) => {
-      // Create a new object without the active property if it exists
-      // to avoid conflicts with the database schema
-      const { active, ...serviceUpdates } = updates;
-      
       const { data, error } = await supabase
         .from('services')
-        .update(serviceUpdates)
+        .update(updates)
         .eq('id', updates.id)
         .select();
       

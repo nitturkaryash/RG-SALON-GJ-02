@@ -16,7 +16,7 @@ export interface ServiceItem {
   price: number;
   duration: number;
   active: boolean;
-  gender?: string;
+  gender?: 'male' | 'female' | null;
   created_at?: string;
 }
 
