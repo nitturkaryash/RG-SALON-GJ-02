@@ -1934,6 +1934,8 @@ export default function Appointments() {
             bottom: 0,
             overflow: 'hidden',
             transition: 'right 0.3s ease',
+            width: showDrawer ? `calc(100% - ${drawerWidth}px)` : '100%',
+            maxWidth: '100vw',
           }}
         >
           {viewMode === 'calendar' ? (
@@ -2674,35 +2676,75 @@ export default function Appointments() {
                 </Box>
                 
                 {/* From/To Time Selection */}
-                <Grid container spacing={2}>
+                <Grid container spacing={2} sx={{ mt: 1, mb: 2 }}>
                   <Grid item xs={6}>
                     <FormControl fullWidth>
-                      <InputLabel>From Time</InputLabel>
+                      <InputLabel id="from-time-label" sx={{ bgcolor: 'background.paper', px: 1 }}>From Time</InputLabel>
                       <Select
+                        labelId="from-time-label"
                         value={service.fromTime}
                         label="From Time"
                         displayEmpty
                         renderValue={(value) => convertTo12Hour(value)}
                         onChange={(e) => updateServiceTime(clientEntries[0].id, serviceIndex, 'fromTime', e.target.value)}
+                        sx={{
+                          '& .MuiSelect-select': {
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 1
+                          }
+                        }}
                       >
                         {timeOptions.map(option => (
-                          <MenuItem key={`from-${option.value}`} value={option.value}>{option.label}</MenuItem>
+                          <MenuItem 
+                            key={`from-${option.value}`} 
+                            value={option.value}
+                            sx={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 1
+                            }}
+                          >
+                            <Box component="span" sx={{ color: 'primary.main' }}>
+                              {option.label}
+                            </Box>
+                          </MenuItem>
                         ))}
                       </Select>
                     </FormControl>
                   </Grid>
                   <Grid item xs={6}>
                     <FormControl fullWidth>
-                      <InputLabel>To Time</InputLabel>
+                      <InputLabel id="to-time-label" sx={{ bgcolor: 'background.paper', px: 1 }}>To Time</InputLabel>
                       <Select
+                        labelId="to-time-label"
                         value={service.toTime}
                         label="To Time"
                         displayEmpty
                         renderValue={(value) => convertTo12Hour(value)}
                         onChange={(e) => updateServiceTime(clientEntries[0].id, serviceIndex, 'toTime', e.target.value)}
+                        sx={{
+                          '& .MuiSelect-select': {
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 1
+                          }
+                        }}
                       >
                         {timeOptions.map(option => (
-                          <MenuItem key={`to-${option.value}`} value={option.value}>{option.label}</MenuItem>
+                          <MenuItem 
+                            key={`to-${option.value}`} 
+                            value={option.value}
+                            sx={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 1
+                            }}
+                          >
+                            <Box component="span" sx={{ color: 'primary.main' }}>
+                              {option.label}
+                            </Box>
+                          </MenuItem>
                         ))}
                       </Select>
                     </FormControl>
@@ -2927,11 +2969,12 @@ export default function Appointments() {
                 ))}
                 
                 {/* Time Selection */}
-                <Grid container spacing={2} sx={{ mb: 2 }}>
+                <Grid container spacing={2} sx={{ mt: 1, mb: 2 }}>
                   <Grid item xs={6}>
                     <FormControl fullWidth>
-                      <InputLabel>From Time</InputLabel>
+                      <InputLabel id="inline-from-time-label" sx={{ bgcolor: 'background.paper', px: 1 }}>From Time</InputLabel>
                       <Select
+                        labelId="inline-from-time-label"
                         value={inlineServiceData.fromTime}
                         label="From Time"
                         displayEmpty
@@ -2961,17 +3004,37 @@ export default function Appointments() {
                             }));
                           }
                         }}
+                        sx={{
+                          '& .MuiSelect-select': {
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 1
+                          }
+                        }}
                       >
                         {timeOptions.map(option => (
-                          <MenuItem key={`inline-from-${option.value}`} value={option.value}>{option.label}</MenuItem>
+                          <MenuItem 
+                            key={`inline-from-${option.value}`} 
+                            value={option.value}
+                            sx={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 1
+                            }}
+                          >
+                            <Box component="span" sx={{ color: 'primary.main' }}>
+                              {option.label}
+                            </Box>
+                          </MenuItem>
                         ))}
                       </Select>
                     </FormControl>
                   </Grid>
                   <Grid item xs={6}>
                     <FormControl fullWidth>
-                      <InputLabel>To Time</InputLabel>
+                      <InputLabel id="inline-to-time-label" sx={{ bgcolor: 'background.paper', px: 1 }}>To Time</InputLabel>
                       <Select
+                        labelId="inline-to-time-label"
                         value={inlineServiceData.toTime}
                         label="To Time"
                         displayEmpty
@@ -2982,9 +3045,28 @@ export default function Appointments() {
                             toTime: e.target.value as string
                           }));
                         }}
+                        sx={{
+                          '& .MuiSelect-select': {
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 1
+                          }
+                        }}
                       >
                         {timeOptions.map(option => (
-                          <MenuItem key={`inline-to-${option.value}`} value={option.value}>{option.label}</MenuItem>
+                          <MenuItem 
+                            key={`inline-to-${option.value}`} 
+                            value={option.value}
+                            sx={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 1
+                            }}
+                          >
+                            <Box component="span" sx={{ color: 'primary.main' }}>
+                              {option.label}
+                            </Box>
+                          </MenuItem>
                         ))}
                       </Select>
                     </FormControl>
