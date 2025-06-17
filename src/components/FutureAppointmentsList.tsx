@@ -48,6 +48,7 @@ interface AppointmentCardProps {
   onEditClick: (appointment: any) => void;
   onUpdateAppointment?: (appointment: any) => void;
   clients?: any[];
+  allAppointments?: any[];
 }
 
 const AppointmentCard = ({ 
@@ -55,7 +56,8 @@ const AppointmentCard = ({
   onDeleteClick, 
   onEditClick, 
   onUpdateAppointment,
-  clients = [] 
+  clients = [],
+  allAppointments = []
 }: AppointmentCardProps) => {
   const navigate = useNavigate();
   const [datePickerOpen, setDatePickerOpen] = useState(false);
@@ -420,7 +422,7 @@ const AppointmentCard = ({
   const formattedDateTime = format(new Date(appointment.start_time), 'dd-MMM-yyyy, hh:mm a');
 
   // Get comprehensive service and stylist data
-  const serviceData = getAppointmentServicesAndStylists(appointment, []);
+  const serviceData = getAppointmentServicesAndStylists(appointment, allAppointments);
 
   // Create comprehensive tooltip content
   const tooltipContent = (
@@ -450,7 +452,7 @@ const AppointmentCard = ({
         </Typography>
         
         {serviceData.services.length > 1 ? (
-          // Multiple services - Better spacing
+          // Multiple services - Better spacing with individual timings
           <>
             {serviceData.services.map((s: any) => (
               <Box key={s.id} sx={{ ml: 1.5, mb: 0.8, mt: 0.5 }}>
@@ -460,6 +462,9 @@ const AppointmentCard = ({
                     ({s.stylists.join(', ')})
                   </span>
                 </Typography>
+                <Typography variant="body2" sx={{ fontSize: '0.75rem', color: 'text.secondary', ml: 1 }}>
+                  ⏰ {format(new Date(s.startTime), 'hh:mm a')} - {format(new Date(s.endTime), 'hh:mm a')}
+                </Typography>
               </Box>
             ))}
             <Typography variant="body2" sx={{ fontWeight: 'bold', color: 'success.main', fontSize: '0.8rem', ml: 1.5, mt: 0.5 }}>
@@ -467,27 +472,43 @@ const AppointmentCard = ({
             </Typography>
           </>
         ) : (
-          // Single service - Better spacing
-          <Typography variant="body2" sx={{ fontSize: '0.8rem', mt: 0.5 }}>
-            {serviceData.services[0]?.name} - {formatCurrency(serviceData.services[0]?.price || 0)} 
-            <span style={{ color: '#666', marginLeft: '8px' }}>
-              ({serviceData.allStylists.join(', ')})
-            </span>
-          </Typography>
+          // Single service - Better spacing with timing
+          <>
+            <Typography variant="body2" sx={{ fontSize: '0.8rem', mt: 0.5 }}>
+              {serviceData.services[0]?.name} - {formatCurrency(serviceData.services[0]?.price || 0)} 
+              <span style={{ color: '#666', marginLeft: '8px' }}>
+                ({serviceData.allStylists.join(', ')})
+              </span>
+            </Typography>
+            <Typography variant="body2" sx={{ fontSize: '0.75rem', color: 'text.secondary', mt: 0.5 }}>
+              ⏰ {format(new Date(serviceData.services[0]?.startTime || appointment.start_time), 'hh:mm a')} - {format(new Date(serviceData.services[0]?.endTime || appointment.end_time), 'hh:mm a')}
+            </Typography>
+          </>
         )}
       </Box>
 
       <Divider sx={{ my: 1 }} />
 
-      {/* Schedule & Status */}
-      <Box sx={{ mb: 1.5 }}>
-        <Typography variant="body2" sx={{ fontWeight: 'bold', color: 'info.main', fontSize: '0.9rem' }}>
-          ⏰ {format(new Date(appointment.start_time), 'MMM dd, hh:mm a')} - {format(new Date(appointment.end_time), 'hh:mm a')}
-        </Typography>
-        <Typography variant="body2" sx={{ fontSize: '0.75rem', color: 'text.secondary', mt: 0.5 }}>
-          {format(new Date(appointment.start_time), 'EEEE')} • Duration: {serviceData.totalDuration}min
-        </Typography>
-      </Box>
+      {/* Overall Schedule - Only show if different from individual service times */}
+      {serviceData.services.length > 1 && (
+        <Box sx={{ mb: 1.5 }}>
+          <Typography variant="body2" sx={{ fontWeight: 'bold', color: 'info.main', fontSize: '0.85rem' }}>
+            📅 Overall: {format(new Date(appointment.start_time), 'MMM dd, hh:mm a')} - {format(new Date(appointment.end_time), 'hh:mm a')}
+          </Typography>
+          <Typography variant="body2" sx={{ fontSize: '0.75rem', color: 'text.secondary', mt: 0.5 }}>
+            {format(new Date(appointment.start_time), 'EEEE')} • Total Duration: {serviceData.totalDuration}min
+          </Typography>
+        </Box>
+      )}
+
+      {/* Single service schedule */}
+      {serviceData.services.length === 1 && (
+        <Box sx={{ mb: 1.5 }}>
+          <Typography variant="body2" sx={{ fontSize: '0.75rem', color: 'text.secondary', mt: 0.5 }}>
+            {format(new Date(appointment.start_time), 'EEEE, MMM dd')} • Duration: {serviceData.totalDuration}min
+          </Typography>
+        </Box>
+      )}
 
       {/* Payment Status - Inline with status */}
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
@@ -666,18 +687,36 @@ const AppointmentCard = ({
             </Typography>
             
             {serviceData.services.length > 1 ? (
-              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                {serviceData.services.map((s: any) => s.name).join(', ')}
-              </Typography>
-            ) : null}
+              <>
+                {/* Show individual service timings for multi-service appointments */}
+                <Box sx={{ mt: 1.5 }}>
+                  {serviceData.services.map((s: any, index: number) => (
+                    <Typography key={s.id} variant="body2" sx={{ fontSize: '0.85rem', mb: 0.5 }}>
+                      <strong>{s.name}:</strong> {format(new Date(s.startTime), 'hh:mm a')} - {format(new Date(s.endTime), 'hh:mm a')}
+                      <span style={{ color: '#666', marginLeft: '8px' }}>
+                        ({s.stylists.join(', ')})
+                      </span>
+                    </Typography>
+                  ))}
+                </Box>
+              </>
+            ) : (
+              <>
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                  Expert(s): {serviceData.allStylists.join(', ')}
+                </Typography>
+                <Typography variant="body2" sx={{ mt: 1.5, fontWeight: 'medium' }}>
+                  {format(new Date(serviceData.services[0]?.startTime || appointment.start_time), 'dd-MMM-yyyy, hh:mm a')} - {format(new Date(serviceData.services[0]?.endTime || appointment.end_time), 'hh:mm a')}
+                </Typography>
+              </>
+            )}
             
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-              Expert(s): {serviceData.allStylists.join(', ')}
-            </Typography>
-
-            <Typography variant="body2" sx={{ mt: 1.5, fontWeight: 'medium' }}>
-              {formattedDateTime}
-            </Typography>
+            {/* Show overall timing only for multi-service appointments */}
+            {serviceData.services.length > 1 && (
+              <Typography variant="body2" color="primary" sx={{ mt: 1, fontWeight: 'medium', fontSize: '0.9rem' }}>
+                Overall: {formattedDateTime} - {format(new Date(appointment.end_time), 'hh:mm a')}
+              </Typography>
+            )}
           </Box>
 
           <Box sx={{ mt: 2, display: 'flex', justifyContent: 'flex-end' }}>
@@ -744,6 +783,7 @@ interface AppointmentRowProps {
   clients?: any[];
   stylists?: any[];
   services?: any[];
+  allAppointments?: any[];
 }
 
 const AppointmentRow = ({ 
@@ -753,7 +793,8 @@ const AppointmentRow = ({
   onUpdateAppointment,
   clients = [],
   stylists = [],
-  services = []
+  services = [],
+  allAppointments = []
 }: AppointmentRowProps) => {
   const navigate = useNavigate();
   const [datePickerOpen, setDatePickerOpen] = useState(false);
@@ -1175,7 +1216,7 @@ const AppointmentRow = ({
   const clientInitials = clientName.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
 
   // Get comprehensive service and stylist data
-  const serviceData = getAppointmentServicesAndStylists(appointment, []);
+  const serviceData = getAppointmentServicesAndStylists(appointment, allAppointments);
 
   return (
     <>
@@ -1228,12 +1269,6 @@ const AppointmentRow = ({
               `₹${serviceData.services[0]?.price || 0}`
             )}
           </Typography>
-          {serviceData.services.length > 1 && (
-            <Typography variant="caption" color="text.secondary" display="block">
-              {serviceData.services.map((s: any) => s.name).slice(0, 2).join(', ')}
-              {serviceData.services.length > 2 && ` +${serviceData.services.length - 2} more`}
-            </Typography>
-          )}
         </TableCell>
 
         {/* Stylist */}
@@ -1255,12 +1290,31 @@ const AppointmentRow = ({
 
         {/* Date & Time */}
         <TableCell>
-          <Typography variant="body2" fontWeight="medium">
-            {date}
-          </Typography>
-          <Typography variant="caption" color="text.secondary">
-            {startTime} - {endTime}
-          </Typography>
+          {serviceData.services.length > 1 ? (
+            <>
+              <Typography variant="body2" fontWeight="medium">
+                {date}
+              </Typography>
+              {/* Show individual service timings */}
+              {serviceData.services.map((s: any, index: number) => (
+                <Typography key={s.id} variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
+                  {s.name}: {format(new Date(s.startTime), 'hh:mm a')} - {format(new Date(s.endTime), 'hh:mm a')}
+                </Typography>
+              ))}
+              <Typography variant="caption" color="primary" display="block" sx={{ mt: 0.5, fontWeight: 'medium' }}>
+                Overall: {startTime} - {endTime}
+              </Typography>
+            </>
+          ) : (
+            <>
+              <Typography variant="body2" fontWeight="medium">
+                {date}
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                {format(new Date(serviceData.services[0]?.startTime || appointment.start_time), 'hh:mm a')} - {format(new Date(serviceData.services[0]?.endTime || appointment.end_time), 'hh:mm a')}
+              </Typography>
+            </>
+          )}
         </TableCell>
 
         {/* Status */}
@@ -1437,6 +1491,27 @@ const FutureAppointmentsList: React.FC<FutureAppointmentsListProps> = ({
         })
       );
     }
+    
+    // Group multi-expert appointments by booking_id to avoid duplicates
+    const groupedAppointments = new Map();
+    
+    filtered.forEach(appointment => {
+      if (appointment.booking_id) {
+        // This is a multi-expert appointment
+        if (!groupedAppointments.has(appointment.booking_id)) {
+          // First appointment with this booking_id becomes the primary
+          groupedAppointments.set(appointment.booking_id, appointment);
+        }
+        // We don't add duplicates - the getAppointmentServicesAndStylists function
+        // will handle extracting all expert info from the full appointments array
+      } else {
+        // Single appointment or appointment without booking_id
+        groupedAppointments.set(appointment.id, appointment);
+      }
+    });
+    
+    // Convert back to array
+    filtered = Array.from(groupedAppointments.values());
     
     // Sort by start time
     filtered.sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
@@ -1705,6 +1780,7 @@ const FutureAppointmentsList: React.FC<FutureAppointmentsListProps> = ({
                     onEditClick={() => handleEditClick(appointment)}
                     onUpdateAppointment={handleUpdateAppointment}
                     clients={clients}
+                    allAppointments={appointments}
                   />
                 </Box>
               ))}
@@ -1794,6 +1870,7 @@ const FutureAppointmentsList: React.FC<FutureAppointmentsListProps> = ({
                         clients={clients}
                         stylists={stylists}
                         services={services}
+                        allAppointments={appointments}
                       />
                     ))}
                   </TableBody>
