@@ -225,12 +225,29 @@ export default function Orders() {
         
         let finalTotal, finalSubtotal, finalTax;
         
+        // Aggregate all payments from the split orders
+        const aggregatedPayments: any[] = [];
+        const paymentSummary: Record<string, number> = {};
+
+        appointmentOrders.forEach(order => {
+          if (order.payments && Array.isArray(order.payments)) {
+            order.payments.forEach(p => {
+              paymentSummary[p.payment_method] = (paymentSummary[p.payment_method] || 0) + p.amount;
+            });
+          }
+        });
+        
+        for (const [method, amount] of Object.entries(paymentSummary)) {
+          aggregatedPayments.push({ payment_method: method, amount: amount });
+        }
+        
         // Calculate the correct customer-facing total from the services
         // Aggregate services by name to avoid counting duplicates from multiple experts
         const serviceAggregation: Record<string, { 
           quantity: number; 
           unit_price: number; 
-          total_price: number; 
+          total_price: number;
+          name: string;
         }> = {};
         
         appointmentOrders.forEach(order => {
@@ -242,9 +259,10 @@ export default function Orders() {
               
               if (!serviceAggregation[serviceName]) {
                 serviceAggregation[serviceName] = {
-                  quantity: quantity,
+                  quantity: 0,
                   unit_price: 0,
-                  total_price: 0
+                  total_price: 0,
+                  name: serviceName
                 };
               }
               
@@ -262,73 +280,41 @@ export default function Orders() {
         
         console.log('[Orders Aggregation] Calculated customer-facing total from services. Total:', finalTotal, 'Subtotal:', finalSubtotal, 'Tax:', finalTax);
         
-        // Aggregate payments from all orders in the appointment
-        const aggregatedPayments: any[] = [];
-        const paymentMethodMap: Record<string, number> = {};
-        
-        appointmentOrders.forEach(order => {
-          if (order.payments && Array.isArray(order.payments)) {
-            order.payments.forEach(payment => {
-              const method = payment.payment_method;
-              paymentMethodMap[method] = (paymentMethodMap[method] || 0) + payment.amount;
-            });
-          }
-        });
-        
-        // Create aggregated payment records
-        Object.entries(paymentMethodMap).forEach(([method, amount]) => {
-          aggregatedPayments.push({
-            id: `aggregated-${appointmentId}-${method}`,
-            amount: amount,
-            payment_method: method,
-            payment_date: baseOrder.created_at
-          });
-        });
-        
-        const aggregatedOrder: ExtendedOrder & { stylist_names: string[] } = {
+        aggMap[appointmentId] = {
           ...baseOrder,
-          // Use calculated amounts based on whether we have split orders or original order
-          total: finalTotal,
+          id: baseOrder.appointment_id, // Use appointment_id as a unique key for the map
+          aggregated_from_ids: appointmentOrders.map(o => o.id), // For debugging
+          aggregated_multi_expert: true,
+          total: finalTotal, // Use the correct aggregated total
           total_amount: finalTotal,
           subtotal: finalSubtotal,
           tax: finalTax,
-          // Keep original payment method from base order
-          payment_method: baseOrder.payment_method,
-          stylist_names: [],
-          // Use aggregated payments that sum up all split payments
-          payments: aggregatedPayments,
-          // For multi-expert orders, we need to aggregate services properly
-          // Instead of trying to deduplicate or manipulate prices, collect all services from all orders
-          services: appointmentOrders.reduce((allServices: any[], order) => {
-            if (order.services && Array.isArray(order.services)) {
-              // Add all services from this order, preserving their original structure
-              order.services.forEach(service => {
-                allServices.push({
-                  ...service,
-                  // Preserve the original service data without modification
-                  stylist_id: order.stylist_id,
-                  stylist_name: order.stylist_name
-                });
-              });
-            }
-            return allServices;
-          }, []),
-          aggregated_multi_expert: true as any
+          stylist_name: appointmentOrders.map(o => o.stylist_name || o.stylist?.name).filter(Boolean).join(', '),
+          stylists: appointmentOrders.map(o => o.stylist || { name: o.stylist_name, id: o.stylist_id }).filter(s => s && s.id),
+          payments: aggregatedPayments, // Use the aggregated payments
+          services: Object.values(serviceAggregation).map(s => ({
+            service_name: s.name,
+            item_name: s.name,
+            quantity: s.quantity,
+            price: s.unit_price,
+            type: 'service'
+          })),
+          stylist_names: [], // Initialize empty array for stylist names
         };
 
         // Aggregate stylist names from all orders
         appointmentOrders.forEach(order => {
-          if (order.stylist_name && !aggregatedOrder.stylist_names.includes(order.stylist_name)) {
-            aggregatedOrder.stylist_names.push(order.stylist_name);
+          if (order.stylist_name && !aggMap[appointmentId].stylist_names.includes(order.stylist_name)) {
+            aggMap[appointmentId].stylist_names.push(order.stylist_name);
           }
         });
 
         // Update stylist_name to show all stylists
-        aggregatedOrder.stylist_name = aggregatedOrder.stylist_names.filter(Boolean).join(', ');
+        aggMap[appointmentId].stylist_name = aggMap[appointmentId].stylist_names.filter(Boolean).join(', ');
         
-        console.log('[Orders Aggregation] Created aggregate for appointment:', appointmentId, 'stylists:', aggregatedOrder.stylist_name, 'total:', aggregatedOrder.total, 'items:', aggregatedOrder.services?.length);
+        console.log('[Orders Aggregation] Created aggregate for appointment:', appointmentId, 'stylists:', aggMap[appointmentId].stylist_name, 'total:', aggMap[appointmentId].total, 'items:', aggMap[appointmentId].services?.length);
         
-        result.push(aggregatedOrder as ExtendedOrder);
+        result.push(aggMap[appointmentId] as ExtendedOrder);
       } else {
         // Single order for this appointment
         console.log('[Orders Aggregation] Added single appointment order:', appointmentOrders[0].id);
@@ -345,116 +331,56 @@ export default function Orders() {
         // Use the first order as the base
         const baseOrder = groupOrders[0];
         
-        // For multi-expert orders, calculate the original customer-facing total from services
-        // The individual orders contain split amounts for stylist commission tracking,
-        // but the customer should see the original full amount
-        
-        let finalTotal, finalSubtotal, finalTax;
-        
-        // Calculate the correct customer-facing total from the services
-        // Aggregate services by name to avoid counting duplicates from multiple experts
-        const serviceAggregation: Record<string, { 
-          quantity: number; 
-          unit_price: number; 
-          total_price: number; 
-        }> = {};
-        
-        groupOrders.forEach(order => {
-          if (order.services && Array.isArray(order.services)) {
-            order.services.forEach((service: any) => {
-              const serviceName = service.service_name || service.item_name || service.name;
-              const quantity = service.quantity || 1;
-              const price = service.price || 0;
-              
-              if (!serviceAggregation[serviceName]) {
-                serviceAggregation[serviceName] = {
-                  quantity: quantity,
-                  unit_price: 0,
-                  total_price: 0
-                };
-              }
-              
-              // Sum up the prices from all experts working on this service
-              serviceAggregation[serviceName].unit_price += price;
-              serviceAggregation[serviceName].total_price += (price * quantity);
-            });
-          }
-        });
-        
-        // Calculate totals from aggregated services
-        finalSubtotal = Object.values(serviceAggregation).reduce((sum, item) => sum + item.total_price, 0);
-        finalTax = finalSubtotal * 0.18; // 18% GST
-        finalTotal = finalSubtotal + finalTax - (baseOrder.discount || 0);
-        
-        console.log('[Orders Aggregation] Calculated customer-facing total from walk-in services. Total:', finalTotal, 'Subtotal:', finalSubtotal, 'Tax:', finalTax);
-        
-        // Aggregate payments from all orders in the group
+        // Aggregate payments for walk-in multi-expert orders
         const aggregatedPayments: any[] = [];
-        const paymentMethodMap: Record<string, number> = {};
-        
+        const paymentSummary: Record<string, number> = {};
         groupOrders.forEach(order => {
           if (order.payments && Array.isArray(order.payments)) {
-            order.payments.forEach(payment => {
-              const method = payment.payment_method;
-              paymentMethodMap[method] = (paymentMethodMap[method] || 0) + payment.amount;
+            order.payments.forEach(p => {
+              paymentSummary[p.payment_method] = (paymentSummary[p.payment_method] || 0) + p.amount;
             });
           }
         });
+        for (const [method, amount] of Object.entries(paymentSummary)) {
+          aggregatedPayments.push({ payment_method: method, amount: amount });
+        }
         
-        // Create aggregated payment records
-        Object.entries(paymentMethodMap).forEach(([method, amount]) => {
-          aggregatedPayments.push({
-            id: `aggregated-${groupId}-${method}`,
-            amount: amount,
-            payment_method: method,
-            payment_date: baseOrder.created_at
-          });
-        });
+        // Sum up the total from all orders in the group
+        const totalAmount = groupOrders.reduce((sum, order) => sum + (order.total || 0), 0);
+        const subtotal = groupOrders.reduce((sum, order) => sum + (order.subtotal || 0), 0);
+        const tax = groupOrders.reduce((sum, order) => sum + (order.tax || 0), 0);
+        const discount = groupOrders.reduce((sum, order) => sum + (order.discount || 0), 0);
+        const allServices = groupOrders.flatMap(o => o.services || []);
         
-        const aggregatedOrder: ExtendedOrder & { stylist_names: string[] } = {
+        aggMap[groupId] = {
           ...baseOrder,
-          // Use calculated amounts based on whether we have split orders or original order
-          total: finalTotal,
-          total_amount: finalTotal,
-          subtotal: finalSubtotal,
-          tax: finalTax,
-          // Keep original payment method from base order
-          payment_method: baseOrder.payment_method,
-          stylist_names: [],
-          // Use aggregated payments that sum up all split payments
-          payments: aggregatedPayments,
-          // For multi-expert orders, we need to aggregate services properly
-          // Instead of trying to deduplicate or manipulate prices, collect all services from all orders
-          services: groupOrders.reduce((allServices: any[], order) => {
-            if (order.services && Array.isArray(order.services)) {
-              // Add all services from this order, preserving their original structure
-              order.services.forEach(service => {
-                allServices.push({
-                  ...service,
-                  // Preserve the original service data without modification
-                  stylist_id: order.stylist_id,
-                  stylist_name: order.stylist_name
-                });
-              });
-            }
-            return allServices;
-          }, []),
-          aggregated_multi_expert: true as any
+          id: groupId, // Use group_id as a unique key
+          aggregated_multi_expert: true,
+          total: totalAmount,
+          total_amount: totalAmount,
+          subtotal: subtotal,
+          tax: tax,
+          discount: discount,
+          stylist_name: groupOrders.map(o => o.stylist_name || o.stylist?.name).filter(Boolean).join(', '),
+          stylists: groupOrders.map(o => o.stylist || { name: o.stylist_name, id: o.stylist_id }).filter(s => s && s.id),
+          services: allServices,
+          payments: aggregatedPayments, // Use aggregated payments
+          stylist_names: [], // Initialize empty array for stylist names
         };
 
         // Aggregate stylist names from all orders
         groupOrders.forEach(order => {
-          if (order.stylist_name && !aggregatedOrder.stylist_names.includes(order.stylist_name)) {
-            aggregatedOrder.stylist_names.push(order.stylist_name);
+          if (order.stylist_name && !aggMap[groupId].stylist_names.includes(order.stylist_name)) {
+            aggMap[groupId].stylist_names.push(order.stylist_name);
           }
         });
 
         // Update stylist_name to show all stylists
-        aggregatedOrder.stylist_name = aggregatedOrder.stylist_names.filter(Boolean).join(', ');
+        aggMap[groupId].stylist_name = aggMap[groupId].stylist_names.filter(Boolean).join(', ');
         
-        console.log('[Orders Aggregation] Created walk-in aggregate for group:', groupId, 'stylists:', aggregatedOrder.stylist_name, 'total:', aggregatedOrder.total, 'items:', aggregatedOrder.services?.length);
+        console.log('[Orders Aggregation] Created walk-in aggregate for group:', groupId, 'stylists:', aggMap[groupId].stylist_name, 'total:', aggMap[groupId].total, 'items:', aggMap[groupId].services?.length);
         
-        result.push(aggregatedOrder as ExtendedOrder);
+        result.push(aggMap[groupId] as ExtendedOrder);
       } else {
         // Single order in this group (shouldn't happen, but handle gracefully)
         console.log('[Orders Aggregation] Added single walk-in multi-expert order:', groupOrders[0].id);
@@ -1435,35 +1361,22 @@ export default function Orders() {
 
   // Add this function before the return statement
   const renderPaymentMethods = (order: ExtendedOrder) => {
-    // Check if this is an aggregated multi-expert order
-    const isAggregatedOrder = (order as any).aggregated_multi_expert;
-    
     if (order.payments && order.payments.length > 0) {
-      // Group payments by method and sum up the amounts
-      const paymentSummary: Record<string, number> = {};
-      
-      // For both aggregated and regular orders, sum payments normally
-      // Aggregated orders already have properly aggregated payment amounts
-      order.payments.forEach(payment => {
-        const method = payment.payment_method;
-        paymentSummary[method] = (paymentSummary[method] || 0) + payment.amount;
-      });
-
+      // For aggregated orders, payments are already summarized.
+      // For regular orders, this will just show the payments.
       return (
         <Box>
-          {Object.entries(paymentSummary).map(([method, amount], index) => {
-            return (
-              <Box key={index} sx={{ mb: 0.5 }}>
-                <Chip
-                  size="small"
-                  label={`${PAYMENT_METHOD_LABELS[method as PaymentMethod] || method}: ${formatCurrency(amount)}`}
-                  sx={{ mr: 0.5 }}
-                />
-              </Box>
-            );
-          })}
+          {order.payments.map((payment, index) => (
+            <Box key={index} sx={{ mb: 0.5 }}>
+              <Chip
+                size="small"
+                label={`${PAYMENT_METHOD_LABELS[payment.payment_method as PaymentMethod] || payment.payment_method}: ${formatCurrency(payment.amount)}`}
+                sx={{ mr: 0.5 }}
+              />
+            </Box>
+          ))}
           {(order.pending_amount || 0) > 0 && order.status !== 'completed' && (
-            <Box sx={{ mb: 0.5 }}>
+            <Box sx={{ mt: 0.5 }}>
               <Chip
                 size="small"
                 label={`Pending: ${formatCurrency(order.pending_amount || 0)}`}
@@ -1476,29 +1389,9 @@ export default function Orders() {
       );
     }
     
-    // For single payment orders, show payment method with total amount
+    // Fallback for older orders or single payment orders without a payments array
     const paymentMethod = PAYMENT_METHOD_LABELS[order.payment_method as PaymentMethod] || order.payment_method || 'Unknown';
-    let totalAmount = order.total || order.total_amount || 0;
-    
-    // For multi-expert orders, calculate the correct total from services
-    if (isAggregatedOrder && order.services && order.services.length > 0) {
-      const serviceAggregation: Record<string, { total_price: number }> = {};
-      
-      order.services.forEach((service: any) => {
-        const serviceName = service.service_name || service.item_name || service.name;
-        const quantity = service.quantity || 1;
-        const price = service.price || 0;
-
-        if (!serviceAggregation[serviceName]) {
-          serviceAggregation[serviceName] = { total_price: 0 };
-        }
-        serviceAggregation[serviceName].total_price += (price * quantity);
-      });
-
-      const correctSubtotal = Object.values(serviceAggregation).reduce((sum, item) => sum + item.total_price, 0);
-      const correctTax = correctSubtotal * 0.18;
-      totalAmount = correctSubtotal + correctTax - (order.discount || 0);
-    }
+    const totalAmount = order.total || order.total_amount || 0;
     
     return (
       <Box>
@@ -1508,7 +1401,7 @@ export default function Orders() {
           color="primary"
           variant="outlined"
         />
-                 {(order.pending_amount || 0) > 0 && order.status !== 'completed' && (
+         {(order.pending_amount || 0) > 0 && order.status !== 'completed' && (
            <Box sx={{ mt: 0.5 }}>
              <Chip
                size="small"
@@ -1986,7 +1879,55 @@ export default function Orders() {
                         )}
                       </TableCell>
                       <TableCell>
-                        {order.stylist_name || 'No stylist'}
+                        {(() => {
+                          // Check if this is a multi-expert order by looking at services
+                          const allStylistsFromServices = new Set<string>();
+                          (order.services || []).forEach((service: any) => {
+                            // Add from legacy stylist_name field
+                            if (service.stylist_name) {
+                              allStylistsFromServices.add(service.stylist_name);
+                            }
+                            // Add from experts array
+                            if (service.experts && Array.isArray(service.experts)) {
+                              service.experts.forEach((expert: any) => {
+                                if (expert && expert.name) {
+                                  allStylistsFromServices.add(expert.name);
+                                }
+                              });
+                            }
+                          });
+                          
+                          // Combine with order-level stylist info
+                          if (order.stylist_name) {
+                            // Split comma-separated names and add each
+                            order.stylist_name.split(',').forEach((name: string) => {
+                              const trimmedName = name.trim();
+                              if (trimmedName) {
+                                allStylistsFromServices.add(trimmedName);
+                              }
+                            });
+                          }
+
+                          const allStylists = Array.from(allStylistsFromServices);
+                          
+                          if (allStylists.length === 0) {
+                            return 'No stylist';
+                          } else if (allStylists.length === 1) {
+                            return allStylists[0];
+                          } else {
+                            // Multi-expert scenario
+                            return (
+                              <Box>
+                                <Typography variant="body2" component="div">
+                                  {allStylists.join(', ')}
+                                </Typography>
+                                <Typography variant="caption" color="text.secondary" component="div">
+                                  Multi-expert
+                                </Typography>
+                              </Box>
+                            );
+                          }
+                        })()}
                       </TableCell>
                       <TableCell>
                         {(() => {
@@ -2250,12 +2191,59 @@ export default function Orders() {
                     )}
                   </Typography>
                   <Typography variant="body2">
-                    <strong>Stylist{(selectedOrder as any).aggregated_multi_expert ? 's' : ''}:</strong> {selectedOrder.stylist_name}
-                    {(selectedOrder as any).aggregated_multi_expert && (
-                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
-                        Revenue split among all experts
-                      </Typography>
-                    )}
+                    <strong>Stylist{(() => {
+                      // Check if this is a multi-expert order by looking at services
+                      const allStylistsFromServices = new Set<string>();
+                      (selectedOrder.services || []).forEach((service: any) => {
+                        // Add from legacy stylist_name field
+                        if (service.stylist_name) allStylistsFromServices.add(service.stylist_name);
+                        // Add from experts array
+                        if (service.experts && Array.isArray(service.experts)) {
+                          service.experts.forEach((expert: any) => {
+                            if (expert.name) allStylistsFromServices.add(expert.name);
+                          });
+                        }
+                      });
+                      return allStylistsFromServices.size > 1 ? 's' : '';
+                    })()}:</strong> {(() => {
+                      // Display all stylists from services if available, otherwise use order-level stylist_name
+                      const allStylistsFromServices = new Set<string>();
+                      (selectedOrder.services || []).forEach((service: any) => {
+                        // Add from legacy stylist_name field
+                        if (service.stylist_name) allStylistsFromServices.add(service.stylist_name);
+                        // Add from experts array
+                        if (service.experts && Array.isArray(service.experts)) {
+                          service.experts.forEach((expert: any) => {
+                            if (expert.name) allStylistsFromServices.add(expert.name);
+                          });
+                        }
+                      });
+                      
+                      if (allStylistsFromServices.size > 0) {
+                        return Array.from(allStylistsFromServices).join(', ');
+                      }
+                      return selectedOrder.stylist_name || 'No stylist';
+                    })()}
+                    {(() => {
+                      // Check if this is a multi-expert order
+                      const allStylistsFromServices = new Set<string>();
+                      (selectedOrder.services || []).forEach((service: any) => {
+                        // Add from legacy stylist_name field
+                        if (service.stylist_name) allStylistsFromServices.add(service.stylist_name);
+                        // Add from experts array
+                        if (service.experts && Array.isArray(service.experts)) {
+                          service.experts.forEach((expert: any) => {
+                            if (expert.name) allStylistsFromServices.add(expert.name);
+                          });
+                        }
+                      });
+                      
+                      return allStylistsFromServices.size > 1 ? (
+                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                          Multi-expert service collaboration
+                        </Typography>
+                      ) : null;
+                    })()}
                   </Typography>
                   <Typography variant="body2">
                     <strong>Purchase Type:</strong> <Box component="span" sx={{ ml: 1 }}>{renderPurchaseTypeChip(getPurchaseType(selectedOrder), selectedOrder)}</Box>
@@ -2621,9 +2609,18 @@ export default function Orders() {
                           serviceAggregation[serviceName].unit_price += price;
                           serviceAggregation[serviceName].total_price += (price * quantity);
                           
-                          // Track stylists
+                          // Track stylists from stylist_name field (legacy)
                           if (stylistName && !serviceAggregation[serviceName].stylists.includes(stylistName)) {
                             serviceAggregation[serviceName].stylists.push(stylistName);
+                          }
+                          
+                          // Track stylists from experts array (new multi-expert format)
+                          if (service.experts && Array.isArray(service.experts)) {
+                            service.experts.forEach((expert: any) => {
+                              if (expert.name && !serviceAggregation[serviceName].stylists.includes(expert.name)) {
+                                serviceAggregation[serviceName].stylists.push(expert.name);
+                              }
+                            });
                           }
                         });
 
@@ -2632,7 +2629,7 @@ export default function Orders() {
                             <TableCell>
                               {aggregatedService.service_name}
                               {/* Show stylist info for multi-expert orders */}
-                              {(selectedOrder as any).aggregated_multi_expert && aggregatedService.stylists.length > 0 && (
+                              {aggregatedService.stylists.length > 0 && (
                                 <Typography variant="caption" display="block" color="text.secondary">
                                   {aggregatedService.stylists.length === 1 
                                     ? `Stylist: ${aggregatedService.stylists[0]}`

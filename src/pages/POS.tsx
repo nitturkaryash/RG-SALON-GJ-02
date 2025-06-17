@@ -434,9 +434,8 @@ export default function POS() {
 	// Persist selectedClient across navigations
 	const [selectedClient, setSelectedClient] = useLocalStorage<Client | null>('pos_selectedClient', null);
 	const [selectedStylist, setSelectedStylist] = useLocalStorage<Stylist | null>('pos_selectedStylist', null);
-	// Add state for multiple stylists (for multi-expert appointments and walk-in customers)
-	// When selectedStylists has items, it overrides selectedStylist for multi-stylist mode
-	// This allows walk-in customers to have multiple stylists assigned to their services
+	// Legacy state for appointment loading compatibility - not used in UI
+	// Individual services now get stylists assigned through the dialog system
 	const [selectedStylists, setSelectedStylists] = useState<(Stylist | null)[]>([]);
 	const [appointmentDate, setAppointmentDate] = useState<Date | null>(new Date());
 	const [appointmentTime, setAppointmentTime] = useState<Date | null>(new Date());
@@ -495,6 +494,14 @@ export default function POS() {
 	const [lastCreatedOrder, setLastCreatedOrder] = useState<any>(null);
 	const [printDialogOpen, setPrintDialogOpen] = useState(false);
 	const [clientDetailsExpanded, setClientDetailsExpanded] = useState(false); // Add state for Client Details accordion
+	
+	// State for service stylist assignment dialog
+	const [pendingService, setPendingService] = useState<Service | null>(null);
+	const [stylistAssignmentDialog, setStylistAssignmentDialog] = useState(false);
+	const [tempSelectedStylists, setTempSelectedStylists] = useState<(Stylist | null)[]>([]);
+	
+	// State for editing existing service items
+	const [editingServiceItem, setEditingServiceItem] = useState<POSOrderItem | null>(null);
 
 	const [paymentAmounts, setPaymentAmounts] = useLocalStorage<Record<PaymentMethod, number>>(`${POS_STATE_STORAGE_KEY}_paymentAmounts`, {
 		cash: 0,
@@ -626,25 +633,9 @@ export default function POS() {
 			// Determine the type - ensure it is always either 'product' or 'service', never undefined
 			const itemType = service.type === 'service' ? 'service' : 'product';
 			
-			// Assign currently selected stylists to service items
+			// Services now get stylist assignments through the dialog system
+			// No automatic global stylist assignment
 			let expertsArray: any[] = [];
-			if (itemType === 'service') {
-				if (selectedStylists.length > 0) {
-					// Multi-stylist mode: use all selected stylists
-					expertsArray = selectedStylists
-						.filter(stylist => stylist !== null)
-						.map(stylist => ({
-							id: stylist!.id,
-							name: stylist!.name
-						}));
-				} else if (selectedStylist) {
-					// Single stylist mode: use the main selected stylist
-					expertsArray = [{
-						id: selectedStylist.id,
-						name: selectedStylist.name
-					}];
-				}
-			}
 			
 			const newItem: POSOrderItem = {
 				id: uuidv4(),
@@ -671,15 +662,10 @@ export default function POS() {
 				return newState;
 			});
 
-			// Show which stylists are assigned to the service
-			if (itemType === 'service' && expertsArray.length > 0) {
-				const expertNames = expertsArray.map(expert => expert.name).join(', ');
-				toast.success(`Added ${service.name} to order (Stylists: ${expertNames})`);
-			} else {
-				toast.success(`Added ${service.name} to order`);
-			}
+			// Simple success message - stylists are assigned through the dialog
+			toast.success(`Added ${service.name} to order`);
 		}
-	}, [orderItems, toast, selectedStylists, selectedStylist]); // Keep dependencies for handleAddToOrder itself
+	}, [orderItems, toast]); // Removed selectedStylists since services now get stylists through dialog
 
 	// RESTORING fetchClientHistory HERE
 	const fetchClientHistory = useCallback(async (clientName: string) => {
@@ -1732,8 +1718,8 @@ export default function POS() {
 	// Update the isOrderValid function to use the new payment validation
 	const isOrderValid = useCallback(() => {
 		// Customer info validation
-		const hasStylistSelected = selectedStylist !== null || (selectedStylists.length > 0 && selectedStylists.some(s => s !== null));
-		const customerInfoValid = customerName.trim() !== "" && hasStylistSelected;
+		// No global stylist validation needed - stylists are assigned per service
+		const customerInfoValid = customerName.trim() !== "";
 		
 		// Order items validation
 		const orderItemsValid = orderItems.length > 0;
@@ -1743,7 +1729,7 @@ export default function POS() {
 		const paymentValid = paymentValidation.isValid;
 		
 		return customerInfoValid && orderItemsValid && paymentValid;
-	}, [customerName, selectedStylist, selectedStylists, orderItems, getPaymentValidation]);
+	}, [customerName, orderItems, getPaymentValidation]);
 
 	// Add effect to handle split payment amount distribution
 	useEffect(() => {
@@ -2063,111 +2049,78 @@ export default function POS() {
 			// Always use the full amount regardless of payment method
 			const totalAmount = subtotal + tax - walkInDiscount;
 			
-					// Check if this is a multi-expert appointment
-		const isMultiExpert = selectedStylists && selectedStylists.length > 1 && selectedStylists.every(s => s !== null);
-		const expertsToProcess = isMultiExpert ? selectedStylists.filter(s => s !== null) : [staffInfo];
+					// Check for multi-expert by analyzing service experts arrays
+		// Get all unique experts from services
+		const allExpertsInServices = new Set<string>();
+		formattedServices.forEach(service => {
+			const experts = (service as any).experts || [];
+			experts.forEach((expert: any) => allExpertsInServices.add(expert.id));
+		});
+		
+		// Fallback to legacy selectedStylists for appointment loading compatibility
+		const legacyExperts = selectedStylists && selectedStylists.length > 1 && selectedStylists.every(s => s !== null) 
+			? selectedStylists.filter(s => s !== null) 
+			: [];
+		
+		// Determine if this is multi-expert and get experts to process
+		const isMultiExpert = allExpertsInServices.size > 1 || legacyExperts.length > 1;
+		const expertsToProcess = allExpertsInServices.size > 0 
+			? Array.from(allExpertsInServices).map(id => stylists?.find(s => s.id === id)).filter(Boolean)
+			: legacyExperts.length > 0 
+				? legacyExperts 
+				: [staffInfo];
 		const numberOfExperts = expertsToProcess.length;
 		
-		console.log(`[Multi-Expert Debug] selectedStylists:`, selectedStylists);
+		console.log(`[Multi-Expert Debug] allExpertsInServices:`, Array.from(allExpertsInServices));
 		console.log(`[Multi-Expert Debug] isMultiExpert:`, isMultiExpert);
-		console.log(`[Multi-Expert Debug] expertsToProcess:`, expertsToProcess);
+		console.log(`[Multi-Expert Debug] expertsToProcess:`, expertsToProcess.map(e => e?.name));
 		console.log(`[Multi-Expert Debug] numberOfExperts:`, numberOfExperts);
 		
-		console.log(`[Multi-Expert Order] Creating ${numberOfExperts} orders for ${numberOfExperts} experts:`, expertsToProcess.map(e => e?.name));
+		console.log(`[Multi-Expert Order] Creating ${isMultiExpert ? 'single multi-expert' : 'single'} order for ${numberOfExperts} experts:`, expertsToProcess.map(e => e?.name));
 		
 		// Create a unique group ID for multi-expert walk-in orders
 		const multiExpertGroupId = isMultiExpert ? uuidv4() : undefined;
 		
-		// Create orders for each expert (split revenue among them)
-		const orderResults = [];
+		// For multi-expert orders, create a single order with all experts assigned
+		// For single expert orders, use the existing logic
+		let orderResults = [];
 		
-		for (let i = 0; i < expertsToProcess.length; i++) {
-			const expert = expertsToProcess[i];
-			if (!expert) continue;
+		if (isMultiExpert) {
+			// **MULTI-EXPERT: Create single order with all services and experts**
+			
+			// Prepare services with expert assignments for multi-expert order
+			const servicesWithExperts = formattedServices.map(service => ({
+				...service,
+				// Keep original price - no splitting needed for customer-facing bill
+				experts: (service as any).experts || expertsToProcess.map(expert => ({
+					id: expert.id,
+					name: expert.name
+				})),
+				discount: service.discount || 0,
+				discount_percentage: service.discount_percentage || 0
+			})) as any[];
 
-			// ---------- NEW: decide whether this expert gets products / memberships ----------
-			const includeProductsAndMemberships = !(isMultiExpert && i !== 0); // only the primary expert (index 0) gets these
-
-			// --- New per-service revenue split ---
-			const expertServicesOriginal = formattedServices.filter(service => {
-			  const expArr = (service as any).experts as any[] | undefined;
-			  console.log(`[Multi-Expert Billing] Service ${service.name}, Expert ${expert.name}, Experts array:`, expArr);
-			  
-			  if (expArr && expArr.length > 0) {
-			    const hasExpert = expArr.some(ex => ex.id === expert.id);
-			    console.log(`[Multi-Expert Billing] Service ${service.name} - Expert ${expert.name} assigned: ${hasExpert}`);
-			    return hasExpert;
-			  }
-			  
-			  // FIXED: Only give services with no experts array to the primary expert (first expert)
-			  const isPrimaryExpert = i === 0;
-			  console.log(`[Multi-Expert Billing] Service ${service.name} has no experts array - assigning to primary expert only (${expert.name} is primary: ${isPrimaryExpert})`);
-			  return isPrimaryExpert;
-			});
-
-			console.log(`[Multi-Expert Billing] Expert ${expert.name} gets ${expertServicesOriginal.length} services:`, expertServicesOriginal.map(s => s.name));
-
-			// For each service, determine share count and adjust price
-			const splitServicesForExpert = expertServicesOriginal.map(service => {
-			  const expArr = ((service as any).experts || []) as any[];
-			  const shareCount = expArr && expArr.length > 0 ? expArr.length : numberOfExperts;
-			  const splitPrice = service.price / shareCount;
-			  return {
-			    ...service,
-			    price: splitPrice,
-			    total: splitPrice * service.quantity,
-			    split_revenue: true,
-			    total_experts: shareCount,
-			    expert_index: (expArr && expArr.length > 0) ? expArr.findIndex(ex => ex.id === expert.id) + 1 : (i + 1)
-			  } as any;
-			});
-
-			// Calculate service subtotals & tax for this expert based on split services
-			const splitServiceSubtotal = splitServicesForExpert.reduce((sum, s) => sum + s.price * s.quantity, 0);
-			const splitServiceTax      = splitServicesForExpert.reduce((sum, s) => sum + calculateServiceGstAmount(s.price * s.quantity), 0);
-
-			// Product / membership portions (only primary gets them)
-			const productSubForExpert      = includeProductsAndMemberships ? calculateProductSubtotal()      : 0;
-			const membershipSubForExpert   = includeProductsAndMemberships ? calculateMembershipSubtotal()  : 0;
-			const productTaxForExpert      = includeProductsAndMemberships ? calculateProductGstAmount(calculateProductSubtotal())     : 0;
-			const membershipTaxForExpert   = includeProductsAndMemberships ? calculateMembershipGstAmount(calculateMembershipSubtotal()) : 0;
-
-			// Final totals for this expert --------------------------------------------
-			const expertSubtotal = productSubForExpert + membershipSubForExpert + splitServiceSubtotal;
-			const expertTax      = productTaxForExpert + membershipTaxForExpert + splitServiceTax;
-			const expertTotal    = expertSubtotal + expertTax - (isMultiExpert ? (walkInDiscount / numberOfExperts) : walkInDiscount);
-
-			// Build item arrays --------------------------------------------------------
-			const expertProducts      = includeProductsAndMemberships ? formattedProducts : [];
-			const expertMemberships   = includeProductsAndMemberships ? formattedMemberships : [];
-			const expertServicesFinal = isMultiExpert ? 
-				splitServicesForExpert : formattedServices;
-
-			const itemsForOrder = [...expertProducts, ...expertServicesFinal, ...expertMemberships].map(item => ({
+			// All items for the single multi-expert order
+			const allItemsForOrder = [...formattedProducts, ...servicesWithExperts, ...formattedMemberships].map(item => ({
 				...item,
 				discount: item.discount || 0,
 				discount_percentage: item.discount_percentage || 0
 			})) as any[];
 
-			// -------------------------------------------------------------------------
-			// Use the correct amountPaid calculation from paymentAmounts
-			const totalAmountPaid = Object.values(paymentAmounts).reduce((a, b) => a + b, 0);
-			
-			// Calculate payment amounts first
+			// Calculate payment amounts (no splitting for customer bill)
 			const membershipPayableAmount = getMembershipPayableAmount();
 			const regularPayableAmount = getRegularPayableAmount();
 			
-			// Determine payment method variables early
+			// Determine payment method variables
 			const paymentMethodsUsed = Object.entries(paymentAmounts).filter(([_, amount]) => amount > 0);
 			const hasMembershipPayment = membershipPayableAmount > 0 && paymentMethodsUsed.some(([method]) => method === 'membership');
 			const hasRegularPayment = regularPayableAmount > 0 && paymentMethodsUsed.some(([method]) => method !== 'membership');
 			
-			// Also check if services are being paid via membership toggle (even if paymentAmounts doesn't show it)
+			// Also check if services are being paid via membership toggle
 			const hasServicesPaidViaMembership = Object.values(servicesMembershipPayment).some(Boolean);
 			const hasProductsOrOtherItems = orderItems.some(item => item.type === 'product' || item.type === 'membership');
 			
-			// Build payments array from paymentAmounts instead of splitPayments
-			// Ensure membership payment only applies to services, not products
+			// Build payments array from paymentAmounts (no splitting for customer bill)
 			let paymentsArray = Object.entries(paymentAmounts)
 				.filter(([_, amount]) => amount > 0)
 				.map(([method, amount]) => {
@@ -2177,14 +2130,14 @@ export default function POS() {
 						const actualAmount = Math.min(amount, maxMembershipAmount);
 						return {
 							id: uuidv4(),
-							amount: isMultiExpert ? actualAmount / numberOfExperts : actualAmount,
+							amount: actualAmount, // No splitting for customer-facing amount
 							payment_method: method as PaymentMethodWithSplit,
 							payment_date: orderDate ? orderDate.toISOString() : new Date().toISOString()
 						};
 					}
 					return {
 						id: uuidv4(),
-						amount: isMultiExpert ? amount / numberOfExperts : amount,
+						amount: amount, // No splitting for customer-facing amount
 						payment_method: method as PaymentMethodWithSplit,
 						payment_date: orderDate ? orderDate.toISOString() : new Date().toISOString()
 					};
@@ -2196,7 +2149,7 @@ export default function POS() {
 				if (!existingMembershipPayment) {
 					paymentsArray.push({
 						id: uuidv4(),
-						amount: isMultiExpert ? membershipPayableAmount / numberOfExperts : membershipPayableAmount,
+						amount: membershipPayableAmount, // No splitting for customer-facing amount
 						payment_method: 'membership' as PaymentMethodWithSplit,
 						payment_date: orderDate ? orderDate.toISOString() : new Date().toISOString()
 					});
@@ -2207,7 +2160,7 @@ export default function POS() {
 			if (paymentsArray.length === 0 && membershipPayableAmount > 0) {
 				paymentsArray = [{
 					id: uuidv4(),
-					amount: isMultiExpert ? membershipPayableAmount / numberOfExperts : membershipPayableAmount,
+					amount: membershipPayableAmount, // No splitting for customer-facing amount
 					payment_method: 'membership' as PaymentMethodWithSplit,
 					payment_date: orderDate ? orderDate.toISOString() : new Date().toISOString()
 				}];
@@ -2215,21 +2168,129 @@ export default function POS() {
 			
 			let primaryPaymentMethod: PaymentMethodWithSplit;
 			
-			// Force split payment method when there are both membership and regular payments
-			// OR when services are paid via membership AND there are products/other items
+			// Determine primary payment method
 			if ((hasMembershipPayment && hasRegularPayment) || (hasServicesPaidViaMembership && hasProductsOrOtherItems)) {
 				primaryPaymentMethod = 'split';
 			} else if (paymentMethodsUsed.length === 1) {
-				// Single payment method
 				primaryPaymentMethod = paymentMethodsUsed[0][0] as PaymentMethodWithSplit;
 			} else if (paymentMethodsUsed.length > 1) {
-				// Multiple payment methods - split payment
 				primaryPaymentMethod = 'split' as PaymentMethodWithSplit;
 			} else if (membershipPayableAmount > 0 && regularPayableAmount === 0) {
-				// Only membership payment, no regular payment needed
 				primaryPaymentMethod = 'membership' as PaymentMethodWithSplit;
 			} else {
-				// Fallback to default payment method
+				primaryPaymentMethod = walkInPaymentMethod;
+			}
+
+			// Create single multi-expert order
+			const orderResult = await createWalkInOrderMutation.mutateAsync({
+				order_id: uuidv4(),
+				client_id: clientIdToUse || '',
+				client_name: clientNameToUse,
+				stylist_id: expertsToProcess[0]?.id || '', // Primary expert
+				stylist_name: expertsToProcess.map(e => e?.name).filter(Boolean).join(', '), // All experts in name
+				appointment_id: currentAppointmentId || undefined,
+				items: [],
+				services: allItemsForOrder,
+				payment_method: primaryPaymentMethod,
+				split_payments: (paymentMethodsUsed.length > 1 || (hasMembershipPayment && hasRegularPayment) || (hasServicesPaidViaMembership && hasProductsOrOtherItems)) ? paymentsArray : undefined,
+				discount: walkInDiscount, // No splitting for customer-facing discount
+				discount_percentage: walkInDiscountPercentage,
+				subtotal: subtotal, // Customer-facing subtotal
+				tax: tax, // Customer-facing tax
+				total: totalAmount, // Customer-facing total
+				total_amount: totalAmount,
+				status: 'completed',
+				order_date: orderDate ? orderDate.toISOString() : new Date().toISOString(),
+				is_walk_in: true,
+				is_salon_consumption: false,
+				pending_amount: 0,
+				payments: paymentsArray
+			});
+
+			orderResults.push(orderResult);
+			
+		} else {
+			// **SINGLE EXPERT: Use existing logic**
+			const expert = expertsToProcess[0] || staffInfo;
+			if (!expert) throw new Error('No expert available for order creation');
+
+			// Use original logic for single expert orders
+			const itemsForOrder = [...formattedProducts, ...formattedServices, ...formattedMemberships].map(item => ({
+				...item,
+				discount: item.discount || 0,
+				discount_percentage: item.discount_percentage || 0
+			})) as any[];
+
+			// Calculate payment amounts
+			const membershipPayableAmount = getMembershipPayableAmount();
+			const regularPayableAmount = getRegularPayableAmount();
+			
+			// Determine payment method variables
+			const paymentMethodsUsed = Object.entries(paymentAmounts).filter(([_, amount]) => amount > 0);
+			const hasMembershipPayment = membershipPayableAmount > 0 && paymentMethodsUsed.some(([method]) => method === 'membership');
+			const hasRegularPayment = regularPayableAmount > 0 && paymentMethodsUsed.some(([method]) => method !== 'membership');
+			
+			// Also check if services are being paid via membership toggle
+			const hasServicesPaidViaMembership = Object.values(servicesMembershipPayment).some(Boolean);
+			const hasProductsOrOtherItems = orderItems.some(item => item.type === 'product' || item.type === 'membership');
+			
+			// Build payments array from paymentAmounts
+			let paymentsArray = Object.entries(paymentAmounts)
+				.filter(([_, amount]) => amount > 0)
+				.map(([method, amount]) => {
+					if (method === 'membership') {
+						const maxMembershipAmount = membershipPayableAmount;
+						const actualAmount = Math.min(amount, maxMembershipAmount);
+						return {
+							id: uuidv4(),
+							amount: actualAmount,
+							payment_method: method as PaymentMethodWithSplit,
+							payment_date: orderDate ? orderDate.toISOString() : new Date().toISOString()
+						};
+					}
+					return {
+						id: uuidv4(),
+						amount: amount,
+						payment_method: method as PaymentMethodWithSplit,
+						payment_date: orderDate ? orderDate.toISOString() : new Date().toISOString()
+					};
+				});
+			
+			// If we have services paid via membership but membership isn't in paymentAmounts, add it
+			if (hasServicesPaidViaMembership && membershipPayableAmount > 0) {
+				const existingMembershipPayment = paymentsArray.find(p => p.payment_method === 'membership');
+				if (!existingMembershipPayment) {
+					paymentsArray.push({
+						id: uuidv4(),
+						amount: membershipPayableAmount,
+						payment_method: 'membership' as PaymentMethodWithSplit,
+						payment_date: orderDate ? orderDate.toISOString() : new Date().toISOString()
+					});
+				}
+			}
+			
+			// If no payment amounts are set but we have membership payment, add it
+			if (paymentsArray.length === 0 && membershipPayableAmount > 0) {
+				paymentsArray = [{
+					id: uuidv4(),
+					amount: membershipPayableAmount,
+					payment_method: 'membership' as PaymentMethodWithSplit,
+					payment_date: orderDate ? orderDate.toISOString() : new Date().toISOString()
+				}];
+			}
+			
+			let primaryPaymentMethod: PaymentMethodWithSplit;
+			
+			// Determine primary payment method
+			if ((hasMembershipPayment && hasRegularPayment) || (hasServicesPaidViaMembership && hasProductsOrOtherItems)) {
+				primaryPaymentMethod = 'split';
+			} else if (paymentMethodsUsed.length === 1) {
+				primaryPaymentMethod = paymentMethodsUsed[0][0] as PaymentMethodWithSplit;
+			} else if (paymentMethodsUsed.length > 1) {
+				primaryPaymentMethod = 'split' as PaymentMethodWithSplit;
+			} else if (membershipPayableAmount > 0 && regularPayableAmount === 0) {
+				primaryPaymentMethod = 'membership' as PaymentMethodWithSplit;
+			} else {
 				primaryPaymentMethod = walkInPaymentMethod;
 			}
 
@@ -2244,35 +2305,21 @@ export default function POS() {
 				services: itemsForOrder,
 				payment_method: primaryPaymentMethod,
 				split_payments: (paymentMethodsUsed.length > 1 || (hasMembershipPayment && hasRegularPayment) || (hasServicesPaidViaMembership && hasProductsOrOtherItems)) ? paymentsArray : undefined,
-				discount: isMultiExpert ? (walkInDiscount / numberOfExperts) : walkInDiscount,
+				discount: walkInDiscount,
 				discount_percentage: walkInDiscountPercentage,
-				subtotal: expertSubtotal,
-				tax: expertTax,
-				total: expertTotal,
-				total_amount: expertTotal,
+				subtotal: subtotal,
+				tax: tax,
+				total: totalAmount,
+				total_amount: totalAmount,
 				status: 'completed',
 				order_date: orderDate ? orderDate.toISOString() : new Date().toISOString(),
 				is_walk_in: true,
 				is_salon_consumption: false,
-				// Calculate expert's share of payment correctly
-				pending_amount: 0, // Always 0 for completed orders - no pending amounts
-				payments: paymentsArray,
-				// Always set multi_expert fields when we have multiple experts
-				...(numberOfExperts > 1 && {
-					multi_expert: true,
-					total_experts: numberOfExperts,
-					expert_index: i + 1,
-					multi_expert_group_id: multiExpertGroupId
-				})
+				pending_amount: 0,
+				payments: paymentsArray
 			});
 
 			orderResults.push(orderResult);
-			
-			if (!orderResult.success) {
-				throw new Error(`Failed to create order for ${expert.name}: ${orderResult.error?.message || 'Unknown error'}`);
-			}
-			
-			console.log(`[Multi-Expert Order] Created order for ${expert.name}: ${orderResult.order?.id}`);
 		}
 		
 		// Use the first order result for the rest of the logic (they should all be successful)
@@ -2320,7 +2367,7 @@ export default function POS() {
 		}
 
 					const successMessage = isMultiExpert ? 
-			`${orderResults.length} orders created successfully for ${numberOfExperts} experts!` : 
+			`Multi-expert order created successfully for ${numberOfExperts} experts!` : 
 			"Order created successfully!";
 		setSnackbarMessage(successMessage);
 		setSnackbarOpen(true);
@@ -2950,7 +2997,7 @@ export default function POS() {
 				order_date: orderDate ? orderDate.toISOString() : new Date().toISOString(),
 				is_walk_in: false,
 				appointment_id: appointmentId,  // Include appointment_id
-				appointment_time: appointment.start_time || appointment.appointmentTime,  // Include appointment_time
+				appointment_time: appointment.start_time, // Include appointment_time
 			};
 			
 			console.log('Creating appointment order with services:', walkInOrderData.services);
@@ -3294,7 +3341,41 @@ export default function POS() {
 										{item.type === 'service' && <ContentCutIcon fontSize="inherit" sx={{ verticalAlign: 'middle', mr: 0.5, color: 'primary.main' }} />}
 										{item.type === 'product' && <Inventory fontSize="inherit" sx={{ verticalAlign: 'middle', mr: 0.5, color: 'secondary.main' }} />}
 										{item.type === 'membership' && <CardMembershipIcon fontSize="inherit" sx={{ verticalAlign: 'middle', mr: 0.5, color: 'success.main' }} />}
-										{item.item_name}
+										
+										{/* Make service names clickable to edit stylist assignments */}
+										{item.type === 'service' ? (
+											<Box
+												component="span"
+												onClick={() => {
+													// Open stylist assignment dialog for editing
+													setEditingServiceItem(item as POSOrderItem);
+													// Find the original service data
+													const originalService = services?.find(s => s.id === item.item_id);
+													if (originalService) {
+														setPendingService(originalService);
+													}
+													// Pre-populate with existing stylists
+													const existingExperts = (item as POSOrderItem).experts || [];
+													const existingStylists = existingExperts.map(expert => 
+														stylists?.find(s => s.id === expert.id) || null
+													);
+													setTempSelectedStylists(existingStylists.length > 0 ? existingStylists : [null]);
+													setStylistAssignmentDialog(true);
+												}}
+												sx={{
+													cursor: 'pointer',
+													textDecoration: 'underline',
+													'&:hover': {
+														color: 'primary.main',
+														fontWeight: 600
+													}
+												}}
+											>
+												{item.item_name}
+											</Box>
+										) : (
+											item.item_name
+										)}
 										<TextField
 											size="small"
 											variant="standard"
@@ -3535,7 +3616,7 @@ export default function POS() {
 												checked={servicesMembershipPayment[item.id] || false}
 												onChange={(e) => {
 													// Check if service is eligible for membership payment
-													const service = services.find(s => s.id === item.item_id);
+													const service = services?.find(s => s.id === item.item_id);
 													if (e.target.checked && service && service.membership_eligible === false) {
 														toast.error('This is a premium service and cannot be purchased with membership balance');
 														return;
@@ -3563,7 +3644,7 @@ export default function POS() {
 												size="small"
 												color="primary"
 												disabled={(() => {
-													const service = services.find(s => s.id === item.item_id);
+													const service = services?.find(s => s.id === item.item_id);
 													const isPremiumService = service && service.membership_eligible === false;
 													const noMembership = !activeClientMembership || !activeClientMembership.isActive;
 													return isPremiumService || noMembership;
@@ -3577,7 +3658,7 @@ export default function POS() {
 													Pay with Membership Balance
 												</Typography>
 												{(() => {
-													const service = services.find(s => s.id === item.item_id);
+													const service = services?.find(s => s.id === item.item_id);
 													const isPremiumService = service && service.membership_eligible === false;
 													if (isPremiumService) {
 														return (
@@ -3599,7 +3680,7 @@ export default function POS() {
 										}
 									/>
 									{activeClientMembership && (() => {
-										const service = services.find(s => s.id === item.item_id);
+										const service = services?.find(s => s.id === item.item_id);
 										const isPremiumService = service && service.membership_eligible === false;
 										return !isPremiumService && (
 											<Chip
@@ -3613,7 +3694,7 @@ export default function POS() {
 										);
 									})()}
 									{(() => {
-										const service = services.find(s => s.id === item.item_id);
+										const service = services?.find(s => s.id === item.item_id);
 										const isPremiumService = service && (service as any).membership_eligible === false;
 										return isPremiumService && (
 											<Chip
@@ -4148,255 +4229,7 @@ export default function POS() {
 						</Paper>
 					</Grid>
 
-					{/* Stylist Information */}
-					<Grid item xs={12}>
-						<Paper sx={{ p: 2, mb: 2 }}>
-							<Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid', borderColor: 'divider', pb: 1, mb: 2 }}>
-								<Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-									<Typography variant="h6">
-										Stylist Information
-									</Typography>
-									{selectedStylists.length > 0 && (
-										<Chip 
-											label={`${selectedStylists.filter(s => s !== null).length} Stylists`}
-											size="small" 
-											color="primary" 
-											variant="outlined"
-										/>
-									)}
-								</Box>
-								{/* Add/Remove stylist buttons */}
-								<Box sx={{ display: 'flex', gap: 1 }}>
-									<IconButton
-										size="small"
-										color="primary"
-										onClick={() => {
-											// Add another stylist slot
-											if (selectedStylists.length === 0) {
-												// First time adding multiple stylists
-												setSelectedStylists([selectedStylist, null]);
-											} else {
-												setSelectedStylists([...selectedStylists, null]);
-											}
-										}}
-										title="Add Stylist"
-									>
-										<AddIcon />
-									</IconButton>
-									{(selectedStylists.length > 0 || selectedStylist) && (
-										<IconButton
-											size="small"
-											color="secondary"
-											onClick={() => {
-												if (selectedStylists.length > 0) {
-													// Remove last stylist from multi-stylist array
-													const newStylists = selectedStylists.slice(0, -1);
-													if (newStylists.length === 0) {
-														// If no stylists left in array, go back to single stylist mode
-														setSelectedStylists([]);
-													} else {
-														setSelectedStylists(newStylists);
-														// Update the main stylist for backward compatibility
-														const firstValidStylist = newStylists.find(s => s !== null);
-														setSelectedStylist(firstValidStylist || null);
-													}
-												} else {
-													// Remove single stylist
-													setSelectedStylist(null);
-												}
-												
-												// Update order items to remove expert data for removed stylists
-												setOrderItems(prevItems => 
-													prevItems.map(item => {
-														if (item.type === 'service' && (item as POSOrderItem).experts) {
-															const remainingStylists = selectedStylists.length > 1 ? 
-																selectedStylists.slice(0, -1).filter(s => s !== null) : [];
-															if (remainingStylists.length === 0) {
-																const { experts, ...itemWithoutExperts } = item as POSOrderItem;
-																return itemWithoutExperts;
-															} else {
-																return {
-																	...item,
-																	experts: remainingStylists.map(s => ({ id: s!.id, name: s!.name }))
-																} as POSOrderItem;
-															}
-														}
-														return item;
-													})
-												);
-											}}
-											title="Remove Stylist"
-										>
-											<RemoveIcon />
-										</IconButton>
-									)}
-								</Box>
-							</Box>
-							
-							<Grid container spacing={2}>
-								{/* Stylist Selection - Handle both single and multi-expert modes */}
-								{selectedStylists.length > 0 ? (
-									// Multi-expert mode: Show multiple stylist dropdowns
-									selectedStylists.map((stylist, index) => (
-										<Grid item xs={12} sm={6} md={4} key={index}>
-											<FormControl
-												fullWidth
-												required
-												error={stylist === null}
-												size="small"
-											>
-												<InputLabel id={`stylist-select-label-${index}`}>
-													Expert {index + 1}
-												</InputLabel>
-												<Select
-													labelId={`stylist-select-label-${index}`}
-													id={`stylist-select-${index}`}
-													value={stylist?.id || ""}
-													label={`Expert ${index + 1}`}
-													onChange={(e) => {
-														const stylistId = e.target.value;
-														const selectedStylistOption = stylists?.find(s => s.id === stylistId) || null;
-														const newStylists = [...selectedStylists];
-														newStylists[index] = selectedStylistOption;
-														setSelectedStylists(newStylists);
-														
-														// Set the first expert as the main stylist for backward compatibility
-														if (index === 0) {
-															setSelectedStylist(selectedStylistOption);
-														}
-													}}
-												>
-													<MenuItem value="">
-														<em>None</em>
-													</MenuItem>
-													{(stylists || [])?.map((stylistOption) => (
-														<MenuItem key={stylistOption.id} value={stylistOption.id}>
-															{stylistOption.name}
-														</MenuItem>
-													))}
-												</Select>
-												{stylist === null && (
-													<FormHelperText error>
-														Expert is required
-													</FormHelperText>
-												)}
-											</FormControl>
-										</Grid>
-									))
-								) : (
-									// Single stylist mode: Show original dropdown
-									<Grid item xs={12} sm={6} md={4}>
-										<FormControl
-											fullWidth
-											required
-											error={selectedStylist === null && selectedStylists.length === 0}
-											size="small"
-										>
-											<InputLabel id="stylist-select-label">
-												Select Stylist
-											</InputLabel>
-											<Select
-												labelId="stylist-select-label"
-												id="stylist-select"
-												value={selectedStylist?.id || ""}
-												label="Select Stylist"
-												onChange={(e) => {
-													const stylistId = e.target.value;
-													const stylist = stylists?.find(s => s.id === stylistId) || null;
-													setSelectedStylist(stylist);
-												}}
-											>
-												<MenuItem value="">
-													<em>None</em>
-												</MenuItem>
-												{(stylists || [])?.map((stylist) => (
-													<MenuItem key={stylist.id} value={stylist.id}>
-														{stylist.name}
-													</MenuItem>
-												))}
-											</Select>
-											{selectedStylist === null && selectedStylists.length === 0 && (
-												<FormHelperText error>
-													Stylist is required
-												</FormHelperText>
-											)}
-										</FormControl>
-									</Grid>
-								)}
-								
 
-							</Grid>
-							
-							{/* Display selected stylists summary with individual remove buttons */}
-							{(selectedStylists.length > 0 ? selectedStylists : [selectedStylist]).filter(Boolean).length > 0 && (
-								<Box sx={{ mt: 2, p: 2, bgcolor: 'grey.50', borderRadius: 1 }}>
-									<Typography variant="subtitle2" gutterBottom>
-										Selected Experts:
-									</Typography>
-									<Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-										{selectedStylists.length > 0 ? (
-											// Multi-expert mode: Show chips with individual delete buttons
-											selectedStylists
-												.map((stylist, index) => stylist ? ({ stylist, index }) : null)
-												.filter((item): item is { stylist: Stylist; index: number } => item !== null)
-												.map(({ stylist, index }) => (
-													<Chip
-														key={stylist?.id || index}
-															label={stylist?.name}
-															variant="outlined"
-															color="primary"
-															size="small"
-															onDelete={selectedStylists.length > 1 ? () => {
-																const newStylists = selectedStylists.filter((_, i) => i !== index);
-																setSelectedStylists(newStylists);
-																// Update the main stylist for backward compatibility
-																if (newStylists.length > 0) {
-																	// Set the first remaining stylist as the main stylist
-																	const firstValidStylist = newStylists.find(s => s !== null);
-																	setSelectedStylist(firstValidStylist || null);
-																} else {
-																	setSelectedStylist(null);
-																}
-																
-																// Update order items to remove the deleted stylist from experts arrays
-																const removedStylistId = stylist.id;
-																setOrderItems(prevItems => 
-																	prevItems.map(item => {
-																		if (item.type === 'service' && (item as POSOrderItem).experts) {
-																			const updatedExperts = (item as POSOrderItem).experts!.filter(
-																				expert => expert.id !== removedStylistId
-																			);
-																			return {
-																				...item,
-																				experts: updatedExperts
-																			} as POSOrderItem;
-																		}
-																		return item;
-																	})
-																);
-															} : undefined}
-															deleteIcon={<RemoveIcon />}
-														/>
-												))
-										) : (
-											// Single stylist mode: Show single chip without delete option
-											[selectedStylist]
-											.filter(Boolean)
-											.map((stylist, index) => (
-												<Chip
-													key={stylist?.id || index}
-													label={stylist?.name}
-													variant="outlined"
-													color="primary"
-													size="small"
-												/>
-												))
-										)}
-									</Box>
-								</Box>
-							)}
-						</Paper>
-					</Grid>
 
 					{/* Services & Products */}
 					<Grid item xs={12}>
@@ -4404,6 +4237,8 @@ export default function POS() {
 							<Typography variant="h6" gutterBottom sx={{ borderBottom: '1px solid', borderColor: 'divider', pb: 1 }}>
 								Services & Products
 							</Typography>
+							
+
 							
 							{/* Services & Products Autocomplete */}
 							<Box sx={{ display: 'flex', flexDirection: 'row', gap: 2, mb: 2, flexWrap: 'wrap' }}>
@@ -4413,14 +4248,12 @@ export default function POS() {
 										getOptionLabel={(option) => `${option.name} (₹${option.price} • ${option.duration} min)`}
 										value={serviceDropdownValue}
 										onChange={(_, newService) => {
-											if (newService) handleAddToOrder({
-												id: newService.id,
-												name: newService.name,
-												price: newService.price,
-												duration: newService.duration,
-												type: 'service',
-												category: newService.category
-											});
+											if (newService) {
+												// Set pending service and open stylist assignment dialog
+												setPendingService(newService);
+												setTempSelectedStylists([null]); // Start with one stylist slot
+												setStylistAssignmentDialog(true);
+											}
 											setServiceDropdownValue(null);
 										}}
 										renderInput={(params) => (
@@ -4941,6 +4774,235 @@ export default function POS() {
 						variant="outlined"
 					>
 						Skip
+					</Button>
+				</DialogActions>
+			</Dialog>
+			
+			{/* Stylist Assignment Dialog */}
+			<Dialog
+				open={stylistAssignmentDialog}
+				onClose={() => {
+					setStylistAssignmentDialog(false);
+					setPendingService(null);
+					setTempSelectedStylists([]);
+				}}
+				maxWidth="md"
+				fullWidth
+			>
+				<DialogTitle>
+					<Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+						<Typography variant="h6" sx={{ display: 'flex', alignItems: 'center' }}>
+							<ContentCutIcon sx={{ mr: 1 }} />
+							{editingServiceItem ? 'Edit Stylists for' : 'Assign Stylists to'} {pendingService?.name}
+						</Typography>
+						<IconButton 
+							onClick={() => {
+								setStylistAssignmentDialog(false);
+								setPendingService(null);
+								setTempSelectedStylists([]);
+								setEditingServiceItem(null);
+							}} 
+							size="small"
+						>
+							<CloseIcon />
+						</IconButton>
+					</Box>
+				</DialogTitle>
+				<DialogContent>
+					<Box sx={{ mt: 2 }}>
+						<Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
+							<Typography variant="body1">
+								Select stylists for this service:
+							</Typography>
+							<Box sx={{ display: 'flex', gap: 1 }}>
+								<IconButton
+									color="primary"
+									onClick={() => {
+										setTempSelectedStylists(prev => [...prev, null]);
+									}}
+									title="Add Stylist"
+									size="small"
+								>
+									<AddIcon />
+								</IconButton>
+								{tempSelectedStylists.length > 1 && (
+									<IconButton
+										color="error"
+										onClick={() => {
+											setTempSelectedStylists(prev => prev.slice(0, -1));
+										}}
+										title="Remove Last Stylist"
+										size="small"
+									>
+										<RemoveIcon />
+									</IconButton>
+								)}
+							</Box>
+						</Box>
+						
+						<Grid container spacing={2}>
+							{tempSelectedStylists.map((stylist, index) => (
+								<Grid item xs={12} sm={6} md={4} key={index}>
+									<FormControl fullWidth size="small">
+										<InputLabel id={`temp-stylist-select-label-${index}`}>
+											Stylist {index + 1}
+										</InputLabel>
+										<Select
+											labelId={`temp-stylist-select-label-${index}`}
+											value={stylist?.id || ""}
+											label={`Stylist ${index + 1}`}
+											onChange={(e) => {
+												const stylistId = e.target.value;
+												const selectedStylistOption = stylists?.find(s => s.id === stylistId) || null;
+												const newStylists = [...tempSelectedStylists];
+												newStylists[index] = selectedStylistOption;
+												setTempSelectedStylists(newStylists);
+											}}
+										>
+											<MenuItem value="">
+												<em>Select Stylist</em>
+											</MenuItem>
+											{(stylists || []).map((stylistOption) => (
+												<MenuItem key={stylistOption.id} value={stylistOption.id}>
+													{stylistOption.name}
+												</MenuItem>
+											))}
+										</Select>
+									</FormControl>
+								</Grid>
+							))}
+						</Grid>
+						
+						{/* Display selected stylists */}
+						{tempSelectedStylists.filter(Boolean).length > 0 && (
+							<Box sx={{ mt: 3, p: 2, bgcolor: 'grey.50', borderRadius: 1 }}>
+								<Typography variant="caption" color="text.secondary" gutterBottom>
+									Selected Stylists:
+								</Typography>
+								<Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mt: 1 }}>
+									{tempSelectedStylists
+										.filter(Boolean)
+										.map((stylist, index) => (
+										<Chip
+											key={stylist?.id || index}
+											label={stylist?.name}
+											variant="outlined"
+											color="primary"
+											size="small"
+											icon={<ContentCutIcon />}
+										/>
+									))}
+								</Box>
+							</Box>
+						)}
+					</Box>
+				</DialogContent>
+				<DialogActions>
+					{!editingServiceItem && (
+						<Button 
+							onClick={() => {
+								// Add service without stylists
+								if (pendingService) {
+									handleAddToOrder({
+										id: pendingService.id,
+										name: pendingService.name,
+										price: pendingService.price,
+										duration: pendingService.duration,
+										type: 'service',
+										gst_percentage: (pendingService as any).gst_percentage
+									} as POSService);
+								}
+								setStylistAssignmentDialog(false);
+								setPendingService(null);
+								setTempSelectedStylists([]);
+								setEditingServiceItem(null);
+							}}
+							variant="outlined"
+						>
+							Skip Stylist Assignment
+						</Button>
+					)}
+					<Button 
+						onClick={() => {
+							if (editingServiceItem) {
+								// Update existing service item with new stylists
+								const validStylists = tempSelectedStylists.filter(s => s !== null);
+								const expertsArray = validStylists.map(stylist => ({
+									id: stylist!.id,
+									name: stylist!.name
+								}));
+								
+								// Update the existing service item
+								const updatedItems = orderItems.map(item => 
+									item.id === editingServiceItem.id 
+										? {
+											...item,
+											experts: expertsArray.length > 0 ? expertsArray : undefined
+										} as POSOrderItem
+										: item
+								);
+								setOrderItems(updatedItems);
+								
+								// Show success message
+								if (expertsArray.length > 0) {
+									const expertNames = expertsArray.map(expert => expert.name).join(', ');
+									toast.success(`Updated ${editingServiceItem.item_name} stylists: ${expertNames}`);
+								} else {
+									toast.success(`Removed all stylists from ${editingServiceItem.item_name}`);
+								}
+							} else {
+								// Add new service with assigned stylists
+								if (pendingService) {
+									const validStylists = tempSelectedStylists.filter(s => s !== null);
+									
+									// Create experts array for the service
+									const expertsArray = validStylists.map(stylist => ({
+										id: stylist!.id,
+										name: stylist!.name
+									}));
+									
+									// Create the service item with experts
+									const newItem: POSOrderItem = {
+										id: uuidv4(),
+										order_id: '',
+										item_id: pendingService.id,
+										item_name: pendingService.name,
+										quantity: 1,
+										price: pendingService.price,
+										total: pendingService.price,
+										type: 'service',
+										hsn_code: (pendingService as any).hsn_code,
+										gst_percentage: (pendingService as any).gst_percentage,
+										for_salon_use: false,
+										discount: 0,
+										discount_percentage: 0,
+										experts: expertsArray.length > 0 ? expertsArray : undefined
+									};
+									
+									setOrderItems((prev) => [...prev, newItem]);
+									
+									// Show success message with stylist names
+									if (expertsArray.length > 0) {
+										const expertNames = expertsArray.map(expert => expert.name).join(', ');
+										toast.success(`Added ${pendingService.name} with stylists: ${expertNames}`);
+									} else {
+										toast.success(`Added ${pendingService.name} to order`);
+									}
+								}
+							}
+							setStylistAssignmentDialog(false);
+							setPendingService(null);
+							setTempSelectedStylists([]);
+							setEditingServiceItem(null);
+						}}
+						variant="contained"
+						color="primary"
+						disabled={!editingServiceItem && tempSelectedStylists.filter(Boolean).length === 0}
+					>
+						{editingServiceItem 
+							? `Update Stylists (${tempSelectedStylists.filter(Boolean).length})`
+							: `Add Service with Stylists (${tempSelectedStylists.filter(Boolean).length})`
+						}
 					</Button>
 				</DialogActions>
 			</Dialog>

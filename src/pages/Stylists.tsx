@@ -197,46 +197,56 @@ export default function Stylists() {
           return isBefore(holidayDate, today) && !isToday(holidayDate);
         }).length;
         
-        // Calculate service revenue with proper multi-expert revenue splitting
-        // Since POS now creates separate orders for each expert with split amounts, 
-        // we can simply sum up the revenue from orders assigned to this stylist
-        const stylistOrders = orders.filter(order => {
-          // Fixed: Check both stylist_id field and nested stylist.id field for compatibility
-          const orderStylistId = (order as any).stylist_id || (order as any).stylist?.id;
-          const orderStylistName = (order as any).stylist_name || (order as any).stylist?.name;
-          return orderStylistId ? orderStylistId === stylist.id : orderStylistName === stylist.name;
-        });
-
-        // Debug: Found orders for stylist
-        // console.log(`[Revenue Calculation] ${stylist.name}: Found ${stylistOrders.length} orders`);
-
-        const serviceRevenue = stylistOrders.reduce((total, order) => {
+        // 🔄 Calculate service revenue with equal sharing among experts (multi-expert) while maintaining legacy support
+        const serviceRevenue = orders.reduce((total, order) => {
           const orderDate = new Date((order as any).created_at || order.created_at);
-          if (isWithinInterval(orderDate, { start: rangeStart, end: rangeEnd })) {
-            if (order.status === 'completed' && (order as any).services && Array.isArray((order as any).services)) {
-              // Only count services performed by stylists - exclude products and memberships
-              // Revenue shown WITHOUT GST/tax (base service price only)
-              const servicePriceInOrder = (order as any).services
-                .filter((item: any) => {
-                  // Explicitly include only 'service' type, exclude 'product' and 'membership'
-                  return item.type === 'service' || (!item.type && item.item_name && !item.membership_id);
-                })
-                .reduce((sum: number, service: any) => sum + ((service.price || 0) * (service.quantity || 1)), 0);
 
-              // Return service revenue WITHOUT adding any tax/GST
-              let revenueToAdd = servicePriceInOrder;
-              
-              // Debug: Order contribution
-              // console.log(`[Revenue Calculation] ${stylist.name}: Order ${order.id} contributes ${revenueToAdd} (excluding GST)`)
-              
-              return total + revenueToAdd;
-            }
+          // Skip orders outside the selected range or not completed
+          if (
+            !isWithinInterval(orderDate, { start: rangeStart, end: rangeEnd }) ||
+            order.status !== 'completed' ||
+            !(order as any).services ||
+            !Array.isArray((order as any).services)
+          ) {
+            return total;
           }
+
+          // Iterate through each service in the order
+          (order as any).services
+            .filter((svc: any) => svc.type === 'service') // services only
+            .forEach((svc: any) => {
+              const baseAmount = (svc.price || 0) * (svc.quantity || 1); // Ex-GST amount per service
+
+              // If the service has an experts array, split equally among them
+              const experts: any[] = Array.isArray(svc.experts) ? svc.experts : [];
+
+              if (experts.length > 0) {
+                const stylistInvolved = experts.some(
+                  (exp: any) => exp.id === stylist.id || exp.name === stylist.name
+                );
+
+                if (stylistInvolved) {
+                  total += baseAmount / experts.length; // equal share
+                }
+              } else {
+                // Legacy single-expert order – credit whole amount to the order's stylist
+                const orderStylistId =
+                  (order as any).stylist_id || (order as any).stylist?.id;
+                const orderStylistName =
+                  (order as any).stylist_name || (order as any).stylist?.name;
+
+                const isOrderStylist = orderStylistId
+                  ? orderStylistId === stylist.id
+                  : orderStylistName === stylist.name;
+
+                if (isOrderStylist) {
+                  total += baseAmount;
+                }
+              }
+            });
+
           return total;
         }, 0);
-
-        // Debug: Final revenue
-        // console.log(`[Revenue Calculation] ${stylist.name}: Final revenue: ${serviceRevenue}`);
 
         return {
           stylistId: stylist.id,
