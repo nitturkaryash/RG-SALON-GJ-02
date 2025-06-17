@@ -177,8 +177,9 @@ export default function Orders() {
 
     console.log('[Orders Aggregation] Processing orders:', orders.length);
     
-    // Group orders by appointment_id to find potential multi-expert orders
+    // Group orders by appointment_id and multi_expert_group_id to find potential multi-expert orders
     const ordersByAppointment: Record<string, ExtendedOrder[]> = {};
+    const ordersByMultiExpertGroup: Record<string, ExtendedOrder[]> = {};
     const standaloneOrders: ExtendedOrder[] = [];
     
     orders.forEach(raw => {
@@ -189,6 +190,7 @@ export default function Orders() {
         stylist: order.stylist_name,
         multi_expert: order.multi_expert,
         appointment_id: order.appointment_id,
+        multi_expert_group_id: order.multi_expert_group_id,
         total: order.total
       });
       
@@ -197,6 +199,12 @@ export default function Orders() {
           ordersByAppointment[order.appointment_id] = [];
         }
         ordersByAppointment[order.appointment_id].push(order);
+      } else if (order.multi_expert_group_id) {
+        // Walk-in multi-expert orders grouped by multi_expert_group_id
+        if (!ordersByMultiExpertGroup[order.multi_expert_group_id]) {
+          ordersByMultiExpertGroup[order.multi_expert_group_id] = [];
+        }
+        ordersByMultiExpertGroup[order.multi_expert_group_id].push(order);
       } else {
         standaloneOrders.push(order);
       }
@@ -211,34 +219,71 @@ export default function Orders() {
         // Use the first order as the base
         const baseOrder = appointmentOrders[0];
         
-        // Check if we have split orders (partial amounts) or if there's an original order with full amounts
-        // If all orders have the same total, they might be individual split orders
-        // If one order has a much larger total, it's likely the original
-        const totals = appointmentOrders.map(order => order.total || order.total_amount || 0);
-        const maxTotal = Math.max(...totals);
-        const minTotal = Math.min(...totals);
-        const totalSum = totals.reduce((sum, total) => sum + total, 0);
-        
-        // If all totals are similar (split orders), sum them up
-        // If there's a significant difference, use the largest (original order)
-        const isAllSplitOrders = (maxTotal - minTotal) < (maxTotal * 0.1); // Less than 10% difference means likely all split
+        // For multi-expert orders, calculate the original customer-facing total from services
+        // The individual orders contain split amounts for stylist commission tracking,
+        // but the customer should see the original full amount
         
         let finalTotal, finalSubtotal, finalTax;
         
-        if (isAllSplitOrders) {
-          // All orders are split orders - sum them up to get the original amount
-          finalTotal = totalSum;
-          finalSubtotal = appointmentOrders.reduce((sum, order) => sum + (order.subtotal || 0), 0);
-          finalTax = appointmentOrders.reduce((sum, order) => sum + (order.tax || 0), 0);
-          console.log('[Orders Aggregation] Detected split orders, summing amounts. Total:', finalTotal);
-        } else {
-          // There's likely an original order with full amounts - use the largest
-          const originalOrder = appointmentOrders.find(order => (order.total || order.total_amount || 0) === maxTotal) || baseOrder;
-          finalTotal = originalOrder.total || originalOrder.total_amount || 0;
-          finalSubtotal = originalOrder.subtotal || 0;
-          finalTax = originalOrder.tax || 0;
-          console.log('[Orders Aggregation] Detected original order with full amounts. Total:', finalTotal);
-        }
+        // Calculate the correct customer-facing total from the services
+        // Aggregate services by name to avoid counting duplicates from multiple experts
+        const serviceAggregation: Record<string, { 
+          quantity: number; 
+          unit_price: number; 
+          total_price: number; 
+        }> = {};
+        
+        appointmentOrders.forEach(order => {
+          if (order.services && Array.isArray(order.services)) {
+            order.services.forEach((service: any) => {
+              const serviceName = service.service_name || service.item_name || service.name;
+              const quantity = service.quantity || 1;
+              const price = service.price || 0;
+              
+              if (!serviceAggregation[serviceName]) {
+                serviceAggregation[serviceName] = {
+                  quantity: quantity,
+                  unit_price: 0,
+                  total_price: 0
+                };
+              }
+              
+              // Sum up the prices from all experts working on this service
+              serviceAggregation[serviceName].unit_price += price;
+              serviceAggregation[serviceName].total_price += (price * quantity);
+            });
+          }
+        });
+        
+        // Calculate totals from aggregated services
+        finalSubtotal = Object.values(serviceAggregation).reduce((sum, item) => sum + item.total_price, 0);
+        finalTax = finalSubtotal * 0.18; // 18% GST
+        finalTotal = finalSubtotal + finalTax - (baseOrder.discount || 0);
+        
+        console.log('[Orders Aggregation] Calculated customer-facing total from services. Total:', finalTotal, 'Subtotal:', finalSubtotal, 'Tax:', finalTax);
+        
+        // Aggregate payments from all orders in the appointment
+        const aggregatedPayments: any[] = [];
+        const paymentMethodMap: Record<string, number> = {};
+        
+        appointmentOrders.forEach(order => {
+          if (order.payments && Array.isArray(order.payments)) {
+            order.payments.forEach(payment => {
+              const method = payment.payment_method;
+              paymentMethodMap[method] = (paymentMethodMap[method] || 0) + payment.amount;
+            });
+          }
+        });
+        
+        // Create aggregated payment records
+        Object.entries(paymentMethodMap).forEach(([method, amount]) => {
+          aggregatedPayments.push({
+            id: `aggregated-${appointmentId}-${method}`,
+            amount: amount,
+            payment_method: method,
+            payment_date: baseOrder.created_at
+          });
+        });
         
         const aggregatedOrder: ExtendedOrder & { stylist_names: string[] } = {
           ...baseOrder,
@@ -250,8 +295,8 @@ export default function Orders() {
           // Keep original payment method from base order
           payment_method: baseOrder.payment_method,
           stylist_names: [],
-          // Keep original payments from base order - don't duplicate split payments
-          payments: baseOrder.payments || [],
+          // Use aggregated payments that sum up all split payments
+          payments: aggregatedPayments,
           // For multi-expert orders, we need to aggregate services properly
           // Instead of trying to deduplicate or manipulate prices, collect all services from all orders
           services: appointmentOrders.reduce((allServices: any[], order) => {
@@ -291,7 +336,133 @@ export default function Orders() {
       }
     });
 
-    // Add standalone orders (no appointment_id)
+    // Process walk-in multi-expert orders (grouped by multi_expert_group_id)
+    Object.entries(ordersByMultiExpertGroup).forEach(([groupId, groupOrders]) => {
+      if (groupOrders.length > 1) {
+        // This is a walk-in multi-expert order - aggregate the orders
+        console.log('[Orders Aggregation] Aggregating walk-in multi-expert orders for group:', groupId, 'orders:', groupOrders.length);
+        
+        // Use the first order as the base
+        const baseOrder = groupOrders[0];
+        
+        // For multi-expert orders, calculate the original customer-facing total from services
+        // The individual orders contain split amounts for stylist commission tracking,
+        // but the customer should see the original full amount
+        
+        let finalTotal, finalSubtotal, finalTax;
+        
+        // Calculate the correct customer-facing total from the services
+        // Aggregate services by name to avoid counting duplicates from multiple experts
+        const serviceAggregation: Record<string, { 
+          quantity: number; 
+          unit_price: number; 
+          total_price: number; 
+        }> = {};
+        
+        groupOrders.forEach(order => {
+          if (order.services && Array.isArray(order.services)) {
+            order.services.forEach((service: any) => {
+              const serviceName = service.service_name || service.item_name || service.name;
+              const quantity = service.quantity || 1;
+              const price = service.price || 0;
+              
+              if (!serviceAggregation[serviceName]) {
+                serviceAggregation[serviceName] = {
+                  quantity: quantity,
+                  unit_price: 0,
+                  total_price: 0
+                };
+              }
+              
+              // Sum up the prices from all experts working on this service
+              serviceAggregation[serviceName].unit_price += price;
+              serviceAggregation[serviceName].total_price += (price * quantity);
+            });
+          }
+        });
+        
+        // Calculate totals from aggregated services
+        finalSubtotal = Object.values(serviceAggregation).reduce((sum, item) => sum + item.total_price, 0);
+        finalTax = finalSubtotal * 0.18; // 18% GST
+        finalTotal = finalSubtotal + finalTax - (baseOrder.discount || 0);
+        
+        console.log('[Orders Aggregation] Calculated customer-facing total from walk-in services. Total:', finalTotal, 'Subtotal:', finalSubtotal, 'Tax:', finalTax);
+        
+        // Aggregate payments from all orders in the group
+        const aggregatedPayments: any[] = [];
+        const paymentMethodMap: Record<string, number> = {};
+        
+        groupOrders.forEach(order => {
+          if (order.payments && Array.isArray(order.payments)) {
+            order.payments.forEach(payment => {
+              const method = payment.payment_method;
+              paymentMethodMap[method] = (paymentMethodMap[method] || 0) + payment.amount;
+            });
+          }
+        });
+        
+        // Create aggregated payment records
+        Object.entries(paymentMethodMap).forEach(([method, amount]) => {
+          aggregatedPayments.push({
+            id: `aggregated-${groupId}-${method}`,
+            amount: amount,
+            payment_method: method,
+            payment_date: baseOrder.created_at
+          });
+        });
+        
+        const aggregatedOrder: ExtendedOrder & { stylist_names: string[] } = {
+          ...baseOrder,
+          // Use calculated amounts based on whether we have split orders or original order
+          total: finalTotal,
+          total_amount: finalTotal,
+          subtotal: finalSubtotal,
+          tax: finalTax,
+          // Keep original payment method from base order
+          payment_method: baseOrder.payment_method,
+          stylist_names: [],
+          // Use aggregated payments that sum up all split payments
+          payments: aggregatedPayments,
+          // For multi-expert orders, we need to aggregate services properly
+          // Instead of trying to deduplicate or manipulate prices, collect all services from all orders
+          services: groupOrders.reduce((allServices: any[], order) => {
+            if (order.services && Array.isArray(order.services)) {
+              // Add all services from this order, preserving their original structure
+              order.services.forEach(service => {
+                allServices.push({
+                  ...service,
+                  // Preserve the original service data without modification
+                  stylist_id: order.stylist_id,
+                  stylist_name: order.stylist_name
+                });
+              });
+            }
+            return allServices;
+          }, []),
+          aggregated_multi_expert: true as any
+        };
+
+        // Aggregate stylist names from all orders
+        groupOrders.forEach(order => {
+          if (order.stylist_name && !aggregatedOrder.stylist_names.includes(order.stylist_name)) {
+            aggregatedOrder.stylist_names.push(order.stylist_name);
+          }
+        });
+
+        // Update stylist_name to show all stylists
+        aggregatedOrder.stylist_name = aggregatedOrder.stylist_names.filter(Boolean).join(', ');
+        
+        console.log('[Orders Aggregation] Created walk-in aggregate for group:', groupId, 'stylists:', aggregatedOrder.stylist_name, 'total:', aggregatedOrder.total, 'items:', aggregatedOrder.services?.length);
+        
+        result.push(aggregatedOrder as ExtendedOrder);
+      } else {
+        // Single order in this group (shouldn't happen, but handle gracefully)
+        console.log('[Orders Aggregation] Added single walk-in multi-expert order:', groupOrders[0].id);
+        result.push(groupOrders[0]);
+      }
+    });
+
+    // Add standalone orders (no appointment_id or multi_expert_group_id)
     standaloneOrders.forEach(order => {
       console.log('[Orders Aggregation] Added standalone order:', order.id);
       result.push(order);
@@ -1271,23 +1442,12 @@ export default function Orders() {
       // Group payments by method and sum up the amounts
       const paymentSummary: Record<string, number> = {};
       
-      if (isAggregatedOrder) {
-        // For multi-expert orders, multiply by expert count to get actual payment amount
-        const expertCount = order.services 
-          ? [...new Set(order.services.map((s: any) => s.stylist_name).filter(Boolean))].length 
-          : 1;
-        
-        order.payments.forEach(payment => {
-          const method = payment.payment_method;
-          paymentSummary[method] = (paymentSummary[method] || 0) + (payment.amount * expertCount);
-        });
-      } else {
-        // For regular orders, sum payments normally
+      // For both aggregated and regular orders, sum payments normally
+      // Aggregated orders already have properly aggregated payment amounts
       order.payments.forEach(payment => {
         const method = payment.payment_method;
         paymentSummary[method] = (paymentSummary[method] || 0) + payment.amount;
       });
-      }
 
       return (
         <Box>

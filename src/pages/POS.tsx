@@ -434,7 +434,9 @@ export default function POS() {
 	// Persist selectedClient across navigations
 	const [selectedClient, setSelectedClient] = useLocalStorage<Client | null>('pos_selectedClient', null);
 	const [selectedStylist, setSelectedStylist] = useLocalStorage<Stylist | null>('pos_selectedStylist', null);
-	// Add state for multiple stylists (for multi-expert appointments)
+	// Add state for multiple stylists (for multi-expert appointments and walk-in customers)
+	// When selectedStylists has items, it overrides selectedStylist for multi-stylist mode
+	// This allows walk-in customers to have multiple stylists assigned to their services
 	const [selectedStylists, setSelectedStylists] = useState<(Stylist | null)[]>([]);
 	const [appointmentDate, setAppointmentDate] = useState<Date | null>(new Date());
 	const [appointmentTime, setAppointmentTime] = useState<Date | null>(new Date());
@@ -669,7 +671,13 @@ export default function POS() {
 				return newState;
 			});
 
-			toast.success(`Added ${service.name} to order`);
+			// Show which stylists are assigned to the service
+			if (itemType === 'service' && expertsArray.length > 0) {
+				const expertNames = expertsArray.map(expert => expert.name).join(', ');
+				toast.success(`Added ${service.name} to order (Stylists: ${expertNames})`);
+			} else {
+				toast.success(`Added ${service.name} to order`);
+			}
 		}
 	}, [orderItems, toast, selectedStylists, selectedStylist]); // Keep dependencies for handleAddToOrder itself
 
@@ -1724,7 +1732,8 @@ export default function POS() {
 	// Update the isOrderValid function to use the new payment validation
 	const isOrderValid = useCallback(() => {
 		// Customer info validation
-		const customerInfoValid = customerName.trim() !== "" && selectedStylist !== null;
+		const hasStylistSelected = selectedStylist !== null || (selectedStylists.length > 0 && selectedStylists.some(s => s !== null));
+		const customerInfoValid = customerName.trim() !== "" && hasStylistSelected;
 		
 		// Order items validation
 		const orderItemsValid = orderItems.length > 0;
@@ -1734,7 +1743,7 @@ export default function POS() {
 		const paymentValid = paymentValidation.isValid;
 		
 		return customerInfoValid && orderItemsValid && paymentValid;
-	}, [customerName, selectedStylist, orderItems, getPaymentValidation]);
+	}, [customerName, selectedStylist, selectedStylists, orderItems, getPaymentValidation]);
 
 	// Add effect to handle split payment amount distribution
 	useEffect(() => {
@@ -2066,6 +2075,9 @@ export default function POS() {
 		
 		console.log(`[Multi-Expert Order] Creating ${numberOfExperts} orders for ${numberOfExperts} experts:`, expertsToProcess.map(e => e?.name));
 		
+		// Create a unique group ID for multi-expert walk-in orders
+		const multiExpertGroupId = isMultiExpert ? uuidv4() : undefined;
+		
 		// Create orders for each expert (split revenue among them)
 		const orderResults = [];
 		
@@ -2249,7 +2261,8 @@ export default function POS() {
 				...(numberOfExperts > 1 && {
 					multi_expert: true,
 					total_experts: numberOfExperts,
-					expert_index: i + 1
+					expert_index: i + 1,
+					multi_expert_group_id: multiExpertGroupId
 				})
 			});
 
@@ -4138,9 +4151,87 @@ export default function POS() {
 					{/* Stylist Information */}
 					<Grid item xs={12}>
 						<Paper sx={{ p: 2, mb: 2 }}>
-							<Typography variant="h6" gutterBottom sx={{ borderBottom: '1px solid', borderColor: 'divider', pb: 1 }}>
-								Stylist Information
-							</Typography>
+							<Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid', borderColor: 'divider', pb: 1, mb: 2 }}>
+								<Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+									<Typography variant="h6">
+										Stylist Information
+									</Typography>
+									{selectedStylists.length > 0 && (
+										<Chip 
+											label={`${selectedStylists.filter(s => s !== null).length} Stylists`}
+											size="small" 
+											color="primary" 
+											variant="outlined"
+										/>
+									)}
+								</Box>
+								{/* Add/Remove stylist buttons */}
+								<Box sx={{ display: 'flex', gap: 1 }}>
+									<IconButton
+										size="small"
+										color="primary"
+										onClick={() => {
+											// Add another stylist slot
+											if (selectedStylists.length === 0) {
+												// First time adding multiple stylists
+												setSelectedStylists([selectedStylist, null]);
+											} else {
+												setSelectedStylists([...selectedStylists, null]);
+											}
+										}}
+										title="Add Stylist"
+									>
+										<AddIcon />
+									</IconButton>
+									{(selectedStylists.length > 0 || selectedStylist) && (
+										<IconButton
+											size="small"
+											color="secondary"
+											onClick={() => {
+												if (selectedStylists.length > 0) {
+													// Remove last stylist from multi-stylist array
+													const newStylists = selectedStylists.slice(0, -1);
+													if (newStylists.length === 0) {
+														// If no stylists left in array, go back to single stylist mode
+														setSelectedStylists([]);
+													} else {
+														setSelectedStylists(newStylists);
+														// Update the main stylist for backward compatibility
+														const firstValidStylist = newStylists.find(s => s !== null);
+														setSelectedStylist(firstValidStylist || null);
+													}
+												} else {
+													// Remove single stylist
+													setSelectedStylist(null);
+												}
+												
+												// Update order items to remove expert data for removed stylists
+												setOrderItems(prevItems => 
+													prevItems.map(item => {
+														if (item.type === 'service' && (item as POSOrderItem).experts) {
+															const remainingStylists = selectedStylists.length > 1 ? 
+																selectedStylists.slice(0, -1).filter(s => s !== null) : [];
+															if (remainingStylists.length === 0) {
+																const { experts, ...itemWithoutExperts } = item as POSOrderItem;
+																return itemWithoutExperts;
+															} else {
+																return {
+																	...item,
+																	experts: remainingStylists.map(s => ({ id: s!.id, name: s!.name }))
+																} as POSOrderItem;
+															}
+														}
+														return item;
+													})
+												);
+											}}
+											title="Remove Stylist"
+										>
+											<RemoveIcon />
+										</IconButton>
+									)}
+								</Box>
+							</Box>
 							
 							<Grid container spacing={2}>
 								{/* Stylist Selection - Handle both single and multi-expert modes */}
@@ -4198,7 +4289,7 @@ export default function POS() {
 										<FormControl
 											fullWidth
 											required
-											error={selectedStylist === null}
+											error={selectedStylist === null && selectedStylists.length === 0}
 											size="small"
 										>
 											<InputLabel id="stylist-select-label">
@@ -4224,7 +4315,7 @@ export default function POS() {
 													</MenuItem>
 												))}
 											</Select>
-											{selectedStylist === null && (
+											{selectedStylist === null && selectedStylists.length === 0 && (
 												<FormHelperText error>
 													Stylist is required
 												</FormHelperText>
@@ -4233,23 +4324,7 @@ export default function POS() {
 									</Grid>
 								)}
 								
-								{/* Add Stylist Button for Multi-Expert Mode */}
-								{selectedStylists.length > 0 && (
-									<Grid item xs={12} sm={6} md={4}>
-										<Button
-											variant="outlined"
-											color="primary"
-											fullWidth
-											onClick={() => {
-												setSelectedStylists([...selectedStylists, null]);
-											}}
-											startIcon={<AddIcon />}
-											sx={{ height: '40px' }}
-										>
-											Add Another Expert
-										</Button>
-									</Grid>
-								)}
+
 							</Grid>
 							
 							{/* Display selected stylists summary with individual remove buttons */}

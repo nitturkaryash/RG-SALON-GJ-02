@@ -96,19 +96,18 @@
 
 /* Time column */
 .time-column {
-  width: 80px;
+  width: 80px !important;
+  min-width: 80px !important;
+  max-width: 80px !important;
   flex-shrink: 0;
+  flex-grow: 0;
   border-right: 1px solid rgba(0, 0, 0, 0.12);
   border-top: none;
   position: sticky;
   left: 0;
   background-color: #fff;
-  z-index: 2;
-  margin-top: 0; /* Ensure no margin */
-  position: sticky;
-  left: 0;
   z-index: 10;
-  background-color: white;
+  margin-top: 0; /* Ensure no margin */
   contain: layout style;
 }
 

@@ -140,8 +140,11 @@ const ScheduleGrid = styled(Box)(({ theme }) => ({
 }));
 
 const TimeColumn = styled(Box)(({ theme }) => ({
-  width: 80, // Keep at 80px for consistency with CSS
+  width: 80, // Fixed width - no responsive changes
+  minWidth: 80, // Ensure minimum width is maintained
+  maxWidth: 80, // Ensure maximum width doesn't exceed
   flexShrink: 0,
+  flexGrow: 0, // Prevent growing
   borderRight: `1px solid ${theme.palette.divider}`,
   position: 'sticky',
   left: 0,
@@ -151,12 +154,12 @@ const TimeColumn = styled(Box)(({ theme }) => ({
   margin: 0, // Remove all margin
   height: 'fit-content',
   minHeight: '100%',
-  // Responsive adjustments for time column
-  [theme.breakpoints.down('sm')]: {
-    width: 60, // Smaller on mobile to save space
-  },
-  [theme.breakpoints.up('lg')]: {
-    width: 90, // Slightly wider on large screens
+  // Remove all responsive adjustments to keep fixed width
+  // Only adjust on very small mobile screens
+  [theme.breakpoints.down('xs')]: {
+    width: 70, // Only slightly smaller on very small screens
+    minWidth: 70,
+    maxWidth: 70,
   },
 }));
 
