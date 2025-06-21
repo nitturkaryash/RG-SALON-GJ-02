@@ -156,7 +156,7 @@ interface POSService {
 	name: string;
 	price: number;
 	duration?: number;
-	type?: "service" | "product";
+	type?: "service" | "product" | "membership";
 	hsn_code?: string;
 	units?: string;
 	batch?: string;
@@ -630,8 +630,9 @@ export default function POS() {
 			toast.success(`Increased ${service.name} quantity to ${newQuantity}`);
 		} else {
 			// Item doesn't exist, create new item
-			// Determine the type - ensure it is always either 'product' or 'service', never undefined
-			const itemType = service.type === 'service' ? 'service' : 'product';
+			// Determine the type - properly handle service, product, and membership types
+			const itemType = service.type === 'service' ? 'service' : 
+						   service.type === 'membership' ? 'membership' : 'product';
 			
 			// Services now get stylist assignments through the dialog system
 			// No automatic global stylist assignment
@@ -645,7 +646,8 @@ export default function POS() {
 				quantity: quantity,
 				price: customPrice !== undefined ? customPrice : service.price,
 				total: (customPrice !== undefined ? customPrice : service.price) * quantity,
-				type: itemType, // Ensure type is never undefined
+				type: itemType, // Properly categorized type
+				category: itemType, // Set category to match type for consistency
 				hsn_code: service.hsn_code,
 				gst_percentage: service.gst_percentage,
 				for_salon_use: false,
@@ -668,10 +670,10 @@ export default function POS() {
 	}, [orderItems, toast]); // Removed selectedStylists since services now get stylists through dialog
 
 	// RESTORING fetchClientHistory HERE
-	const fetchClientHistory = useCallback(async (clientName: string) => {
-		if (!clientName) return;
+	const fetchClientHistory = useCallback(async (clientId: string, clientName: string) => {
+		if (!clientId || !clientName) return;
 		setIsHistoryLoading(true);
-		console.log("Fetching history for client:", clientName);
+		console.log("Fetching history for client:", clientName, "ID:", clientId);
 		try {
 			// First query complete pos_orders for this client
 			const { data: ordersData, error: ordersError } = await supabase
@@ -760,7 +762,7 @@ export default function POS() {
 					service_id,
 					stylist_id
 				`)
-				.eq('client_id', clientName)
+				.eq('client_id', clientId)
 				.order('start_time', { ascending: false })
 				.limit(20);
 
@@ -848,11 +850,11 @@ export default function POS() {
 			setCustomerName(client.full_name || '');
 			setNewClientPhone(""); 
 			setNewClientEmail("");
-			if (client.full_name) { 
+			if (client.id && client.full_name) { 
 				console.log("Fetching history for client:", client.full_name);
-				fetchClientHistory(client.full_name); 
+				fetchClientHistory(client.id, client.full_name); 
 			} else {
-				console.warn("Selected client has no name, cannot fetch history.");
+				console.warn("Selected client has no id or name, cannot fetch history.");
 				setClientServiceHistory([]);
 			}
 		} else {
@@ -1139,15 +1141,20 @@ export default function POS() {
 
 	// =============== FILTERED MEMOS (restored) ===============
 	const filteredProducts = useMemo(() => {
+		const productsOnly = allProducts.filter(product => 
+			// Only include actual products, exclude services and memberships
+			(product.type === 'product' || product.type === undefined || product.type === null)
+		);
+		
 		if (!productSearchTerm.trim()) {
-			return allProducts.filter(product => 
+			return productsOnly.filter(product => 
 				(product.stock_quantity === undefined || 
 				product.stock_quantity === null || 
 				product.stock_quantity > 0) &&
 				product.active !== false
 			);
 		}
-		return allProducts.filter(product => 
+		return productsOnly.filter(product => 
 			(product.name.toLowerCase().includes(productSearchTerm.toLowerCase()) ||
 			(product.description && product.description.toLowerCase().includes(productSearchTerm.toLowerCase()))) &&
 			(product.stock_quantity === undefined || 
@@ -2062,13 +2069,22 @@ export default function POS() {
 			? selectedStylists.filter(s => s !== null) 
 			: [];
 		
+		// Check if this is a membership-only or product-only order
+		const hasMemberships = formattedMemberships.length > 0;
+		const hasServices = formattedServices.length > 0;
+		const hasProducts = formattedProducts.length > 0;
+		const isMembershipOnlyOrder = hasMemberships && !hasServices && !hasProducts;
+		const isProductOnlyOrder = hasProducts && !hasServices && !hasMemberships;
+		
 		// Determine if this is multi-expert and get experts to process
 		const isMultiExpert = allExpertsInServices.size > 1 || legacyExperts.length > 1;
 		const expertsToProcess = allExpertsInServices.size > 0 
 			? Array.from(allExpertsInServices).map(id => stylists?.find(s => s.id === id)).filter(Boolean)
 			: legacyExperts.length > 0 
 				? legacyExperts 
-				: [staffInfo];
+				: (isMembershipOnlyOrder || isProductOnlyOrder)
+					? [] // No expert needed for membership-only or product-only orders
+					: [staffInfo];
 		const numberOfExperts = expertsToProcess.length;
 		
 		console.log(`[Multi-Expert Debug] allExpertsInServices:`, Array.from(allExpertsInServices));
@@ -2212,7 +2228,7 @@ export default function POS() {
 		} else {
 			// **SINGLE EXPERT: Use existing logic**
 			const expert = expertsToProcess[0] || staffInfo;
-			if (!expert) throw new Error('No expert available for order creation');
+			if (!expert && !isMembershipOnlyOrder && !isProductOnlyOrder) throw new Error('No expert available for order creation');
 
 			// Use original logic for single expert orders
 			const itemsForOrder = [...formattedProducts, ...formattedServices, ...formattedMemberships].map(item => ({
@@ -2298,8 +2314,8 @@ export default function POS() {
 				order_id: uuidv4(),
 				client_id: clientIdToUse || '',
 				client_name: clientNameToUse,
-				stylist_id: expert.id || '',
-				stylist_name: expert.name || '',
+				stylist_id: expert?.id || '',
+				stylist_name: expert?.name || (isMembershipOnlyOrder ? 'Membership Purchase' : isProductOnlyOrder ? 'Product Purchase' : ''),
 				appointment_id: currentAppointmentId || undefined,
 				items: [],
 				services: itemsForOrder,
@@ -4133,10 +4149,6 @@ export default function POS() {
 										value={selectedClient}
 										onChange={(_, newValue) => {
 											handleClientSelect(newValue);
-											if (newValue && newValue.full_name) {
-												// Explicitly fetch client history when a client is selected
-												fetchClientHistory(newValue.full_name);
-											}
 										}}
 										renderInput={(params) => (
 											<TextField
@@ -4168,8 +4180,8 @@ export default function POS() {
 											color="primary"
 											onClick={() => {
 												setHistoryDrawerOpen(true);
-												if (selectedClient.full_name) {
-													fetchClientHistory(selectedClient.full_name);
+												if (selectedClient.id && selectedClient.full_name) {
+													fetchClientHistory(selectedClient.id, selectedClient.full_name);
 												}
 											}}
 											size="small"

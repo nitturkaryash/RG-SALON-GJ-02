@@ -2723,80 +2723,113 @@ export default function Appointments() {
                 </Box>
                 
                 {/* From/To Time Selection */}
-                <Grid container spacing={2} sx={{ mt: 1, mb: 2 }}>
-                  <Grid item xs={6}>
-                    <FormControl fullWidth>
-                      <InputLabel id="from-time-label" sx={{ bgcolor: 'background.paper', px: 1 }}>From Time</InputLabel>
-                      <Select
-                        labelId="from-time-label"
-                        value={service.fromTime}
-                        label="From Time"
-                        displayEmpty
-                        renderValue={(value) => convertTo12Hour(value)}
-                        onChange={(e) => updateServiceTime(clientEntries[0].id, serviceIndex, 'fromTime', e.target.value)}
-                        sx={{
-                          '& .MuiSelect-select': {
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 1
-                          }
-                        }}
-                      >
-                        {timeOptions.map(option => (
-                          <MenuItem 
-                            key={`from-${option.value}`} 
-                            value={option.value}
-                            sx={{
+                <Box sx={{ mt: 2, mb: 2, px: 1 }}>
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5, fontWeight: 'medium' }}>
+                    Service Time
+                  </Typography>
+                  <Grid container spacing={1.5} sx={{ px: 0 }}>
+                    <Grid item xs={6}>
+                      <FormControl fullWidth size="small">
+                        <InputLabel 
+                          id={`from-time-label-${serviceIndex}`} 
+                          sx={{ 
+                            bgcolor: 'background.paper', 
+                            px: 1,
+                            fontSize: '0.875rem'
+                          }}
+                        >
+                          From Time
+                        </InputLabel>
+                        <Select
+                          labelId={`from-time-label-${serviceIndex}`}
+                          value={service.fromTime}
+                          label="From Time"
+                          size="small"
+                          displayEmpty
+                          renderValue={(value) => convertTo12Hour(value)}
+                          onChange={(e) => updateServiceTime(clientEntries[0].id, serviceIndex, 'fromTime', e.target.value)}
+                          sx={{
+                            '& .MuiSelect-select': {
                               display: 'flex',
                               alignItems: 'center',
-                              gap: 1
-                            }}
-                          >
-                            <Box component="span" sx={{ color: 'primary.main' }}>
-                              {option.label}
-                            </Box>
-                          </MenuItem>
-                        ))}
-                      </Select>
-                    </FormControl>
-                  </Grid>
-                  <Grid item xs={6}>
-                    <FormControl fullWidth>
-                      <InputLabel id="to-time-label" sx={{ bgcolor: 'background.paper', px: 1 }}>To Time</InputLabel>
-                      <Select
-                        labelId="to-time-label"
-                        value={service.toTime}
-                        label="To Time"
-                        displayEmpty
-                        renderValue={(value) => convertTo12Hour(value)}
-                        onChange={(e) => updateServiceTime(clientEntries[0].id, serviceIndex, 'toTime', e.target.value)}
-                        sx={{
-                          '& .MuiSelect-select': {
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 1
-                          }
-                        }}
-                      >
-                        {timeOptions.map(option => (
-                          <MenuItem 
-                            key={`to-${option.value}`} 
-                            value={option.value}
-                            sx={{
+                              py: 1,
+                              fontSize: '0.875rem'
+                            },
+                            '& .MuiOutlinedInput-notchedOutline': {
+                              borderColor: '#E0E0E0'
+                            },
+                            borderRadius: '6px'
+                          }}
+                        >
+                          {timeOptions.map(option => (
+                            <MenuItem 
+                              key={`from-${option.value}-${serviceIndex}`} 
+                              value={option.value}
+                              sx={{
+                                fontSize: '0.875rem',
+                                py: 0.75
+                              }}
+                            >
+                              <Box component="span" sx={{ color: 'primary.main' }}>
+                                {option.label}
+                              </Box>
+                            </MenuItem>
+                          ))}
+                        </Select>
+                      </FormControl>
+                    </Grid>
+                    <Grid item xs={6}>
+                      <FormControl fullWidth size="small">
+                        <InputLabel 
+                          id={`to-time-label-${serviceIndex}`} 
+                          sx={{ 
+                            bgcolor: 'background.paper', 
+                            px: 1,
+                            fontSize: '0.875rem'
+                          }}
+                        >
+                          To Time
+                        </InputLabel>
+                        <Select
+                          labelId={`to-time-label-${serviceIndex}`}
+                          value={service.toTime}
+                          label="To Time"
+                          size="small"
+                          displayEmpty
+                          renderValue={(value) => convertTo12Hour(value)}
+                          onChange={(e) => updateServiceTime(clientEntries[0].id, serviceIndex, 'toTime', e.target.value)}
+                          sx={{
+                            '& .MuiSelect-select': {
                               display: 'flex',
                               alignItems: 'center',
-                              gap: 1
-                            }}
-                          >
-                            <Box component="span" sx={{ color: 'primary.main' }}>
-                              {option.label}
-                            </Box>
-                          </MenuItem>
-                        ))}
-                      </Select>
-                    </FormControl>
+                              py: 1,
+                              fontSize: '0.875rem'
+                            },
+                            '& .MuiOutlinedInput-notchedOutline': {
+                              borderColor: '#E0E0E0'
+                            },
+                            borderRadius: '6px'
+                          }}
+                        >
+                          {timeOptions.map(option => (
+                            <MenuItem 
+                              key={`to-${option.value}-${serviceIndex}`} 
+                              value={option.value}
+                              sx={{
+                                fontSize: '0.875rem',
+                                py: 0.75
+                              }}
+                            >
+                              <Box component="span" sx={{ color: 'primary.main' }}>
+                                {option.label}
+                              </Box>
+                            </MenuItem>
+                          ))}
+                        </Select>
+                      </FormControl>
+                    </Grid>
                   </Grid>
-                </Grid>
+                </Box>
               </Box>
             ))}
             
@@ -3016,109 +3049,142 @@ export default function Appointments() {
                 ))}
                 
                 {/* Time Selection */}
-                <Grid container spacing={2} sx={{ mt: 1, mb: 2 }}>
-                  <Grid item xs={6}>
-                    <FormControl fullWidth>
-                      <InputLabel id="inline-from-time-label" sx={{ bgcolor: 'background.paper', px: 1 }}>From Time</InputLabel>
-                      <Select
-                        labelId="inline-from-time-label"
-                        value={inlineServiceData.fromTime}
-                        label="From Time"
-                        displayEmpty
-                        renderValue={(value) => convertTo12Hour(value)}
-                        onChange={(e) => {
-                          const newFromTime = e.target.value as string;
-                          setInlineServiceData(prev => ({
-                            ...prev,
-                            fromTime: newFromTime
-                          }));
-                          
-                          // Update end time based on service duration
-                          const service = activeServices.find(s => s.id === inlineServiceData.serviceId);
-                          if (service) {
-                            const [fromHour, fromMinute] = newFromTime.split(':').map(Number);
-                            const serviceDuration = service.duration || 60;
-                            
-                            let totalMinutes = (fromHour * 60) + fromMinute + serviceDuration;
-                            const toHour = Math.floor(totalMinutes / 60);
-                            const toMinute = totalMinutes % 60;
-                            
-                            const toTime = `${toHour}:${toMinute.toString().padStart(2, '0')}`;
-                            
+                <Box sx={{ mt: 2, mb: 2, px: 1 }}>
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5, fontWeight: 'medium' }}>
+                    Service Time
+                  </Typography>
+                  <Grid container spacing={1.5} sx={{ px: 0 }}>
+                    <Grid item xs={6}>
+                      <FormControl fullWidth size="small">
+                        <InputLabel 
+                          id="inline-from-time-label" 
+                          sx={{ 
+                            bgcolor: 'background.paper', 
+                            px: 1,
+                            fontSize: '0.875rem'
+                          }}
+                        >
+                          From Time
+                        </InputLabel>
+                        <Select
+                          labelId="inline-from-time-label"
+                          value={inlineServiceData.fromTime}
+                          label="From Time"
+                          size="small"
+                          displayEmpty
+                          renderValue={(value) => convertTo12Hour(value)}
+                          onChange={(e) => {
+                            const newFromTime = e.target.value as string;
                             setInlineServiceData(prev => ({
                               ...prev,
-                              toTime
+                              fromTime: newFromTime
                             }));
-                          }
-                        }}
-                        sx={{
-                          '& .MuiSelect-select': {
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 1
-                          }
-                        }}
-                      >
-                        {timeOptions.map(option => (
-                          <MenuItem 
-                            key={`inline-from-${option.value}`} 
-                            value={option.value}
-                            sx={{
+                            
+                            // Update end time based on service duration
+                            const service = activeServices.find(s => s.id === inlineServiceData.serviceId);
+                            if (service) {
+                              const [fromHour, fromMinute] = newFromTime.split(':').map(Number);
+                              const serviceDuration = service.duration || 60;
+                              
+                              let totalMinutes = (fromHour * 60) + fromMinute + serviceDuration;
+                              const toHour = Math.floor(totalMinutes / 60);
+                              const toMinute = totalMinutes % 60;
+                              
+                              const toTime = `${toHour}:${toMinute.toString().padStart(2, '0')}`;
+                              
+                              setInlineServiceData(prev => ({
+                                ...prev,
+                                toTime
+                              }));
+                            }
+                          }}
+                          sx={{
+                            '& .MuiSelect-select': {
                               display: 'flex',
                               alignItems: 'center',
-                              gap: 1
-                            }}
-                          >
-                            <Box component="span" sx={{ color: 'primary.main' }}>
-                              {option.label}
-                            </Box>
-                          </MenuItem>
-                        ))}
-                      </Select>
-                    </FormControl>
-                  </Grid>
-                  <Grid item xs={6}>
-                    <FormControl fullWidth>
-                      <InputLabel id="inline-to-time-label" sx={{ bgcolor: 'background.paper', px: 1 }}>To Time</InputLabel>
-                      <Select
-                        labelId="inline-to-time-label"
-                        value={inlineServiceData.toTime}
-                        label="To Time"
-                        displayEmpty
-                        renderValue={(value) => convertTo12Hour(value)}
-                        onChange={(e) => {
-                          setInlineServiceData(prev => ({
-                            ...prev,
-                            toTime: e.target.value as string
-                          }));
-                        }}
-                        sx={{
-                          '& .MuiSelect-select': {
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 1
-                          }
-                        }}
-                      >
-                        {timeOptions.map(option => (
-                          <MenuItem 
-                            key={`inline-to-${option.value}`} 
-                            value={option.value}
-                            sx={{
+                              py: 1,
+                              fontSize: '0.875rem'
+                            },
+                            '& .MuiOutlinedInput-notchedOutline': {
+                              borderColor: '#E0E0E0'
+                            },
+                            borderRadius: '6px'
+                          }}
+                        >
+                          {timeOptions.map(option => (
+                            <MenuItem 
+                              key={`inline-from-${option.value}`} 
+                              value={option.value}
+                              sx={{
+                                fontSize: '0.875rem',
+                                py: 0.75
+                              }}
+                            >
+                              <Box component="span" sx={{ color: 'primary.main' }}>
+                                {option.label}
+                              </Box>
+                            </MenuItem>
+                          ))}
+                        </Select>
+                      </FormControl>
+                    </Grid>
+                    <Grid item xs={6}>
+                      <FormControl fullWidth size="small">
+                        <InputLabel 
+                          id="inline-to-time-label" 
+                          sx={{ 
+                            bgcolor: 'background.paper', 
+                            px: 1,
+                            fontSize: '0.875rem'
+                          }}
+                        >
+                          To Time
+                        </InputLabel>
+                        <Select
+                          labelId="inline-to-time-label"
+                          value={inlineServiceData.toTime}
+                          label="To Time"
+                          size="small"
+                          displayEmpty
+                          renderValue={(value) => convertTo12Hour(value)}
+                          onChange={(e) => {
+                            setInlineServiceData(prev => ({
+                              ...prev,
+                              toTime: e.target.value as string
+                            }));
+                          }}
+                          sx={{
+                            '& .MuiSelect-select': {
                               display: 'flex',
                               alignItems: 'center',
-                              gap: 1
-                            }}
-                          >
-                            <Box component="span" sx={{ color: 'primary.main' }}>
-                              {option.label}
-                            </Box>
-                          </MenuItem>
-                        ))}
-                      </Select>
-                    </FormControl>
+                              py: 1,
+                              fontSize: '0.875rem'
+                            },
+                            '& .MuiOutlinedInput-notchedOutline': {
+                              borderColor: '#E0E0E0'
+                            },
+                            borderRadius: '6px'
+                          }}
+                        >
+                          {timeOptions.map(option => (
+                            <MenuItem 
+                              key={`inline-to-${option.value}`} 
+                              value={option.value}
+                              sx={{
+                                fontSize: '0.875rem',
+                                py: 0.75
+                              }}
+                            >
+                              <Box component="span" sx={{ color: 'primary.main' }}>
+                                {option.label}
+                              </Box>
+                            </MenuItem>
+                          ))}
+                        </Select>
+                      </FormControl>
+                    </Grid>
                   </Grid>
-                </Grid>
+                </Box>
                 
                 {/* Action Buttons */}
                 <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 2 }}>

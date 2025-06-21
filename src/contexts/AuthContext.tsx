@@ -45,19 +45,67 @@ export const AuthContextProvider = ({ children }: { children: ReactNode }) => {
 
 	useEffect(() => {
 		setLoading(true)
-		// Get initial session
+		
+		// Check for existing localStorage auth (for backward compatibility)
+		const token = localStorage.getItem('auth_token');
+		const authUser = localStorage.getItem('auth_user');
+		
+		// Get initial session from Supabase
 		supabase.auth.getSession().then(({ data: { session } }) => {
-			setSession(session)
-			setUser(session?.user ?? null)
+			if (session) {
+				// Supabase session exists (Google OAuth)
+				setSession(session)
+				setUser(session.user)
+				
+				// Update localStorage for compatibility
+				localStorage.setItem('auth_token', session.access_token);
+				localStorage.setItem('auth_user', JSON.stringify({
+					id: session.user.id,
+					username: session.user.email,
+					email: session.user.email,
+					name: session.user.user_metadata?.full_name || session.user.email,
+					role: 'user',
+					provider: 'google'
+				}));
+			} else if (token && authUser) {
+				// Fallback to localStorage auth (existing hardcoded system)
+				// Create a mock session for compatibility
+				try {
+					const userData = JSON.parse(authUser);
+					// Don't set session for hardcoded auth, just user
+					setUser(userData as any);
+				} catch (e) {
+					console.error('Error parsing stored user data:', e);
+					localStorage.removeItem('auth_token');
+					localStorage.removeItem('auth_user');
+				}
+			}
 			setLoading(false)
 		})
 
 		// Set up the listener for auth changes
 		const { data: authListener } = supabase.auth.onAuthStateChange(
-			(_event, session) => {
-				setSession(session)
-				setUser(session?.user ?? null)
-				// Set loading to false once we have auth state determined
+			(event, session) => {
+				if (event === 'SIGNED_IN' && session) {
+					setSession(session)
+					setUser(session.user)
+					
+					// Update localStorage for compatibility
+					localStorage.setItem('auth_token', session.access_token);
+					localStorage.setItem('auth_user', JSON.stringify({
+						id: session.user.id,
+						username: session.user.email,
+						email: session.user.email,
+						name: session.user.user_metadata?.full_name || session.user.email,
+						role: 'user',
+						provider: 'google'
+					}));
+				} else if (event === 'SIGNED_OUT') {
+					setSession(null)
+					setUser(null)
+					localStorage.removeItem('auth_token');
+					localStorage.removeItem('auth_user');
+				}
 				setLoading(false)
 			}
 		)

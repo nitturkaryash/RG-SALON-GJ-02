@@ -1040,6 +1040,7 @@ export function usePOS() {
           service_id: s.service_id,
           service_name: s.service_name,
           type: s.type,
+          category: s.category,
           experts: (s as any).experts
         });
         
@@ -1052,31 +1053,49 @@ export function usePOS() {
           gst_percentage: s.gst_percentage || 0
         };
 
-        // Build the core service object
+        // Build the core service object with explicit type checking
         let serviceObj: any;
-        if (s.type === 'product') {
+        
+        // EXPLICIT type assignment - be very clear about what gets what type
+        if (s.type === 'product' || s.category === 'product') {
           serviceObj = {
             ...baseFields,
             product_id: s.service_id,
             product_name: s.service_name,
             type: 'product' as const,
+            category: 'product',
             hsn_code: s.hsn_code || ''
           };
-        } else {
+          console.log('🟨 usePOS - PRODUCT type assigned:', s.service_name);
+        } else if (s.type === 'membership' || s.category === 'membership') {
           serviceObj = {
             ...baseFields,
-            type: 'service' as const
+            type: 'membership' as const,
+            category: 'membership',
+            duration_months: (s as any).duration_months || 12
           };
+          console.log('🟦 usePOS - MEMBERSHIP type assigned:', s.service_name);
+        } else {
+          // Default to service for everything else
+          serviceObj = {
+            ...baseFields,
+            type: 'service' as const,
+            category: s.category || 'service'
+          };
+          console.log('🟩 usePOS - SERVICE type assigned (default):', s.service_name);
         }
 
         // Preserve multi-expert fields if present
-        return {
+        const finalServiceObj = {
           ...serviceObj,
           ...(s as any).experts && { experts: (s as any).experts },
           ...(s as any).total_experts && { total_experts: (s as any).total_experts },
           ...(s as any).split_revenue && { split_revenue: (s as any).split_revenue },
           ...(s as any).expert_index && { expert_index: (s as any).expert_index }
         };
+        
+        console.log('🔍 usePOS - Final enhanced service:', finalServiceObj);
+        return finalServiceObj;
       }) || [];
 
       const order: PosOrder = {
@@ -1101,6 +1120,24 @@ export function usePOS() {
         pending_amount: pendingAmount,
         is_split_payment: isSplitPayment
       };
+      
+      // Enhanced debug logging for walk-in orders
+      console.log('🚶‍♂️ WALK-IN ORDER CREATION DEBUG:', {
+        orderId: order.id,
+        stylistId: order.stylist_id,
+        stylistName: order.stylist_name,
+        clientName: order.client_name,
+        isWalkIn: order.is_walk_in,
+        servicesCount: enhancedServices.length,
+        services: enhancedServices.map(s => ({
+          name: s.service_name,
+          type: s.type,
+          category: s.category,
+          price: s.price,
+          experts: s.experts
+        })),
+        total: order.total
+      });
       
       // Rest of the function implementation
       console.log('🔍 usePOS - Prepared order for submission:', order);
@@ -1272,13 +1309,6 @@ export function usePOS() {
           await syncToSalesHistory(insertedOrder);
         } catch (historyError) {
           console.error('❌ usePOS - Error updating sales history:', historyError);
-        }
-        
-        // Record transaction in accounting
-        try {
-          await recordSaleTransaction(insertedOrder);
-        } catch (accountingError) {
-          console.error('❌ usePOS - Error recording sale transaction:', accountingError);
         }
         
         return {

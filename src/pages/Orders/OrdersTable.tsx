@@ -26,6 +26,11 @@ import DeleteButton from '../../components/DeleteButton';
 import { toast } from 'react-toastify';
 import PrintIcon from '@mui/icons-material/Print';
 import { printBill } from '../../utils/printUtils';
+import SpaIcon from '@mui/icons-material/Spa';
+import ShoppingBagIcon from '@mui/icons-material/ShoppingBag';
+import CardMembershipIcon from '@mui/icons-material/CardMembership';
+import StoreIcon from '@mui/icons-material/Store';
+import { getPurchaseType as baseGetPurchaseType } from '../../utils/orderHelpers';
 
 interface OrdersTableProps {
   orders: Order[];
@@ -92,6 +97,68 @@ const OrdersTable: React.FC<OrdersTableProps> = ({
     return <Chip label={status || 'Unknown'} color={color} size="small" />;
   };
 
+  // Helper to determine purchase type with membership support
+  const getPurchaseType = (order: Order): string => {
+    // If services array exists with detailed type info, use enhanced logic
+    // Fallback to basic helper otherwise
+    // @ts-ignore optional property
+    const services = order.services as any[] | undefined;
+    if (services && Array.isArray(services) && services.length) {
+      const hasMemberships = services.some(s => (s?.type === 'membership') || s?.category === 'membership');
+      const hasServices = services.some(s => (s?.type === 'service') && !(s?.category === 'membership'));
+      const hasProducts = services.some(s => s?.type === 'product' || s?.category === 'product');
+
+      // For items without explicit type, check if they come from product tables or have product-like attributes
+      const hasUnknownProducts = services.some(s => 
+        !s?.type && 
+        !s?.category && 
+        (s?.product_id || s?.product_name || s?.hsn_code || s?.stock_quantity !== undefined)
+      );
+
+      if (hasMemberships && !hasServices && !hasProducts && !hasUnknownProducts) return 'membership';
+      const types: string[] = [];
+      if (hasServices) types.push('service');
+      if (hasProducts || hasUnknownProducts) types.push('product');
+      if (hasMemberships) types.push('membership');
+
+      if (types.length > 1) return types.join('_'); // e.g., service_product
+      if (hasServices) return 'service';
+      if (hasProducts || hasUnknownProducts) return 'product';
+      return 'unknown';
+    }
+    // Basic fallback (service | product | both | unknown)
+    // @ts-ignore ignore mismatch
+    return baseGetPurchaseType(order);
+  };
+
+  const renderPurchaseTypeChip = (type: string) => {
+    switch (type) {
+      case 'service':
+        return <Chip size="small" icon={<SpaIcon fontSize="small" />} label="Service" color="primary" variant="outlined" />;
+      case 'product':
+        return <Chip size="small" icon={<ShoppingBagIcon fontSize="small" />} label="Product" color="info" variant="outlined" />;
+      case 'membership':
+        return <Chip size="small" icon={<CardMembershipIcon fontSize="small" />} label="Membership" color="warning" variant="outlined" />;
+      case 'service_product':
+      case 'product_service':
+        return <Chip size="small" icon={<StoreIcon fontSize="small" />} label="Service & Product" color="success" variant="outlined" />;
+      case 'service_membership':
+      case 'membership_service':
+        return <Chip size="small" icon={<StoreIcon fontSize="small" />} label="Service & Membership" color="secondary" variant="outlined" />;
+      case 'product_membership':
+      case 'membership_product':
+        return <Chip size="small" icon={<StoreIcon fontSize="small" />} label="Product & Membership" color="secondary" variant="outlined" />;
+      case 'both':
+        return <Chip size="small" icon={<StoreIcon fontSize="small" />} label="Service & Product" color="success" variant="outlined" />;
+      case 'service_product_membership':
+      case 'product_service_membership':
+      case 'membership_service_product':
+        return <Chip size="small" icon={<StoreIcon fontSize="small" />} label="Service, Product & Membership" color="secondary" variant="outlined" />;
+      default:
+        return <Chip size="small" label="Unknown" variant="outlined" />;
+    }
+  };
+
   // Calculate paginated data
   const paginatedOrders = orders
     .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
@@ -110,11 +177,12 @@ const OrdersTable: React.FC<OrdersTableProps> = ({
   // Loading skeleton
   const loadingSkeleton = Array(5).fill(0).map((_, index) => (
     <TableRow key={`skeleton-${index}`}>
-      {Array(6).fill(0).map((_, colIndex) => (
+      {Array(7).fill(0).map((_, colIndex) => (
         <TableCell key={`skeleton-cell-${index}-${colIndex}`}>
           <Skeleton animation="wave" />
         </TableCell>
       ))}
+      <TableCell><Skeleton animation="wave" width={40} /></TableCell>
     </TableRow>
   ));
 
@@ -143,6 +211,7 @@ const OrdersTable: React.FC<OrdersTableProps> = ({
               <TableCell>Payment Method</TableCell>
               <TableCell align="right">Total</TableCell>
               <TableCell>Status</TableCell>
+              <TableCell>Purchase Type</TableCell>
               <TableCell align="center">Actions</TableCell>
             </TableRow>
           </TableHead>
@@ -151,7 +220,7 @@ const OrdersTable: React.FC<OrdersTableProps> = ({
               loadingSkeleton
             ) : paginatedOrders.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} align="center" sx={{ py: 6 }}>
+                <TableCell colSpan={8} align="center" sx={{ py: 6 }}>
                   <Typography variant="body2" color="text.secondary">
                     No orders found
                   </Typography>
@@ -180,6 +249,7 @@ const OrdersTable: React.FC<OrdersTableProps> = ({
                     {formatCurrency(order.total_amount || order.total || 0)}
                   </TableCell>
                   <TableCell>{getStatusChip(order.status)}</TableCell>
+                  <TableCell>{renderPurchaseTypeChip(getPurchaseType(order))}</TableCell>
                   <TableCell align="center">
                     <ButtonGroup size="small">
                       <Tooltip title="Print Bill">
