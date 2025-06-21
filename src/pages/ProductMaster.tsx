@@ -29,6 +29,8 @@ import {
   Select,
   MenuItem,
   Autocomplete,
+  Chip,
+  Tooltip,
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -37,6 +39,9 @@ import {
   Refresh as RefreshIcon,
   Visibility as VisibilityIcon,
   VisibilityOff as VisibilityOffIcon,
+  History as HistoryIcon,
+  ToggleOff as ToggleOffIcon,
+  ToggleOn as ToggleOnIcon,
 } from '@mui/icons-material';
 import { styled } from '@mui/material/styles';
 import { supabase, handleSupabaseError } from '../utils/supabase/supabaseClient';
@@ -65,6 +70,21 @@ interface Product {
   description?: string;
   category?: string;
   product_type?: string;
+}
+
+interface PriceHistory {
+  id: number;
+  product_id: string;
+  changed_at: string;
+  old_mrp_incl_gst: number;
+  new_mrp_incl_gst: number;
+  old_mrp_excl_gst?: number;
+  new_mrp_excl_gst?: number;
+  old_gst_percentage?: number;
+  new_gst_percentage?: number;
+  source_of_change: string;
+  reference_id?: string;
+  notes?: string;
 }
 
 // New product form state
@@ -112,6 +132,9 @@ export default function ProductMaster() {
   });
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [productToDelete, setProductToDelete] = useState<Product | null>(null);
+  const [priceHistory, setPriceHistory] = useState<PriceHistory[]>([]);
+  const [historyDialogOpen, setHistoryDialogOpen] = useState(false);
+  const [selectedProductForHistory, setSelectedProductForHistory] = useState<Product | null>(null);
 
   // Fetch purchase history data
   const { purchases, isLoading: isLoadingPurchases } = usePurchaseHistory();
@@ -128,7 +151,7 @@ export default function ProductMaster() {
 
     try {
       const { data, error } = await supabase
-        .from('products')
+        .from('product_master')
         .select('*')
         .order('name');
 
@@ -246,6 +269,60 @@ export default function ProductMaster() {
     setOpen(false);
   };
 
+  const fetchPriceHistory = async (productId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('product_price_history')
+        .select(`
+          id,
+          product_id,
+          changed_at,
+          old_mrp_incl_gst,
+          new_mrp_incl_gst,
+          old_mrp_excl_gst,
+          new_mrp_excl_gst,
+          old_gst_percentage,
+          new_gst_percentage,
+          source_of_change,
+          reference_id,
+          notes
+        `)
+        .eq('product_id', productId)
+        .order('changed_at', { ascending: false });
+
+      if (error) {
+        console.error('Error fetching price history:', error);
+        setSnackbar({
+          open: true,
+          message: 'Failed to load price history',
+          severity: 'error'
+        });
+        return;
+      }
+
+      setPriceHistory(data || []);
+    } catch (err) {
+      console.error('Unexpected error fetching price history:', err);
+      setSnackbar({
+        open: true,
+        message: 'Failed to load price history',
+        severity: 'error'
+      });
+    }
+  };
+
+  const handleOpenHistoryDialog = (product: Product) => {
+    setSelectedProductForHistory(product);
+    fetchPriceHistory(product.id);
+    setHistoryDialogOpen(true);
+  };
+
+  const handleCloseHistoryDialog = () => {
+    setHistoryDialogOpen(false);
+    setPriceHistory([]);
+    setSelectedProductForHistory(null);
+  };
+
   // Form validation
   const validateForm = () => {
     if (!formData.name.trim()) {
@@ -313,7 +390,7 @@ export default function ProductMaster() {
       if (isEditing && formData.id) {
         // Update existing product
         result = await supabase
-          .from('products')
+          .from('product_master')
           .update(productData)
           .eq('id', formData.id);
           
@@ -323,7 +400,7 @@ export default function ProductMaster() {
       } else {
         // Add new product
         result = await supabase
-          .from('products')
+          .from('product_master')
           .insert({
             ...productData,
             created_at: new Date().toISOString(),
@@ -357,7 +434,7 @@ export default function ProductMaster() {
 
     try {
       const { error } = await supabase
-        .from('products')
+        .from('product_master')
         .update({ active: updatedProduct.active })
         .eq('id', product.id);
 
@@ -397,7 +474,7 @@ export default function ProductMaster() {
 
     try {
       const { error } = await supabase
-        .from('products')
+        .from('product_master')
         .delete()
         .eq('id', productToDelete.id);
 
@@ -529,28 +606,71 @@ export default function ProductMaster() {
                         </Box>
                       </TableCell>
                       <TableCell align="center">
-                        <IconButton 
-                          color="primary" 
-                          onClick={() => handleOpenEditDialog(product)}
-                          title="Edit Product"
-                        >
-                          <EditIcon />
-                        </IconButton>
-                        <IconButton 
-                          color={product.active ? "error" : "success"} 
-                          onClick={() => handleToggleActive(product)}
-                          title={product.active ? "Deactivate Product" : "Activate Product"}
-                        >
-                          {product.active ? <VisibilityOffIcon /> : <VisibilityIcon />}
-                        </IconButton>
-                        <IconButton
-                          size="small"
-                          color="error"
-                          onClick={() => handleOpenDeleteDialog(product)}
-                          title="Delete Product"
-                        >
-                          <DeleteIcon />
-                        </IconButton>
+                        <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', justifyContent: 'center' }}>
+                          <Tooltip title="Edit Product">
+                            <IconButton 
+                              size="small"
+                              onClick={() => handleOpenEditDialog(product)}
+                              sx={{
+                                color: '#8baf3f',
+                                '&:hover': {
+                                  backgroundColor: 'rgba(139, 175, 63, 0.1)',
+                                  color: '#7a9e36'
+                                }
+                              }}
+                            >
+                              <EditIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                          
+                          <Tooltip title="View Price History">
+                            <IconButton
+                              size="small"
+                              onClick={() => handleOpenHistoryDialog(product)}
+                              sx={{
+                                color: '#2196f3',
+                                '&:hover': {
+                                  backgroundColor: 'rgba(33, 150, 243, 0.1)',
+                                  color: '#1976d2'
+                                }
+                              }}
+                            >
+                              <HistoryIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                          
+                          <Tooltip title={product.active ? "Deactivate Product" : "Activate Product"}>
+                            <IconButton
+                              size="small"
+                              onClick={() => handleToggleActive(product)}
+                              sx={{
+                                color: product.active ? '#ff9800' : '#4caf50',
+                                '&:hover': {
+                                  backgroundColor: product.active ? 'rgba(255, 152, 0, 0.1)' : 'rgba(76, 175, 80, 0.1)',
+                                  color: product.active ? '#f57c00' : '#388e3c'
+                                }
+                              }}
+                            >
+                              {product.active ? <VisibilityOffIcon fontSize="small" /> : <VisibilityIcon fontSize="small" />}
+                            </IconButton>
+                          </Tooltip>
+                          
+                          <Tooltip title="Delete Product">
+                            <IconButton
+                              size="small"
+                              onClick={() => handleOpenDeleteDialog(product)}
+                              sx={{
+                                color: '#dc3545',
+                                '&:hover': {
+                                  backgroundColor: 'rgba(220, 53, 69, 0.1)',
+                                  color: '#c82333'
+                                }
+                              }}
+                            >
+                              <DeleteIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                        </Box>
                       </TableCell>
                     </TableRow>
                   ))
@@ -595,7 +715,7 @@ export default function ProductMaster() {
               ) : (
                 <Autocomplete
                   options={purchases}
-                  getOptionLabel={(option) => option.product_name}
+                  getOptionLabel={(option) => typeof option === 'string' ? option : option.product_name}
                   renderInput={(params) => (
                     <TextField
                       {...params}
@@ -610,7 +730,15 @@ export default function ProductMaster() {
                     />
                   )}
                   onChange={(event, newValue) => handleProductFromPurchaseHistorySelect(newValue)}
-                  isOptionEqualToValue={(option, value) => option.product_name === value.product_name}
+                  isOptionEqualToValue={(option, value) => {
+                    if (typeof option === 'string' && typeof value === 'string') {
+                      return option === value;
+                    }
+                    if (typeof option === 'object' && typeof value === 'object') {
+                      return option.product_name === value.product_name;
+                    }
+                    return false;
+                  }}
                   loading={isLoadingPurchases}
                   freeSolo
                 />
@@ -763,6 +891,143 @@ export default function ProductMaster() {
           </Button>
           <Button onClick={handleDeleteProduct} color="error">
             Delete
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Price History Dialog */}
+      <Dialog open={historyDialogOpen} onClose={handleCloseHistoryDialog} maxWidth="lg" fullWidth>
+        <DialogTitle>
+          <Box display="flex" alignItems="center" gap={1}>
+            <HistoryIcon />
+            Price History for {selectedProductForHistory?.name}
+          </Box>
+        </DialogTitle>
+        <DialogContent>
+          <TableContainer>
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell><strong>Date & Time</strong></TableCell>
+                  <TableCell align="center"><strong>MRP (Incl. GST)</strong></TableCell>
+                  <TableCell align="center"><strong>MRP (Excl. GST)</strong></TableCell>
+                  <TableCell align="center"><strong>GST %</strong></TableCell>
+                  <TableCell><strong>Source</strong></TableCell>
+                  <TableCell><strong>Reference</strong></TableCell>
+                  <TableCell><strong>Notes</strong></TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {priceHistory.length > 0 ? (
+                  priceHistory.map((entry) => {
+                    const inclGstChange = entry.new_mrp_incl_gst - entry.old_mrp_incl_gst;
+                    const exclGstChange = (entry.new_mrp_excl_gst || 0) - (entry.old_mrp_excl_gst || 0);
+                    const gstChange = (entry.new_gst_percentage || 0) - (entry.old_gst_percentage || 0);
+                    
+                    return (
+                      <TableRow key={entry.id} sx={{ '&:nth-of-type(odd)': { backgroundColor: 'action.hover' } }}>
+                        <TableCell>
+                          <Typography variant="body2">
+                            {new Date(entry.changed_at).toLocaleDateString()}
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            {new Date(entry.changed_at).toLocaleTimeString()}
+                          </Typography>
+                        </TableCell>
+                        <TableCell align="center">
+                          <Box>
+                            <Typography variant="body2" color="text.secondary">
+                              ₹{entry.old_mrp_incl_gst.toFixed(2)}
+                            </Typography>
+                            <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
+                              ₹{entry.new_mrp_incl_gst.toFixed(2)}
+                            </Typography>
+                            <Typography 
+                              variant="caption" 
+                              color={inclGstChange > 0 ? 'success.main' : inclGstChange < 0 ? 'error.main' : 'text.secondary'}
+                            >
+                              {inclGstChange > 0 ? '+' : ''}₹{inclGstChange.toFixed(2)}
+                              {inclGstChange > 0 ? ' 📈' : inclGstChange < 0 ? ' 📉' : ' ➖'}
+                            </Typography>
+                          </Box>
+                        </TableCell>
+                        <TableCell align="center">
+                          <Box>
+                            <Typography variant="body2" color="text.secondary">
+                              ₹{(entry.old_mrp_excl_gst || 0).toFixed(2)}
+                            </Typography>
+                            <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
+                              ₹{(entry.new_mrp_excl_gst || 0).toFixed(2)}
+                            </Typography>
+                            <Typography 
+                              variant="caption" 
+                              color={exclGstChange > 0 ? 'success.main' : exclGstChange < 0 ? 'error.main' : 'text.secondary'}
+                            >
+                              {exclGstChange > 0 ? '+' : ''}₹{exclGstChange.toFixed(2)}
+                              {exclGstChange > 0 ? ' 📈' : exclGstChange < 0 ? ' 📉' : ' ➖'}
+                            </Typography>
+                          </Box>
+                        </TableCell>
+                        <TableCell align="center">
+                          <Box>
+                            <Typography variant="body2" color="text.secondary">
+                              {(entry.old_gst_percentage || 0).toFixed(1)}%
+                            </Typography>
+                            <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
+                              {(entry.new_gst_percentage || 0).toFixed(1)}%
+                            </Typography>
+                            {gstChange !== 0 && (
+                              <Typography 
+                                variant="caption" 
+                                color={gstChange > 0 ? 'success.main' : 'error.main'}
+                              >
+                                {gstChange > 0 ? '+' : ''}{gstChange.toFixed(1)}%
+                              </Typography>
+                            )}
+                          </Box>
+                        </TableCell>
+                        <TableCell>
+                          <Chip 
+                            label={entry.source_of_change.replace(/_/g, ' ')} 
+                            size="small" 
+                            color={entry.source_of_change.includes('edit') ? 'warning' : 'primary'}
+                            sx={{ textTransform: 'capitalize' }}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <Typography variant="body2">
+                            {entry.reference_id || 'N/A'}
+                          </Typography>
+                        </TableCell>
+                        <TableCell>
+                          <Typography variant="caption" color="text.secondary">
+                            {entry.notes || 'No additional notes'}
+                          </Typography>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
+                ) : (
+                  <TableRow>
+                    <TableCell colSpan={7} align="center">
+                      <Box py={3}>
+                        <Typography variant="body2" color="text.secondary">
+                          No price history found for this product.
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          Price changes will be automatically tracked when you edit purchase transactions.
+                        </Typography>
+                      </Box>
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseHistoryDialog} variant="outlined">
+            Close
           </Button>
         </DialogActions>
       </Dialog>

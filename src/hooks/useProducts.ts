@@ -76,7 +76,7 @@ export const updateProductInventory = async (updates: { productId: string; quant
         
         // Get the current product data from the 'products' table
         const { data: product, error: fetchError } = await supabase
-          .from('products') // Use 'products' table
+          .from('product_master') // Use 'products' table
           .select('id, name, stock_quantity') // Select necessary fields
           .eq('id', update.productId) // Use 'id' column
           .single();
@@ -114,7 +114,7 @@ export const updateProductInventory = async (updates: { productId: string; quant
           
           // Verify the update was successful
           const { data: verifyData, error: verifyError } = await supabase
-            .from('products')
+            .from('product_master')
             .select('stock_quantity')
             .eq('id', update.productId)
             .single();
@@ -174,7 +174,7 @@ export const useProducts = () => {
     try {
       // Fetch products from Supabase - select only needed columns
       const { data, error: fetchError } = await supabase
-        .from('products')
+        .from('product_master')
         .select('id, name, price, hsn_code, units, product_type, mrp_incl_gst, mrp_excl_gst, gst_percentage, stock_quantity, active, created_at, updated_at') // Added product_type field
         .order('created_at', { ascending: false });
       
@@ -222,7 +222,7 @@ export const useProducts = () => {
       
       // Insert into Supabase
       const { data, error: insertError } = await supabase
-        .from('products')
+        .from('product_master')
         .insert({
           id: productId,
           name: product.product_name,
@@ -300,7 +300,7 @@ export const useProducts = () => {
       
       // Update in Supabase
       const { error: updateError } = await supabase
-        .from('products')
+        .from('product_master')
         .update(supabaseUpdates)
         .eq('id', id);
       
@@ -329,7 +329,7 @@ export const useProducts = () => {
     try {
       // Delete from Supabase
       const { error: deleteError } = await supabase
-        .from('products')
+        .from('product_master')
         .delete()
         .eq('id', id);
       

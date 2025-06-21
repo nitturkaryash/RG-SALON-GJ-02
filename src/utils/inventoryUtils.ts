@@ -44,7 +44,7 @@ export const addPurchaseTransaction = async (purchaseData: PurchaseFormData) => 
 
     // --- Step 1: Find or create the product ---
     const { data: existingProduct, error: fetchProductError } = await supabase
-      .from('products')
+      .from('product_master')
       .select('id, stock_quantity, name, hsn_code, units, gst_percentage, mrp_incl_gst, mrp_excl_gst')
       .eq('name', purchaseData.product_name)
       .maybeSingle();
@@ -79,7 +79,7 @@ export const addPurchaseTransaction = async (purchaseData: PurchaseFormData) => 
       };
       
       const { data: newProductData, error: createProductError } = await supabase
-        .from('products')
+        .from('product_master')
         .insert(newProduct)
         .select('id')
         .single();
@@ -94,7 +94,10 @@ export const addPurchaseTransaction = async (purchaseData: PurchaseFormData) => 
       productId = existingProduct.id;
       console.log(`Found existing product with ID: ${productId}, current stock: ${existingProduct.stock_quantity}`);
     }
-    
+
+    // Note: Price change detection and product master updates are now handled by database trigger
+    // Note: Stock updates are now handled by database trigger
+
     // currentProductStock is the stock of the product *before this operation* (add or edit)
     const currentProductStock = existingProduct?.stock_quantity || 0;
     let quantityChange = 0;
@@ -226,7 +229,7 @@ export const addPurchaseTransaction = async (purchaseData: PurchaseFormData) => 
     if (newOverallProductStock !== currentProductStock || !existingProduct?.stock_quantity) { // also update if initial stock was 0
         console.log(`Updating product stock for ID ${productId} from ${currentProductStock} to ${newOverallProductStock}`);
         const { error: stockUpdateError } = await supabase
-          .from('products')
+          .from('product_master')
           .update({ 
               stock_quantity: newOverallProductStock,
               updated_at: timestamp
@@ -322,7 +325,7 @@ export const updateProductStock = async (productId: string, quantity: number, tr
   try {
     // Get product details first
     const { data: product, error: productError } = await supabase
-      .from('products')
+      .from('product_master')
       .select('name, hsn_code, units, gst_percentage, price, stock_quantity')
       .eq('id', productId)
       .single();
@@ -401,7 +404,7 @@ export const updateProductStock = async (productId: string, quantity: number, tr
 
     // Update the products table stock
     const { error: updateError } = await supabase
-      .from('products')
+      .from('product_master')
       .update({ 
         stock_quantity: newStock,
         updated_at: new Date().toISOString()
@@ -428,15 +431,96 @@ export const updateProductStock = async (productId: string, quantity: number, tr
 }; 
 
 /**
- * Edits an existing purchase transaction
- * @param purchaseId - The ID of the purchase to edit
- * @param updatedData - The updated purchase data
- * @returns Promise with success/error result
+ * A comprehensive function to edit an existing purchase transaction.
+ * This function will:
+ * 1. Fetch the original purchase to calculate stock changes.
+ * 2. Update the product's master MRP if it has changed.
+ * 3. Log any MRP changes to the product_price_history table.
+ * 4. Update the purchase record in purchase_history_with_stock.
+ * 5. Adjust the product's overall stock_quantity in the products table.
+ * 6. Record the stock adjustment in the product_stock_transaction_history table.
+ *
+ * @param purchaseId The ID of the purchase to edit.
+ * @param updatedData The new data for the purchase from the form.
+ * @returns {Promise<{success: boolean, error?: any}>}
  */
 export const editPurchaseTransaction = async (purchaseId: string, updatedData: PurchaseFormData) => {
-  // Add the purchase ID to the data and call the main function
-  const dataWithId = { ...updatedData, id: purchaseId };
-  return await addPurchaseTransaction(dataWithId);
+  const transactionTimestamp = new Date().toISOString();
+
+  try {
+    // --- Step 1: Fetch the original purchase record ---
+    const { data: originalPurchase, error: fetchError } = await supabase
+      .from('purchase_history_with_stock')
+      .select('*')
+      .eq('purchase_id', purchaseId)
+      .single();
+
+    if (fetchError || !originalPurchase) {
+      console.error('Error fetching original purchase:', fetchError);
+      throw new Error(`Original purchase with ID ${purchaseId} not found.`);
+    }
+
+    const productId = originalPurchase.product_id;
+
+    // --- Step 2: Fetch the product from the product master ---
+    const { data: product, error: productError } = await supabase
+      .from('product_master')
+      .select('id, stock_quantity, mrp_incl_gst, mrp_excl_gst, gst_percentage')
+      .eq('id', productId)
+      .single();
+
+    if (productError || !product) {
+      console.error('Error fetching product master data:', productError);
+      throw new Error(`Product with ID ${productId} not found in product master.`);
+    }
+
+    // Note: Price change detection and updates are now handled by database trigger
+
+    // --- Step 3: Prepare and update the purchase record ---
+    const updatedPurchaseRecord = {
+      date: updatedData.date,
+      product_name: updatedData.product_name,
+      hsn_code: updatedData.hsn_code,
+      units: updatedData.unit_type || updatedData.units,
+      purchase_invoice_number: updatedData.invoice_number || updatedData.purchase_invoice_number,
+      purchase_qty: updatedData.purchase_qty,
+      mrp_incl_gst: updatedData.mrp_incl_gst,
+      mrp_excl_gst: updatedData.mrp_excl_gst || updatedData.mrp_per_unit_excl_gst,
+      discount_on_purchase_percentage: updatedData.discount_on_purchase_percentage,
+      gst_percentage: updatedData.gst_percentage,
+      purchase_taxable_value: updatedData.purchase_cost_taxable_value,
+      purchase_igst: updatedData.is_interstate ? ((updatedData.purchase_cost_taxable_value || 0) * (updatedData.gst_percentage || 18) / 100) : 0,
+      purchase_cgst: !updatedData.is_interstate ? ((updatedData.purchase_cost_taxable_value || 0) * (updatedData.gst_percentage || 18) / 200) : 0,
+      purchase_sgst: !updatedData.is_interstate ? ((updatedData.purchase_cost_taxable_value || 0) * (updatedData.gst_percentage || 18) / 200) : 0,
+      purchase_invoice_value_rs: updatedData.purchase_invoice_value,
+      supplier: updatedData.vendor,
+      "Purchase_Cost/Unit(Ex.GST)": updatedData.mrp_excl_gst || updatedData.mrp_per_unit_excl_gst || 0,
+      price_inlcuding_disc: updatedData.mrp_excl_gst || updatedData.mrp_per_unit_excl_gst || 0,
+      updated_at: transactionTimestamp,
+    };
+    
+    // Note: The database trigger will automatically:
+    // 1. Update product master prices if they changed
+    // 2. Log price changes to product_price_history
+    // 3. Update stock quantities
+    // 4. Log stock changes to stock_history
+    
+    const { error: updatePurchaseError } = await supabase
+      .from('purchase_history_with_stock')
+      .update(updatedPurchaseRecord)
+      .eq('purchase_id', purchaseId);
+
+    if (updatePurchaseError) {
+      throw new Error(`Failed to update purchase record: ${updatePurchaseError.message}`);
+    }
+
+    console.log(`Purchase record updated successfully. Database trigger will handle price/stock updates.`);
+
+    return { success: true };
+  } catch (error) {
+    console.error('Error in editPurchaseTransaction:', error);
+    return { success: false, error: error instanceof Error ? error : new Error('An unknown error occurred') };
+  }
 };
 
 /**
@@ -462,7 +546,7 @@ export const deletePurchaseTransaction = async (purchaseId: string) => {
 
     // Get the product to update its stock
     const { data: product, error: productError } = await supabase
-      .from('products')
+      .from('product_master')
       .select('id, stock_quantity, name')
       .eq('id', purchaseToDelete.product_id)
       .single();
@@ -490,7 +574,7 @@ export const deletePurchaseTransaction = async (purchaseId: string) => {
 
     // Update product stock
     const { error: stockUpdateError } = await supabase
-      .from('products')
+      .from('product_master')
       .update({ 
         stock_quantity: newStock,
         updated_at: timestamp

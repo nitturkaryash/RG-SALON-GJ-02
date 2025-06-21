@@ -33,7 +33,8 @@ import {
   Select,
   MenuItem,
   FormHelperText,
-  Chip
+  Chip,
+  Tooltip
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -56,7 +57,7 @@ import { initialFormData, ProductFormData } from '../data/formData';
 import { supabase, handleSupabaseError } from '../utils/supabase/supabaseClient';
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
-import { toast } from 'react-hot-toast';
+import { toast } from 'react-toastify';
 import { calculatePriceExcludingGST, calculateGSTAmount } from '../utils/gstCalculations';
 import { SelectChangeEvent } from '@mui/material';
 import { v4 as uuidv4 } from 'uuid';
@@ -171,7 +172,14 @@ interface ExtendedProductFormData extends ProductFormData {
 // Update the extendedInitialFormData with all required fields
 const extendedInitialFormData: ExtendedProductFormData = {
   product_id: '',
-  date: new Date().toISOString().split('T')[0],
+  date: (() => {
+    // Initialize with current time in India timezone
+    const now = new Date();
+    const indiaOffset = 5.5 * 60; // India is UTC+5:30
+    const utcTime = now.getTime() + (now.getTimezoneOffset() * 60000);
+    const indiaTime = new Date(utcTime + (indiaOffset * 60000));
+    return indiaTime.toISOString();
+  })(),
   product_name: '',
   hsn_code: '',
   units: '',
@@ -1630,30 +1638,54 @@ export default function InventoryManager() {
   };
 
   const handleEdit = (purchase: PurchaseTransaction) => {
-    const isOpeningBalance = purchase.transaction_type === 'opening_balance';
-    setDialogMode(isOpeningBalance ? 'inventory' : 'purchase');
-    setEditingId(purchase.purchase_id);
-
-    const formattedDate = purchase.date?.split('T')[0] || new Date().toISOString().split('T')[0];
-    const purchaseExclGst = purchase.purchase_cost_per_unit_ex_gst || 0;
-
-    setPurchaseFormData({
-      ...extendedInitialFormData,
-      purchase_id: purchase.purchase_id,
+    console.log('Editing purchase:', purchase);
+    setEditingPurchaseId(purchase.purchase_id);
+    setIsEditing(true);
+    
+    // Ensure the date has proper time component in India timezone
+    let dateToUse = purchase.date;
+    if (dateToUse) {
+      const date = new Date(dateToUse);
+      // If the date is exactly midnight (00:00:00), it probably lost its time component
+      if (date.getHours() === 0 && date.getMinutes() === 0 && date.getSeconds() === 0) {
+        // Use current time in India timezone but keep the original date
+        const now = new Date();
+        const indiaOffset = 5.5 * 60; // India is UTC+5:30
+        const utcTime = now.getTime() + (now.getTimezoneOffset() * 60000);
+        const indiaTime = new Date(utcTime + (indiaOffset * 60000));
+        
+        date.setHours(indiaTime.getHours());
+        date.setMinutes(indiaTime.getMinutes());
+        date.setSeconds(indiaTime.getSeconds());
+        date.setMilliseconds(indiaTime.getMilliseconds());
+        
+        dateToUse = date.toISOString();
+        console.log('Updated midnight timestamp to include current India time:', dateToUse);
+      }
+    }
+    
+    const formData: ExtendedProductFormData = {
       product_id: purchase.product_id,
-      date: formattedDate,
-      product_name: purchase.product_name,
+      purchase_id: purchase.purchase_id,
+      date: dateToUse || (() => {
+        // Create current time in India timezone
+        const now = new Date();
+        const indiaOffset = 5.5 * 60;
+        const utcTime = now.getTime() + (now.getTimezoneOffset() * 60000);
+        const indiaTime = new Date(utcTime + (indiaOffset * 60000));
+        return indiaTime.toISOString();
+      })(),
+      product_name: purchase.product_name || '',
       hsn_code: purchase.hsn_code || '',
       units: purchase.units || '',
       unit_type: purchase.units || '',
       purchase_invoice_number: purchase.purchase_invoice_number || '',
+      invoice_number: purchase.purchase_invoice_number || '',
       purchase_qty: purchase.purchase_qty || 0,
       mrp_incl_gst: purchase.mrp_incl_gst || 0,
       mrp_excl_gst: purchase.mrp_excl_gst || 0,
       discount_on_purchase_percentage: purchase.discount_on_purchase_percentage || 0,
-      purchase_excl_gst: purchaseExclGst,
       gst_percentage: purchase.gst_percentage || 18,
-      purchase_cost_per_unit_ex_gst: purchaseExclGst,
       purchase_cost_taxable_value: purchase.purchase_taxable_value || 0,
       purchase_igst: purchase.purchase_igst || 0,
       purchase_cgst: purchase.purchase_cgst || 0,
@@ -1661,14 +1693,16 @@ export default function InventoryManager() {
       purchase_invoice_value: purchase.purchase_invoice_value_rs || 0,
       vendor: purchase.supplier || '',
       supplier: purchase.supplier || '',
-      stock_after_purchase: purchase.stock_after_purchase ?? undefined,
       is_interstate: (purchase.purchase_igst || 0) > 0,
       mrp_per_unit_excl_gst: purchase.mrp_excl_gst || 0,
-    });
-
-    setAddedProductsSummary([]);
-    setCurrentSessionTotal({ totalProducts: 0, totalQuantity: 0, totalValue: 0 });
-    setEditingSummaryIndex(null);
+      purchase_cost_per_unit_ex_gst: purchase.purchase_cost_per_unit_ex_gst || 0,
+      purchase_excl_gst: purchase.purchase_cost_per_unit_ex_gst || 0,
+      purchase_incl_gst: 0 // Will be calculated
+    };
+    
+    console.log('Form data for editing:', formData);
+    setPurchaseFormData(formData);
+    setDialogMode('purchase');
     setOpen(true);
   };
 
@@ -1823,22 +1857,6 @@ export default function InventoryManager() {
     }
   };
 
-  const handleDelete = async (purchaseId: string) => {
-    if (!window.confirm('Are you sure you want to delete this purchase record?')) return;
-    try {
-      const success = await deletePurchaseTransaction(purchaseId);
-      if (success) {
-        toast.success('Purchase deleted successfully');
-        fetchPurchasesData();
-      } else {
-        toast.error('Failed to delete purchase');
-      }
-    } catch (error) {
-      console.error('Error deleting purchase:', error);
-      toast.error('Error deleting purchase');
-    }
-  };
-
   const validateForm = () => {
     if (!purchaseFormData.product_name.trim()) {
       alert('Product name is required');
@@ -1886,15 +1904,10 @@ export default function InventoryManager() {
   };
 
   const handleRefresh = async () => {
-    if (activeTab === 'purchaseHistory') {
-      fetchPurchasesData();
-    } else if (activeTab === 'salesHistory') {
-      fetchSalesHistory();
-    } else if (activeTab === 'salonConsumption') {
-      fetchSalonConsumption();
-    } else if (activeTab === 'balanceStock') {
-      fetchBalanceStock();
-    }
+    await fetchPurchasesData();
+    await fetchSalesHistory();
+    await fetchSalonConsumption();
+    await fetchBalanceStock();
   };
 
   const calculatePrices = (price: number, gstPercentage: number) => {
@@ -1935,9 +1948,7 @@ export default function InventoryManager() {
   };
 
   const parseNumericInput = (value: string | number | undefined | null): number => {
-    if (typeof value === 'number') {
-        return isNaN(value) ? 0 : value;
-    }
+    if (typeof value === 'number') return value;
     if (typeof value === 'string') {
         const parsed = parseFloat(value);
         return isNaN(parsed) ? 0 : parsed;
@@ -1945,108 +1956,108 @@ export default function InventoryManager() {
     return 0;
   };
 
-  const calculateGSTAmounts = (taxableValue: number, gst_percentage: number) => {
-    const totalGSTRate = gst_percentage / 100;
-    const totalGST = parseFloat((taxableValue * totalGSTRate).toFixed(2));
-    const halfGST = parseFloat((totalGST / 2).toFixed(2));
-
-    return {
-        totalGST,
-        cgst: halfGST,
-        sgst: halfGST
-    };
+  const calculateGSTAmounts = (taxableValue: number, gst_percentage: number, is_interstate: boolean) => {
+    const totalGST = taxableValue * (gst_percentage / 100);
+    if (is_interstate) {
+      return { igst: totalGST, cgst: 0, sgst: 0 };
+    } else {
+      return { igst: 0, cgst: totalGST / 2, sgst: totalGST / 2 };
+    }
   };
 
   const calculateInvoiceValue = () => {
-    const { purchase_excl_gst, purchase_qty, gst_percentage } = purchaseFormData;
-    const taxableValue = parseFloat((purchase_excl_gst * purchase_qty).toFixed(2));
-    const gstAmounts = calculateGSTAmounts(taxableValue, gst_percentage);
-    const invoiceValue = parseFloat((taxableValue + gstAmounts.cgst + gstAmounts.sgst).toFixed(2));
-    return invoiceValue;
+    // This function can be expanded if needed, but for now, calculation is in handleInputChange
   };
 
   const handleInputChange = (name: string, value: string | number | boolean) => {
-    // Handle special case for product selection
-    if (name === 'product_id' && typeof value === 'string') {
-      const selectedProduct = productMasterList.find(p => p.id === value);
-      if (selectedProduct) {
-        handleProductSelect(selectedProduct);
-      }
-      return;
-    }
-    
-    // Handle simple updates for non-calculated fields
-    if (['vendor', 'supplier', 'purchase_invoice_number', 'date', 'unit_type', 'units'].includes(name)) {
-      setPurchaseFormData(prev => ({ ...prev, [name]: value }));
-      return;
-    }
+    console.log(`Input change: ${name} = ${value}`);
     
     setPurchaseFormData(prev => {
-      // Create updated form data with proper typing
-      const updatedData = { ...prev };
+      const updated = { ...prev };
       
-      // Handle special cases for certain fields with proper type checking
-      if (name === 'is_interstate') {
-        updatedData.is_interstate = value as boolean;
-      } else if (name in prev && typeof prev[name as keyof ExtendedProductFormData] === 'number') {
-        (updatedData as any)[name] = parseNumericInput(value as string | number);
-      } else if (name in prev && typeof prev[name as keyof ExtendedProductFormData] === 'string') {
-        (updatedData as any)[name] = String(value);
-      } else {
-        (updatedData as any)[name] = value;
-      }
-      
-      // Recalculate values when key fields change
-      if (['mrp_incl_gst', 'gst_percentage', 'discount_on_purchase_percentage', 'purchase_qty', 'is_interstate'].includes(String(name))) {
-        const mrp = parseNumericInput(updatedData.mrp_incl_gst) || 0;
-        const gst = parseNumericInput(updatedData.gst_percentage) || 0;
-        const discount = parseNumericInput(updatedData.discount_on_purchase_percentage) || 0;
-        const qty = parseNumericInput(updatedData.purchase_qty) || 1;
-        const isInterstate = updatedData.is_interstate || false;
-
-        const mrpExGST = calculatePriceExcludingGST(mrp, gst);
-        updatedData.mrp_per_unit_excl_gst = parseFloat(mrpExGST.toFixed(2));
-
-        const discountFactor = 1 - (discount / 100);
-        const purchaseCost = parseFloat((mrpExGST * discountFactor).toFixed(2));
-        updatedData.purchase_excl_gst = purchaseCost;
-
-        const taxableValue = parseFloat((purchaseCost * qty).toFixed(2));
-        updatedData.purchase_cost_taxable_value = taxableValue;
-
-        if (isInterstate) {
-          updatedData.purchase_igst = parseFloat((taxableValue * gst / 100).toFixed(2));
-          updatedData.purchase_cgst = 0;
-          updatedData.purchase_sgst = 0;
-        } else {
-          updatedData.purchase_igst = 0;
-          const halfGstAmount = parseFloat((taxableValue * gst / 200).toFixed(2));
-          updatedData.purchase_cgst = halfGstAmount;
-          updatedData.purchase_sgst = halfGstAmount;
+      if (name === 'date') {
+        // Fix timezone issue: Create date in India timezone (Asia/Kolkata)
+        const dateValue = typeof value === 'string' ? value : String(value);
+        if (dateValue) {
+          // Create a date object and adjust for India timezone
+          const localDate = new Date(dateValue);
+          
+          // Get current time in India timezone
+          const now = new Date();
+          const indiaOffset = 5.5 * 60; // India is UTC+5:30
+          const utcTime = now.getTime() + (now.getTimezoneOffset() * 60000);
+          const indiaTime = new Date(utcTime + (indiaOffset * 60000));
+          
+          // Set the time components to current India time
+          localDate.setHours(indiaTime.getHours());
+          localDate.setMinutes(indiaTime.getMinutes());
+          localDate.setSeconds(indiaTime.getSeconds());
+          localDate.setMilliseconds(indiaTime.getMilliseconds());
+          
+          // Store the date with India timezone context
+          updated.date = localDate.toISOString();
+          console.log(`Date updated to: ${updated.date} (India timezone: ${localDate.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })})`);
         }
-
-        const totalGst = updatedData.purchase_igst + updatedData.purchase_cgst + updatedData.purchase_sgst;
-        updatedData.purchase_invoice_value = parseFloat((taxableValue + totalGst).toFixed(2));
+      } else {
+        // Use type assertion to handle the dynamic property assignment
+        (updated as any)[name] = value;
       }
-      
-      return updatedData;
+
+      // Automatic calculation logic (same as before)
+      let {
+        mrp_incl_gst,
+        mrp_excl_gst,
+        gst_percentage,
+        discount_on_purchase_percentage,
+        purchase_qty,
+        is_interstate
+      } = updated;
+
+      mrp_incl_gst = parseNumericInput(mrp_incl_gst);
+      mrp_excl_gst = parseNumericInput(mrp_excl_gst);
+      gst_percentage = parseNumericInput(gst_percentage);
+      discount_on_purchase_percentage = parseNumericInput(discount_on_purchase_percentage);
+      purchase_qty = parseNumericInput(purchase_qty);
+
+      // Recalculate prices based on which one was changed
+      if (name === 'mrp_incl_gst' || name === 'gst_percentage') {
+        updated.mrp_excl_gst = calculatePriceExcludingGST(mrp_incl_gst, gst_percentage);
+      } else if (name === 'mrp_excl_gst') {
+        updated.mrp_incl_gst = mrp_excl_gst * (1 + gst_percentage / 100);
+      }
+
+      const final_mrp_excl_gst = parseNumericInput(updated.mrp_excl_gst);
+
+      // Recalculate purchase_excl_gst
+      const discount = discount_on_purchase_percentage / 100;
+      const purchase_excl_gst = final_mrp_excl_gst * (1 - discount);
+      updated.purchase_excl_gst = purchase_excl_gst;
+
+      // Recalculate taxable value
+      const taxableValue = purchase_excl_gst * purchase_qty;
+      updated.purchase_cost_taxable_value = taxableValue;
+
+      // Recalculate GST amounts
+      const gstAmounts = calculateGSTAmounts(taxableValue, gst_percentage, is_interstate);
+      updated.purchase_igst = gstAmounts.igst;
+      updated.purchase_cgst = gstAmounts.cgst;
+      updated.purchase_sgst = gstAmounts.sgst;
+
+      // Calculate final invoice value
+      updated.purchase_invoice_value = taxableValue + gstAmounts.igst + gstAmounts.cgst + gstAmounts.sgst;
+
+      // Calculate per unit values
+      if (purchase_qty > 0) {
+        updated.mrp_per_unit_excl_gst = final_mrp_excl_gst;
+        updated.purchase_cost_per_unit_ex_gst = purchase_excl_gst;
+      }
+
+      return updated;
     });
   };
 
   const handleProductSelect = (product: Product | null) => {
-    if (!product) {
-        setPurchaseFormData(prev => ({ 
-          ...prev, 
-          product_id: '', 
-          product_name: '', 
-          hsn_code: '', 
-          unit_type: '', 
-          gst_percentage: 0, 
-          mrp_incl_gst: 0 
-        }));
-        return;
-    }
-
+    if (product) {
     // Get all values from product master
     const mrp = product.mrp_incl_gst || 0;
     const gst = product.gst_percentage || 18;
@@ -2071,6 +2082,7 @@ export default function InventoryManager() {
     // Trigger calculations for GST and other dependent fields
     handleInputChange('mrp_incl_gst', mrp);
     handleInputChange('gst_percentage', gst);
+    }
   };
 
   // New handler for the Select component in the dialog
@@ -2592,6 +2604,91 @@ export default function InventoryManager() {
     setPurchaseFormData(resetFormData);
   };
 
+  const formatDateTimeForDisplay = (dateTimeString: string | null | undefined): string => {
+    if (!dateTimeString) return '-';
+    
+    try {
+      const date = new Date(dateTimeString);
+      // Check if date is valid
+      if (isNaN(date.getTime())) return '-';
+      
+      // Display in India timezone (Asia/Kolkata)
+      // Format as: DD/MM/YYYY, HH:MM AM/PM IST
+      const options: Intl.DateTimeFormatOptions = {
+        timeZone: 'Asia/Kolkata',
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true
+      };
+      
+      const formatter = new Intl.DateTimeFormat('en-IN', options);
+      const formattedDateTime = formatter.format(date);
+      
+      return `${formattedDateTime} IST`;
+    } catch (error) {
+      console.error('Error formatting date:', error);
+      return '-';
+    }
+  };
+
+  // Add delete handler function
+  const handleDelete = async (purchase: PurchaseTransaction) => {
+    if (!purchase.purchase_id) {
+      toast.error('Cannot delete: Invalid purchase ID');
+      return;
+    }
+
+    // Add special handling for opening balance entries
+    if (purchase.transaction_type === 'opening_balance' || purchase.transaction_type === 'stock_increment') {
+      const confirmed = window.confirm(
+        `⚠️ WARNING: You are about to delete an Opening Balance entry!\n\n` +
+        `Product: ${purchase.product_name}\n` +
+        `Date: ${formatDateTimeForDisplay(purchase.date)}\n` +
+        `Quantity: ${purchase.purchase_qty}\n` +
+        `Invoice Value: ₹${purchase.purchase_invoice_value_rs?.toFixed(2) || '0.00'}\n\n` +
+        `Deleting opening balance entries may affect stock calculations and reports.\n` +
+        `This action cannot be undone.\n\n` +
+        `Are you absolutely sure you want to proceed?`
+      );
+      
+      if (!confirmed) {
+        return;
+      }
+    } else {
+      // Show confirmation dialog for regular purchases
+      const confirmed = window.confirm(
+        `Are you sure you want to delete this purchase record?\n\n` +
+        `Product: ${purchase.product_name}\n` +
+        `Date: ${formatDateTimeForDisplay(purchase.date)}\n` +
+        `Quantity: ${purchase.purchase_qty}\n` +
+        `Invoice Value: ₹${purchase.purchase_invoice_value_rs?.toFixed(2) || '0.00'}\n\n` +
+        `This action cannot be undone.`
+      );
+
+      if (!confirmed) {
+        return;
+      }
+    }
+
+    try {
+      const result = await deletePurchaseTransaction(purchase.purchase_id);
+      
+      if (result) {
+        toast.success('Purchase record deleted successfully');
+        // Refresh the data to reflect the deletion
+        await fetchPurchasesData();
+      } else {
+        toast.error('Failed to delete purchase record');
+      }
+    } catch (error) {
+      console.error('Error deleting purchase:', error);
+      toast.error(`Failed to delete purchase: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  };
+
   return (
     <Box sx={{ p: 3 }}>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
@@ -2839,7 +2936,7 @@ export default function InventoryManager() {
                   <StyledTableCell>
                     Serial No
                   </StyledTableCell>
-                  <SortablePurchaseTableCell label="Date" property="date" />
+                  <SortablePurchaseTableCell label="Date & Time" property="date" />
                   <SortablePurchaseTableCell label="Product Name" property="product_name" />
                   <SortablePurchaseTableCell label="HSN Code" property="hsn_code" />
                   <SortablePurchaseTableCell label="UNITS" property="units" />
@@ -2938,10 +3035,10 @@ export default function InventoryManager() {
                               display: 'inline-block',
                               fontWeight: 'bold'
                             }}>
-                              {(purchase as any).serial_no || `PURCHASE-${sortedPurchases.length - (page * rowsPerPage + index)}`}
+                              {getPurchaseSerialNo(purchase, index)}
                             </div>
                           </TableCell>
-                          <TableCell>{new Date(purchase.date).toLocaleDateString() || '-'}</TableCell>
+                          <TableCell>{formatDateTimeForDisplay(purchase.date)}</TableCell>
                           <TableCell>
                             {purchase.product_name}
                             {purchase.transaction_type === 'stock_increment' && (
@@ -3027,12 +3124,46 @@ export default function InventoryManager() {
                           <TableCell align="right">₹{totalIGST > 0 ? totalIGST.toFixed(2) : '-'}</TableCell>
                           <TableCell align="right">₹{(totalValueMRP + totalCGST + totalSGST + totalIGST) > 0 ? (totalValueMRP + totalCGST + totalSGST + totalIGST).toFixed(2) : '-'}</TableCell>
                           <TableCell align="center">
-                            <IconButton color="primary" onClick={() => handleEdit(purchase)} title="Edit Purchase">
-                              <EditIcon />
+                            <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+                              <Tooltip title="Edit Purchase">
+                                <IconButton
+                                  size="small"
+                                  onClick={() => handleEdit(purchase)}
+                                  sx={{
+                                    color: '#8baf3f',
+                                    '&:hover': {
+                                      backgroundColor: 'rgba(139, 175, 63, 0.1)',
+                                      color: '#7a9e36'
+                                    }
+                                  }}
+                                >
+                                  <EditIcon fontSize="small" />
                             </IconButton>
-                            <IconButton color="error" onClick={() => handleDelete(purchase.purchase_id)} title="Delete Purchase">
-                              <DeleteIcon />
-                            </IconButton>
+                              </Tooltip>
+                              
+                              {purchase.transaction_type === 'opening_balance' && (
+                                <Chip
+                                  label="Opening"
+                                  size="small"
+                                  sx={{
+                                    backgroundColor: '#17a2b8',
+                                    color: 'white',
+                                    fontSize: '0.7rem',
+                                    height: '20px'
+                                  }}
+                                />
+                              )}
+                              <Tooltip title="Delete Purchase">
+                                <IconButton 
+                                  size="small" 
+                                  color="error" 
+                                  onClick={() => handleDelete(purchase)}
+                                  sx={{ padding: '4px' }}
+                                >
+                                  <DeleteIcon fontSize="small" />
+                                </IconButton>
+                              </Tooltip>
+                            </Box>
                           </TableCell>
                         </TableRow>
                       );
@@ -4043,12 +4174,12 @@ export default function InventoryManager() {
                           </Grid>
                           <Grid item xs={2}>
                             <Typography variant="body2">
-                              ₹{product.mrp_incl_gst?.toFixed(2) || '0.00'}
+                              ₹{typeof product.mrp_incl_gst === 'number' ? product.mrp_incl_gst.toFixed(2) : 'N/A'}
                             </Typography>
                           </Grid>
                           <Grid item xs={2}>
                             <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                              ₹{product.purchase_invoice_value?.toFixed(2) || '0.00'}
+                              ₹{typeof product.purchase_invoice_value === 'number' ? product.purchase_invoice_value.toFixed(2) : 'N/A'}
                             </Typography>
                           </Grid>
                           <Grid item xs={3}>
@@ -4196,10 +4327,11 @@ export default function InventoryManager() {
               <TextField
                 name="mrp_incl_gst"
                 label="MRP (Incl. GST)"
+                type="number"
                 value={purchaseFormData.mrp_incl_gst}
+                onChange={(e) => handleInputChange('mrp_incl_gst', e.target.value)}
                 fullWidth
-                disabled
-                helperText="Auto-filled from Product Master"
+                helperText="Editable. Updates Excl. GST price."
                 FormHelperTextProps={{ sx: { color: 'text.secondary', fontStyle: 'italic' } }}
               />
             </Grid>
@@ -4208,10 +4340,11 @@ export default function InventoryManager() {
               <TextField
                 name="mrp_excl_gst"
                 label="MRP (Excl. GST)"
+                type="number"
                 value={purchaseFormData.mrp_excl_gst}
+                onChange={(e) => handleInputChange('mrp_excl_gst', e.target.value)}
                 fullWidth
-                disabled
-                helperText="Auto-filled from Product Master"
+                helperText="Editable. Updates Incl. GST price."
                 FormHelperTextProps={{ sx: { color: 'text.secondary', fontStyle: 'italic' } }}
               />
             </Grid>

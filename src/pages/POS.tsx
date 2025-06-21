@@ -2081,7 +2081,7 @@ export default function POS() {
 		// Create a unique group ID for multi-expert walk-in orders
 		const multiExpertGroupId = isMultiExpert ? uuidv4() : undefined;
 		
-		// For multi-expert orders, create a single order with all experts assigned
+		// For multi-expert orders, create a single order with all services and experts
 		// For single expert orders, use the existing logic
 		let orderResults = [];
 		

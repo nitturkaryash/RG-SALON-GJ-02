@@ -1,5 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase, handleSupabaseError, TABLES } from '../utils/supabase/supabaseClient';
+import { 
+  addPurchaseTransaction, 
+  editPurchaseTransaction, 
+  deletePurchaseTransaction as deleteTransaction,
+  PurchaseFormData 
+} from '../utils/inventoryUtils';
 
 // Interface based on existing purchases table in Supabase
 export interface PurchaseTransaction {
@@ -110,7 +116,7 @@ export const usePurchaseHistory = () => {
           'supplier,current_stock_at_purchase,computed_stock_taxable_value,computed_stock_cgst,' +
           'computed_stock_sgst,computed_stock_igst,computed_stock_total_value,"Purchase_Cost/Unit(Ex.GST)",created_at,updated_at,transaction_type'
         )
-        .order('date', { ascending: false });
+        .order('created_at', { ascending: false });
 
       if (fetchError) throw handleSupabaseError(fetchError);
 
@@ -132,17 +138,17 @@ export const usePurchaseHistory = () => {
           hsn_code: item.hsn_code,
           units: item.units,
           purchase_invoice_number: item.purchase_invoice_number,
-          purchase_qty: Number(item.purchase_qty),
-          mrp_incl_gst: item.mrp_incl_gst,
-          mrp_excl_gst: item.mrp_excl_gst,
-          purchase_cost_per_unit_ex_gst: item["Purchase_Cost/Unit(Ex.GST)"],
-          discount_on_purchase_percentage: item.discount_on_purchase_percentage,
-          gst_percentage: item.gst_percentage,
-          purchase_taxable_value: item.purchase_taxable_value,
-          purchase_igst: item.purchase_igst,
-          purchase_cgst: item.purchase_cgst,
-          purchase_sgst: item.purchase_sgst,
-          purchase_invoice_value_rs: item.purchase_invoice_value_rs,
+          purchase_qty: Number(item.purchase_qty || 0),
+          mrp_incl_gst: Number(item.mrp_incl_gst || 0),
+          mrp_excl_gst: Number(item.mrp_excl_gst || 0),
+          purchase_cost_per_unit_ex_gst: Number(item["Purchase_Cost/Unit(Ex.GST)"] || 0),
+          discount_on_purchase_percentage: Number(item.discount_on_purchase_percentage || 0),
+          gst_percentage: Number(item.gst_percentage || 0),
+          purchase_taxable_value: Number(item.purchase_taxable_value || 0),
+          purchase_igst: Number(item.purchase_igst || 0),
+          purchase_cgst: Number(item.purchase_cgst || 0),
+          purchase_sgst: Number(item.purchase_sgst || 0),
+          purchase_invoice_value_rs: Number(item.purchase_invoice_value_rs || 0),
           created_at: item.created_at,
           updated_at: item.updated_at,
           supplier: item.supplier,
@@ -179,39 +185,33 @@ export const usePurchaseHistory = () => {
     fetchPurchases();
   }, [fetchPurchases]);
 
-  // Delete a purchase transaction by ID from both history and purchases tables
+  // Delete a purchase transaction using the enhanced function
   const deletePurchaseTransaction = useCallback(async (purchaseId: string): Promise<boolean> => {
     try {
-      // Remove from purchase_history_with_stock table
-      const { error: histError } = await supabase
-        .from(TABLES.PURCHASE_HISTORY_WITH_STOCK)
-        .delete()
-        .eq('purchase_id', purchaseId);
-      if (histError) {
-        console.error('Error deleting purchase history record:', histError);
+      // Use the enhanced deletePurchaseTransaction function
+      const result = await deleteTransaction(purchaseId);
+      
+      if (!result.success) {
+        console.error('Error from enhanced delete function:', result.error);
         return false;
       }
       
-      // Also remove from original inventory_purchases table to keep both in sync
-      const { error: purchaseError } = await supabase
-        .from('inventory_purchases')
-        .delete()
-        .eq('purchase_id', purchaseId);
-      if (purchaseError) {
-        console.error('Error deleting purchase record:', purchaseError);
-        // Don't return false here as the main operation succeeded
-      }
+      console.log('Purchase transaction deleted successfully with enhanced tracking');
       
       // Update local state to reflect deletion
       setPurchases(prev => prev.filter(p => p.purchase_id !== purchaseId));
+      
+      // Refresh the data
+      await fetchPurchases();
+      
       return true;
     } catch (err) {
       console.error('Unexpected error deleting purchase:', err);
       return false;
     }
-  }, [setPurchases]);
+  }, [setPurchases, fetchPurchases]);
 
-  // Update a purchase transaction
+  // Update a purchase transaction using the enhanced function
   const updatePurchaseTransaction = useCallback(async (
     purchaseId: string, 
     updateData: UpdatePurchaseTransactionData
@@ -220,36 +220,51 @@ export const usePurchaseHistory = () => {
       console.log('Updating purchase transaction with ID:', purchaseId);
       console.log('Updates to apply:', JSON.stringify(updateData));
       
-      // Log the exact SQL query we're about to execute (for debugging)
-      console.log(`SQL (equivalent): UPDATE purchase_history_with_stock SET date='${updateData.date}' WHERE purchase_id='${purchaseId}'`);
-      
-      // Update the purchase in purchase_history_with_stock table
-      const { data: historyData, error: historyUpdateError } = await supabase
-        .from(TABLES.PURCHASE_HISTORY_WITH_STOCK)
-        .update(updateData)
-        .eq('purchase_id', purchaseId)
-        .select(); // Add select to get the returned data
-      
-      if (historyUpdateError) {
-        console.error('Error updating purchase history:', historyUpdateError);
-        console.error('Error details:', JSON.stringify(historyUpdateError));
+      // First, get the existing purchase to get product_id and other required fields
+      const existingPurchase = purchases.find(p => p.purchase_id === purchaseId);
+      if (!existingPurchase) {
+        console.error('Purchase not found in local state:', purchaseId);
         return { 
           success: false, 
-          error: { message: historyUpdateError.message || 'Failed to update purchase history' }
+          error: { message: 'Purchase transaction not found' }
         };
       }
       
-      console.log('Purchase transaction updated successfully');
-      console.log('Updated history record:', historyData);
+      // Transform the update data to match PurchaseFormData interface
+      const purchaseFormData: PurchaseFormData = {
+        id: purchaseId,
+        product_id: existingPurchase.product_id, // Required field from existing purchase
+        date: updateData.date || existingPurchase.date,
+        product_name: updateData.product_name || existingPurchase.product_name,
+        vendor: updateData.supplier || updateData.Vendor || existingPurchase.supplier || '',
+        invoice_number: updateData.purchase_invoice_number || existingPurchase.purchase_invoice_number || '',
+        hsn_code: updateData.hsn_code || existingPurchase.hsn_code || '',
+        unit_type: updateData.units || existingPurchase.units || '',
+        purchase_qty: updateData.purchase_qty ?? existingPurchase.purchase_qty,
+        gst_percentage: updateData.gst_percentage ?? existingPurchase.gst_percentage ?? 18,
+        mrp_incl_gst: updateData.mrp_incl_gst ?? existingPurchase.mrp_incl_gst ?? 0,
+        mrp_excl_gst: updateData.mrp_excl_gst ?? existingPurchase.mrp_excl_gst ?? 0,
+        mrp_per_unit_excl_gst: updateData.mrp_excl_gst ?? existingPurchase.mrp_excl_gst ?? 0,
+        discount_on_purchase_percentage: updateData.discount_on_purchase_percentage ?? existingPurchase.discount_on_purchase_percentage ?? 0,
+        purchase_cost_taxable_value: updateData.purchase_taxable_value ?? existingPurchase.purchase_taxable_value ?? 0,
+        purchase_invoice_value: updateData.purchase_invoice_value_rs ?? existingPurchase.purchase_invoice_value_rs ?? 0,
+        is_interstate: (updateData.purchase_igst ?? existingPurchase.purchase_igst ?? 0) > 0
+      };
+      
+      // Use the enhanced editPurchaseTransaction function
+      const result = await editPurchaseTransaction(purchaseId, purchaseFormData);
+      
+      if (!result.success) {
+        console.error('Error from enhanced edit function:', result.error);
+        return { 
+          success: false, 
+          error: { message: result.error?.message || 'Failed to update purchase transaction' }
+        };
+      }
+      
+      console.log('Purchase transaction updated successfully with enhanced tracking');
 
-      // Update local state to reflect the changes
-      setPurchases(prev => prev.map(purchase => 
-        purchase.purchase_id === purchaseId 
-          ? { ...purchase, ...updateData, updated_at: new Date().toISOString() }
-          : purchase
-      ));
-
-      // Refresh the data to get updated computed values from the view
+      // Refresh the data to get updated values
       console.log('Refreshing purchase data...');
       await new Promise(resolve => setTimeout(resolve, 500)); // Wait 500ms for database to update
       await fetchPurchases();
@@ -266,7 +281,43 @@ export const usePurchaseHistory = () => {
         error: { message: errorMessage }
       };
     }
-  }, [setPurchases, fetchPurchases]);
+  }, [fetchPurchases, purchases]);
+
+  // Add a new purchase transaction using the enhanced function
+  const addPurchaseTransactionEnhanced = useCallback(async (purchaseData: PurchaseFormData) => {
+    try {
+      console.log('Adding new purchase transaction:', purchaseData);
+      
+      // Use the enhanced addPurchaseTransaction function
+      const result = await addPurchaseTransaction(purchaseData);
+      
+      if (!result.success) {
+        console.error('Error from enhanced add function:', result.error);
+        return { 
+          success: false, 
+          error: { message: result.error?.message || 'Failed to add purchase transaction' }
+        };
+      }
+      
+      console.log('Purchase transaction added successfully with enhanced tracking');
+
+      // Refresh the data to get updated values
+      console.log('Refreshing purchase data...');
+      await new Promise(resolve => setTimeout(resolve, 500)); // Wait 500ms for database to update
+      await fetchPurchases();
+      console.log('Purchase data refreshed');
+
+      return { success: true, data: result.data };
+    } catch (err) {
+      console.error('Error adding purchase transaction:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Failed to add purchase transaction';
+      setError(errorMessage);
+      return { 
+        success: false, 
+        error: { message: errorMessage }
+      };
+    }
+  }, [fetchPurchases]);
 
   // New function to add opening balance - Insert directly into purchase_history_with_stock
   const addOpeningBalance = useCallback(async (openingData: OpeningBalanceData): Promise<{ success: boolean; error?: any }> => {
@@ -376,6 +427,7 @@ export const usePurchaseHistory = () => {
     fetchPurchases,
     deletePurchaseTransaction,
     updatePurchaseTransaction,
-    addOpeningBalance
+    addOpeningBalance,
+    addPurchaseTransactionEnhanced
   };
 }; 
