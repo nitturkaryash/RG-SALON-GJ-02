@@ -6,6 +6,10 @@ import { supabase } from './supabase/supabaseClient';
  */
 async function addClientColumns() {
   try {
+    console.log('⚠️ addClientColumns function is temporarily disabled to prevent database errors');
+    console.log('This function was causing startup issues with missing database functions');
+    return; // Early return to prevent database calls
+    
     console.log('Adding client_name and client_phone columns to appointments table...');
     
     // 1. First, check if the add_missing_column function exists

@@ -6,7 +6,7 @@
         "@modelcontextprotocol/server-postgres@latest"
       ],
       "env": {
-        "POSTGRES_CONNECTION_STRING": "postgresql://postgres.mtyudylsozncvilibxda:UObiuSXMvkVPpDXA@aws-0-ap-south-1.pooler.supabase.com:6543/postgres?sslmode=require"
+        "POSTGRES_CONNECTION_STRING": "postgresql://postgres:W8nFpzGX7bt9sSXj@db.mtyudylsozncvilibxda.supabase.co:5432/postgres"
       }
     },
     "supabase-rest": {
@@ -15,9 +15,11 @@
         "@modelcontextprotocol/server-supabase@latest"
       ],
       "env": {
-        "SUPABASE_URL": "https://mtyudylsozncvilibxda.supabase.co",
-        "SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im10eXVkeWxzb3puY3ZpbGlieGRhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDk4OTE0MTIsImV4cCI6MjA2NTQ2NzQxMn0.KJP6Pu3jaheEj8wTPioZsRUNRnkKH88hcRgvS97FOZA",
-        "NEXT_PUBLIC_SUPABASE_URL": "https://mtyudylsozncvilibxda.supabase.co",
+            "SUPABASE_URL": "https://mtyudylsozncvilibxda.supabase.co",
+    "SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im10eXVkeWxzb3puY3ZpbGlieGRhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDk4OTE0MTIsImV4cCI6MjA2NTQ2NzQxMn0.KJP6Pu3jaheEj8wTPioZsRUNRnkKH88hcRgvS97FOZA",
+    "SUPABASE_SERVICE_ROLE_KEY": "sbp_c801d9013cb57eeae074be509ad948f349941db8",
+    "DATABASE_URL": "postgresql://postgres:W8nFpzGX7bt9sSXj@db.mtyudylsozncvilibxda.supabase.co:5432/postgres",
+    "NEXT_PUBLIC_SUPABASE_URL": "https://mtyudylsozncvilibxda.supabase.co",
         "NEXT_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im10eXVkeWxzb3puY3ZpbGlieGRhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDk4OTE0MTIsImV4cCI6MjA2NTQ2NzQxMn0.KJP6Pu3jaheEj8wTPioZsRUNRnkKH88hcRgvS97FOZA"
       }
     }
@@ -30,8 +32,8 @@
   },
   "database_info": {
     "url": "https://mtyudylsozncvilibxda.supabase.co",
-    "database_password": "UObiuSXMvkVPpDXA",
-    "connection_string": "postgresql://postgres.mtyudylsozncvilibxda:UObiuSXMvkVPpDXA@aws-0-ap-south-1.pooler.supabase.com:6543/postgres?sslmode=require",
+    "database_password": "W8nFpzGX7bt9sSXj",
+    "connection_string": "postgresql://postgres:W8nFpzGX7bt9sSXj@db.mtyudylsozncvilibxda.supabase.co:5432/postgres",
     "supabase_status": "WORKING",
     "auth_status": "admin/admin CONFIRMED WORKING"
   },

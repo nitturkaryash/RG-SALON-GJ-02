@@ -28,19 +28,63 @@ export function useOrders() {
           const storedOrders = localStorage.getItem('orders')
           if (storedOrders) {
             const parsedOrders = JSON.parse(storedOrders)
+            console.log(`🔍 USEORDERS DEBUG - Loading ${parsedOrders.length} orders from localStorage`);
             setOrders(normalizeOrders(parsedOrders))
           }
         } else if (supabaseOrders && supabaseOrders.length > 0) {
-          // We have orders from Supabase - normalize and use them
-          setOrders(normalizeOrders(supabaseOrders))
+          // We have orders from Supabase - fetch their services first
+          console.log(`🔍 USEORDERS DEBUG - Loading ${supabaseOrders.length} orders from Supabase`);
+          
+          const ordersWithServices = await Promise.all(supabaseOrders.map(async (order) => {
+            const { data: services, error: servicesError } = await supabase
+              .from('pos_order_items')
+              .select('*')
+              .eq('order_id', order.id);
+              
+            if (servicesError) {
+              console.error(`Error fetching services for order ${order.id}:`, servicesError);
+            }
+            
+            // Prefer items table result, but fall back to embedded services array (for legacy/walk-in orders)
+            let resolvedServices = servicesError ? [] : services || [];
+            if ((resolvedServices.length === 0) && Array.isArray(order.services) && order.services.length > 0) {
+              resolvedServices = order.services as any[];
+            }
+            
+            const orderWithServices = {
+              ...order,
+              services: resolvedServices
+            };
+            
+            // Debug specific orders
+            if (order.id === 'sales-0022' || order.stylist_name === 'Sangam') {
+              console.log(`🔍 USEORDERS DEBUG - Order ${order.id}:`, {
+                id: order.id,
+                stylist_name: order.stylist_name,
+                stylist_id: order.stylist_id,
+                status: order.status,
+                servicesCount: orderWithServices.services.length,
+                services: orderWithServices.services
+              });
+            }
+            
+            return orderWithServices;
+          }));
+          
+          const normalizedOrders = normalizeOrders(ordersWithServices);
+          console.log(`🔍 USEORDERS DEBUG - Normalized orders count:`, normalizedOrders.length);
+          setOrders(normalizedOrders)
         } else {
           // No orders in Supabase, check localStorage
+          console.log(`🔍 USEORDERS DEBUG - No orders in Supabase, checking localStorage`);
           const storedOrders = localStorage.getItem('orders')
           if (storedOrders) {
             const parsedOrders = JSON.parse(storedOrders)
+            console.log(`🔍 USEORDERS DEBUG - Loading ${parsedOrders.length} orders from localStorage (fallback)`);
             setOrders(normalizeOrders(parsedOrders))
           } else {
             // No orders anywhere
+            console.log(`🔍 USEORDERS DEBUG - No orders found anywhere`);
             setOrders([])
           }
         }
@@ -131,9 +175,15 @@ export function useOrders() {
             console.error(`Error fetching services for order ${order.id}:`, servicesError);
           }
           
+          // Prefer items table result, but fall back to embedded services array (for legacy/walk-in orders)
+          let resolvedServices = servicesError ? [] : services || [];
+          if ((resolvedServices.length === 0) && Array.isArray(order.services) && order.services.length > 0) {
+            resolvedServices = order.services as any[];
+          }
+          
           return {
             ...order,
-            services: servicesError ? [] : services || []
+            services: resolvedServices
           };
         }));
         

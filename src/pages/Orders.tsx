@@ -153,6 +153,7 @@ export default function Orders() {
     salonPurchases: 0,
     services: 0,
     products: 0,
+    memberships: 0,
     totalRevenue: 0,
   })
 
@@ -422,6 +423,14 @@ export default function Orders() {
           const type = getPurchaseType(normalized);
           return type === 'product' || type === 'both';
         }).length,
+        memberships: aggregatedOrders.filter(order => {
+          const normalized = normalizeOrder(order);
+          const type = getPurchaseType(normalized);
+          return type === 'membership' || 
+                 type === 'service_membership' || 
+                 type === 'product_membership' || 
+                 type === 'service_product_membership';
+        }).length,
         totalRevenue: aggregatedOrders.reduce((sum, orderRaw) => {
           const order = normalizeOrder(orderRaw);
           // Only count completed orders or the paid portion of pending orders
@@ -686,7 +695,107 @@ export default function Orders() {
         return `${paymentMethod}: ${Math.round(totalAmount)}`;
       })(),
       'Status': order.status || 'unknown',
-      'Total Amount': (() => {
+      'Subtotal (Ex. Tax)': (() => {
+        const isAggregatedOrder = (order as any).aggregated_multi_expert;
+        
+        let subtotal = order.subtotal || 0;
+        
+        if (isAggregatedOrder && order.services && order.services.length > 0) {
+          const serviceAggregation: Record<string, { total_price: number }> = {};
+          
+          order.services.forEach((service: any) => {
+            const serviceName = service.service_name || service.item_name || service.name;
+            const quantity = service.quantity || 1;
+            const price = service.price || 0;
+
+            if (!serviceAggregation[serviceName]) {
+              serviceAggregation[serviceName] = { total_price: 0 };
+            }
+            serviceAggregation[serviceName].total_price += (price * quantity);
+          });
+
+          subtotal = Object.values(serviceAggregation).reduce((sum, item) => sum + item.total_price, 0);
+        } else if (order.payments && order.payments.length > 0) {
+          // For orders with payments, calculate subtotal from total
+          const regularPaymentTotal = order.payments
+            .filter((payment: any) => payment.payment_method !== 'membership')
+            .reduce((sum: number, payment: any) => sum + (payment.amount || 0), 0);
+          
+          if (regularPaymentTotal > 0) {
+            subtotal = regularPaymentTotal / 1.18; // Remove 18% tax to get subtotal
+          }
+        }
+        
+        return Math.round(subtotal).toString();
+      })(),
+      'CGST (9%)': (() => {
+        const isAggregatedOrder = (order as any).aggregated_multi_expert;
+        
+        let subtotal = order.subtotal || 0;
+        
+        if (isAggregatedOrder && order.services && order.services.length > 0) {
+          const serviceAggregation: Record<string, { total_price: number }> = {};
+          
+          order.services.forEach((service: any) => {
+            const serviceName = service.service_name || service.item_name || service.name;
+            const quantity = service.quantity || 1;
+            const price = service.price || 0;
+
+            if (!serviceAggregation[serviceName]) {
+              serviceAggregation[serviceName] = { total_price: 0 };
+            }
+            serviceAggregation[serviceName].total_price += (price * quantity);
+          });
+
+          subtotal = Object.values(serviceAggregation).reduce((sum, item) => sum + item.total_price, 0);
+        } else if (order.payments && order.payments.length > 0) {
+          const regularPaymentTotal = order.payments
+            .filter((payment: any) => payment.payment_method !== 'membership')
+            .reduce((sum: number, payment: any) => sum + (payment.amount || 0), 0);
+          
+          if (regularPaymentTotal > 0) {
+            subtotal = regularPaymentTotal / 1.18;
+          }
+        }
+        
+        const cgst = subtotal * 0.09; // 9% CGST
+        return Math.round(cgst).toString();
+      })(),
+      'SGST (9%)': (() => {
+        const isAggregatedOrder = (order as any).aggregated_multi_expert;
+        
+        let subtotal = order.subtotal || 0;
+        
+        if (isAggregatedOrder && order.services && order.services.length > 0) {
+          const serviceAggregation: Record<string, { total_price: number }> = {};
+          
+          order.services.forEach((service: any) => {
+            const serviceName = service.service_name || service.item_name || service.name;
+            const quantity = service.quantity || 1;
+            const price = service.price || 0;
+
+            if (!serviceAggregation[serviceName]) {
+              serviceAggregation[serviceName] = { total_price: 0 };
+            }
+            serviceAggregation[serviceName].total_price += (price * quantity);
+          });
+
+          subtotal = Object.values(serviceAggregation).reduce((sum, item) => sum + item.total_price, 0);
+        } else if (order.payments && order.payments.length > 0) {
+          const regularPaymentTotal = order.payments
+            .filter((payment: any) => payment.payment_method !== 'membership')
+            .reduce((sum: number, payment: any) => sum + (payment.amount || 0), 0);
+          
+          if (regularPaymentTotal > 0) {
+            subtotal = regularPaymentTotal / 1.18;
+          }
+        }
+        
+        const sgst = subtotal * 0.09; // 9% SGST
+        return Math.round(sgst).toString();
+      })(),
+      'IGST (0%)': "0", // IGST is 0% for intra-state transactions
+      'Total Amount (Incl. Tax)': (() => {
         const isAggregatedOrder = (order as any).aggregated_multi_expert;
         
         let displayTotal = order.total_amount || order.total || 0;
@@ -724,6 +833,23 @@ export default function Orders() {
       })()
     }));
     
+    // Update the type export logic for CSV
+    formattedOrders.forEach((order, index) => {
+      const originalOrder = filteredOrders[index];
+      const type = getPurchaseType(originalOrder);
+      
+      switch (type) {
+        case 'service': order['Type'] = 'Service'; break;
+        case 'product': order['Type'] = 'Product'; break;
+        case 'membership': order['Type'] = 'Membership'; break;
+        case 'both': order['Type'] = 'Mixed (Service & Product)'; break;
+        case 'service_membership': order['Type'] = 'Mixed (Service & Membership)'; break;
+        case 'product_membership': order['Type'] = 'Mixed (Product & Membership)'; break;
+        case 'service_product_membership': order['Type'] = 'Mixed (Service & Product & Membership)'; break;
+        default: order['Type'] = 'Unknown'; break;
+      }
+    });
+
     // Create headers mapping for CSV export
     const headers = {
       'Order ID': 'Order ID',
@@ -735,7 +861,11 @@ export default function Orders() {
       'Type': 'Type',
       'Payment Method': 'Payment Method',
       'Status': 'Status',
-      'Total Amount': 'Total Amount'
+      'Subtotal (Ex. Tax)': 'Subtotal (Ex. Tax)',
+      'CGST (9%)': 'CGST (9%)',
+      'SGST (9%)': 'SGST (9%)',
+      'IGST (0%)': 'IGST (0%)',
+      'Total Amount (Incl. Tax)': 'Total Amount (Incl. Tax)'
     };
     
     exportToCSV(formattedOrders, 'salon-orders-export', headers);
@@ -866,7 +996,107 @@ export default function Orders() {
         return `${paymentMethod}: ${Math.round(totalAmount)}`;
       })(),
       'Status': order.status || 'unknown',
-      'Total Amount': (() => {
+      'Subtotal (Ex. Tax)': (() => {
+        const isAggregatedOrder = (order as any).aggregated_multi_expert;
+        
+        let subtotal = order.subtotal || 0;
+        
+        if (isAggregatedOrder && order.services && order.services.length > 0) {
+          const serviceAggregation: Record<string, { total_price: number }> = {};
+          
+          order.services.forEach((service: any) => {
+            const serviceName = service.service_name || service.item_name || service.name;
+            const quantity = service.quantity || 1;
+            const price = service.price || 0;
+
+            if (!serviceAggregation[serviceName]) {
+              serviceAggregation[serviceName] = { total_price: 0 };
+            }
+            serviceAggregation[serviceName].total_price += (price * quantity);
+          });
+
+          subtotal = Object.values(serviceAggregation).reduce((sum, item) => sum + item.total_price, 0);
+        } else if (order.payments && order.payments.length > 0) {
+          // For orders with payments, calculate subtotal from total
+          const regularPaymentTotal = order.payments
+            .filter((payment: any) => payment.payment_method !== 'membership')
+            .reduce((sum: number, payment: any) => sum + (payment.amount || 0), 0);
+          
+          if (regularPaymentTotal > 0) {
+            subtotal = regularPaymentTotal / 1.18; // Remove 18% tax to get subtotal
+          }
+        }
+        
+        return Math.round(subtotal).toString();
+      })(),
+      'CGST (9%)': (() => {
+        const isAggregatedOrder = (order as any).aggregated_multi_expert;
+        
+        let subtotal = order.subtotal || 0;
+        
+        if (isAggregatedOrder && order.services && order.services.length > 0) {
+          const serviceAggregation: Record<string, { total_price: number }> = {};
+          
+          order.services.forEach((service: any) => {
+            const serviceName = service.service_name || service.item_name || service.name;
+            const quantity = service.quantity || 1;
+            const price = service.price || 0;
+
+            if (!serviceAggregation[serviceName]) {
+              serviceAggregation[serviceName] = { total_price: 0 };
+            }
+            serviceAggregation[serviceName].total_price += (price * quantity);
+          });
+
+          subtotal = Object.values(serviceAggregation).reduce((sum, item) => sum + item.total_price, 0);
+        } else if (order.payments && order.payments.length > 0) {
+          const regularPaymentTotal = order.payments
+            .filter((payment: any) => payment.payment_method !== 'membership')
+            .reduce((sum: number, payment: any) => sum + (payment.amount || 0), 0);
+          
+          if (regularPaymentTotal > 0) {
+            subtotal = regularPaymentTotal / 1.18;
+          }
+        }
+        
+        const cgst = subtotal * 0.09; // 9% CGST
+        return Math.round(cgst).toString();
+      })(),
+      'SGST (9%)': (() => {
+        const isAggregatedOrder = (order as any).aggregated_multi_expert;
+        
+        let subtotal = order.subtotal || 0;
+        
+        if (isAggregatedOrder && order.services && order.services.length > 0) {
+          const serviceAggregation: Record<string, { total_price: number }> = {};
+          
+          order.services.forEach((service: any) => {
+            const serviceName = service.service_name || service.item_name || service.name;
+            const quantity = service.quantity || 1;
+            const price = service.price || 0;
+
+            if (!serviceAggregation[serviceName]) {
+              serviceAggregation[serviceName] = { total_price: 0 };
+            }
+            serviceAggregation[serviceName].total_price += (price * quantity);
+          });
+
+          subtotal = Object.values(serviceAggregation).reduce((sum, item) => sum + item.total_price, 0);
+        } else if (order.payments && order.payments.length > 0) {
+          const regularPaymentTotal = order.payments
+            .filter((payment: any) => payment.payment_method !== 'membership')
+            .reduce((sum: number, payment: any) => sum + (payment.amount || 0), 0);
+          
+          if (regularPaymentTotal > 0) {
+            subtotal = regularPaymentTotal / 1.18;
+          }
+        }
+        
+        const sgst = subtotal * 0.09; // 9% SGST
+        return Math.round(sgst).toString();
+      })(),
+      'IGST (0%)': "0", // IGST is 0% for intra-state transactions
+      'Total Amount (Incl. Tax)': (() => {
         const isAggregatedOrder = (order as any).aggregated_multi_expert;
         
         let displayTotal = order.total_amount || order.total || 0;
@@ -915,9 +1145,30 @@ export default function Orders() {
       'Type': 'Type',
       'Payment Method': 'Payment Method',
       'Status': 'Status',
-      'Total Amount': 'Total Amount'
+      'Subtotal (Ex. Tax)': 'Subtotal (Ex. Tax)',
+      'CGST (9%)': 'CGST (9%)',
+      'SGST (9%)': 'SGST (9%)',
+      'IGST (0%)': 'IGST (0%)',
+      'Total Amount (Incl. Tax)': 'Total Amount (Incl. Tax)'
     };
     
+    // Update the type export logic for PDF
+    formattedOrdersPDF.forEach((order, index) => {
+      const originalOrder = filteredOrders[index];
+      const type = getPurchaseType(originalOrder);
+      
+      switch (type) {
+        case 'service': order['Type'] = 'Service'; break;
+        case 'product': order['Type'] = 'Product'; break;
+        case 'membership': order['Type'] = 'Membership'; break;
+        case 'both': order['Type'] = 'Mixed (Service & Product)'; break;
+        case 'service_membership': order['Type'] = 'Mixed (Service & Membership)'; break;
+        case 'product_membership': order['Type'] = 'Mixed (Product & Membership)'; break;
+        case 'service_product_membership': order['Type'] = 'Mixed (Service & Product & Membership)'; break;
+        default: order['Type'] = 'Unknown'; break;
+      }
+    });
+
     // Use landscape orientation for better column width
     exportToPDF(
       formattedOrdersPDF, 
@@ -929,19 +1180,108 @@ export default function Orders() {
 
   // Determine purchase type for an order
   const getPurchaseType = (order: ExtendedOrder) => {
-    if (!order || !order.services || !Array.isArray(order.services) || order.services.length === 0) {
-      return 'unknown';
+    if (!order) {
+      return 'service'; // Default fallback
+    }
+
+    // Handle orders that might not have services array or have empty services
+    if (!order.services || !Array.isArray(order.services) || order.services.length === 0) {
+      // Check if this is a salon consumption order
+      if (isSalonConsumptionOrder(order)) {
+        return 'service'; // Salon consumption orders are typically service-related
+      }
+      
+      // Try to determine type from other indicators
+      // Check for membership-related amounts
+      if (order.payments && order.payments.some((p: any) => p.payment_method === 'membership')) {
+        return 'service'; // Services paid with membership
+      }
+      
+      // Check for typical membership purchase amounts
+      const total = order.total || order.total_amount || 0;
+      if ([1000, 5000, 10000, 15000, 25000, 50000, 100000].includes(total)) {
+        return 'membership'; // Likely membership purchase
+      }
+      
+      // Default to service if we can't determine
+      return 'service';
     }
     
-    const hasServices = order.services.some((service: any) => 
-      service && (!service.type || service.type === 'service')
-    );
-    const hasProducts = order.services.some((service: any) => 
-      service && service.type === 'product'
-    );
-    const hasMemberships = order.services.some((service: any) => 
-      service && (service.type === 'membership' || service.category === 'membership')
-    );
+    // Helper function to check if a service is a membership
+    const isMembershipService = (service: any) => {
+      if (!service) return false;
+      
+      // Check explicit type/category
+      if (service.type === 'membership' || service.category === 'membership') {
+        return true;
+      }
+      
+      // Check for membership fields
+      if (service.duration_months || service.benefit_amount || service.benefitAmount) {
+        return true;
+      }
+      
+      // Check name patterns (more comprehensive)
+      const serviceName = (service.item_name || service.service_name || service.name || '').toLowerCase();
+      const membershipPatterns = [
+        'silver', 'gold', 'platinum', 'diamond', 
+        'membership', 'member', 'tier', 'package',
+        'subscription', 'plan'
+      ];
+      
+      return membershipPatterns.some(pattern => serviceName.includes(pattern));
+    };
+    
+    // Check for membership services first
+    const hasMemberships = order.services.some(isMembershipService) || 
+    // Check if this is a membership purchase (NOT using membership balance to pay)
+    // Look for orders where someone bought a membership (paid with cash/card, not membership balance)
+    (order.payments && 
+     order.payments.every((payment: any) => payment.payment_method !== 'membership') && // Not paid with membership balance
+     [1000, 5000, 10000, 15000, 25000, 50000, 100000].includes(order.total || order.total_amount || 0)) || // Common membership prices
+    // Or check for specific membership-related fields
+    (order.services && order.services.some((service: any) => 
+      service.benefit_amount || service.benefitAmount || service.duration_months
+    ));
+    
+    // Removed debug logging for production
+
+    // Enhanced product detection with smart fallbacks
+    const hasProducts = order.services.some((service: any) => {
+      if (!service) return false;
+      const isMembership = isMembershipService(service);
+      
+      // Check for explicit product type/category
+      if (service.type === 'product' || service.category === 'product') {
+        return !isMembership;
+      }
+      
+      // Smart detection for products based on product-like attributes
+      const hasProductAttributes = service.product_id || service.product_name || 
+                                   service.hsn_code || service.stock_quantity !== undefined;
+      
+      return hasProductAttributes && !isMembership;
+    });
+    
+    // Check for regular services (exclude membership services and products)
+    const hasServices = order.services.some((service: any) => {
+      if (!service) return false;
+      const isMembership = isMembershipService(service);
+      
+      // Explicit service type
+      if (service.type === 'service' || service.category === 'service') {
+        return !isMembership;
+      }
+      
+      // Check if it's explicitly a product
+      const isExplicitProduct = service.type === 'product' || service.category === 'product';
+      const hasProductAttributes = service.product_id || service.product_name || 
+                                   service.hsn_code || service.stock_quantity !== undefined;
+      const isProduct = isExplicitProduct || hasProductAttributes;
+      
+      // Only treat as service if it's not a product or membership
+      return !isProduct && !isMembership;
+    });
     
     // Check product, service, and membership subcategories
     const productCategories = new Set();
@@ -950,11 +1290,13 @@ export default function Orders() {
     
     order.services.forEach((service: any) => {
       if (service) {
-        if (service.type === 'product' && service.category) {
+        const isMembershipItem = isMembershipService(service);
+        
+        if (service.type === 'product' && service.category && !isMembershipItem) {
           productCategories.add(service.category.toLowerCase());
-        } else if ((!service.type || service.type === 'service') && service.category) {
+        } else if ((!service.type || service.type === 'service') && service.category && !isMembershipItem) {
           serviceCategories.add(service.category.toLowerCase());
-        } else if (service.type === 'membership' || service.category === 'membership') {
+        } else if (isMembershipItem) {
           membershipCategories.add('membership');
         }
       }
@@ -974,10 +1316,21 @@ export default function Orders() {
     if (hasProducts) types.push('product');
     if (hasMemberships) types.push('membership');
     
-    if (types.length > 1) return 'both';
+    if (types.length > 1) {
+      // Return specific combination instead of generic "both"
+      if (types.includes('membership') && types.includes('service') && types.includes('product')) {
+        return 'service_product_membership';
+      } else if (types.includes('membership') && types.includes('service')) {
+        return 'service_membership';
+      } else if (types.includes('membership') && types.includes('product')) {
+        return 'product_membership';
+      } else {
+        return 'both'; // service + product (no membership)
+      }
+    }
     if (hasProducts) return 'product';
     if (hasMemberships) return 'membership';
-    return 'service';
+    return 'service'; // Default to service for all remaining cases
   };
 
   // Function to detect if an order is a salon consumption order
@@ -1093,27 +1446,49 @@ export default function Orders() {
         (isSalonPurchaseFilter === 'true' && isSalonConsumptionOrder(order)) ||
         (isSalonPurchaseFilter === 'false' && !isSalonConsumptionOrder(order));
       
-      // Purchase type filter - enhanced with categories
+      // Purchase type filter - enhanced with categories and membership combinations
       const orderType = getPurchaseType(order);
       let matchesPurchaseType = false;
       
       if (purchaseTypeFilter === 'all') {
         matchesPurchaseType = true;
-      } else if (purchaseTypeFilter === orderType || 
-                (purchaseTypeFilter === 'both' && (orderType === 'service' || orderType === 'product')) ||
-                (purchaseTypeFilter === 'service' && orderType === 'both') ||
-                (purchaseTypeFilter === 'product' && orderType === 'both')) {
+      } else if (purchaseTypeFilter === orderType) {
+        // Exact match
         matchesPurchaseType = true;
+      } else if (purchaseTypeFilter === 'membership') {
+        // Match any order containing memberships
+        matchesPurchaseType = orderType === 'membership' || 
+                            orderType === 'service_membership' || 
+                            orderType === 'product_membership' || 
+                            orderType === 'service_product_membership';
+      } else if (purchaseTypeFilter === 'service') {
+        // Match any order containing services
+        matchesPurchaseType = orderType === 'service' || 
+                            orderType === 'both' || 
+                            orderType === 'service_membership' || 
+                            orderType === 'service_product_membership';
+      } else if (purchaseTypeFilter === 'product') {
+        // Match any order containing products
+        matchesPurchaseType = orderType === 'product' || 
+                            orderType === 'both' || 
+                            orderType === 'product_membership' || 
+                            orderType === 'service_product_membership';
+      } else if (purchaseTypeFilter === 'both') {
+        // Match mixed service/product orders (legacy support)
+        matchesPurchaseType = orderType === 'both' || 
+                            orderType === 'service_product_membership';
       } else if (purchaseTypeFilter.startsWith('product:')) {
         // Product category filtering
         const category = purchaseTypeFilter.split(':')[1];
-        matchesPurchaseType = (orderType === 'product' || orderType === 'both') && 
+        matchesPurchaseType = (orderType === 'product' || orderType === 'both' || 
+                            orderType === 'product_membership' || orderType === 'service_product_membership') && 
                             (order as any)._productCategories && 
                             (order as any)._productCategories.some((cat: string) => cat.includes(category));
       } else if (purchaseTypeFilter.startsWith('service:')) {
         // Service category filtering
         const category = purchaseTypeFilter.split(':')[1];
-        matchesPurchaseType = (orderType === 'service' || orderType === 'both') && 
+        matchesPurchaseType = (orderType === 'service' || orderType === 'both' || 
+                            orderType === 'service_membership' || orderType === 'service_product_membership') && 
                             (order as any)._serviceCategories && 
                             (order as any)._serviceCategories.some((cat: string) => cat.includes(category));
       }
@@ -1204,6 +1579,36 @@ export default function Orders() {
             label="Service & Product"
             size="small"
             color="success"
+            variant="outlined"
+          />
+        );
+      case 'service_membership':
+        return (
+          <Chip
+            icon={<CardMembershipIcon fontSize="small" />}
+            label="Service & Membership"
+            size="small"
+            color="warning"
+            variant="outlined"
+          />
+        );
+      case 'product_membership':
+        return (
+          <Chip
+            icon={<CardMembershipIcon fontSize="small" />}
+            label="Product & Membership"
+            size="small"
+            color="info"
+            variant="outlined"
+          />
+        );
+      case 'service_product_membership':
+        return (
+          <Chip
+            icon={<StoreIcon fontSize="small" />}
+            label="Service & Product & Membership"
+            size="small"
+            color="secondary"
             variant="outlined"
           />
         );
@@ -1649,7 +2054,7 @@ export default function Orders() {
             <Tab 
               icon={<CardMembershipIcon sx={{ fontSize: 22 }} />}
               iconPosition="start"
-              label={`Memberships`} 
+              label={`Memberships (${orderStats.memberships})`} 
               value={OrderTab.MEMBERSHIPS}
             />
           </Tabs>
@@ -1812,7 +2217,7 @@ export default function Orders() {
                     <TableCell>Type</TableCell>
                     <TableCell>Payment</TableCell>
                     <TableCell>Status</TableCell>
-                    <TableCell>Total</TableCell>
+                    <TableCell>Total Amount</TableCell>
                     <TableCell align="right">Actions</TableCell>
                   </TableRow>
                 </TableHead>

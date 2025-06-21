@@ -20,7 +20,7 @@ export interface SaleData {
  * IMPORTANT: Only product items should be recorded in Sales History, not services
  */
 export const syncToSalesHistory = async (orderData: {
-  products: Array<{
+  services: Array<{
     id: string;
     name?: string;
     product_name?: string;
@@ -42,13 +42,13 @@ export const syncToSalesHistory = async (orderData: {
     // Add debug log specifically for salon consumption
     if (orderData.customer_name === 'Salon Consumption') {
       console.log('🎯 FOUND SALON CONSUMPTION RECORD TO SAVE:', {
-        products: orderData.products.length,
-        first_product: orderData.products[0],
+        products: orderData.services.length,
+        first_product: orderData.services[0],
         customer: orderData.customer_name
       });
     }
     
-    if (!orderData.products || orderData.products.length === 0) {
+    if (!orderData.services || orderData.services.length === 0) {
       console.warn('No products in order data, skipping sales history sync');
       return { success: false, error: 'No products to record' };
     }
@@ -56,7 +56,7 @@ export const syncToSalesHistory = async (orderData: {
     const results = [];
     
     // Filter to ensure we only process items that are products (not services)
-    const productItemsOnly = orderData.products.filter(product => {
+    const productItemsOnly = orderData.services.filter(product => {
       // Always check for type field, verify it's a product (case-insensitive)
       if (product.type) {
         const isProduct = product.type.toLowerCase() === 'product';
@@ -74,7 +74,7 @@ export const syncToSalesHistory = async (orderData: {
       return hasValidId;
     });
     
-    console.log(`📦 After filtering: ${productItemsOnly.length} of ${orderData.products.length} items are products`);
+    console.log(`📦 After filtering: ${productItemsOnly.length} of ${orderData.services.length} items are products`);
     
     if (productItemsOnly.length === 0) {
       console.warn('No product items found after filtering, skipping sales history sync');
@@ -173,6 +173,12 @@ export const recordSaleTransaction = async (saleData: SaleData) => {
   try {
     // Log the incoming data for debugging
     console.log('📊 SALES DATA:', saleData);
+    
+    // Check if the item is a service and skip if so.
+    if ((saleData as any).type === 'service' || (saleData as any).service_name) {
+      console.log('Skipping service item in recordSaleTransaction:', (saleData as any).service_name || saleData.product_id);
+      return { success: true, message: 'Service item skipped' };
+    }
     
     // Validate required fields
     if (!saleData.product_id) {

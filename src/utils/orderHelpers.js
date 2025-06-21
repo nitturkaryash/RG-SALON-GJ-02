@@ -106,16 +106,27 @@ export function getPurchaseType(order) {
   }
   
   const hasServices = order.services.some(service => 
-    service && (!service.type || service.type === 'service')
+    service && service.type === 'service'
   );
   
   const hasProducts = order.services.some(service => 
-    service && service.type === 'product'
+    service && (service.type === 'product' || service.category === 'product')
   );
   
-  if (hasServices && hasProducts) return 'both';
-  if (hasProducts) return 'product';
-  return 'service';
+  // For items without explicit type, check if they come from product tables or have product-like attributes
+  const hasUnknownProducts = order.services.some(service => 
+    service && 
+    !service.type && 
+    !service.category && 
+    (service.product_id || service.product_name || service.hsn_code || service.stock_quantity !== undefined)
+  );
+  
+  const totalProducts = hasProducts || hasUnknownProducts;
+  
+  if (hasServices && totalProducts) return 'both';
+  if (totalProducts) return 'product';
+  if (hasServices) return 'service';
+  return 'unknown';
 }
 
 /**

@@ -46,7 +46,8 @@ import {
   FilterAltOff as FilterOffIcon,
   Speed as SpeedIcon,
   LocalShipping as LocalShippingIcon,
-  Check as CheckIcon
+  Check as CheckIcon,
+  Info as InfoIcon
 } from '@mui/icons-material';
 import { styled } from '@mui/material/styles';
 import { useProducts, Product } from '../hooks/useProducts';
@@ -2697,6 +2698,32 @@ export default function InventoryManager() {
           </Box>
       </Paper>
 
+      {/* Horizontal Scroll Help Info */}
+      <Paper 
+        elevation={1} 
+        sx={{ 
+          p: 1.5, 
+          mb: 2, 
+          background: 'linear-gradient(45deg, #f0f8ff 30%, #e6f3ff 90%)',
+          border: '1px solid #2196f3',
+          borderRadius: '8px'
+        }}
+      >
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <InfoIcon sx={{ color: '#1976d2', fontSize: '20px' }} />
+          <Typography variant="body2" sx={{ color: '#1976d2', fontWeight: 500 }}>
+            💡 <strong>Horizontal Scroll Tip:</strong> Hold <kbd style={{ 
+              background: '#e3f2fd', 
+              padding: '2px 6px', 
+              borderRadius: '4px', 
+              border: '1px solid #bbdefb',
+              fontFamily: 'monospace',
+              fontSize: '11px'
+            }}>Shift</kbd> + Mouse Wheel to scroll horizontally, or use the scroll bar below the table
+          </Typography>
+        </Box>
+      </Paper>
+
       <Tabs 
         value={activeTab} 
         onChange={handleTabChange} 
@@ -2832,7 +2859,49 @@ export default function InventoryManager() {
             </Grid>
           </Box>
 
-          <TableContainer sx={{ maxHeight: 'calc(100vh - 300px)', overflow: 'auto' }}>
+          <TableContainer 
+            sx={{ 
+              maxHeight: 'calc(100vh - 300px)', 
+              overflow: 'auto',
+              overflowX: 'scroll', // Force horizontal scrollbar to always show
+              cursor: 'grab',
+              '&:active': {
+                cursor: 'grabbing'
+              },
+              // Enhanced scrollbar styling for better visibility
+              '&::-webkit-scrollbar': {
+                height: '12px',
+                width: '12px'
+              },
+              '&::-webkit-scrollbar-track': {
+                background: '#f1f1f1',
+                borderRadius: '6px',
+                border: '1px solid #e0e0e0'
+              },
+              '&::-webkit-scrollbar-thumb': {
+                background: 'linear-gradient(45deg, #8baf3f 30%, #7da237 90%)',
+                borderRadius: '6px',
+                border: '1px solid #6d8c30',
+                '&:hover': {
+                  background: 'linear-gradient(45deg, #7da237 30%, #6d8c30 90%)',
+                  transform: 'scale(1.1)'
+                }
+              },
+              '&::-webkit-scrollbar-corner': {
+                background: '#f1f1f1'
+              },
+              // For Firefox
+              scrollbarWidth: 'thin',
+              scrollbarColor: '#8baf3f #f1f1f1'
+            }}
+            onWheel={(e) => {
+              // Enable horizontal scrolling with mouse wheel when shift is held
+              if (e.shiftKey) {
+                e.preventDefault();
+                e.currentTarget.scrollLeft += e.deltaY;
+              }
+            }}
+          >
             <Table stickyHeader aria-label="products purchase history table" sx={{ minWidth: 2200 }}>
               <TableHead>
                 <TableRow>
@@ -3163,7 +3232,49 @@ export default function InventoryManager() {
             </Grid>
           </Box>
           
-          <TableContainer sx={{ maxHeight: 'calc(100vh - 380px)', overflow: 'auto' }}>
+          <TableContainer 
+            sx={{ 
+              maxHeight: 'calc(100vh - 380px)', 
+              overflow: 'auto',
+              overflowX: 'scroll', // Force horizontal scrollbar to always show
+              cursor: 'grab',
+              '&:active': {
+                cursor: 'grabbing'
+              },
+              // Enhanced scrollbar styling for better visibility
+              '&::-webkit-scrollbar': {
+                height: '12px',
+                width: '12px'
+              },
+              '&::-webkit-scrollbar-track': {
+                background: '#f1f1f1',
+                borderRadius: '6px',
+                border: '1px solid #e0e0e0'
+              },
+              '&::-webkit-scrollbar-thumb': {
+                background: 'linear-gradient(45deg, #8baf3f 30%, #7da237 90%)',
+                borderRadius: '6px',
+                border: '1px solid #6d8c30',
+                '&:hover': {
+                  background: 'linear-gradient(45deg, #7da237 30%, #6d8c30 90%)',
+                  transform: 'scale(1.1)'
+                }
+              },
+              '&::-webkit-scrollbar-corner': {
+                background: '#f1f1f1'
+              },
+              // For Firefox
+              scrollbarWidth: 'thin',
+              scrollbarColor: '#8baf3f #f1f1f1'
+            }}
+            onWheel={(e) => {
+              // Enable horizontal scrolling with mouse wheel when shift is held
+              if (e.shiftKey) {
+                e.preventDefault();
+                e.currentTarget.scrollLeft += e.deltaY;
+              }
+            }}
+          >
             <Table stickyHeader aria-label="sales history table" sx={{ minWidth: 2200 }}>
                <TableHead>
                  <TableRow>
@@ -3386,7 +3497,49 @@ export default function InventoryManager() {
             </Grid>
           </Box>
           
-          <TableContainer sx={{ maxHeight: 'calc(100vh - 380px)', overflow: 'auto' }}>
+          <TableContainer 
+            sx={{ 
+              maxHeight: 'calc(100vh - 380px)', 
+              overflow: 'auto',
+              overflowX: 'scroll', // Force horizontal scrollbar to always show
+              cursor: 'grab',
+              '&:active': {
+                cursor: 'grabbing'
+              },
+              // Enhanced scrollbar styling for better visibility
+              '&::-webkit-scrollbar': {
+                height: '12px',
+                width: '12px'
+              },
+              '&::-webkit-scrollbar-track': {
+                background: '#f1f1f1',
+                borderRadius: '6px',
+                border: '1px solid #e0e0e0'
+              },
+              '&::-webkit-scrollbar-thumb': {
+                background: 'linear-gradient(45deg, #8baf3f 30%, #7da237 90%)',
+                borderRadius: '6px',
+                border: '1px solid #6d8c30',
+                '&:hover': {
+                  background: 'linear-gradient(45deg, #7da237 30%, #6d8c30 90%)',
+                  transform: 'scale(1.1)'
+                }
+              },
+              '&::-webkit-scrollbar-corner': {
+                background: '#f1f1f1'
+              },
+              // For Firefox
+              scrollbarWidth: 'thin',
+              scrollbarColor: '#8baf3f #f1f1f1'
+            }}
+            onWheel={(e) => {
+              // Enable horizontal scrolling with mouse wheel when shift is held
+              if (e.shiftKey) {
+                e.preventDefault();
+                e.currentTarget.scrollLeft += e.deltaY;
+              }
+            }}
+          >
             <Table stickyHeader aria-label="salon consumption table" sx={{ minWidth: 2200 }}>
               <TableHead>
                 <TableRow>
@@ -3789,7 +3942,49 @@ export default function InventoryManager() {
             </Grid>
           </Box>
           
-          <TableContainer sx={{ maxHeight: 'calc(100vh - 380px)', overflow: 'auto' }}>
+          <TableContainer 
+            sx={{ 
+              maxHeight: 'calc(100vh - 380px)', 
+              overflow: 'auto',
+              overflowX: 'scroll', // Force horizontal scrollbar to always show
+              cursor: 'grab',
+              '&:active': {
+                cursor: 'grabbing'
+              },
+              // Enhanced scrollbar styling for better visibility
+              '&::-webkit-scrollbar': {
+                height: '12px',
+                width: '12px'
+              },
+              '&::-webkit-scrollbar-track': {
+                background: '#f1f1f1',
+                borderRadius: '6px',
+                border: '1px solid #e0e0e0'
+              },
+              '&::-webkit-scrollbar-thumb': {
+                background: 'linear-gradient(45deg, #8baf3f 30%, #7da237 90%)',
+                borderRadius: '6px',
+                border: '1px solid #6d8c30',
+                '&:hover': {
+                  background: 'linear-gradient(45deg, #7da237 30%, #6d8c30 90%)',
+                  transform: 'scale(1.1)'
+                }
+              },
+              '&::-webkit-scrollbar-corner': {
+                background: '#f1f1f1'
+              },
+              // For Firefox
+              scrollbarWidth: 'thin',
+              scrollbarColor: '#8baf3f #f1f1f1'
+            }}
+            onWheel={(e) => {
+              // Enable horizontal scrolling with mouse wheel when shift is held
+              if (e.shiftKey) {
+                e.preventDefault();
+                e.currentTarget.scrollLeft += e.deltaY;
+              }
+            }}
+          >
             <Table stickyHeader aria-label="balance stock table" sx={{ minWidth: 1200 }}>
               <TableHead>
                 <TableRow>

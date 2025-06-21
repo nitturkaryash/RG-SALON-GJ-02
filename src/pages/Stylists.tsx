@@ -75,7 +75,7 @@ interface HolidayReport {
   upcomingHolidays: number;
   pastHolidays: number;
   holidays: StylistHoliday[];
-  serviceRevenue: number; // Revenue from services only, excluding GST/tax, products, and memberships
+  serviceRevenue: number; // Revenue from services only, explicitly excluding GST/tax, products, memberships, and services paid via membership
 }
 
 const initialFormData: StylistFormData = {
@@ -105,6 +105,19 @@ export default function Stylists() {
   const { services } = useServices()
   const { serviceCollections, isLoading: isLoadingServiceCollections } = useServiceCollections()
   const { orders, isLoading: isLoadingOrders } = useOrders()
+  
+  // Debug orders loading
+  useEffect(() => {
+    console.log('🔍 STYLISTS DEBUG - Orders loaded:', {
+      ordersLength: orders?.length || 0,
+      isLoadingOrders,
+      firstOrder: orders?.[0],
+      ordersWithSangam: orders?.filter(order => 
+        (order as any).stylist_name === 'Sangam' || 
+        (order as any).stylist?.name === 'Sangam'
+      )?.length || 0
+    });
+  }, [orders, isLoadingOrders]);
   const [open, setOpen] = useState(false)
   const [formData, setFormData] = useState<StylistFormData>(initialFormData)
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -171,6 +184,10 @@ export default function Stylists() {
   // Generate holiday reports whenever stylists or date range changes
   useEffect(() => {
     if (stylists?.length && allHolidays && orders) {
+      console.log(`🔍 ORDERS DEBUG - Total orders loaded:`, orders.length);
+      console.log(`🔍 ORDERS DEBUG - First 3 orders:`, orders.slice(0, 3));
+      console.log(`🔍 ORDERS DEBUG - Date range:`, { startDate, endDate });
+      
       const rangeStart = new Date(startDate);
       const rangeEnd = new Date(endDate);
       // Extend rangeEnd to include the full day (23:59:59.999)
@@ -198,8 +215,39 @@ export default function Stylists() {
         }).length;
         
         // 🔄 Calculate service revenue with equal sharing among experts (multi-expert) while maintaining legacy support
+        // Excludes memberships, products, and services paid via membership
         const serviceRevenue = orders.reduce((total, order) => {
           const orderDate = new Date((order as any).created_at || order.created_at);
+
+          // Debug logging for walk-in orders specifically
+          if ((order as any).is_walk_in) {
+            console.log(`🚶 WALK-IN ORDER DEBUG for ${stylist.name}:`, {
+              orderId: (order as any).id,
+              orderStatus: order.status,
+              isWalkIn: (order as any).is_walk_in,
+              orderDate: orderDate,
+              isInRange: isWithinInterval(orderDate, { start: rangeStart, end: rangeEnd }),
+              stylistId: (order as any).stylist_id,
+              stylistName: (order as any).stylist_name,
+              hasServices: !!(order as any).services,
+              servicesArray: (order as any).services,
+              servicesCount: Array.isArray((order as any).services) ? (order as any).services.length : 0
+            });
+          }
+
+          // Debug logging for Sangam specifically
+          if (stylist.name === 'Sangam') {
+            console.log(`🔍 SANGAM DEBUG - Processing order:`, {
+              orderId: (order as any).id,
+              orderStatus: order.status,
+              orderDate: orderDate,
+              isInRange: isWithinInterval(orderDate, { start: rangeStart, end: rangeEnd }),
+              hasServices: !!(order as any).services,
+              servicesArray: (order as any).services,
+              stylistId: (order as any).stylist_id,
+              stylistName: (order as any).stylist_name
+            });
+          }
 
           // Skip orders outside the selected range or not completed
           if (
@@ -208,14 +256,121 @@ export default function Stylists() {
             !(order as any).services ||
             !Array.isArray((order as any).services)
           ) {
+            if (stylist.name === 'Sangam') {
+              console.log(`🚫 SANGAM DEBUG - Skipping order:`, {
+                orderId: (order as any).id,
+                reason: !isWithinInterval(orderDate, { start: rangeStart, end: rangeEnd }) ? 'Date out of range' :
+                       order.status !== 'completed' ? 'Not completed' :
+                       !(order as any).services ? 'No services' :
+                       !Array.isArray((order as any).services) ? 'Services not array' : 'Unknown'
+              });
+            }
             return total;
           }
 
           // Iterate through each service in the order
           (order as any).services
-            .filter((svc: any) => svc.type === 'service') // services only
+            .filter((svc: any) => {
+              if (!svc) return false;
+              
+              // Enhanced debugging for walk-in orders
+              if ((order as any).is_walk_in) {
+                console.log(`🚶 WALK-IN SERVICE DEBUG for ${stylist.name} - ORDER ${(order as any).id}:`, {
+                  service_name: svc.service_name || svc.name,
+                  type: svc.type,
+                  category: svc.category,
+                  price: svc.price,
+                  is_membership_payment: svc.is_membership_payment,
+                  membership_payment: svc.membership_payment,
+                  full_service: svc
+                });
+              }
+              
+              // Enhanced debugging for this specific order
+              if ((order as any).id === 'sales-0022' || (svc.service_name === 'Basic Haircut' && svc.price === 300)) {
+                console.log(`🔍 DEBUGGING ORDER ${(order as any).id || 'unknown'} - SERVICE:`, {
+                  service_name: svc.service_name || svc.name,
+                  type: svc.type,
+                  category: svc.category,
+                  price: svc.price,
+                  is_membership_payment: svc.is_membership_payment,
+                  membership_payment: svc.membership_payment,
+                  full_service: svc
+                });
+              }
+              
+              // CRITICAL FIX: Check for membership type/category FIRST before any other logic
+              const isMembership =
+                svc.type === 'membership' ||
+                svc.category === 'membership' ||
+                (typeof svc.duration_months === 'number' && svc.duration_months > 0) ||
+                /membership/i.test(svc.name || svc.service_name || '');
+
+              // IMMEDIATELY exclude memberships - no membership revenue should ever reach stylists
+              if (isMembership) {
+                if ((order as any).is_walk_in) console.log(`🚶 WALK-IN: 🚫 Membership exclusion for ${stylist.name}: ${svc.service_name || svc.name}`);
+                return false;
+              }
+
+              const isProduct = svc.type === 'product' || svc.category === 'product';
+              
+              // IMMEDIATELY exclude products - no product revenue should reach stylists  
+              if (isProduct) {
+                if ((order as any).is_walk_in) console.log(`🚶 WALK-IN: 🚫 Product exclusion for ${stylist.name}: ${svc.service_name || svc.name}`);
+                return false;
+              }
+
+              // Exclude services paid via membership
+              const isPaidViaMembership = svc.is_membership_payment || svc.membership_payment;
+              if (isPaidViaMembership) {
+                if ((order as any).is_walk_in) console.log(`🚶 WALK-IN: 🚫 Membership Payment exclusion for ${stylist.name}: ${svc.service_name || svc.name}`);
+                return false;
+              }
+
+              // Only include actual paid services
+              const isService = svc.type === 'service';
+              if (!isService) {
+                if ((order as any).is_walk_in) console.log(`🚶 WALK-IN: 🚫 Not a service exclusion for ${stylist.name}: ${svc.service_name || svc.name} (type: ${svc.type})`);
+              }
+              
+              return isService;
+            })
             .forEach((svc: any) => {
               const baseAmount = (svc.price || 0) * (svc.quantity || 1); // Ex-GST amount per service
+
+              // Enhanced debugging for stylist assignment in walk-in orders
+              if ((order as any).is_walk_in) {
+                console.log(`🚶 WALK-IN STYLIST ASSIGNMENT DEBUG for ${stylist.name} - ORDER ${(order as any).id}:`, {
+                  service: svc.service_name || svc.name,
+                  baseAmount,
+                  orderStylistId: (order as any).stylist_id,
+                  orderStylistName: (order as any).stylist_name,
+                  currentStylistId: stylist.id,
+                  currentStylistName: stylist.name,
+                  experts: svc.experts,
+                  matchById: (order as any).stylist_id === stylist.id,
+                  matchByName: (order as any).stylist_name === stylist.name
+                });
+              }
+
+              // Enhanced debugging for stylist assignment
+              if ((order as any).id === 'sales-0022' || (svc.service_name === 'Basic Haircut' && svc.price === 300)) {
+                console.log(`🔍 STYLIST ASSIGNMENT DEBUG for ${stylist.name}:`, {
+                  service: svc.service_name || svc.name,
+                  baseAmount,
+                  orderStylistId: (order as any).stylist_id,
+                  orderStylistName: (order as any).stylist_name,
+                  currentStylistId: stylist.id,
+                  currentStylistName: stylist.name,
+                  experts: svc.experts,
+                  orderData: {
+                    id: (order as any).id,
+                    stylist_id: (order as any).stylist_id,
+                    stylist_name: (order as any).stylist_name,
+                    stylist: (order as any).stylist
+                  }
+                });
+              }
 
               // If the service has an experts array, split equally among them
               const experts: any[] = Array.isArray(svc.experts) ? svc.experts : [];
@@ -226,7 +381,12 @@ export default function Stylists() {
                 );
 
                 if (stylistInvolved) {
+                  console.log(`💰 EXPERT REVENUE for ${stylist.name} in order ${(order as any).id}: +₹${baseAmount / experts.length} (split ${experts.length} ways) for service "${svc.service_name}"`);
                   total += baseAmount / experts.length; // equal share
+                } else {
+                  if ((order as any).is_walk_in) {
+                    console.log(`🚶 WALK-IN: Stylist ${stylist.name} not in experts list for service "${svc.service_name}" in order ${(order as any).id}. Experts:`, experts.map(e => e.name));
+                  }
                 }
               } else {
                 // Legacy single-expert order – credit whole amount to the order's stylist
@@ -240,7 +400,10 @@ export default function Stylists() {
                   : orderStylistName === stylist.name;
 
                 if (isOrderStylist) {
+                  console.log(`💰 LEGACY REVENUE for ${stylist.name} in order ${(order as any).id}: +₹${baseAmount} for service "${svc.service_name}"`);
                   total += baseAmount;
+                } else if ((order as any).is_walk_in) {
+                  console.log(`🚶 WALK-IN: Stylist ${stylist.name} does not match legacy order stylist ${orderStylistName} (${orderStylistId}) for order ${(order as any).id}`);
                 }
               }
             });

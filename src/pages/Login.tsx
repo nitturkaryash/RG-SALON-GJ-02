@@ -9,12 +9,14 @@ import {
   Alert,
   Fade,
   useTheme,
+  Divider,
 } from '@mui/material';
 import { styled } from '@mui/material/styles';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { useAuthContext } from '../contexts/AuthContext';
 import { supabase } from '../utils/supabase/supabaseClient.js';
 import { ContentCut, LockPerson } from '@mui/icons-material';
+import GoogleSignIn from '../components/GoogleSignIn';
 
 const LoginContainer = styled(Paper)(({ theme }) => ({
   background: 'linear-gradient(135deg, #111111 0%, #000000 100%)',
@@ -106,17 +108,30 @@ export default function Login() {
   const theme = useTheme();
   const navigate = useNavigate();
   const location = useLocation();
-  const { session } = useAuthContext();
+  const [searchParams] = useSearchParams();
+  const { session, user, loading: authLoading } = useAuthContext();
   const [credentials, setCredentials] = useState({ username: '', password: '' });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
+  // Handle OAuth errors from URL params
   useEffect(() => {
-    if (session) {
+    const error = searchParams.get('error');
+    if (error === 'auth_callback_error') {
+      setError('Google Sign-In failed. Please try again or use your username/password.');
+    }
+  }, [searchParams]);
+
+  useEffect(() => {
+    // Don't redirect if still loading auth state
+    if (authLoading) return;
+    
+    // Check if user is authenticated (either through Supabase session or localStorage)
+    if (session || user) {
       const from = location.state?.from?.pathname || '/dashboard';
       navigate(from, { replace: true });
     }
-  }, [session, navigate, location]);
+  }, [session, user, authLoading, navigate, location]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -155,8 +170,6 @@ export default function Login() {
       
       // Force navigation with reload to ensure the protected route picks up the localStorage changes
       window.location.href = location.state?.from?.pathname || '/dashboard';
-      
-      // No need for navigate() as we're forcing a reload
 
     } catch (err: any) {
       setError(err.message || 'Login failed. Please try again.');
@@ -164,6 +177,35 @@ export default function Login() {
       setLoading(false);
     }
   };
+
+  const handleGoogleSuccess = () => {
+    // Success will be handled by the auth callback route
+    // User will be redirected automatically
+  };
+
+  const handleGoogleError = (error: any) => {
+    console.error('Google Sign-In error:', error);
+    setError('Google Sign-In failed. Please try again or use your username/password.');
+  };
+
+  // Show loading state while checking authentication
+  if (authLoading) {
+    return (
+      <Box
+        sx={{
+          minHeight: '100vh',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: 'linear-gradient(45deg, #000000 0%, #1a1a1a 100%)',
+        }}
+      >
+        <Typography variant="h6" sx={{ color: '#FFD700' }}>
+          Loading...
+        </Typography>
+      </Box>
+    );
+  }
 
   return (
     <Box
@@ -243,6 +285,29 @@ export default function Login() {
                     </Alert>
                   </Fade>
                 )}
+
+                {/* Google Sign-In Section */}
+                <Box sx={{ mb: 3 }}>
+                  <GoogleSignIn 
+                    onSuccess={handleGoogleSuccess}
+                    onError={handleGoogleError}
+                    redirectTo={`${window.location.origin}/dashboard`}
+                  />
+                  
+                  <Box sx={{ display: 'flex', alignItems: 'center', my: 2 }}>
+                    <Divider sx={{ flex: 1, borderColor: 'rgba(255, 255, 255, 0.2)' }} />
+                    <Typography 
+                      sx={{ 
+                        px: 2, 
+                        color: 'rgba(255, 255, 255, 0.5)',
+                        fontSize: '0.875rem'
+                      }}
+                    >
+                      OR
+                    </Typography>
+                    <Divider sx={{ flex: 1, borderColor: 'rgba(255, 255, 255, 0.2)' }} />
+                  </Box>
+                </Box>
 
                 <GoldTextField
                   required
