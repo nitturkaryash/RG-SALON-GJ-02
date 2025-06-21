@@ -1682,9 +1682,16 @@ export default function Orders() {
       );
     }
     
-    // Date range filter
-    if (startDate || endDate) {
-      const label = `Date: ${startDate ? startDate.toLocaleDateString() : 'Any'} - ${endDate ? endDate.toLocaleDateString() : 'Any'}`;
+    // Date range filter - only show if it's not the default 30-day range
+    const thirtyDaysAgo = new Date(new Date().setDate(new Date().getDate() - 30));
+    const today = new Date();
+    const isDefaultDateRange = 
+      startDate && endDate &&
+      startDate.toDateString() === thirtyDaysAgo.toDateString() &&
+      endDate.toDateString() === today.toDateString();
+    
+    if (startDate && endDate && !isDefaultDateRange) {
+      const label = `Date: ${startDate.toLocaleDateString()} - ${endDate.toLocaleDateString()}`;
       
       filters.push(
         <Chip 
@@ -1695,6 +1702,7 @@ export default function Orders() {
           onDelete={() => {
             setStartDate(new Date(new Date().setDate(new Date().getDate() - 30)));
             setEndDate(new Date());
+            setPage(0); // Reset pagination when clearing date filter
           }}
           sx={{ mr: 1, mb: 1 }}
         />
@@ -2180,8 +2188,10 @@ export default function Orders() {
                       variant="outlined"
                       size="small"
                       onClick={() => {
-                        setStartDate(new Date(new Date().setDate(new Date().getDate() - 30)));
-                        setEndDate(new Date());
+                        const newStartDate = new Date(new Date().setDate(new Date().getDate() - 30));
+                        const newEndDate = new Date();
+                        setStartDate(newStartDate);
+                        setEndDate(newEndDate);
                         setPage(0);
                       }}
                     >
@@ -2614,13 +2624,14 @@ export default function Orders() {
                       // Display all stylists from services if available, otherwise use order-level stylist_name
                       const allStylistsFromServices = new Set<string>();
                       (selectedOrder.services || []).forEach((service: any) => {
-                        // Add from legacy stylist_name field
-                        if (service.stylist_name) allStylistsFromServices.add(service.stylist_name);
-                        // Add from experts array
+                        // Prioritize experts array over legacy stylist_name field
                         if (service.experts && Array.isArray(service.experts)) {
                           service.experts.forEach((expert: any) => {
                             if (expert.name) allStylistsFromServices.add(expert.name);
                           });
+                        } else if (service.stylist_name) {
+                          // Only use legacy field if no experts array exists
+                          allStylistsFromServices.add(service.stylist_name);
                         }
                       });
                       
@@ -3093,21 +3104,24 @@ export default function Orders() {
                               </Typography>
                             </TableCell>
                             <TableCell align="center">
-                              {/* Show membership consumption details */}
-                              {(aggregatedService.type === 'membership' || 
-                                (aggregatedService.service_name && ['Silver', 'Gold', 'Platinum', 'Diamond'].some(tier => 
-                                  aggregatedService.service_name.toLowerCase().includes(tier.toLowerCase())))) && 
-                               aggregatedService.benefit_amount && (
-                                <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                              {/* Show membership purchase details for purchased membership tiers */}
+                              {aggregatedService.type === 'membership' && (
+                                <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0.5 }}>
                                   <Chip
-                                    icon={<AccountBalanceWalletIcon fontSize="small" />}
-                                    label={`Benefit: ₹${(aggregatedService.benefit_amount || 0).toLocaleString()}`}
+                                    icon={<CardMembershipIcon fontSize="small" />}
+                                    label="Membership Purchased"
                                     size="small"
                                     color="success"
                                     variant="outlined"
                                   />
+                                  {aggregatedService.benefit_amount && (
+                                    <Typography variant="caption" color="text.secondary">
+                                      Benefit: ₹{(aggregatedService.benefit_amount || 0).toLocaleString()}
+                                    </Typography>
+                                  )}
                                 </Box>
                               )}
+                              
                               {/* Show if service was paid with membership balance */}
                               {aggregatedService.type === 'service' && aggregatedService.paid_with_membership && (
                                 <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
@@ -3123,14 +3137,27 @@ export default function Orders() {
                                   </Typography>
                                 </Box>
                               )}
-                              {/* Show if no membership details */}
-                              {!((aggregatedService.type === 'membership' || 
-                                  (aggregatedService.service_name && ['Silver', 'Gold', 'Platinum', 'Diamond'].some(tier => 
-                                    aggregatedService.service_name.toLowerCase().includes(tier.toLowerCase())))) && 
-                                 aggregatedService.benefit_amount) && 
-                               !(aggregatedService.type === 'service' && aggregatedService.paid_with_membership) && (
-                                <Typography variant="body2" color="text.secondary">
-                                  -
+                              
+                              {/* Show benefit amount consumption for other membership items */}
+                              {aggregatedService.type !== 'membership' && aggregatedService.type !== 'service' && 
+                               aggregatedService.benefit_amount && (
+                                <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                                  <Chip
+                                    icon={<AccountBalanceWalletIcon fontSize="small" />}
+                                    label={`Benefit: ₹${(aggregatedService.benefit_amount || 0).toLocaleString()}`}
+                                    size="small"
+                                    color="success"
+                                    variant="outlined"
+                                  />
+                                </Box>
+                              )}
+                              
+                              {/* Show dash only for products and services without membership details */}
+                              {(aggregatedService.type === 'product' || 
+                                (aggregatedService.type === 'service' && !aggregatedService.paid_with_membership)) && 
+                               !aggregatedService.benefit_amount && (
+                                <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic' }}>
+                                  N/A
                                 </Typography>
                               )}
                             </TableCell>

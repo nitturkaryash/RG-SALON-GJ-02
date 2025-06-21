@@ -37,30 +37,146 @@ export function formatPercentage(value: string | number | null | undefined): str
 }
 
 /**
- * Format a date string to a readable format
+ * Format a date string to IST timezone for display
+ */
+export function formatDateKolkata(dateString: string | null, includeTime: boolean = false): string {
+  if (!dateString) return '-';
+  try {
+    // More robust date parsing
+    let date: Date;
+    
+    if (dateString.includes('T') || dateString.includes('+')) {
+      // ISO format timestamp
+      date = new Date(dateString);
+    } else {
+      // Simple date string - treat as UTC to avoid local timezone interference
+      date = new Date(dateString + 'Z');
+    }
+    
+    // Check if date is valid
+    if (isNaN(date.getTime())) {
+      console.error('Invalid date:', dateString);
+      return dateString;
+    }
+    
+    if (includeTime) {
+      // Convert UTC timestamp to Asia/Kolkata timezone display with seconds
+      return new Intl.DateTimeFormat('en-IN', {
+        timeZone: 'Asia/Kolkata',
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: true
+      }).format(date) + ' IST';
+    } else {
+      // Date only in Asia/Kolkata timezone
+      return new Intl.DateTimeFormat('en-IN', {
+        timeZone: 'Asia/Kolkata',
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric'
+      }).format(date);
+    }
+  } catch (e) {
+    console.error('Error formatting date:', e);
+    return dateString;
+  }
+}
+
+/**
+ * Format a date string to a readable format (legacy function - now properly handles UTC to Asia/Kolkata)
  */
 export function formatDate(dateString: string | null): string {
   if (!dateString) return '-';
   try {
     // For date only
     if (!dateString.includes(':')) {
-      return new Date(dateString).toLocaleDateString('en-IN', {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric'
-      });
+      return formatDateKolkata(dateString, false);
     }
     
-    // For datetime
-    return new Date(dateString).toLocaleString('en-IN', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
+    // For datetime - convert UTC to Asia/Kolkata timezone
+    return formatDateKolkata(dateString, true);
   } catch (e) {
     return dateString;
+  }
+}
+
+/**
+ * Get current date and time in Asia/Kolkata timezone
+ */
+export function getCurrentKolkataDateTime(): string {
+  return new Intl.DateTimeFormat('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  }).format(new Date());
+}
+
+/**
+ * Convert date to proper UTC ISO string for database storage
+ */
+export function toKolkataISOString(date: Date | string): string {
+  const dateObj = typeof date === 'string' ? new Date(date) : date;
+  // Always store as UTC in database
+  return dateObj.toISOString();
+}
+
+/**
+ * Get current Asia/Kolkata time as a Date object
+ */
+export function getCurrentAsiaKolkataTime(): Date {
+  const now = new Date();
+  return new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+}
+
+/**
+ * Convert any timestamp to Asia/Kolkata timezone display
+ */
+export function formatAsiaKolkataTime(timestamp: string | Date): string {
+  try {
+    // More robust date parsing to handle various timestamp formats
+    let date: Date;
+    
+    if (typeof timestamp === 'string') {
+      // Handle different timestamp formats
+      if (timestamp.includes('T') || timestamp.includes('+')) {
+        // ISO format timestamp
+        date = new Date(timestamp);
+      } else {
+        // Simple date string - treat as UTC to avoid local timezone interference
+        date = new Date(timestamp + 'Z');
+      }
+    } else {
+      date = timestamp;
+    }
+    
+    // Check if date is valid
+    if (isNaN(date.getTime())) {
+      console.error('Invalid date:', timestamp);
+      return typeof timestamp === 'string' ? timestamp : timestamp.toString();
+    }
+    
+    return new Intl.DateTimeFormat('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true
+    }).format(date);
+  } catch (error) {
+    console.error('Error formatting timestamp:', error);
+    return typeof timestamp === 'string' ? timestamp : timestamp.toString();
   }
 }
 

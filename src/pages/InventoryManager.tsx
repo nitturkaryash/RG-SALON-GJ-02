@@ -63,6 +63,7 @@ import { calculatePriceExcludingGST, calculateGSTAmount } from '../utils/gstCalc
 import { SelectChangeEvent } from '@mui/material';
 import { v4 as uuidv4 } from 'uuid';
 import DateRangeCalendar from '../components/dashboard/DateRangeCalendar';
+import { formatCurrency, formatDateKolkata, formatAsiaKolkataTime } from '../utils/formatters';
 
 const StyledTableCell = styled(TableCell)(({ theme }) => ({
   fontWeight: 'bold',
@@ -1275,11 +1276,11 @@ export default function InventoryManager() {
 
       // Helper function to safely format dates
       const safeDate = (value: any): string => {
+        if (!value) return '-';
         try {
-          if (!value) return '-';
-          return new Date(value).toLocaleDateString();
-        } catch {
-          return '-';
+          return formatDateKolkata(value, true); // Use Kolkata timezone with time
+        } catch (e) {
+          return value.toString();
         }
       };
       
@@ -1587,8 +1588,7 @@ export default function InventoryManager() {
   
   // Helper function to safely format numbers
   const formatNumber = (value: any): string => {
-    if (value === undefined || value === null) return '0.00';
-    return typeof value === 'number' ? value.toFixed(2) : '0.00';
+    return value ? Number(value).toLocaleString('en-IN') : '0';
   };
 
   const handleTabChange = (event: ChangeEvent<{}>, newValue: string) => {
@@ -1995,9 +1995,9 @@ export default function InventoryManager() {
           localDate.setSeconds(indiaTime.getSeconds());
           localDate.setMilliseconds(indiaTime.getMilliseconds());
           
-          // Store the date with India timezone context
+          // Store the date with system timezone
           updated.date = localDate.toISOString();
-          console.log(`Date updated to: ${updated.date} (India timezone: ${localDate.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })})`);
+          console.log(`Date updated to: ${updated.date} (System timezone: ${localDate.toLocaleString('en-IN')})`);
         }
       } else {
         // Use type assertion to handle the dynamic property assignment
@@ -2606,32 +2606,13 @@ export default function InventoryManager() {
   };
 
   const formatDateTimeForDisplay = (dateTimeString: string | null | undefined): string => {
-    if (!dateTimeString) return '-';
+    if (!dateTimeString) return 'Unknown';
     
     try {
-      const date = new Date(dateTimeString);
-      // Check if date is valid
-      if (isNaN(date.getTime())) return '-';
-      
-      // Display in India timezone (Asia/Kolkata)
-      // Format as: DD/MM/YYYY, HH:MM AM/PM IST
-      const options: Intl.DateTimeFormatOptions = {
-        timeZone: 'Asia/Kolkata',
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: true
-      };
-      
-      const formatter = new Intl.DateTimeFormat('en-IN', options);
-      const formattedDateTime = formatter.format(date);
-      
-      return `${formattedDateTime} IST`;
+      return formatAsiaKolkataTime(dateTimeString); // Use Asia/Kolkata timezone with full format
     } catch (error) {
-      console.error('Error formatting date:', error);
-      return '-';
+      console.error('Error formatting date for display:', error);
+      return dateTimeString;
     }
   };
 
@@ -2771,7 +2752,7 @@ export default function InventoryManager() {
               size="small"
             >
               {dateFilter.isActive 
-                ? `${dateFilter.startDate.toLocaleDateString()} - ${dateFilter.endDate.toLocaleDateString()}` 
+                ? `${dateFilter.startDate.toLocaleDateString('en-IN')} - ${dateFilter.endDate.toLocaleDateString('en-IN')}` 
                 : 'Select Date Range'}
             </Button>
             
@@ -3465,7 +3446,7 @@ export default function InventoryManager() {
                       return (
                       <TableRow key={sale.id || index} hover>
                         <TableCell>{sale.serial_no}</TableCell>
-                        <TableCell>{new Date(sale.date).toLocaleDateString()}</TableCell>
+                        <TableCell>{formatDateTimeForDisplay(sale.date)}</TableCell>
                         <TableCell>{sale.product_name}</TableCell>
                         <TableCell>{sale.hsn_code || '-'}</TableCell>
                         <TableCell>{sale.product_type}</TableCell>
@@ -3734,7 +3715,7 @@ export default function InventoryManager() {
                             </div>
                           </TableCell>
                           <TableCell>{index + 1}</TableCell>
-                          <TableCell>{new Date(item.date).toLocaleDateString()}</TableCell>
+                          <TableCell>{formatDateTimeForDisplay(item.date)}</TableCell>
                           <TableCell>{item.requisition_voucher_no}</TableCell>
                           <TableCell>{item.order_id}</TableCell>
                           <TableCell>{item.product_name}</TableCell>
@@ -4193,7 +4174,7 @@ export default function InventoryManager() {
                               STOCK-{balanceStock.length - (page * rowsPerPage + index)}
                             </div>
                           </TableCell>
-                        <TableCell>{new Date(item.date).toLocaleDateString()}</TableCell>
+                        <TableCell>{formatDateTimeForDisplay(item.date)}</TableCell>
                         <TableCell>{item.product_name}</TableCell>
                         <TableCell>{item.hsn_code || '-'}</TableCell>
                         <TableCell>{item.units}</TableCell>

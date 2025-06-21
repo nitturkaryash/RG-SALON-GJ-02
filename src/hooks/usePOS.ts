@@ -121,7 +121,7 @@ export interface CreateServiceData {
 	service_name: string;
 	quantity: number;
 	price: number;
-  type?: 'service' | 'product';
+  type?: 'service' | 'product' | 'membership';
   gst_percentage?: number;
   hsn_code?: string;
   category?: string;
@@ -1034,13 +1034,35 @@ export function usePOS() {
       const isSplitPayment = payments.length > 0;
       let orderStatus: 'completed' | 'pending' | 'cancelled' = 'completed';
       
+      // Helper function to detect if this is a membership item
+      const isMembershipItem = async (service: any): Promise<boolean> => {
+        try {
+          const { data, error } = await supabase
+            .from('membership_tiers')
+            .select('id')
+            .eq('name', service.service_name || service.name)
+            .single();
+          
+          if (error && error.code !== 'PGRST116') { // PGRST116 is "not found" error
+            console.error('Error checking membership tiers:', error);
+            return false;
+          }
+          
+          return !!data; // Returns true if membership found, false otherwise
+        } catch (err) {
+          console.error('Failed to check membership tiers:', err);
+          return false;
+        }
+      };
+      
       // Ensure all services have proper data fields and preserve multi-expert metadata
-      const enhancedServices = data.services?.map(s => {
+      const enhancedServices = await Promise.all(data.services?.map(async (s) => {
         console.log('🔍 usePOS - Processing service for order:', {
           service_id: s.service_id,
           service_name: s.service_name,
           type: s.type,
           category: s.category,
+          price: s.price,
           experts: (s as any).experts
         });
         
@@ -1067,14 +1089,14 @@ export function usePOS() {
             hsn_code: s.hsn_code || ''
           };
           console.log('🟨 usePOS - PRODUCT type assigned:', s.service_name);
-        } else if (s.type === 'membership' || s.category === 'membership') {
+        } else if ((s as any).type === 'membership' || (s as any).category === 'membership' || await isMembershipItem(s)) {
           serviceObj = {
             ...baseFields,
             type: 'membership' as const,
             category: 'membership',
             duration_months: (s as any).duration_months || 12
           };
-          console.log('🟦 usePOS - MEMBERSHIP type assigned:', s.service_name);
+          console.log('🟦 usePOS - MEMBERSHIP type assigned:', s.service_name, '(price:', s.price, ')');
         } else {
           // Default to service for everything else
           serviceObj = {
@@ -1096,7 +1118,7 @@ export function usePOS() {
         
         console.log('🔍 usePOS - Final enhanced service:', finalServiceObj);
         return finalServiceObj;
-      }) || [];
+      }) || []);
 
       const order: PosOrder = {
         id: uuidv4(),

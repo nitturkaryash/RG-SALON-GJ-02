@@ -349,7 +349,7 @@ export const usePurchaseHistory = () => {
       const openingBalancePayload = {
         purchase_id: purchaseId,
         product_id: openingData.product_id,
-        date: new Date(openingData.date).toISOString(),
+        date: new Date(openingData.date).toISOString(), // Use system timestamp directly
         product_name: openingData.product_name,
         hsn_code: openingData.hsn_code,
         units: openingData.units,
@@ -374,8 +374,8 @@ export const usePurchaseHistory = () => {
         "Purchase_Cost/Unit(Ex.GST)": openingData.purchase_cost_per_unit_ex_gst,
         price_inlcuding_disc: openingData.purchase_cost_per_unit_ex_gst,
         transaction_type: 'opening_balance',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
+        created_at: new Date().toISOString(), // Use system timestamp directly
+        updated_at: new Date().toISOString() // Use system timestamp directly
       };
 
       console.log('Opening balance payload for purchase_history_with_stock:', openingBalancePayload);
@@ -399,7 +399,7 @@ export const usePurchaseHistory = () => {
         .from('products')
         .update({ 
           stock_quantity: totalStockAfterOpening,
-          updated_at: new Date().toISOString()
+          updated_at: new Date().toISOString() // Use system timestamp directly
         })
         .eq('id', openingData.product_id);
         

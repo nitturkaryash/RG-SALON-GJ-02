@@ -36,7 +36,7 @@ import { Purchase, PurchaseFormState, Product, SelectChangeEvent } from '../../m
 import { useInventory } from '../../hooks/useInventory';
 import { useProducts } from '../../hooks/useProducts';
 import { toast } from 'react-toastify';
-import { formatCurrency } from '../../utils/formatters';
+import { formatCurrency, formatDateKolkata, formatAsiaKolkataTime } from '../../utils/formatters';
 import { convertToCSV, downloadCSV } from '../../utils/csvExporter';
 import { fetchProductsWithStock } from '../../utils/inventoryHelpers';
 import { supabase, handleSupabaseError } from '../../utils/supabase/supabaseClient';
@@ -469,7 +469,7 @@ const PurchaseTab: React.FC<PurchaseTabProps> = ({ purchases, isLoading, error }
   const formatDate = (dateStr: string | undefined) => {
     if (!dateStr) return '';
     try {
-      return new Date(dateStr).toLocaleDateString('en-IN');
+      return formatAsiaKolkataTime(dateStr);
     } catch (e) {
       return dateStr;
     }
@@ -562,7 +562,7 @@ const PurchaseTab: React.FC<PurchaseTabProps> = ({ purchases, isLoading, error }
       setExportingCSV(true);
       
       const csvData = purchases.map(purchase => ({
-        'Date': new Date(purchase.date).toLocaleDateString(),
+        'Date': formatDateKolkata(purchase.date, true),
         'Product Name': purchase.product_name || '',
         'HSN Code': purchase.hsn_code || '',
         'Units': purchase.units || '',

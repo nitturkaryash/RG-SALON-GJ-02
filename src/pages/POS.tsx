@@ -573,7 +573,7 @@ export default function POS() {
 	// CALLBACK DEFINITIONS (MOVED UP OR RESTORED)
 	// ====================================================
 
-	const handleAddToOrder = useCallback((service: POSService, quantity: number = 1, customPrice?: number) => {
+	const handleAddToOrder = useCallback(async (service: POSService, quantity: number = 1, customPrice?: number) => {
 		console.log(`[handleAddToOrder] Called for: ${service.name} (ID: ${service.id}), Quantity: ${quantity}`);
 
 		const isOutOfStock = service.type === 'product' &&
@@ -630,9 +630,44 @@ export default function POS() {
 			toast.success(`Increased ${service.name} quantity to ${newQuantity}`);
 		} else {
 			// Item doesn't exist, create new item
-			// Determine the type - properly handle service, product, and membership types
-			const itemType = service.type === 'service' ? 'service' : 
-						   service.type === 'membership' ? 'membership' : 'product';
+			// Helper function to detect if this is a membership item by checking membership_tiers table
+			const isMembershipItem = async (service: POSService): Promise<boolean> => {
+				try {
+					const { data, error } = await supabase
+						.from('membership_tiers')
+						.select('id')
+						.eq('name', service.name)
+						.single();
+					
+					if (error && error.code !== 'PGRST116') { // PGRST116 is "not found" error
+						console.error('Error checking membership tiers:', error);
+						return false;
+					}
+					
+					return !!data; // Returns true if membership found, false otherwise
+				} catch (err) {
+					console.error('Failed to check membership tiers:', err);
+					return false;
+				}
+			};
+			
+			// Determine the type - CHECK MEMBERSHIP FIRST, then product, then service
+			let itemType: 'service' | 'product' | 'membership';
+			if (service.type === 'membership') {
+				itemType = 'membership';
+			} else {
+				// Check if it's a membership by querying the database
+				const isMembership = await isMembershipItem(service);
+				if (isMembership) {
+					itemType = 'membership';
+				} else if (service.type === 'product') {
+					itemType = 'product';
+				} else {
+					itemType = 'service'; // Default to service
+				}
+			}
+			
+			console.log(`🔍 POS - Type detection for ${service.name}: original=${service.type}, detected=${itemType}, price=${service.price}`);
 			
 			// Services now get stylist assignments through the dialog system
 			// No automatic global stylist assignment
@@ -1705,12 +1740,15 @@ export default function POS() {
 
 
 
-	// Enhanced payment validation helper
+	// Enhanced payment validation helper - more lenient for order validation
 	const getPaymentValidation = useCallback(() => {
 		const totalAmount = calculateTotalAmount();
 		const totalPayments = Object.values(paymentAmounts).reduce((sum, amount) => sum + amount, 0);
 		const remaining = totalAmount - totalPayments;
-		const isValid = Math.abs(remaining) < 0.01; // Allow small rounding differences
+		
+		// For order validation, allow proceeding if no payment entered yet
+		// Payment can be entered during the order creation process
+		const isValid = totalPayments === 0 || Math.abs(remaining) < 0.01; // Allow no payment or exact payment
 		
 		return {
 			totalAmount,
@@ -1725,18 +1763,37 @@ export default function POS() {
 	// Update the isOrderValid function to use the new payment validation
 	const isOrderValid = useCallback(() => {
 		// Customer info validation
-		// No global stylist validation needed - stylists are assigned per service
 		const customerInfoValid = customerName.trim() !== "";
 		
 		// Order items validation
 		const orderItemsValid = orderItems.length > 0;
 		
-		// Payment validation using the new validation helper
+		// Stylist validation - only check services, not products or memberships
+		const services = orderItems.filter(item => item.type === 'service');
+		const hasServices = services.length > 0;
+		
+		// Only require stylist validation if there are actual services (not products/memberships)
+		let stylistValid = true;
+		if (hasServices) {
+			// Check if all services have stylists assigned through experts array
+			const servicesWithoutStylists = services.filter(service => {
+				const experts = (service as POSOrderItem).experts;
+				return !experts || experts.length === 0;
+			});
+			
+			// If there are services without stylists, check if there's a global stylist selected as fallback
+			if (servicesWithoutStylists.length > 0) {
+				stylistValid = selectedStylist !== null;
+			}
+		}
+		
+		// Payment validation - allow proceeding without payment for now
+		// Payment will be validated during actual order creation
 		const paymentValidation = getPaymentValidation();
 		const paymentValid = paymentValidation.isValid;
 		
-		return customerInfoValid && orderItemsValid && paymentValid;
-	}, [customerName, orderItems, getPaymentValidation]);
+		return customerInfoValid && orderItemsValid && stylistValid && paymentValid;
+	}, [customerName, orderItems, selectedStylist, getPaymentValidation]);
 
 	// Add effect to handle split payment amount distribution
 	useEffect(() => {
@@ -1850,10 +1907,48 @@ export default function POS() {
 	// Modify handleCreateWalkInOrder to use the isOrderValid function
 	const handleCreateWalkInOrder = useCallback(async () => {
 		if (!isOrderValid()) {
+			// Check specific validation failures for better error messages
+			const customerInfoValid = customerName.trim() !== "";
+			const orderItemsValid = orderItems.length > 0;
+			
+			// Updated stylist validation logic to match isOrderValid - only check services
+			const services = orderItems.filter(item => item.type === 'service');
+			const hasServices = services.length > 0;
+			
+			let stylistValid = true;
+			if (hasServices) {
+				const servicesWithoutStylists = services.filter(service => {
+					const experts = (service as POSOrderItem).experts;
+					return !experts || experts.length === 0;
+				});
+				
+				if (servicesWithoutStylists.length > 0) {
+					stylistValid = selectedStylist !== null;
+				}
+			}
+			
 			const paymentValidation = getPaymentValidation();
+			
 			let errorMessage = "Please complete all required fields.";
 			
-			if (!paymentValidation.isValid) {
+			if (!customerInfoValid) {
+				errorMessage = "Please enter a customer name.";
+			} else if (!orderItemsValid) {
+				errorMessage = "Please add at least one item to the order.";
+			} else if (!stylistValid) {
+				const servicesWithoutStylists = services.filter(service => {
+					const experts = (service as POSOrderItem).experts;
+					return !experts || experts.length === 0;
+				});
+				
+				if (servicesWithoutStylists.length > 0) {
+					if (servicesWithoutStylists.length === 1) {
+						errorMessage = `Please assign a stylist to "${servicesWithoutStylists[0].item_name}" service or select a global stylist.`;
+					} else {
+						errorMessage = `Please assign stylists to services: ${servicesWithoutStylists.map(s => s.item_name).join(', ')} or select a global stylist.`;
+					}
+				}
+			} else if (!paymentValidation.isValid) {
 				if (paymentValidation.isUnderpaid) {
 					errorMessage = `Payment incomplete. Remaining amount: ₹${paymentValidation.remaining.toFixed(2)}`;
 				} else if (paymentValidation.isOverpaid) {
@@ -1985,7 +2080,7 @@ export default function POS() {
 				quantity: service.quantity,
 				gst_percentage: service.gst_percentage || 0,
 				hsn_code: service.hsn_code || '',
-				type: 'service' as const,
+				type: service.type, // Preserve the correctly detected type (service/membership)
 				product_id: service.item_id,
 				product_name: service.item_name,
 				category: service.category,
@@ -2075,6 +2170,7 @@ export default function POS() {
 		const hasProducts = formattedProducts.length > 0;
 		const isMembershipOnlyOrder = hasMemberships && !hasServices && !hasProducts;
 		const isProductOnlyOrder = hasProducts && !hasServices && !hasMemberships;
+		const isNonServiceOrder = !hasServices; // No services, regardless of products/memberships
 		
 		// Determine if this is multi-expert and get experts to process
 		const isMultiExpert = allExpertsInServices.size > 1 || legacyExperts.length > 1;
@@ -2082,8 +2178,8 @@ export default function POS() {
 			? Array.from(allExpertsInServices).map(id => stylists?.find(s => s.id === id)).filter(Boolean)
 			: legacyExperts.length > 0 
 				? legacyExperts 
-				: (isMembershipOnlyOrder || isProductOnlyOrder)
-					? [] // No expert needed for membership-only or product-only orders
+				: isNonServiceOrder
+					? [] // No expert needed for any order without services
 					: [staffInfo];
 		const numberOfExperts = expertsToProcess.length;
 		
@@ -2228,7 +2324,7 @@ export default function POS() {
 		} else {
 			// **SINGLE EXPERT: Use existing logic**
 			const expert = expertsToProcess[0] || staffInfo;
-			if (!expert && !isMembershipOnlyOrder && !isProductOnlyOrder) throw new Error('No expert available for order creation');
+			if (!expert && !isNonServiceOrder) throw new Error('No expert available for order creation');
 
 			// Use original logic for single expert orders
 			const itemsForOrder = [...formattedProducts, ...formattedServices, ...formattedMemberships].map(item => ({
@@ -4150,6 +4246,7 @@ export default function POS() {
 										onChange={(_, newValue) => {
 											handleClientSelect(newValue);
 										}}
+										isOptionEqualToValue={(option, value) => option.id === value.id}
 										renderInput={(params) => (
 											<TextField
 												{...params}
@@ -4237,6 +4334,41 @@ export default function POS() {
 										</Grid>
 									</>
 								)}
+								
+								{/* Global Stylist Selection - Always visible as fallback */}
+								<Grid item xs={12} sm={selectedClient && customerName.trim() !== "" ? 4 : 6}>
+									<FormControl
+										fullWidth
+										size="small"
+									>
+										<InputLabel id="global-stylist-select-label">
+											Default Stylist (Optional)
+										</InputLabel>
+										<Select
+											labelId="global-stylist-select-label"
+											id="global-stylist-select"
+											value={selectedStylist?.id || ""}
+											label="Default Stylist (Optional)"
+											onChange={(e) => {
+												const stylistId = e.target.value;
+												const stylist = stylists?.find(s => s.id === stylistId) || null;
+												setSelectedStylist(stylist);
+											}}
+										>
+											<MenuItem value="">
+												<em>None</em>
+											</MenuItem>
+											{(stylists || [])?.map((stylist) => (
+												<MenuItem key={stylist.id} value={stylist.id}>
+													{stylist.name}
+												</MenuItem>
+											))}
+										</Select>
+										<FormHelperText>
+											Used as fallback for services without assigned stylists
+										</FormHelperText>
+									</FormControl>
+								</Grid>
 							</Grid>
 						</Paper>
 					</Grid>
@@ -4293,12 +4425,12 @@ export default function POS() {
 											</li>
 										)}
 										value={productDropdownValue}
-										onChange={(_, newProduct) => {
+										onChange={async (_, newProduct) => {
 											if (newProduct) {
 												if (newProduct.stock_quantity !== undefined && newProduct.stock_quantity <= 0) {
 													toast.error(`${newProduct.name} is out of stock`);
 												} else {
-													handleAddToOrder(newProduct);
+													await handleAddToOrder(newProduct);
 												}
 											}
 											setProductDropdownValue(null);
@@ -4912,10 +5044,10 @@ export default function POS() {
 				<DialogActions>
 					{!editingServiceItem && (
 						<Button 
-							onClick={() => {
+							onClick={async () => {
 								// Add service without stylists
 								if (pendingService) {
-									handleAddToOrder({
+									await handleAddToOrder({
 										id: pendingService.id,
 										name: pendingService.name,
 										price: pendingService.price,
