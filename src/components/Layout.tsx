@@ -37,6 +37,7 @@ import {
   Logout,
   Store as StoreIcon,
   InventoryRounded,
+  WhatsApp,
 } from '@mui/icons-material'
 import * as React from 'react'
 import * as FramerMotion from 'framer-motion'
@@ -67,6 +68,7 @@ const menuLinks: MenuLink[] = [
   { text: 'Orders', path: '/orders', icon: <ShoppingCart /> },
   { text: 'POS', path: '/pos', icon: <PointOfSale /> },
   { text: 'Inventory', path: '/products', icon: <StoreIcon /> },
+  { text: 'Communications', path: '/communications', icon: <WhatsApp /> },
   { text: 'Memberships', path: '/membership-tiers', icon: <CardMembership /> },
   { text: 'Members', path: '/members', icon: <CardMembership /> },
 ]

@@ -38,6 +38,7 @@ const CollectionDetail = lazy(() => import('./pages/CollectionDetail'));
 const MembershipTiers = lazy(() => import('./pages/MembershipTiers'));
 const MembersPage = lazy(() => import('./pages/MembersPage'));
 const ServiceOverview = lazy(() => import('./pages/ServiceOverview'));
+const Communications = lazy(() => import('./pages/Communications'));
 
 // Loading fallback component
 const PageLoader = () => (
@@ -166,6 +167,11 @@ function App() {
               </ErrorBoundary>
             } />
             <Route path="pos" element={<POS />} />
+            <Route path="communications" element={
+              <ErrorBoundary>
+                <Communications />
+              </ErrorBoundary>
+            } />
             <Route path="collections/:id" element={
               <ErrorBoundary>
                 <CollectionDetail />

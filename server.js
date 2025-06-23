@@ -1,8 +1,11 @@
 import express from 'express';
 import cors from 'cors';
+import nodemailer from 'nodemailer';
+// import * as WhatsAppModule from './dist/whatsapp/business-api/services/whatsappService.js';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 
+// const { WhatsAppService } = WhatsAppModule;
 const app = express();
 
 // Security middleware
