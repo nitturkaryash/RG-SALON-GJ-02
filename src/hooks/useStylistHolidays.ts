@@ -23,7 +23,7 @@ export function useStylistHolidays() {
       
       if (error) {
         console.error('Error creating stylist_holidays table:', error);
-      } else {
+      } else if (import.meta.env.DEV) {
         console.log('Stylist holidays table check completed');
       }
     } catch (error) {
@@ -39,7 +39,9 @@ export function useStylistHolidays() {
     queryKey: ['stylist_holidays'],
     queryFn: async () => {
       try {
-        console.log('Fetching stylist holidays from database...');
+        if (import.meta.env.DEV) {
+          console.log('Fetching stylist holidays from database...');
+        }
         
         // Fetch holidays from Supabase
         const { data: holidaysData, error } = await supabase
@@ -53,10 +55,14 @@ export function useStylistHolidays() {
         }
 
         if (holidaysData && holidaysData.length > 0) {
-          console.log('Stylist holidays data fetched successfully:', holidaysData.length);
+          if (import.meta.env.DEV) {
+            console.log('Stylist holidays data fetched successfully:', holidaysData.length);
+          }
           return holidaysData as StylistHoliday[];
         } else {
-          console.warn('No stylist holidays found in the database.');
+          if (import.meta.env.DEV) {
+            console.warn('No stylist holidays found in the database.');
+          }
           return [] as StylistHoliday[];
         }
       } catch (error) {

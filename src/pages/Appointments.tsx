@@ -79,6 +79,9 @@ type UpdateAppointmentData = {
   stylist_id?: string;
   service_id?: string;
   booking_id?: string | null; // Allow null for updates
+  booker_name?: string;
+  booker_phone?: string;
+  booker_email?: string;
 }
 import { useStylists, Stylist, StylistBreak } from '../hooks/useStylists'
 import { useServices, Service as BaseService } from '../hooks/useServices'
@@ -103,7 +106,7 @@ import { DatePicker } from '@mui/x-date-pickers/DatePicker'
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider'
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns'
 import { useAuthContext } from '../contexts/AuthContext'
-import { sendAppointmentWhatsAppNotification, isWhatsAppEnabled } from '../utils/whatsappNotifications'
+import { sendAppointmentWhatsAppNotification, isWhatsAppEnabled } from '../utils/whatsapp'
 import { isValidPhoneNumber, isValidEmail } from '../utils/validation'
 
 // Define Drawer width as a constant
@@ -352,6 +355,7 @@ export default function Appointments() {
   const [editingAppointment, setEditingAppointment] = useState<MergedAppointment | null>(null);
   const [isBilling, setIsBilling] = useState(false); // Kept for potential future use with button disabling
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [selectedAppointmentStatus, setSelectedAppointmentStatus] = useState<Appointment['status']>('scheduled');
   // Add state for view mode
   const [viewMode, setViewMode] = useState<'calendar' | 'list'>('calendar');
   const [serviceGenderFilter, setServiceGenderFilter] = useState<'male' | 'female' | null>(null);
@@ -680,6 +684,7 @@ export default function Appointments() {
       endTime: formattedEndTime,
     });
     setAppointmentNotes(appointment.notes || '');
+    setSelectedAppointmentStatus(appointment.status || 'scheduled');
     console.log("[handleAppointmentClick] Drawer populated. Services count:", consolidatedServiceEntries.length, "Overall Times:", { startTime: formattedStartTime, endTime: formattedEndTime });
   };
 
@@ -1012,339 +1017,30 @@ export default function Appointments() {
 
   // Combined function for booking or updating
   const handleSaveAppointment = async () => {
-    console.log('Saving appointment with data:', {
-      clientEntries,
-      appointmentTime,
-      appointmentNotes
-    });
-
-    // --- Validation ---
-    let isValid = true;
-    
-    // Validate client entries
-    clientEntries.forEach((entry, idx) => {
-      const clientName = entry.client?.full_name?.trim() || entry.client?.inputValue?.trim();
-      const isNewClient = !entry.client?.id;
-      const clientPhone = entry.client?.phone?.trim();
-      const clientEmail = entry.client?.email?.trim();
-
-      if (!clientName) {
-        console.error(`Validation Error: Client name missing for entry ${idx + 1}`);
-        isValid = false;
-      }
-      
-      if (isNewClient && !clientPhone) {
-        console.error(`Validation Error: Phone number required for new client in entry ${idx + 1}`);
-        isValid = false;
-      } else if (isNewClient && clientPhone && !isValidPhoneNumber(clientPhone)) {
-        console.error(`Validation Error: Invalid phone number format for client in entry ${idx + 1}`);
-        isValid = false;
-        toast.error(`Invalid phone number format for client ${clientName}`);
-      }
-      
-      // Validate email if provided
-      if (isNewClient && clientEmail && !isValidEmail(clientEmail)) {
-        console.error(`Validation Error: Invalid email format for client in entry ${idx + 1}`);
-        isValid = false;
-        toast.error(`Invalid email format for client ${clientName}`);
-      }
-      
-      // Validate booker information if booking for someone else
-      if (entry.isForSomeoneElse) {
-        if (!entry.bookerName) {
-          console.error(`Validation Error: Booker's name is required when booking for someone else`);
-          isValid = false;
-          toast.error("Booker's name is required");
-        }
-        
-        if (!entry.bookerPhone) {
-          console.error(`Validation Error: Booker's phone is required when booking for someone else`);
-          isValid = false;
-          toast.error("Booker's phone is required");
-        } else if (entry.bookerPhone && !isValidPhoneNumber(entry.bookerPhone)) {
-          console.error(`Validation Error: Invalid booker's phone number format`);
-          isValid = false;
-          toast.error("Invalid booker's phone number format");
-        }
-        
-        // Validate booker email if provided
-        if (entry.bookerEmail && !isValidEmail(entry.bookerEmail)) {
-          console.error(`Validation Error: Invalid booker's email format`);
-          isValid = false;
-          toast.error("Invalid booker's email format");
-        }
-      }
-      
-      if (entry.services.length === 0) {
-        console.error(`Validation Error: No services selected for entry ${idx + 1}`);
-        isValid = false;
-      }
-    });
-    
-    // Validate experts for each service
-    clientEntries.forEach((entry, idx) => {
-      entry.services.forEach((service, sIdx) => {
-        const expertsArr = service.experts && service.experts.length > 0 ? service.experts : [{ id: service.stylistId, name: service.stylistName }];
-        // Only validate experts that have been started (have either id or name), ignore completely empty objects
-        const expertsToValidate = expertsArr.filter(exp => exp.id || exp.name);
-        const hasInvalid = expertsToValidate.some(exp => !exp.id);
-        if (hasInvalid) {
-          console.error(`Validation Error: Service ${service.name} in entry ${idx + 1} has unassigned expert(s).`);
-          isValid = false;
-          toast.error(`Please assign all experts for service ${service.name}`);
-        }
-      });
-    });
-    
-    if (!isValid) {
-      setSnackbarMessage('Validation failed. Ensure all required fields are filled correctly.');
-      setSnackbarSeverity('error');
-      setSnackbarOpen(true);
-      return;
-    }
-
-    // --- Break Conflict Validation ---
-    for (const entry of clientEntries) {
-      for (const service of entry.services) {
-        if (!service.stylistId) continue;
-        const [startHour, startMinute] = service.fromTime.split(':').map(Number);
-        const [endHour, endMinute] = service.toTime.split(':').map(Number);
-        const baseDateForValidation = new Date(drawerDate);
-        baseDateForValidation.setHours(0, 0, 0, 0);
-        const serviceStartTime = new Date(baseDateForValidation);
-        serviceStartTime.setHours(startHour, startMinute, 0, 0);
-        const serviceEndTime = new Date(baseDateForValidation);
-        serviceEndTime.setHours(endHour, endMinute, 0, 0);
-        if (serviceEndTime <= serviceStartTime) {
-          serviceEndTime.setDate(serviceEndTime.getDate() + 1);
-        }
-        const stylist = stylists.find(s => s.id === service.stylistId);
-        if (stylist && stylist.breaks && stylist.breaks.length > 0) {
-          const hasBreakConflict = stylist.breaks.some((breakItem: StylistBreak) => {
-            const breakStartTime = new Date(breakItem.startTime);
-            const breakEndTime = new Date(breakItem.endTime);
-            
-            // Only check breaks on the same day as drawerDate (baseDateForValidation)
-            if (!isSameDay(breakStartTime, baseDateForValidation)) {
-              return false;
-            }
-
-            // Check for overlap between service time and break time
-            return (
-              (serviceStartTime >= breakStartTime && serviceStartTime < breakEndTime) || // Service starts during break
-              (serviceEndTime > breakStartTime && serviceEndTime <= breakEndTime) || // Service ends during break
-              (serviceStartTime <= breakStartTime && serviceEndTime >= breakEndTime) // Break is within service time
-            );
-          });
-
-          if (hasBreakConflict) {
-            const stylistName = stylist.name;
-            const serviceName = service.name;
-            const timeRange = `${service.fromTime} - ${service.toTime}`;
-            
-            setSnackbarMessage(`Cannot book appointment: ${serviceName} for ${stylistName} (${timeRange}) conflicts with break time.`);
-            setSnackbarSeverity('error');
-            setSnackbarOpen(true);
-            return;
-          }
-        }
-      }
-    }
-    // --- End Break Conflict Validation ---
-    
-    // --- End Validation ---
-
-    const newBookingId = uuidv4();
-
     if (!editingAppointment) {
-      // --- CREATE NEW APPOINTMENT(S) ---
+      // --- CREATE NEW APPOINTMENT ---
       try {
-        // Create appointments for each service (one per service, not per expert)
-        const appointmentsToCreatePromises = clientEntries.flatMap(async entry => {
-          let currentClientId = entry.client?.id;
-          if (!currentClientId && entry.client) {
-            const newClient = await handleAddNewClient(entry);
-            if (newClient) currentClientId = newClient.id;
-            else throw new Error('Failed to ensure client exists for new appointment.');
-          }
-          if (!currentClientId) throw new Error('Client ID is missing for a new appointment entry.');
-
-          return entry.services.map(service => {
-            // Get all experts for this service (fallback to primary stylist if no experts)
-            const rawExpertsList = (service.experts && service.experts.length > 0)
-              ? service.experts
-              : [{ id: service.stylistId, name: service.stylistName }];
-            const expertsList = rawExpertsList.filter(e => e.id && e.id.trim() !== '');
-            
-            if (expertsList.length === 0) return null; // skip if no valid expert
-
-            const [startHour, startMinute] = service.fromTime.split(':').map(Number);
-            const [endHour, endMinute] = service.toTime.split(':').map(Number);
-            const baseDate = new Date(drawerDate);
-
-            const startTime = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate(), startHour, startMinute);
-            const endTime = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate(), endHour, endMinute);
-            if (endTime <= startTime) endTime.setDate(endTime.getDate() + 1);
-
-            // Ensure we have a valid primary stylist ID
-            const primaryStylistId = expertsList[0].id;
-            if (!primaryStylistId) return null;
-
-            return {
-              client_id: currentClientId,
-              stylist_id: primaryStylistId, // Primary stylist for the appointment record
-              service_id: service.id,
-              start_time: startTime.toISOString(),
-              end_time: endTime.toISOString(),
-              status: 'scheduled' as Appointment['status'],
-              notes: appointmentNotes,
-              // Store all experts in clientDetails for join table insertion
-              clientDetails: [{
-                clientId: currentClientId,
-                serviceIds: [service.id],
-                stylistIds: expertsList.map(e => e.id).filter((id): id is string => Boolean(id)), // ALL experts for this service
-              }],
-              booking_id: newBookingId,
-              is_for_someone_else: entry.isForSomeoneElse,
-              booker_name: entry.bookerName,
-              booker_phone: entry.bookerPhone,
-              booker_email: entry.bookerEmail
-            };
-          }).filter(Boolean);
-        });
-        // Flatten nested arrays and remove nulls
-        const appointmentsToCreate = (await Promise.all(appointmentsToCreatePromises)).flat().filter((app): app is NonNullable<typeof app> => app !== null);
-
-        if (appointmentsToCreate.length === 0) {
-          setSnackbarMessage('No services selected to book.');
-          setSnackbarSeverity('warning');
-          setSnackbarOpen(true);
-          return;
+        const primaryEntry = clientEntries[0];
+        if (!primaryEntry.client) {
+          throw new Error('Please select a client');
         }
 
-        // Insert appointments sequentially to avoid race conditions
-        for (const appData of appointmentsToCreate) {
-          await createAppointment(appData);
+        // Validate services
+        if (!primaryEntry.services || primaryEntry.services.length === 0) {
+          throw new Error('Please select at least one service');
         }
 
-        // Send WhatsApp notifications for new appointments
-        if (isWhatsAppEnabled()) {
-          const primaryEntry = clientEntries[0];
-          if (primaryEntry.client && primaryEntry.client.phone && isValidPhoneNumber(primaryEntry.client.phone)) {
-            try {
-              // Get the first created appointment for notification data
-              const firstService = primaryEntry.services[0];
-              if (firstService) {
-                const appointmentBaseDate = new Date(drawerDate); // Fixed variable scope issue
-                const appointmentData = {
-                  id: newBookingId, // Use booking ID as reference
-                  client_id: primaryEntry.client.id || '',
-                  stylist_id: firstService.stylistId,
-                  service_id: firstService.id,
-                  start_time: new Date(appointmentBaseDate.getFullYear(), appointmentBaseDate.getMonth(), appointmentBaseDate.getDate(), 
-                    parseInt(firstService.fromTime.split(':')[0]), 
-                    parseInt(firstService.fromTime.split(':')[1])
-                  ).toISOString(),
-                  end_time: new Date(appointmentBaseDate.getFullYear(), appointmentBaseDate.getMonth(), appointmentBaseDate.getDate(), 
-                    parseInt(firstService.toTime.split(':')[0]), 
-                    parseInt(firstService.toTime.split(':')[1])
-                  ).toISOString(),
-                  status: 'scheduled' as const,
-                  notes: appointmentNotes
-                };
-
-                const clientData = {
-                  id: primaryEntry.client.id || '',
-                  full_name: primaryEntry.client.full_name,
-                  phone: primaryEntry.client.phone,
-                  email: primaryEntry.client.email || ''
-                };
-
-                const servicesData = primaryEntry.services.map(service => ({
-                  id: service.id,
-                  name: service.name,
-                  price: service.price,
-                  duration: 60 // Default duration
-                }));
-
-                const stylistsData = primaryEntry.services.map(service => {
-                  const stylist = stylists.find(s => s.id === service.stylistId);
-                  return {
-                    id: service.stylistId,
-                    name: stylist?.name || 'Unknown'
-                  };
-                });
-
-                // Send WhatsApp notification
-                await sendAppointmentWhatsAppNotification(
-                  'created',
-                  appointmentData,
-                  clientData,
-                  servicesData,
-                  stylistsData
-                );
-
-                console.log('[WhatsApp] Appointment confirmation sent successfully');
-              }
-            } catch (whatsappError) {
-              console.error('[WhatsApp] Failed to send appointment confirmation:', whatsappError);
-              // Don't block the appointment creation if WhatsApp fails
-              toast.warning('Appointment created successfully, but WhatsApp notification failed to send');
-            }
-          } else {
-            console.log('[WhatsApp] Skipping notification - invalid or missing phone number');
+        // Validate times for all services
+        for (const service of primaryEntry.services) {
+          if (!service.fromTime || !service.toTime) {
+            throw new Error(`Please set time for all services`);
           }
         }
 
-        setSnackbarMessage('Appointment(s) created successfully!');
-        setSnackbarSeverity('success');
-        setSnackbarOpen(true);
-        handleCloseDrawer();
-        // fetchHolidays(); // Commented out as fetchHolidays is not defined
-        setLastBookedAppointmentTime(new Date().toISOString());
+        // Generate a shared booking_id for all appointments in this booking session
+        const bookingId = uuidv4();
 
-      } catch (error) {
-        console.error('Error creating appointment(s):', error);
-        setSnackbarMessage(`Error: ${error instanceof Error ? error.message : 'Could not create appointments'}`);
-        setSnackbarSeverity('error');
-        setSnackbarOpen(true);
-      }
-    } else {
-      // --- UPDATE EXISTING APPOINTMENT ---
-      if (!editingAppointment.id) {
-        setSnackbarMessage('Error: No appointment selected for update.');
-        setSnackbarSeverity('error');
-        setSnackbarOpen(true);
-        return;
-      }
-
-      const primaryEntry = clientEntries[0]; 
-      if (!primaryEntry || !primaryEntry.client?.id || primaryEntry.services.length === 0) {
-        setSnackbarMessage('Client and at least one service are required for update.');
-        setSnackbarSeverity('warning');
-        setSnackbarOpen(true);
-        return;
-      }
-
-      try {
-        const existingAppointmentDbData = allAppointments.find(app => app.id === editingAppointment.id);
-        const bookingId = existingAppointmentDbData?.booking_id || editingAppointment.booking_id || uuidv4();
-        
-        // First, find all existing appointments with the same booking_id or client_id on the same day
-        const clickedDate = new Date(editingAppointment.start_time);
-        const relatedAppointments = allAppointments.filter((app: MergedAppointment) =>
-          (app.booking_id === bookingId || 
-           (app.client_id === primaryEntry.client!.id && 
-            isSameDay(new Date(app.start_time), clickedDate) && 
-            !app.is_for_someone_else))
-        );
-
-        console.log('[UPDATE] Found related appointments to delete:', relatedAppointments.map(a => a.id));
-
-        // Delete all existing related appointments
-        await Promise.all(relatedAppointments.map(app => deleteAppointment(app.id)));
-
-        // Create new appointments for each service (one per service, not per expert)
+        // Create individual appointments for each service
         const appointmentsToCreate = primaryEntry.services.map(service => {
           // Get all experts for this service (fallback to primary stylist if no experts)
           const rawExpertsList = (service.experts && service.experts.length > 0)
@@ -1366,19 +1062,19 @@ export default function Appointments() {
           if (!primaryStylistId) return null;
 
           return {
-            client_id: primaryEntry.client!.id,
+            client_id: primaryEntry.client.id,
             stylist_id: primaryStylistId, // Primary stylist for the appointment record
             service_id: service.id,
             start_time: startTime.toISOString(),
             end_time: endTime.toISOString(),
-            status: editingAppointment.status || 'scheduled' as Appointment['status'],
+            status: (selectedAppointmentStatus as Appointment['status']) || 'scheduled',
             notes: appointmentNotes,
-            paid: editingAppointment.paid || false,
-            billed: editingAppointment.billed || false,
+            paid: false,
+            billed: false,
             is_for_someone_else: primaryEntry.isForSomeoneElse,
             // Store all experts in clientDetails for join table insertion
             clientDetails: [{
-              clientId: primaryEntry.client!.id,
+              clientId: primaryEntry.client.id,
               serviceIds: [service.id],
               stylistIds: expertsList.map(e => e.id).filter((id): id is string => Boolean(id)), // ALL experts for this service
             }],
@@ -1389,12 +1085,244 @@ export default function Appointments() {
           };
         }).filter((app): app is NonNullable<typeof app> => app !== null);
 
-        // Create all new appointments sequentially
+        // Create all appointments sequentially
         for (const appData of appointmentsToCreate) {
           await createAppointment(appData);
         }
 
-        console.log('[UPDATE] Created new appointments:', appointmentsToCreate.length);
+        // Send WhatsApp notifications
+        if (isWhatsAppEnabled()) {
+          const primaryEntry = clientEntries[0];
+          if (primaryEntry.client && primaryEntry.client.phone && isValidPhoneNumber(primaryEntry.client.phone)) {
+            try {
+              const firstService = primaryEntry.services[0];
+              if (firstService) {
+                // Calculate the start and end times for the first service
+                const [startHour, startMinute] = firstService.fromTime.split(':').map(Number);
+                const [endHour, endMinute] = firstService.toTime.split(':').map(Number);
+                const baseDate = new Date(drawerDate);
+                
+                const serviceStartTime = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate(), startHour, startMinute);
+                const serviceEndTime = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate(), endHour, endMinute);
+                if (serviceEndTime <= serviceStartTime) serviceEndTime.setDate(serviceEndTime.getDate() + 1);
+
+                const appointmentData = {
+                  id: uuidv4(), // Temporary ID for notification
+                  client_id: primaryEntry.client.id,
+                  stylist_id: firstService.stylistId,
+                  service_id: firstService.id,
+                  start_time: serviceStartTime.toISOString(),
+                  end_time: serviceEndTime.toISOString(),
+                  status: (selectedAppointmentStatus as Appointment['status']) || 'scheduled',
+                  notes: appointmentNotes
+                };
+
+                const clientData = {
+                  id: primaryEntry.client.id,
+                  full_name: primaryEntry.client.full_name,
+                  phone: primaryEntry.client.phone,
+                  email: primaryEntry.client.email || ''
+                };
+
+                const servicesData = primaryEntry.services.map(service => ({
+                  id: service.id,
+                  name: service.name,
+                  price: service.price,
+                  duration: 60 // Default duration
+                }));
+
+                const stylistsData = primaryEntry.services.map(service => {
+                  const stylist = stylists.find(s => s.id === service.stylistId);
+                  return {
+                    id: service.stylistId,
+                    name: stylist?.name || 'Unknown'
+                  };
+                });
+
+                // Send WhatsApp notification for creation
+                await sendAppointmentWhatsAppNotification(
+                  'created',
+                  appointmentData,
+                  clientData,
+                  servicesData,
+                  stylistsData
+                );
+
+                console.log('[WhatsApp] Appointment confirmation notification sent successfully');
+              }
+            } catch (whatsappError) {
+              console.error('[WhatsApp] Failed to send appointment confirmation notification:', whatsappError);
+              // Don't block the appointment creation if WhatsApp fails
+              toast.warning('Appointment created successfully, but WhatsApp notification failed to send');
+            }
+          } else {
+            console.log('[WhatsApp] Skipping confirmation notification - invalid or missing phone number');
+          }
+        }
+
+        setSnackbarMessage('Appointment created successfully!');
+        setSnackbarSeverity('success');
+        setSnackbarOpen(true);
+        handleCloseDrawer();
+        // fetchHolidays(); // Commented out as fetchHolidays is not defined
+      } catch (error) {
+        console.error('Error creating appointment:', error);
+        setSnackbarMessage(`Error: ${error instanceof Error ? error.message : 'Could not create appointment'}`);
+        setSnackbarSeverity('error');
+        setSnackbarOpen(true);
+      }
+    } else {
+      // --- UPDATE EXISTING APPOINTMENT ---
+      const primaryEntry = clientEntries[0];
+      if (!primaryEntry.client) {
+        setSnackbarMessage('Error: Please select a client');
+        setSnackbarSeverity('error');
+        setSnackbarOpen(true);
+        return;
+      }
+
+      // Validate services
+      if (!primaryEntry.services || primaryEntry.services.length === 0) {
+        setSnackbarMessage('Error: Please select at least one service');
+        setSnackbarSeverity('error');
+        setSnackbarOpen(true);
+        return;
+      }
+
+      // Validate times for all services
+      for (const service of primaryEntry.services) {
+        if (!service.fromTime || !service.toTime) {
+          setSnackbarMessage('Error: Please set time for all services');
+          setSnackbarSeverity('error');
+          setSnackbarOpen(true);
+          return;
+        }
+      }
+
+      try {
+        const existingAppointmentDbData = allAppointments.find(app => app.id === editingAppointment.id);
+        const bookingId = existingAppointmentDbData?.booking_id || editingAppointment.booking_id || uuidv4();
+        
+        // Check if this is a simple update (same number of services, same service IDs, same client)
+        const currentServices = primaryEntry.services;
+        const isSimpleUpdate = 
+          currentServices.length === 1 &&
+          currentServices[0].id === editingAppointment.service_id &&
+          primaryEntry.client.id === editingAppointment.client_id;
+
+        if (isSimpleUpdate) {
+          // --- DIRECT UPDATE: Use updateAppointment for simple changes ---
+          console.log('[UPDATE] Performing direct update for simple appointment change');
+          
+          const service = currentServices[0];
+          const [startHour, startMinute] = service.fromTime.split(':').map(Number);
+          const [endHour, endMinute] = service.toTime.split(':').map(Number);
+          const baseDate = new Date(drawerDate);
+
+          const startTime = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate(), startHour, startMinute);
+          const endTime = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate(), endHour, endMinute);
+          if (endTime <= startTime) endTime.setDate(endTime.getDate() + 1);
+
+          const updateData: UpdateAppointmentData = {
+            id: editingAppointment.id,
+            start_time: startTime.toISOString(),
+            end_time: endTime.toISOString(),
+            notes: appointmentNotes,
+            status: editingAppointment.status || 'scheduled',
+            paid: editingAppointment.paid || false,
+            billed: editingAppointment.billed || false,
+            stylist_id: service.stylistId,
+            is_for_someone_else: primaryEntry.isForSomeoneElse,
+            booker_name: primaryEntry.bookerName,
+            booker_phone: primaryEntry.bookerPhone,
+            booker_email: primaryEntry.bookerEmail
+          };
+
+          // Only include clientDetails if service experts have changed
+          const existingExperts = service.experts?.map(e => e.id).filter(Boolean) || [service.stylistId];
+          const newExperts = service.experts?.map(e => e.id).filter(Boolean) || [service.stylistId];
+          const expertsChanged = JSON.stringify(existingExperts.sort()) !== JSON.stringify(newExperts.sort());
+          
+          if (expertsChanged && primaryEntry.client) {
+            updateData.clientDetails = [{
+              clientId: primaryEntry.client.id,
+              serviceIds: [service.id],
+              stylistIds: newExperts.filter((id): id is string => Boolean(id))
+            }];
+          }
+
+          await updateAppointment(updateData);
+          console.log('[UPDATE] Direct update completed successfully');
+        } else {
+          // --- COMPLEX UPDATE: Use delete-recreate for multiple services or complex changes ---
+          console.log('[UPDATE] Performing complex update with delete-recreate approach');
+          
+          // First, find all existing appointments with the same booking_id or client_id on the same day
+          const clickedDate = new Date(editingAppointment.start_time);
+          const relatedAppointments = allAppointments.filter((app: MergedAppointment) =>
+            (app.booking_id === bookingId || 
+             (app.client_id === primaryEntry.client!.id && 
+              isSameDay(new Date(app.start_time), clickedDate) && 
+              !app.is_for_someone_else))
+          );
+
+          console.log('[UPDATE] Found related appointments to delete:', relatedAppointments.map(a => a.id));
+
+          // Delete all existing related appointments
+          await Promise.all(relatedAppointments.map(app => deleteAppointment(app.id)));
+
+          // Create new appointments for each service (one per service, not per expert)
+          const appointmentsToCreate = primaryEntry.services.map(service => {
+            // Get all experts for this service (fallback to primary stylist if no experts)
+            const rawExpertsList = (service.experts && service.experts.length > 0)
+              ? service.experts
+              : [{ id: service.stylistId, name: service.stylistName }];
+            const expertsList = rawExpertsList.filter(e => e.id && e.id.trim() !== '');
+            if (expertsList.length === 0) return null; // skip if no valid expert
+
+            const [startHour, startMinute] = service.fromTime.split(':').map(Number);
+            const [endHour, endMinute] = service.toTime.split(':').map(Number);
+            const baseDate = new Date(drawerDate);
+
+            const startTime = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate(), startHour, startMinute);
+            const endTime = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate(), endHour, endMinute);
+            if (endTime <= startTime) endTime.setDate(endTime.getDate() + 1);
+
+            // Ensure we have a valid primary stylist ID
+            const primaryStylistId = expertsList[0].id;
+            if (!primaryStylistId) return null;
+
+            return {
+              client_id: primaryEntry.client!.id,
+              stylist_id: primaryStylistId, // Primary stylist for the appointment record
+              service_id: service.id,
+              start_time: startTime.toISOString(),
+              end_time: endTime.toISOString(),
+              status: editingAppointment.status || 'scheduled' as Appointment['status'],
+              notes: appointmentNotes,
+              paid: editingAppointment.paid || false,
+              billed: editingAppointment.billed || false,
+              is_for_someone_else: primaryEntry.isForSomeoneElse,
+              // Store all experts in clientDetails for join table insertion
+              clientDetails: [{
+                clientId: primaryEntry.client!.id,
+                serviceIds: [service.id],
+                stylistIds: expertsList.map(e => e.id).filter((id): id is string => Boolean(id)), // ALL experts for this service
+              }],
+              booking_id: bookingId,
+              booker_name: primaryEntry.bookerName,
+              booker_phone: primaryEntry.bookerPhone,
+              booker_email: primaryEntry.bookerEmail
+            };
+          }).filter((app): app is NonNullable<typeof app> => app !== null);
+
+          // Create all new appointments sequentially
+          for (const appData of appointmentsToCreate) {
+            await createAppointment(appData);
+          }
+
+          console.log('[UPDATE] Created new appointments:', appointmentsToCreate.length);
+        }
         
         // Send WhatsApp notifications for appointment updates
         if (isWhatsAppEnabled()) {
@@ -1563,6 +1491,7 @@ export default function Appointments() {
     setAppointmentNotes('');
     setServiceSearchTerm('');
     setServiceGenderFilter(null);
+    setSelectedAppointmentStatus('scheduled');
   };
 
   // Add handler for view mode toggle

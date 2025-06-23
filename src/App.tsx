@@ -12,6 +12,7 @@ import { CircularProgress, Box } from '@mui/material';
 import ProtectedRoute from './components/ProtectedRoute';
 import ErrorBoundary from './components/ErrorBoundary';
 import { addClientColumns } from './utils/addClientColumns';
+import { startAutomaticReminders } from './utils/appointmentReminders';
 
 // Eagerly loaded pages
 import Dashboard from './pages/Dashboard';
@@ -53,6 +54,15 @@ function App() {
     addClientColumns().catch(err => {
       console.error('Error running database maintenance functions:', err);
     });
+
+    // Initialize automatic appointment reminder system
+    try {
+      console.log('🚀 Initializing automatic appointment reminder system...');
+      startAutomaticReminders();
+      console.log('✅ Appointment reminder system initialized successfully');
+    } catch (error) {
+      console.error('❌ Error initializing appointment reminder system:', error);
+    }
   }, []);
   
   // Handle right-click control based on environment

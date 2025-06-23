@@ -8,9 +8,10 @@ import {
   testWhatsAppIntegration,
   AppointmentNotificationData
 } from '../utils/whatsapp'
+import { integrateWithAppointmentHooks } from '../utils/professionalWhatsApp'
 
 // Import from useClients
-import { useClients } from './useClients'
+// import { useClients } from './useClients'
 
 // Data types
 interface Client {
@@ -73,6 +74,188 @@ export interface MergedAppointment extends Appointment {
   clientName?: string;
   phone?: string;
 }
+
+// Enhanced WhatsApp notification functions
+const sendProfessionalWhatsAppNotification = async (
+  type: 'confirmation' | 'rescheduling' | 'cancellation' | 'reminder',
+  appointmentData: {
+    clientName: string;
+    clientPhone?: string;
+    date: string;
+    time: string;
+    services: string[];
+    stylists: string[];
+    amount: number;
+    bookingId: string;
+    notes?: string;
+    oldDate?: string;
+    oldTime?: string;
+    reason?: string;
+    reminderType?: '24h' | '2h';
+  }
+) => {
+  const businessPhone = '+91-8956860024'; // RG Salon contact number
+  
+  const formatPhoneNumber = (phone: string): string => {
+    if (!phone) return '';
+    
+    // Remove all non-numeric characters
+    let cleaned = phone.replace(/\D/g, '');
+    
+    // Remove leading zeros
+    cleaned = cleaned.replace(/^0+/, '');
+    
+    // Ensure it has the country code for India (91)
+    if (!cleaned.startsWith('91') && cleaned.length >= 10) {
+      cleaned = `91${cleaned}`;
+    }
+    
+    // Final validation - should be 12 digits for Indian numbers (91 + 10 digits)
+    if (cleaned.length !== 12 || !cleaned.startsWith('91')) {
+      console.warn(`Invalid phone number format: ${phone} -> ${cleaned}`);
+      return '';
+    }
+    
+    return cleaned;
+  };
+
+  const targetPhone = formatPhoneNumber(appointmentData.clientPhone || '');
+  
+  if (!targetPhone) {
+    console.warn('❌ No valid client phone number provided');
+    return { success: false, error: 'No valid client phone number' };
+  }
+
+  // Generate messages
+  const messages = {
+    confirmation: `🎉 *Appointment Confirmed!*
+
+Dear ${appointmentData.clientName},
+
+Your appointment at *RG Salon* has been successfully confirmed!
+
+📅 *Date:* ${appointmentData.date}
+⏰ *Time:* ${appointmentData.time}
+💅 *Services:* ${appointmentData.services.join(', ')}
+✨ *Stylists:* ${appointmentData.stylists.join(', ')}
+💰 *Amount:* ₹${appointmentData.amount.toFixed(2)}
+
+${appointmentData.notes ? `📝 *Notes:* ${appointmentData.notes}\n` : ''}*Important Reminders:*
+• Please arrive 10 minutes before your appointment
+• Carry a valid ID for verification
+• Cancel at least 2 hours in advance if needed
+
+Thank you for choosing RG Salon! 💖
+
+For any queries, call us at: ${businessPhone}
+
+*Booking ID:* ${appointmentData.bookingId}`,
+
+    rescheduling: `📅 *Appointment Rescheduled*
+
+Dear ${appointmentData.clientName},
+
+Your appointment at *RG Salon* has been successfully rescheduled.
+
+*Previous Appointment:*
+📅 Date: ${appointmentData.oldDate}
+⏰ Time: ${appointmentData.oldTime}
+
+*New Appointment:*
+📅 *Date:* ${appointmentData.date}
+⏰ *Time:* ${appointmentData.time}
+💅 *Services:* ${appointmentData.services.join(', ')}
+✨ *Stylists:* ${appointmentData.stylists.join(', ')}
+💰 *Amount:* ₹${appointmentData.amount.toFixed(2)}
+
+${appointmentData.notes ? `📝 *Notes:* ${appointmentData.notes}\n` : ''}Thank you for your flexibility! 💖
+
+For any queries, call us at: ${businessPhone}
+
+*Booking ID:* ${appointmentData.bookingId}`,
+
+    cancellation: `❌ *Appointment Cancelled*
+
+Dear ${appointmentData.clientName},
+
+We regret to inform you that your appointment at *RG Salon* has been cancelled.
+
+📅 *Cancelled Date:* ${appointmentData.date}
+⏰ *Cancelled Time:* ${appointmentData.time}
+💅 *Services:* ${appointmentData.services.join(', ')}
+✨ *Stylists:* ${appointmentData.stylists.join(', ')}
+💰 *Amount:* ₹${appointmentData.amount.toFixed(2)}
+
+*Reason:* ${appointmentData.reason || 'Scheduling conflict'}
+
+*We sincerely apologize for any inconvenience caused.*
+
+📞 To reschedule your appointment, please call us at: ${businessPhone}
+
+💝 *Special Offer:* Book again within 7 days and get 10% discount!
+
+Thank you for your understanding.
+
+Best regards,
+RG Salon Team 💖
+
+*Booking ID:* ${appointmentData.bookingId}`,
+
+    reminder: `⏰ *Appointment Reminder*
+
+Dear ${appointmentData.clientName},
+
+This is a friendly reminder that you have an appointment at *RG Salon* ${appointmentData.reminderType === '24h' ? 'tomorrow' : 'in 2 hours'}.
+
+📅 *Date:* ${appointmentData.date}
+⏰ *Time:* ${appointmentData.time}
+💅 *Services:* ${appointmentData.services.join(', ')}
+✨ *Stylists:* ${appointmentData.stylists.join(', ')}
+💰 *Amount:* ₹${appointmentData.amount.toFixed(2)}
+
+${appointmentData.notes ? `📝 *Notes:* ${appointmentData.notes}\n` : ''}*Important Reminders:*
+• Please arrive 10 minutes before your appointment
+• Carry a valid ID for verification
+• Reschedule at least 2 hours in advance if needed
+
+${appointmentData.reminderType === '2h' ? '🚨 *Final Reminder* - Please confirm your attendance by replying YES\n\n' : ''}📞 Contact us: ${businessPhone}
+
+Thank you for choosing RG Salon! 💖
+
+*Booking ID:* ${appointmentData.bookingId}`
+  };
+
+  try {
+    console.log(`📱 [Professional WhatsApp] Sending ${type} notification to client: ${targetPhone}`);
+    
+    // Use relative URL - Vite proxy will forward to backend server
+    const response = await fetch('/api/whatsapp/send-message', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        phone: targetPhone,
+        message: messages[type]
+      })
+    });
+    
+    const result = await response.json();
+    
+    if (response.ok && result.success) {
+      console.log(`✅ Professional ${type} notification sent successfully!`);
+      console.log(`📱 Message sent to client: ${targetPhone}`);
+      if (result.data?.messages?.[0]?.id) {
+        console.log(`📋 Message ID: ${result.data.messages[0].id}`);
+      }
+      return { success: true, messageId: result.data?.messages?.[0]?.id };
+    } else {
+      console.error(`❌ Professional ${type} notification failed:`, result.error);
+      return { success: false, error: result.error };
+    }
+  } catch (error) {
+    console.error(`❌ Professional ${type} notification exception:`, error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+};
 
 // Add a function to check if an appointment conflicts with a stylist's break
 const checkBreakConflict = (
@@ -207,21 +390,6 @@ interface StylistResponse {
   };
 }
 
-export interface AppointmentNotificationData {
-  clientName: string;
-  clientPhone: string;
-  services: string[];
-  stylists: string[];
-  startTime: string;
-  endTime: string;
-  status: string;
-  notes?: string;
-  id: string;
-  serviceDetails: Array<{name: string; duration: number; price: number}>;
-  totalAmount: number;
-  booking_id?: string | null;
-}
-
 const prepareNotificationData = async (appointmentId: string): Promise<AppointmentNotificationData | null> => {
   try {
     // Fetch all necessary data for the appointment
@@ -342,8 +510,7 @@ const prepareNotificationData = async (appointmentId: string): Promise<Appointme
       notes: appointment.notes || '',
       id: appointmentId, // Include the appointment ID
       serviceDetails,
-      totalAmount,
-      booking_id: appointment.booking_id
+      totalAmount
     };
   } catch (error) {
     console.error('Error preparing notification data:', error);
@@ -371,12 +538,13 @@ const sendNotificationWithTemplateCheck = async (action: 'created' | 'updated' |
 
 export function useAppointments() {
   const queryClient = useQueryClient()
-  const { updateClientFromAppointment } = useClients()
 
   const { data: appointments, isLoading } = useQuery<MergedAppointment[], Error>({
     queryKey: ['appointments'],
     queryFn: async (): Promise<MergedAppointment[]> => {
-      console.log("Fetching appointments...");
+      if (import.meta.env.DEV) {
+        console.log("Fetching appointments...");
+      }
       try {
         // Step 1: Fetch base appointments
         const { data: baseAppointments, error: baseError } = await supabase
@@ -386,10 +554,14 @@ export function useAppointments() {
 
         if (baseError) throw new Error(`Failed to fetch base appointments: ${baseError.message}`);
         if (!baseAppointments || baseAppointments.length === 0) {
-          console.log("Fetched 0 base appointments.");
+          if (import.meta.env.DEV) {
+            console.log("Fetched 0 base appointments.");
+          }
           return [];
         }
-        console.log(`Fetched ${baseAppointments.length} base appointments:`, baseAppointments);
+        if (import.meta.env.DEV) {
+          console.log(`Fetched ${baseAppointments.length} base appointments:`, baseAppointments);
+        }
 
         const appointmentIds = baseAppointments.map(a => a.id);
         if (appointmentIds.length === 0) return []; // No appointments, no need to fetch details
@@ -492,7 +664,9 @@ export function useAppointments() {
             phone: appointment.booker_phone
           };
         });
-        console.log("Finished merging appointment data:", mergedAppointments);
+        if (import.meta.env.DEV) {
+          console.log("Finished merging appointment data:", mergedAppointments);
+        }
         return mergedAppointments;
 
       } catch (error) {
@@ -520,6 +694,10 @@ export function useAppointments() {
         stylistIds: string[];
       }[];
       booking_id?: string | null;
+      is_for_someone_else?: boolean;
+      booker_name?: string;
+      booker_phone?: string;
+      booker_email?: string;
     }) => {
       const { clientDetails, ...appointmentBaseData } = data;
 
@@ -568,26 +746,12 @@ export function useAppointments() {
             
           if (clientFetchError) {
             console.warn(`Could not fetch client details for ID ${clientId}: ${clientFetchError.message}`);
-          } else if (clientData) {
-            // Update the appointment with client details for easier retrieval
-            const { error: updateError } = await supabase
-              .from('appointments')
-              .update({
-                client_name: clientData.full_name,
-                client_phone: clientData.phone
-              })
-              .eq('id', newAppointmentId);
-              
-            if (updateError) {
-              console.warn(`Failed to update appointment with client details: ${updateError.message}`);
-            }
           }
 
           // 2a: Insert into appointment_clients (Appointment <-> Client link)
           const { error: acError } = await supabase
             .from('appointment_clients')
             .insert({ appointment_id: newAppointmentId, client_id: clientId });
-          // If this fails, the rest for this client might not make sense
           if (acError) throw new Error(`Failed to link client ${clientId}: ${acError.message}`);
           console.log(` -> Linked client ${clientId}`);
 
@@ -649,64 +813,43 @@ export function useAppointments() {
         throw error;
       }
 
-      // Try to send notification
+      // --- Step 3: Send automatic WhatsApp notification ---
       try {
-        console.log('DEBUG - Starting notification preparation for new appointment...');
-        const notificationData = await prepareNotificationData(newAppointmentId);
-        console.log('DEBUG - Appointment notification data prepared:', JSON.stringify(notificationData, null, 2));
+        console.log('📱 Starting professional WhatsApp notification for new appointment...');
         
-        if (notificationData && notificationData.clientPhone) {
-          console.log(`DEBUG - Client phone found: ${notificationData.clientPhone}, attempting to send notification`);
+        // Fetch notification data
+        const notificationData = await prepareNotificationData(newAppointmentId);
+        
+        if (notificationData) {
+          console.log(`📱 Sending professional appointment confirmation to: ${notificationData.clientName}`);
           
-          // IMPORTANT! Direct text message might be more reliable than template
-          try {
-            // First try sending as a regular notification
-            console.log('DEBUG - Sending confirmation notification...');
-            const result = await sendAppointmentNotification('created', notificationData);
-            console.log('DEBUG - Notification API response:', JSON.stringify(result));
-            
-            // Show explicit success message
-            toast.success('✅ Appointment created and confirmation sent!');
-            console.log('✅ Appointment creation notification sent successfully');
-          } catch (whatsappError) {
-            console.error('DEBUG - First attempt failed, trying direct message as backup');
-            
-            // If regular notification fails, try direct text as fallback
-            try {
-              // Create a simple direct message
-              const directMessageText = `Hello ${notificationData.clientName},\n\nYour appointment at RG Salon has been confirmed for ${new Date(notificationData.startTime).toLocaleDateString()} at ${new Date(notificationData.startTime).toLocaleTimeString()}.\n\nService(s): ${notificationData.services.join(', ')}\n\nStylist(s): ${notificationData.stylists.join(', ')}\n\nThank you for choosing RG Salon!`;
-              
-              // Send as direct message
-              console.log('DEBUG - Attempting direct message fallback');
-              const directResult = await testWhatsAppIntegration(notificationData.clientPhone, directMessageText);
-              console.log('DEBUG - Direct message response:', JSON.stringify(directResult));
-              
-              toast.success('✅ Appointment created and confirmation sent through direct message!');
-            } catch (directError) {
-              // Log both errors for debugging
-              console.error('ERROR: WhatsApp notification error:', whatsappError);
-              console.error('ERROR: Direct message fallback also failed:', directError);
-              
-              // Show error to user
-              toast.warning('⚠️ Appointment created but notification could not be sent. Please contact the client directly.');
-            }
+          // Use the new professional integration
+          const whatsappResult = await integrateWithAppointmentHooks.onAppointmentCreated({
+            clientName: notificationData.clientName,
+            clientPhone: notificationData.clientPhone,
+            services: notificationData.services,
+            stylists: notificationData.stylists,
+            startTime: notificationData.startTime,
+            totalAmount: notificationData.totalAmount || 0,
+            notes: notificationData.notes
+          });
+          
+          if (whatsappResult.success) {
+            console.log('✅ Professional WhatsApp confirmation sent successfully');
+            console.log(`📋 Message ID: ${whatsappResult.messageId}`);
+            toast.success('✅ Appointment booked and professional WhatsApp confirmation sent!');
+          } else {
+            console.warn('⚠️ Professional WhatsApp notification failed:', whatsappResult.error);
+            toast.warning('⚠️ Appointment booked successfully, but WhatsApp notification failed. Please contact the client manually.');
           }
         } else {
-          // Log the issue when client phone is missing
-          console.warn('DEBUG - Could not send notification: Missing client data', {
-            notificationDataExists: !!notificationData,
-            clientPhoneExists: notificationData ? !!notificationData.clientPhone : false,
-            clientPhone: notificationData ? notificationData.clientPhone : 'N/A',
-            appointmentId: newAppointmentId
-          });
-          toast.warning('⚠️ Appointment created but notification could not be sent: Missing client contact information');
+          console.warn('⚠️ Cannot send WhatsApp notification: Missing notification data');
+          toast.warning('⚠️ Appointment booked, but notification data is incomplete.');
         }
-      } catch (error) {
-        console.error('DEBUG - Error preparing notification data:', error);
-        if (error instanceof Error) {
-          console.error('ERROR DETAILS:', error.message, error.stack);
-        }
-        toast.warning('⚠️ Appointment created but confirmation message could not be sent');
+      } catch (notificationError) {
+        console.error('❌ Error sending professional WhatsApp notification:', notificationError);
+        // Don't throw error here as appointment was created successfully
+        toast.warning('⚠️ Appointment booked successfully, but WhatsApp notification could not be sent.');
       }
 
       return newAppointment;
@@ -876,33 +1019,131 @@ export function useAppointments() {
 
           console.log(` -> Successfully inserted new joins for appointment ${appointmentId}.`);
 
-          // Send WhatsApp notification
+          // --- Step 4: Send WhatsApp update/reschedule notification ---
           try {
+            console.log('📱 Starting WhatsApp notification for appointment update...');
             const notificationData = await prepareNotificationData(appointmentId);
+            
             if (notificationData && notificationData.clientPhone) {
+              console.log(`📱 Sending appointment update notification to: ${notificationData.clientPhone}`);
+              
+              // Format phone number for WhatsApp
+              let phoneNumber = notificationData.clientPhone.replace(/\D/g, '');
+              if (!phoneNumber.startsWith('91') && phoneNumber.length === 10) {
+                phoneNumber = '91' + phoneNumber;
+              }
+              
+              // Determine if this is a reschedule (time change) or just an update
+              const isReschedule = start_time || end_time;
+              const appointmentDate = new Date(notificationData.startTime);
+              
+              let updateMessage = '';
+              
+              if (isReschedule) {
+                // This is a reschedule - show new timing
+                updateMessage = `🔄 *Appointment Rescheduled!*
+
+Hello ${notificationData.clientName},
+
+Your appointment at *RG Salon* has been rescheduled.
+
+📅 *New Date:* ${appointmentDate.toLocaleDateString('en-IN', { 
+                  weekday: 'long', 
+                  year: 'numeric', 
+                  month: 'long', 
+                  day: 'numeric' 
+                })}
+⏰ *New Time:* ${appointmentDate.toLocaleTimeString('en-IN', { 
+                  hour: 'numeric', 
+                  minute: '2-digit', 
+                  hour12: true 
+                })}
+
+💅 *Services:* ${notificationData.services.join(', ')}
+✨ *Stylists:* ${notificationData.stylists.join(', ')}
+
+${notificationData.notes ? `📝 *Updated Notes:* ${notificationData.notes}\n` : ''}
+💰 *Total Amount:* ₹${(notificationData.totalAmount || 0).toFixed(2)}
+
+*Important Reminders:*
+• Please arrive 10 minutes before your appointment
+• Carry a valid ID for verification
+• Contact us immediately if this timing doesn't work
+
+Thank you for your understanding! 💖
+
+For any queries, call us at: ${import.meta.env.VITE_SALON_PHONE || '+91-XXXXXXXXXX'}`;
+              } else {
+                // This is a general update (status, notes, etc.)
+                updateMessage = `📝 *Appointment Updated!*
+
+Hello ${notificationData.clientName},
+
+Your appointment details at *RG Salon* have been updated.
+
+📅 *Date:* ${appointmentDate.toLocaleDateString('en-IN', { 
+                weekday: 'long', 
+                year: 'numeric', 
+                month: 'long', 
+                day: 'numeric' 
+              })}
+⏰ *Time:* ${appointmentDate.toLocaleTimeString('en-IN', { 
+                hour: 'numeric', 
+                minute: '2-digit', 
+                hour12: true 
+              })}
+
+💅 *Services:* ${notificationData.services.join(', ')}
+✨ *Stylists:* ${notificationData.stylists.join(', ')}
+
+${notificationData.notes ? `📝 *Notes:* ${notificationData.notes}\n` : ''}
+💰 *Total Amount:* ₹${(notificationData.totalAmount || 0).toFixed(2)}
+
+${status ? `📊 *Status:* ${status.toUpperCase()}\n` : ''}
+
+We look forward to serving you! 💖
+
+For any queries, call us at: ${import.meta.env.VITE_SALON_PHONE || '+91-XXXXXXXXXX'}`;
+              }
+
+              // Send WhatsApp notification
               try {
-                await sendAppointmentNotification('updated', notificationData);
-                console.log('Appointment update notification sent successfully');
-              } catch (whatsappError) {
-                console.error('Failed to send appointment update notification:', whatsappError);
-                // Log the detailed error for debugging
-                if (whatsappError instanceof Error) {
-                  console.error('Error details:', whatsappError.message);
+                const updateNotificationData: AppointmentNotificationData = {
+                  clientName: notificationData.clientName,
+                  clientPhone: phoneNumber,
+                  services: notificationData.services,
+                  stylists: notificationData.stylists,
+                  startTime: notificationData.startTime,
+                  endTime: notificationData.endTime,
+                  status: 'updated',
+                  notes: notificationData.notes,
+                  id: notificationData.id,
+                  serviceDetails: notificationData.serviceDetails,
+                  totalAmount: notificationData.totalAmount
+                };
+
+                const whatsappResult = await sendAppointmentNotification('updated', updateNotificationData);
+                
+                if (whatsappResult.success) {
+                  console.log('✅ WhatsApp update notification sent successfully');
+                  toast.success(isReschedule ? 
+                    '✅ Appointment rescheduled and notification sent via WhatsApp!' : 
+                    '✅ Appointment updated and notification sent via WhatsApp!');
+                } else {
+                  console.warn('⚠️ WhatsApp notification failed:', whatsappResult.error);
+                  toast.warning('⚠️ Appointment updated successfully, but WhatsApp notification failed. Please contact the client manually.');
                 }
-                // Don't throw error here to not affect the appointment update
-                // But we do want to show a toast notification to the user
-                toast.warning('Appointment updated but notification could not be sent. Please contact the client directly.');
+              } catch (whatsappError) {
+                console.error('❌ WhatsApp API error:', whatsappError);
+                toast.warning('⚠️ Appointment updated successfully, but WhatsApp notification could not be sent.');
               }
             } else {
-              console.warn('Could not send appointment update notification: Missing client data', {
-                notificationData,
-                appointmentId
-              });
-              toast.warning('Appointment updated but notification could not be sent: Missing client contact information');
+              console.warn('⚠️ Cannot send WhatsApp notification: Missing client phone number');
+              toast.warning('⚠️ Appointment updated, but client phone number is missing for notification.');
             }
-          } catch (error) {
-            console.error('Error preparing notification data for update:', error);
-            toast.warning('Appointment updated but confirmation message could not be sent');
+          } catch (notificationError) {
+            console.error('❌ Error preparing update notification:', notificationError);
+            // Don't throw error here as appointment was updated successfully
           }
 
         } catch (joinError) {
@@ -930,7 +1171,11 @@ export function useAppointments() {
   const deleteAppointment = useMutation({
     mutationFn: async (id: string) => {
       try {
-        // Get appointment details before deletion
+        if (import.meta.env.DEV) {
+          console.log('📱 Preparing to delete appointment and send cancellation notification...');
+        }
+        
+        // Get appointment details before deletion for notification
         const notificationData = await prepareNotificationData(id);
         
         // Delete the appointment
@@ -941,41 +1186,102 @@ export function useAppointments() {
 
         if (error) throw new Error(`Error deleting appointment ${id}: ${error.message}`);
         
-        // Send WhatsApp notification if we have the client's data
+        // --- Send WhatsApp cancellation notification ---
         if (notificationData && notificationData.clientPhone) {
+          if (import.meta.env.DEV) {
+            console.log(`📱 Sending cancellation notification to: ${notificationData.clientPhone}`);
+          }
+          
+          // Format phone number for WhatsApp
+          let phoneNumber = notificationData.clientPhone.replace(/\D/g, '');
+          if (!phoneNumber.startsWith('91') && phoneNumber.length === 10) {
+            phoneNumber = '91' + phoneNumber;
+          }
+          
+          // Create cancellation message
+          const appointmentDate = new Date(notificationData.startTime);
+          const cancellationMessage = `❌ *Appointment Cancelled*
+
+Hello ${notificationData.clientName},
+
+We regret to inform you that your appointment at *RG Salon* has been cancelled.
+
+📅 *Cancelled Date:* ${appointmentDate.toLocaleDateString('en-IN', { 
+            weekday: 'long', 
+            year: 'numeric', 
+            month: 'long', 
+            day: 'numeric' 
+          })}
+⏰ *Cancelled Time:* ${appointmentDate.toLocaleTimeString('en-IN', { 
+            hour: 'numeric', 
+            minute: '2-digit', 
+            hour12: true 
+          })}
+
+💅 *Services:* ${notificationData.services.join(', ')}
+✨ *Stylists:* ${notificationData.stylists.join(', ')}
+
+💰 *Amount:* ₹${(notificationData.totalAmount || 0).toFixed(2)}
+
+*We sincerely apologize for any inconvenience caused.*
+
+📞 To reschedule your appointment, please call us at: ${import.meta.env.VITE_SALON_PHONE || '+91-XXXXXXXXXX'}
+
+💝 *Special Offer:* Book again within 7 days and get 10% discount!
+
+Thank you for your understanding.
+
+Best regards,
+RG Salon Team 💖`;
+
+          // Send WhatsApp notification
           try {
-            await sendAppointmentNotification('cancelled', notificationData);
-            console.log('Cancellation notification sent successfully');
-          } catch (whatsappError) {
-            console.error('Failed to send cancellation notification:', whatsappError);
-            // Log the detailed error for debugging
-            if (whatsappError instanceof Error) {
-              console.error('Error details:', whatsappError.message);
+            const cancellationNotificationData: AppointmentNotificationData = {
+              clientName: notificationData.clientName,
+              clientPhone: phoneNumber,
+              services: notificationData.services,
+              stylists: notificationData.stylists,
+              startTime: notificationData.startTime,
+              endTime: notificationData.endTime,
+              status: 'cancelled',
+              notes: notificationData.notes,
+              id: notificationData.id,
+              serviceDetails: notificationData.serviceDetails,
+              totalAmount: notificationData.totalAmount
+            };
+
+            const whatsappResult = await sendAppointmentNotification('cancelled', cancellationNotificationData);
+            
+            if (whatsappResult.success) {
+              console.log('✅ WhatsApp cancellation notification sent successfully');
+              toast.success('✅ Appointment cancelled and notification sent via WhatsApp!');
+            } else {
+              console.warn('⚠️ WhatsApp notification failed:', whatsappResult.error);
+              toast.warning('⚠️ Appointment cancelled successfully, but WhatsApp notification failed. Please contact the client manually.');
             }
-            // Don't throw the error as the appointment was successfully deleted
-            toast.warning('Appointment cancelled but notification could not be sent. Please contact the client directly.');
+          } catch (whatsappError) {
+            console.error('❌ WhatsApp API error:', whatsappError);
+            toast.warning('⚠️ Appointment cancelled successfully, but WhatsApp notification could not be sent.');
           }
         } else {
-          console.warn('Could not send cancellation notification: Missing client data', {
-            notificationData,
-            appointmentId: id
-          });
-          toast.warning('Appointment cancelled but notification could not be sent: Missing client contact information');
+          console.warn('⚠️ Cannot send WhatsApp notification: Missing client phone number');
+          toast.warning('⚠️ Appointment cancelled, but client phone number is missing for notification.');
         }
 
         return { id, success: true };
       } catch (error) {
-        console.error('Error in deleteAppointment:', error);
+        console.error('❌ Error in deleteAppointment:', error);
         throw error;
       }
     },
     onSuccess: (data) => {
-      console.log("Appointment deleted successfully:", data);
+      if (import.meta.env.DEV) {
+        console.log("✅ Appointment deleted successfully:", data);
+      }
       queryClient.invalidateQueries({ queryKey: ['appointments'] });
-      toast.success('Appointment deleted successfully');
     },
     onError: (error) => {
-      console.error('Error deleting appointment:', error);
+      console.error('❌ Error deleting appointment:', error);
       toast.error(`Failed to delete appointment: ${error instanceof Error ? error.message : 'Unknown error'}`);
     },
   });

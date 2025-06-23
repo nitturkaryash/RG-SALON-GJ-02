@@ -57,6 +57,7 @@ const AutomationSettings: React.FC = () => {
   const fetchConfig = async () => {
     try {
       setLoading(true);
+      // Use relative URL - Vite proxy will forward to backend server
       const response = await fetch('/api/whatsapp/config');
       const data = await response.json();
       
@@ -83,6 +84,7 @@ const AutomationSettings: React.FC = () => {
 
     try {
       setSaving(true);
+      // Use relative URL - Vite proxy will forward to backend server
       const response = await fetch('/api/whatsapp/config', {
         method: 'POST',
         headers: {
@@ -111,6 +113,7 @@ const AutomationSettings: React.FC = () => {
   const resetToDefaults = async () => {
     try {
       setSaving(true);
+      // Use relative URL - Vite proxy will forward to backend server
       const response = await fetch('/api/whatsapp/config', {
         method: 'PUT',
       });
@@ -140,6 +143,7 @@ const AutomationSettings: React.FC = () => {
 
     try {
       setSendingTest(true);
+      // Use relative URL - Vite proxy will forward to backend server
       const response = await fetch('/api/test-whatsapp', {
         method: 'POST',
         headers: {

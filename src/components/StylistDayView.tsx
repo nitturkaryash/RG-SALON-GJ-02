@@ -715,11 +715,15 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
     const [startHour, startMinute] = format(new Date(appointment.start_time), 'HH:mm').split(':');
     const [endHour, endMinute] = format(new Date(appointment.end_time), 'HH:mm').split(':');
     
+    // Ensure proper zero-padding for the time format expected by the Select components
+    const formattedStartTime = `${startHour.padStart(2, '0')}:${startMinute.padStart(2, '0')}`;
+    const formattedEndTime = `${endHour.padStart(2, '0')}:${endMinute.padStart(2, '0')}`;
+    
     setEditFormData({
       ...editFormData,
       clientEntries: [clientEntry],
-      startTime: `${startHour}:${startMinute}`,
-      endTime: `${endHour}:${endMinute}`,
+      startTime: formattedStartTime,
+      endTime: formattedEndTime,
       notes: appointment.notes || '',
       clientId: clientDetails?.id || '',
       clientName: clientDetails?.full_name || '',
@@ -1096,23 +1100,30 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
   const todayAppointments = appointments.filter(appointment => {
     // Explicitly create Date objects for clearer comparison
     const appointmentDate = new Date(appointment.start_time);
-    console.log("Comparing appointment date:", {
-      appointment_id: appointment.id,
-      appointmentDate: appointmentDate.toISOString().split('T')[0],
-      currentDate: currentDate.toISOString().split('T')[0],
-      isSameDay: isSameDay(appointmentDate, currentDate),
-      appClientName: appointment.clientDetails?.[0]?.full_name || 'Unknown'
-    });
+    
+    // Only log in development and limit frequency
+    if (import.meta.env.DEV && Math.random() < 0.1) {
+      console.log("Appointment date comparison:", {
+        appointment_id: appointment.id,
+        appointmentDate: appointmentDate.toISOString().split('T')[0],
+        currentDate: currentDate.toISOString().split('T')[0],
+        isSameDay: isSameDay(appointmentDate, currentDate),
+        appClientName: appointment.clientDetails?.[0]?.full_name || 'Unknown'
+      });
+    }
     
     // Use date-fns isSameDay to correctly compare dates regardless of time
     return isSameDay(appointmentDate, currentDate);
   });
 
-  console.log("Filtered appointments:", todayAppointments.length, todayAppointments.map(a => ({ 
-    id: a.id, 
-    client: a.clientDetails?.[0]?.full_name || 'Unknown', 
-    time: `${formatTime(a.start_time)} - ${formatTime(a.end_time)}` 
-  })));
+  // Only log in development
+  if (import.meta.env.DEV) {
+    console.log("Filtered appointments:", todayAppointments.length, todayAppointments.map(a => ({ 
+      id: a.id, 
+      client: a.clientDetails?.[0]?.full_name || 'Unknown', 
+      time: `${formatTime(a.start_time)} - ${formatTime(a.end_time)}` 
+    })));
+  }
   
   // Make sure date-times are normalized to the current date to ensure consistent display
   const normalizeDateTime = (dateTimeString: string) => {
@@ -1151,8 +1162,10 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
       // Convert to pixels based on 15-minute slots and include header offset
       const positionExact = STYLIST_HEADER_HEIGHT + (totalMinutes / 15) * TIME_SLOT_HEIGHT;
       
-      if (process.env.NODE_ENV === 'development') {
-        console.log(`Position for ${normalizedStartTime.toLocaleTimeString()}:`, {
+      // Reduce logging frequency to avoid spam
+      if (import.meta.env.DEV && Math.random() < 0.05) {
+        console.log(`Position calculation sample:`, {
+          time: normalizedStartTime.toLocaleTimeString(),
           hours,
           minutes,
           totalMinutes,
@@ -1188,10 +1201,10 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
       // Convert to pixels based on 15-minute slots
       const heightExact = (durationMinutes / 15) * TIME_SLOT_HEIGHT;
       
-      if (process.env.NODE_ENV === 'development') {
-        console.log(`Duration calc for ${start.toLocaleTimeString()} - ${endDate.toLocaleTimeString()}:`, {
-          startTime: start.toLocaleTimeString(),
-          endTime: endDate.toLocaleTimeString(),
+      // Reduce logging frequency to avoid spam
+      if (import.meta.env.DEV && Math.random() < 0.05) {
+        console.log(`Duration calculation sample:`, {
+          timeRange: `${start.toLocaleTimeString()} - ${endDate.toLocaleTimeString()}`,
           durationMinutes,
           heightExact
         });
@@ -1647,26 +1660,30 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
 
   // Debug log: Log all appointments on component mount/update
   useEffect(() => {
-    console.log("Current appointments:", appointments.map(app => ({
-      id: app.id,
-      client: app.clientDetails?.[0]?.full_name || 'Unknown',
-      start: new Date(app.start_time).toLocaleTimeString(),
-      end: new Date(app.end_time).toLocaleTimeString(),
-      start_raw: app.start_time,
-      end_raw: app.end_time
-    })));
-    
-    // Also log the selectedDate
-    console.log("Selected date:", selectedDate, format(selectedDate, 'EEEE, MMMM d, yyyy'));
+    if (import.meta.env.DEV) {
+      console.log("Current appointments:", appointments.map(app => ({
+        id: app.id,
+        client: app.clientDetails?.[0]?.full_name || 'Unknown',
+        start: new Date(app.start_time).toLocaleTimeString(),
+        end: new Date(app.end_time).toLocaleTimeString(),
+        start_raw: app.start_time,
+        end_raw: app.end_time
+      })));
+      
+      // Also log the selectedDate
+      console.log("Selected date:", selectedDate, format(selectedDate, 'EEEE, MMMM d, yyyy'));
+    }
   }, [appointments, selectedDate]);
 
   // Keep currentDate in sync with selectedDate prop
   useEffect(() => {
     if (selectedDate && !isSameDay(selectedDate, currentDate)) {
-      console.log("Updating currentDate from selectedDate prop:", {
-        previousDate: currentDate.toISOString().split('T')[0],
-        newDate: selectedDate.toISOString().split('T')[0]
-      });
+      if (import.meta.env.DEV) {
+        console.log("Updating currentDate from selectedDate prop:", {
+          previousDate: currentDate.toISOString().split('T')[0],
+          newDate: selectedDate.toISOString().split('T')[0]
+        });
+      }
       setCurrentDate(selectedDate);
     }
   }, [selectedDate]);

@@ -57,17 +57,17 @@ const AutomationSettings: React.FC = () => {
   const fetchConfig = async () => {
     try {
       setLoading(true);
+      // Use relative URL - Vite proxy will forward to backend server
       const response = await fetch('/api/whatsapp/config');
       const data = await response.json();
       
       if (data.success) {
         setConfig(data.config);
       } else {
-        toast.error('Failed to load configuration');
+        console.error('Failed to load configuration');
       }
     } catch (error) {
       console.error('Error fetching config:', error);
-      toast.error('Error loading configuration');
     } finally {
       setLoading(false);
     }
@@ -83,6 +83,7 @@ const AutomationSettings: React.FC = () => {
 
     try {
       setSaving(true);
+      // Use relative URL - Vite proxy will forward to backend server
       const response = await fetch('/api/whatsapp/config', {
         method: 'POST',
         headers: {
@@ -94,14 +95,13 @@ const AutomationSettings: React.FC = () => {
       const data = await response.json();
       
       if (data.success) {
-        toast.success('Configuration saved successfully');
+        console.log('Configuration saved successfully');
         setConfig(data.config);
       } else {
-        toast.error(data.error || 'Failed to save configuration');
+        console.error(data.error || 'Failed to save configuration');
       }
     } catch (error) {
       console.error('Error saving config:', error);
-      toast.error('Error saving configuration');
     } finally {
       setSaving(false);
     }
@@ -111,6 +111,7 @@ const AutomationSettings: React.FC = () => {
   const resetToDefaults = async () => {
     try {
       setSaving(true);
+      // Use relative URL - Vite proxy will forward to backend server
       const response = await fetch('/api/whatsapp/config', {
         method: 'PUT',
       });
@@ -118,14 +119,13 @@ const AutomationSettings: React.FC = () => {
       const data = await response.json();
       
       if (data.success) {
-        toast.success('Configuration reset to defaults');
+        console.log('Configuration reset to defaults');
         setConfig(data.config);
       } else {
-        toast.error('Failed to reset configuration');
+        console.error('Failed to reset configuration');
       }
     } catch (error) {
       console.error('Error resetting config:', error);
-      toast.error('Error resetting configuration');
     } finally {
       setSaving(false);
     }

@@ -9,6 +9,7 @@ export const useWhatsAppNotifications = () => {
     setError(null);
     
     try {
+      // Use relative URL - Vite proxy will forward to backend server
       const response = await fetch(`/api/whatsapp/${endpoint}`, {
         method: 'POST',
         headers: {
@@ -41,7 +42,7 @@ export const useWhatsAppNotifications = () => {
       client_name: orderData.clientName,
       client_phone: orderData.clientPhone,
       order_id: orderData.orderId,
-      items: orderData.items, // [{ name: "Product", quantity: 2 }]
+      items: orderData.items,
       total_amount: orderData.totalAmount
     });
   }, [apiCall]);
@@ -51,8 +52,8 @@ export const useWhatsAppNotifications = () => {
       client_name: orderData.clientName,
       client_phone: orderData.clientPhone,
       order_id: orderData.orderId,
-      status: orderData.newStatus, // e.g., "Completed", "In Progress"
-      items: orderData.items // optional
+      status: orderData.newStatus,
+      items: orderData.items
     });
   }, [apiCall]);
 
@@ -61,7 +62,7 @@ export const useWhatsAppNotifications = () => {
       client_name: orderData.clientName,
       client_phone: orderData.clientPhone,
       order_id: orderData.orderId,
-      reason: orderData.reason // optional
+      reason: orderData.reason
     });
   }, [apiCall]);
 
@@ -70,8 +71,8 @@ export const useWhatsAppNotifications = () => {
       client_name: appointmentData.clientName,
       client_phone: appointmentData.clientPhone,
       service: appointmentData.serviceName,
-      date: appointmentData.date, // "15/12/2024"
-      time: appointmentData.time  // "2:30 PM"
+      date: appointmentData.date,
+      time: appointmentData.time
     });
   }, [apiCall]);
 
@@ -103,6 +104,7 @@ export const useWhatsAppNotifications = () => {
     setError(null);
     
     try {
+      // Use relative URL - Vite proxy will forward to backend server
       const response = await fetch('/api/whatsapp/login', {
         method: 'POST',
         headers: {
@@ -131,6 +133,7 @@ export const useWhatsAppNotifications = () => {
 
   const testWhatsApp = useCallback(async () => {
     try {
+      // Use relative URL - Vite proxy will forward to backend server
       const response = await fetch('/api/whatsapp/test');
       const result = await response.json();
       return result;
