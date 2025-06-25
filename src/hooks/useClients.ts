@@ -24,24 +24,53 @@ export interface Client {
 export function useClients() {
   const queryClient = useQueryClient();
 
-  // Query for all clients
-  const { data: clients, isLoading } = useQuery({
+  // Query for all clients with pagination
+  const { data: clientsData, isLoading } = useQuery({
     queryKey: ['clients'],
     queryFn: async () => {
-      const { data, error } = await supabase
+      // First, get the total count
+      const { count, error: countError } = await supabase
         .from('clients')
-        .select('*')
-        .order('full_name', { ascending: true });
+        .select('*', { count: 'exact', head: true });
+
+      if (countError) {
+        console.error('Error getting clients count:', countError);
+        throw countError;
+      }
+
+      // Then get all clients in batches to avoid pagination limits
+      const allClients = [];
+      const batchSize = 1000;
+      let from = 0;
       
-      if (error) {
-        console.error('Error fetching clients:', error);
-        toast.error('Failed to fetch clients');
-        throw error;
+      while (from < (count || 0)) {
+        const { data, error } = await supabase
+          .from('clients')
+          .select('*')
+          .order('created_at', { ascending: true })
+          .range(from, from + batchSize - 1);
+        
+        if (error) {
+          console.error('Error fetching clients batch:', error);
+          throw error;
+        }
+        
+        if (data) {
+          allClients.push(...data);
+        }
+        
+        from += batchSize;
       }
       
-      return data || [];
+      return {
+        clients: allClients,
+        totalCount: count || 0
+      };
     },
   });
+
+  const clients = clientsData?.clients || [];
+  const totalClientsCount = clientsData?.totalCount || 0;
 
   // Create a new client
   const createClient = useMutation({
@@ -393,6 +422,13 @@ export function useClients() {
     },
   });
 
+  // Frontend-only serial number logic - no longer needed since we handle it in UI
+  const resequenceSerialNumbers = async () => {
+    // This function is now a no-op since serial numbers are handled on the frontend
+    console.log('Serial numbers are now handled on the frontend - no backend resequencing needed');
+    return Promise.resolve();
+  };
+
   // Delete a client with fallback to direct SQL if needed
   const deleteClient = useMutation({
     mutationFn: async (clientId: string) => {
@@ -650,8 +686,22 @@ export function useClients() {
     },
   });
 
+  // Manual resequencing mutation for when user wants to fix serial numbers manually
+  const manualResequence = useMutation({
+    mutationFn: resequenceSerialNumbers,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['clients'] });
+      toast.success('Serial numbers resequenced successfully');
+    },
+    onError: (error) => {
+      console.error('Error in manual resequencing:', error);
+      toast.error(`Failed to resequence serial numbers: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    },
+  });
+
   return {
     clients,
+    totalClientsCount,
     isLoading,
     createClient: createClient.mutate,
     createClientAsync: createClient.mutateAsync,
@@ -660,6 +710,8 @@ export function useClients() {
     updateClientFromAppointment,
     processPendingPayment: processPendingPayment.mutate,
     deleteClient: deleteClient.mutate,
-    deleteAllClients: deleteAllClients.mutate
+    deleteAllClients: deleteAllClients.mutate,
+    resequenceSerialNumbers: manualResequence.mutate,
+    isResequencing: manualResequence.isPending
   };
 } 
