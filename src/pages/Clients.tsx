@@ -40,15 +40,16 @@ import { useOrders } from '../hooks/useOrders'
 import { formatCurrency } from '../utils/format'
 import { toast } from 'react-hot-toast'
 import { isValidPhoneNumber, isValidEmail } from '../utils/validation'
+import ScrollIndicator from '../components/ScrollIndicator'
 
 export default function Clients() {
-  const { clients, isLoading, createClient, updateClient, processPendingPayment, deleteClient, deleteAllClients } = useClients()
+  const { clients, totalClientsCount, isLoading, createClient, updateClient, processPendingPayment, deleteClient } = useClients()
   const { orders, isLoading: isLoadingOrders } = useOrders()
   const [openAddDialog, setOpenAddDialog] = useState(false)
   const [openEditDialog, setOpenEditDialog] = useState(false)
   const [openPaymentDialog, setOpenPaymentDialog] = useState(false)
   const [openDeleteDialog, setOpenDeleteDialog] = useState(false)
-  const [openDeleteAllDialog, setOpenDeleteAllDialog] = useState(false)
+
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedClient, setSelectedClient] = useState<Client | null>(null)
   const [paymentAmount, setPaymentAmount] = useState<number>(0)
@@ -259,16 +260,7 @@ export default function Clients() {
     }
   }
   
-  // Open delete all clients dialog
-  const handleOpenDeleteAllDialog = () => {
-    setOpenDeleteAllDialog(true)
-  }
-  
-  // Handle delete all clients
-  const handleDeleteAllClients = async () => {
-    await deleteAllClients()
-    setOpenDeleteAllDialog(false)
-  }
+
   
   if (isLoading || isLoadingOrders) {
     return (
@@ -280,18 +272,26 @@ export default function Clients() {
   
   return (
     <Box>
+      {/* Scroll Indicator - tracks window scroll progress */}
+      <ScrollIndicator 
+        showScrollToTop={true}
+        color="primary"
+        height={4}
+        position="top"
+        showPercentage={true}
+      />
+      
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Typography variant="h1">Clients</Typography>
         <Box>
-          <Button
-            variant="outlined"
-            color="error"
-            startIcon={<DeleteIcon />}
-            onClick={handleOpenDeleteAllDialog}
-            sx={{ height: 'fit-content', mr: 2 }}
-          >
-            Delete All Clients
-          </Button>
+          <Typography variant="h1">Clients</Typography>
+          <Typography variant="body2" color="text.secondary">
+            Showing {clients?.length || 0} of {totalClientsCount} total clients
+          </Typography>
+          <Typography variant="caption" color="success.main" sx={{ display: 'block', mt: 0.5 }}>
+            ✨ Serial numbers are auto-generated on frontend (always sequential: 1,2,3...)
+          </Typography>
+        </Box>
+        <Box>
           <Button
             variant="contained"
             startIcon={<PersonAddIcon />}
@@ -322,11 +322,18 @@ export default function Clients() {
       
       {/* Clients Table */}
       <Paper sx={{ p: 3 }}>
+        {isLoading && (
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', p: 3 }}>
+            <CircularProgress size={24} sx={{ mr: 2 }} />
+            <Typography>Loading all clients...</Typography>
+          </Box>
+        )}
         {clients && clients.length > 0 ? (
           <TableContainer>
             <Table>
               <TableHead>
                 <TableRow>
+                  <TableCell>S.No.</TableCell>
                   <TableCell>Name</TableCell>
                   <TableCell>Contact</TableCell>
                   <TableCell>Last Visit</TableCell>
@@ -340,7 +347,7 @@ export default function Clients() {
                 </TableRow>
               </TableHead>
               <TableBody>
-                {filteredClients.map((client) => {
+                {filteredClients.map((client, index) => {
                   // Calculate lifetime visits dynamically
                   const lifetimeVisits = orders?.filter(
                     order => 
@@ -352,6 +359,11 @@ export default function Clients() {
 
                   return (
                     <TableRow key={client.id}>
+                      <TableCell>
+                        <Typography variant="body2" fontWeight="bold">
+                          {index + 1}
+                        </Typography>
+                      </TableCell>
                       <TableCell>{client.full_name}</TableCell>
                       <TableCell>
                         <Typography variant="body2">{client.phone}</Typography>
@@ -754,32 +766,7 @@ export default function Clients() {
         </DialogActions>
       </Dialog>
       
-      {/* Delete All Clients Dialog */}
-      <Dialog
-        open={openDeleteAllDialog}
-        onClose={() => setOpenDeleteAllDialog(false)}
-        aria-labelledby="delete-all-dialog-title"
-        aria-describedby="delete-all-dialog-description"
-      >
-        <DialogTitle id="delete-all-dialog-title">{"Delete All Clients"}</DialogTitle>
-        <DialogContent>
-          <DialogContentText id="delete-all-dialog-description">
-            Warning: This will permanently delete ALL clients in the system. This action cannot be undone. 
-            Are you absolutely sure you want to proceed?
-          </DialogContentText>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setOpenDeleteAllDialog(false)}>Cancel</Button>
-          <Button 
-            onClick={handleDeleteAllClients} 
-            variant="contained"
-            color="error"
-            autoFocus
-          >
-            Yes, Delete All Clients
-          </Button>
-        </DialogActions>
-      </Dialog>
+
     </Box>
   )
 } 
