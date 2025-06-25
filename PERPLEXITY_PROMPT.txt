@@ -1,0 +1,31 @@
+🎯 PERPLEXITY PROMPT - Copy & Paste This Exactly:
+
+"I have an Excel file with 4,191 client records that I need to migrate to a PostgreSQL database. Please generate a single SQL INSERT statement for all clients.
+
+Excel Columns:
+- firstName (client name)
+- mobileNo (mobile number) 
+- gender (male/female)
+- isGlobal (ignore this)
+
+Database Table: clients
+Required SQL format:
+
+INSERT INTO clients (
+  id, full_name, mobile_number, phone, gender, email, birth_date, anniversary_date,
+  last_visit, notes, total_spent, pending_payment, appointment_count,
+  created_at, updated_at
+) VALUES
+  ('UUID', 'NAME', 'MOBILE', 'MOBILE', 'GENDER', NULL, NULL, NULL, NULL, 'Migrated from Excel on 2025-06-25', 0, 0, 0, '2025-06-25T07:53:56.970Z', '2025-06-25T07:53:56.970Z'),
+  ... continue for all rows
+
+Requirements:
+1. Generate unique UUID for each client
+2. Map firstName → full_name, mobileNo → mobile_number & phone
+3. Set all NULL fields as shown
+4. Use exact timestamp: '2025-06-25T07:53:56.970Z'
+5. Set notes to: 'Migrated from Excel on 2025-06-25'
+6. Generate ONE complete SQL with all clients
+7. End with semicolon
+
+[ATTACH YOUR EXCEL FILE HERE]" 

@@ -1,0 +1,28 @@
+
+SALON CLIENT MIGRATION - COMPLETE SETUP
+======================================
+
+STATUS: ✅ READY FOR EXECUTION
+
+MIGRATION DETAILS:
+- Source: Clients Migration (1).xlsx
+- Sheet: SURAT 
+- Total Records: 4,191 clients
+- Completed: 50 clients (Batch 1)
+- Remaining: 4,141 clients (17 combined batches)
+
+EXECUTION PLAN:
+Each combined batch contains 250 clients (except last = 141)
+Use MCP tools: mcp_supabase_apply_migration
+
+FILES READY:
+- combined-batch-01.sql through combined-batch-17.sql
+- All SQL properly formatted for database schema
+- UUIDs generated, proper field mapping completed
+
+NEXT STEPS:
+1. Execute combined batches sequentially
+2. Verify migration progress after each batch
+3. All clients will have proper mobile numbers and names migrated
+
+✅ MIGRATION SYSTEM SUCCESSFULLY PREPARED!

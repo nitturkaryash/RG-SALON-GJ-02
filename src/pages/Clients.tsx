@@ -33,13 +33,15 @@ import {
   Event as EventIcon,
   Wc as WcIcon,
   ConfirmationNumber as ConfirmationNumberIcon,
-  Delete as DeleteIcon
+  Delete as DeleteIcon,
+  Upload as UploadIcon
 } from '@mui/icons-material'
 import { useClients, Client } from '../hooks/useClients'
 import { useOrders } from '../hooks/useOrders'
 import { formatCurrency } from '../utils/format'
-import { toast } from 'react-hot-toast'
+import { toast } from 'react-toastify'
 import { isValidPhoneNumber, isValidEmail } from '../utils/validation'
+import ClientExcelImport from '../components/ClientExcelImport'
 
 export default function Clients() {
   const { clients, isLoading, createClient, updateClient, processPendingPayment, deleteClient, deleteAllClients } = useClients()
@@ -49,6 +51,7 @@ export default function Clients() {
   const [openPaymentDialog, setOpenPaymentDialog] = useState(false)
   const [openDeleteDialog, setOpenDeleteDialog] = useState(false)
   const [openDeleteAllDialog, setOpenDeleteAllDialog] = useState(false)
+  const [openImportDialog, setOpenImportDialog] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedClient, setSelectedClient] = useState<Client | null>(null)
   const [paymentAmount, setPaymentAmount] = useState<number>(0)
@@ -291,6 +294,14 @@ export default function Clients() {
             sx={{ height: 'fit-content', mr: 2 }}
           >
             Delete All Clients
+          </Button>
+          <Button
+            variant="outlined"
+            startIcon={<UploadIcon />}
+            onClick={() => setOpenImportDialog(true)}
+            sx={{ height: 'fit-content', mr: 2 }}
+          >
+            Import from Excel
           </Button>
           <Button
             variant="contained"
@@ -780,6 +791,12 @@ export default function Clients() {
           </Button>
         </DialogActions>
       </Dialog>
+      
+      {/* Excel Import Dialog */}
+      <ClientExcelImport 
+        open={openImportDialog} 
+        onClose={() => setOpenImportDialog(false)} 
+      />
     </Box>
   )
 } 
