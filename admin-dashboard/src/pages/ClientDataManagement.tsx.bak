@@ -1,0 +1,1942 @@
+import { useState } from 'react'
+import { motion } from 'framer-motion'
+import { useQuery } from '@tanstack/react-query'
+import {
+  UsersIcon,
+  BuildingStorefrontIcon,
+  CurrencyDollarIcon,
+  ChartBarIcon,
+  CogIcon,
+  ExclamationTriangleIcon,
+  PlusIcon,
+  MagnifyingGlassIcon,
+  EyeIcon,
+  PencilIcon,
+  TrashIcon,
+  CheckCircleIcon,
+  XCircleIcon,
+  ClockIcon,
+  KeyIcon,
+  ShieldCheckIcon,
+  GlobeAltIcon,
+  DocumentArrowDownIcon,
+  DocumentArrowUpIcon,
+  ServerIcon,
+  UserPlusIcon,
+  BanknotesIcon,
+  PhoneIcon,
+  EnvelopeIcon,
+  MapPinIcon,
+  CalendarIcon,
+  ComputerDesktopIcon,
+  DevicePhoneMobileIcon,
+  WifiIcon,
+  LockClosedIcon,
+  ArrowPathIcon,
+  ChartPieIcon,
+  DocumentTextIcon,
+  CloudArrowUpIcon,
+  CloudArrowDownIcon,
+  ExclamationCircleIcon,
+} from '@heroicons/react/24/outline'
+import toast from 'react-hot-toast'
+
+// Enhanced Types for Complete SaaS Client Management
+interface SalonClient {
+  id: string
+  salon_name: string
+  owner_name: string
+  email: string
+  phone: string
+  address: string
+  city: string
+  state: string
+  country: string
+  subscription_plan: 'basic' | 'pro' | 'premium' | 'enterprise'
+  subscription_status: 'active' | 'inactive' | 'suspended' | 'trial' | 'expired'
+  created_at: string
+  last_login: string
+  monthly_revenue: number
+  total_revenue: number
+  support_tickets: number
+  users_count: number
+  appointments_count: number
+  status: 'active' | 'inactive' | 'suspended'
+  trial_ends_at?: string
+  // Enhanced fields
+  password_last_changed: string
+  mfa_enabled: boolean
+  api_key: string
+  database_size: string
+  backup_frequency: 'daily' | 'weekly' | 'monthly'
+  last_backup: string
+  data_retention_days: number
+  custom_domain?: string
+  branding_enabled: boolean
+  sso_enabled: boolean
+  webhook_url?: string
+  timezone: string
+  billing_address: string
+  payment_method: string
+  contract_start: string
+  contract_end: string
+  auto_renewal: boolean
+}
+
+interface ClientSession {
+  id: string
+  client_id: string
+  user_name: string
+  device_type: 'desktop' | 'mobile' | 'tablet'
+  browser: string
+  operating_system: string
+  ip_address: string
+  location: {
+    city: string
+    country: string
+    latitude: number
+    longitude: number
+  }
+  login_time: string
+  logout_time?: string
+  session_duration: number
+  is_active: boolean
+  actions_count: number
+  last_activity: string
+}
+
+interface ClientData {
+  id: string
+  client_id: string
+  table_name: string
+  record_count: number
+  data_size: string
+  last_updated: string
+  sync_status: 'synced' | 'pending' | 'error'
+  backup_status: 'backed_up' | 'pending' | 'failed'
+}
+
+interface ClientAnalytics {
+  client_id: string
+  daily_active_users: number
+  monthly_active_users: number
+  feature_usage: {
+    appointments: number
+    inventory: number
+    payments: number
+    reports: number
+  }
+  revenue_trend: Array<{ date: string; amount: number }>
+  user_engagement: {
+    avg_session_duration: number
+    pages_per_session: number
+    bounce_rate: number
+  }
+  system_performance: {
+    uptime: number
+    response_time: number
+    error_rate: number
+  }
+}
+
+interface BackupRecord {
+  id: string
+  client_id: string
+  backup_type: 'full' | 'incremental' | 'differential'
+  file_size: string
+  created_at: string
+  status: 'completed' | 'in_progress' | 'failed'
+  retention_until: string
+  download_url?: string
+}
+
+// Enhanced Mock Data
+const fetchEnhancedClientsData = async () => {
+  return {
+    clients: [
+      {
+        id: 'client-001',
+        salon_name: 'Glamour Studio',
+        owner_name: 'Sarah Johnson',
+        email: 'sarah@glamourstudio.com',
+        phone: '+1-555-0123',
+        address: '123 Beauty Lane',
+        city: 'New York',
+        state: 'NY',
+        country: 'USA',
+        subscription_plan: 'premium',
+        subscription_status: 'active',
+        created_at: '2024-01-15',
+        last_login: '2024-01-20T14:30:00Z',
+        monthly_revenue: 2500,
+        total_revenue: 15000,
+        support_tickets: 2,
+        users_count: 8,
+        appointments_count: 156,
+        status: 'active',
+        password_last_changed: '2024-01-10',
+        mfa_enabled: true,
+        api_key: 'gls_live_4f6h8k2m9n1p3q5r7s9t',
+        database_size: '2.4 GB',
+        backup_frequency: 'daily',
+        last_backup: '2024-01-20T02:00:00Z',
+        data_retention_days: 365,
+        custom_domain: 'booking.glamourstudio.com',
+        branding_enabled: true,
+        sso_enabled: false,
+        webhook_url: 'https://glamourstudio.com/webhook',
+        timezone: 'America/New_York',
+        billing_address: '123 Beauty Lane, New York, NY 10001',
+        payment_method: 'Credit Card (**** 4242)',
+        contract_start: '2024-01-15',
+        contract_end: '2025-01-15',
+        auto_renewal: true,
+      },
+      {
+        id: 'client-002',
+        salon_name: 'Elite Cuts',
+        owner_name: 'Mike Chen',
+        email: 'mike@elitecuts.com',
+        phone: '+1-555-0456',
+        address: '456 Style Street',
+        city: 'Los Angeles',
+        state: 'CA',
+        country: 'USA',
+        subscription_plan: 'pro',
+        subscription_status: 'active',
+        created_at: '2024-01-10',
+        last_login: '2024-01-19T16:45:00Z',
+        monthly_revenue: 1800,
+        total_revenue: 9000,
+        support_tickets: 1,
+        users_count: 5,
+        appointments_count: 98,
+        status: 'active',
+        password_last_changed: '2024-01-05',
+        mfa_enabled: false,
+        api_key: 'ec_live_9k2l4m6n8p1q3r5s7t9v',
+        database_size: '1.8 GB',
+        backup_frequency: 'weekly',
+        last_backup: '2024-01-18T02:00:00Z',
+        data_retention_days: 180,
+        branding_enabled: false,
+        sso_enabled: false,
+        timezone: 'America/Los_Angeles',
+        billing_address: '456 Style Street, Los Angeles, CA 90210',
+        payment_method: 'Bank Transfer',
+        contract_start: '2024-01-10',
+        contract_end: '2025-01-10',
+        auto_renewal: true,
+      },
+      {
+        id: 'client-003',
+        salon_name: 'Beauty Spot',
+        owner_name: 'Emma Rodriguez',
+        email: 'emma@beautyspot.com',
+        phone: '+1-555-0789',
+        address: '789 Salon Ave',
+        city: 'Miami',
+        state: 'FL',
+        country: 'USA',
+        subscription_plan: 'basic',
+        subscription_status: 'trial',
+        created_at: '2024-01-18',
+        last_login: '2024-01-20T10:15:00Z',
+        monthly_revenue: 0,
+        total_revenue: 0,
+        support_tickets: 0,
+        users_count: 2,
+        appointments_count: 12,
+        status: 'active',
+        trial_ends_at: '2024-02-01',
+        password_last_changed: '2024-01-18',
+        mfa_enabled: false,
+        api_key: 'bs_test_2a4b6c8d0e2f4g6h8i0j',
+        database_size: '156 MB',
+        backup_frequency: 'weekly',
+        last_backup: '2024-01-19T02:00:00Z',
+        data_retention_days: 30,
+        branding_enabled: false,
+        sso_enabled: false,
+        timezone: 'America/Miami',
+        billing_address: '789 Salon Ave, Miami, FL 33101',
+        payment_method: 'Trial',
+        contract_start: '2024-01-18',
+        contract_end: '2024-02-01',
+        auto_renewal: false,
+      },
+    ],
+    sessions: [
+      {
+        id: 'session-001',
+        client_id: 'client-001',
+        user_name: 'Sarah Johnson',
+        device_type: 'desktop',
+        browser: 'Chrome 120.0',
+        operating_system: 'Windows 11',
+        ip_address: '192.168.1.100',
+        location: {
+          city: 'New York',
+          country: 'USA',
+          latitude: 40.7128,
+          longitude: -74.0060,
+        },
+        login_time: '2024-01-20T14:30:00Z',
+        session_duration: 3600,
+        is_active: true,
+        actions_count: 45,
+        last_activity: '2024-01-20T15:30:00Z',
+      },
+      {
+        id: 'session-002',
+        client_id: 'client-001',
+        user_name: 'Jessica Martinez',
+        device_type: 'mobile',
+        browser: 'Safari 17.2',
+        operating_system: 'iOS 17.2',
+        ip_address: '192.168.1.105',
+        location: {
+          city: 'New York',
+          country: 'USA',
+          latitude: 40.7589,
+          longitude: -73.9851,
+        },
+        login_time: '2024-01-20T13:15:00Z',
+        logout_time: '2024-01-20T14:45:00Z',
+        session_duration: 5400,
+        is_active: false,
+        actions_count: 28,
+        last_activity: '2024-01-20T14:45:00Z',
+      },
+      {
+        id: 'session-003',
+        client_id: 'client-002',
+        user_name: 'Mike Chen',
+        device_type: 'tablet',
+        browser: 'Chrome 120.0',
+        operating_system: 'Android 14',
+        ip_address: '192.168.2.50',
+        location: {
+          city: 'Los Angeles',
+          country: 'USA',
+          latitude: 34.0522,
+          longitude: -118.2437,
+        },
+        login_time: '2024-01-19T16:45:00Z',
+        logout_time: '2024-01-19T18:20:00Z',
+        session_duration: 5700,
+        is_active: false,
+        actions_count: 62,
+        last_activity: '2024-01-19T18:20:00Z',
+      },
+    ],
+    clientData: [
+      {
+        id: 'data-001',
+        client_id: 'client-001',
+        table_name: 'appointments',
+        record_count: 1247,
+        data_size: '890 MB',
+        last_updated: '2024-01-20T14:30:00Z',
+        sync_status: 'synced',
+        backup_status: 'backed_up',
+      },
+      {
+        id: 'data-002',
+        client_id: 'client-001',
+        table_name: 'clients',
+        record_count: 856,
+        data_size: '245 MB',
+        last_updated: '2024-01-20T14:25:00Z',
+        sync_status: 'synced',
+        backup_status: 'backed_up',
+      },
+      {
+        id: 'data-003',
+        client_id: 'client-001',
+        table_name: 'inventory',
+        record_count: 342,
+        data_size: '156 MB',
+        last_updated: '2024-01-20T14:20:00Z',
+        sync_status: 'pending',
+        backup_status: 'pending',
+      },
+      {
+        id: 'data-004',
+        client_id: 'client-001',
+        table_name: 'payments',
+        record_count: 2103,
+        data_size: '1.2 GB',
+        last_updated: '2024-01-20T14:35:00Z',
+        sync_status: 'synced',
+        backup_status: 'backed_up',
+      },
+    ],
+    analytics: {
+      'client-001': {
+        client_id: 'client-001',
+        daily_active_users: 6,
+        monthly_active_users: 8,
+        feature_usage: {
+          appointments: 156,
+          inventory: 89,
+          payments: 203,
+          reports: 45,
+        },
+        revenue_trend: [
+          { date: '2024-01-13', amount: 2100 },
+          { date: '2024-01-14', amount: 2300 },
+          { date: '2024-01-15', amount: 2500 },
+          { date: '2024-01-16', amount: 2400 },
+          { date: '2024-01-17', amount: 2700 },
+          { date: '2024-01-18', amount: 2600 },
+          { date: '2024-01-19', amount: 2800 },
+          { date: '2024-01-20', amount: 2500 },
+        ],
+        user_engagement: {
+          avg_session_duration: 4500,
+          pages_per_session: 8.5,
+          bounce_rate: 12.3,
+        },
+        system_performance: {
+          uptime: 99.8,
+          response_time: 245,
+          error_rate: 0.02,
+        },
+      },
+    },
+    backups: [
+      {
+        id: 'backup-001',
+        client_id: 'client-001',
+        backup_type: 'full',
+        file_size: '2.4 GB',
+        created_at: '2024-01-20T02:00:00Z',
+        status: 'completed',
+        retention_until: '2024-04-20T02:00:00Z',
+        download_url: '/api/backups/backup-001/download',
+      },
+      {
+        id: 'backup-002',
+        client_id: 'client-001',
+        backup_type: 'incremental',
+        file_size: '156 MB',
+        created_at: '2024-01-19T02:00:00Z',
+        status: 'completed',
+        retention_until: '2024-04-19T02:00:00Z',
+        download_url: '/api/backups/backup-002/download',
+      },
+      {
+        id: 'backup-003',
+        client_id: 'client-002',
+        backup_type: 'full',
+        file_size: '1.8 GB',
+        created_at: '2024-01-18T02:00:00Z',
+        status: 'completed',
+        retention_until: '2024-04-18T02:00:00Z',
+        download_url: '/api/backups/backup-003/download',
+      },
+    ],
+    supportTickets: [
+      {
+        id: 'ticket-001',
+        client_id: 'client-001',
+        salon_name: 'Glamour Studio',
+        title: 'Payment Gateway Integration Issue',
+        description: 'Unable to process credit card payments through Stripe integration',
+        priority: 'high',
+        status: 'in_progress',
+        created_at: '2024-01-19T10:30:00Z',
+        updated_at: '2024-01-20T09:15:00Z',
+        assigned_to: 'Tech Support Team',
+        resolution_time: null,
+      },
+      {
+        id: 'ticket-002',
+        client_id: 'client-002',
+        salon_name: 'Elite Cuts',
+        title: 'User Permission Access Problem',
+        description: 'Staff member cannot access inventory management module',
+        priority: 'medium',
+        status: 'open',
+        created_at: '2024-01-20T14:20:00Z',
+        updated_at: '2024-01-20T14:20:00Z',
+        assigned_to: null,
+        resolution_time: null,
+      },
+    ],
+    systemOverview: {
+      totalClients: 3,
+      activeClients: 2,
+      trialClients: 1,
+      suspendedClients: 0,
+      totalRevenue: 24000,
+      monthlyRevenue: 4300,
+      totalTickets: 2,
+      openTickets: 1,
+      totalSessions: 247,
+      activeSessions: 156,
+      totalDataSize: '8.2 GB',
+      totalBackups: 15,
+      systemUptime: 99.9,
+    },
+  }
+}
+
+export default function ClientDataManagement() {
+  const [activeTab, setActiveTab] = useState('overview')
+  const [searchTerm, setSearchTerm] = useState('')
+  const [selectedClient, setSelectedClient] = useState<SalonClient | null>(null)
+  const [showCreateModal, setShowCreateModal] = useState(false)
+  const [showPasswordResetModal, setShowPasswordResetModal] = useState(false)
+  const [showDataModal, setShowDataModal] = useState(false)
+  const [showAnalyticsModal, setShowAnalyticsModal] = useState(false)
+  const [showBackupModal, setShowBackupModal] = useState(false)
+  const [showSessionModal, setShowSessionModal] = useState(false)
+
+  const { data, isLoading, refetch } = useQuery({
+    queryKey: ['enhanced-saas-clients'],
+    queryFn: fetchEnhancedClientsData,
+    refetchInterval: 30000,
+  })
+
+  const tabs = [
+    { id: 'overview', name: 'Overview Dashboard', icon: ChartBarIcon },
+    { id: 'clients', name: 'Client Management', icon: UsersIcon },
+    { id: 'sessions', name: 'Session Tracking', icon: GlobeAltIcon },
+    { id: 'data', name: 'Data Management', icon: ServerIcon },
+    { id: 'analytics', name: 'Advanced Analytics', icon: ChartPieIcon },
+    { id: 'backups', name: 'Backup & Restore', icon: CloudArrowUpIcon },
+    { id: 'security', name: 'Security Center', icon: ShieldCheckIcon },
+    { id: 'support', name: 'Support Tickets', icon: ExclamationTriangleIcon },
+    { id: 'billing', name: 'Billing Management', icon: BanknotesIcon },
+    { id: 'settings', name: 'Platform Settings', icon: CogIcon },
+  ]
+
+  const handleClientAction = (action: string, client: SalonClient) => {
+    setSelectedClient(client)
+    switch (action) {
+      case 'view':
+        // Already set selectedClient, modal will show
+        break
+      case 'edit':
+        toast.success(`Editing ${client.salon_name}`)
+        break
+      case 'reset-password':
+        setShowPasswordResetModal(true)
+        break
+      case 'view-data':
+        setShowDataModal(true)
+        break
+      case 'view-analytics':
+        setShowAnalyticsModal(true)
+        break
+      case 'view-backups':
+        setShowBackupModal(true)
+        break
+      case 'view-sessions':
+        setShowSessionModal(true)
+        break
+      case 'suspend':
+        toast.error(`Suspended ${client.salon_name}`)
+        break
+      case 'delete':
+        toast.error(`Deleted ${client.salon_name}`)
+        break
+      default:
+        break
+    }
+  }
+
+  const renderTabContent = () => {
+    switch (activeTab) {
+      case 'overview':
+        return <EnhancedSaaSOverview data={data} isLoading={isLoading} />
+      case 'clients':
+        return (
+          <EnhancedClientsManagement
+            clients={data?.clients || []}
+            isLoading={isLoading}
+            onClientAction={handleClientAction}
+            onCreateClient={() => setShowCreateModal(true)}
+            searchTerm={searchTerm}
+            setSearchTerm={setSearchTerm}
+          />
+        )
+      case 'sessions':
+        return <SessionTrackingManagement sessions={data?.sessions || []} isLoading={isLoading} />
+      case 'data':
+        return <DataManagement clientData={data?.clientData || []} isLoading={isLoading} />
+      case 'analytics':
+        return <AdvancedAnalytics analytics={data?.analytics || {}} isLoading={isLoading} />
+      case 'backups':
+        return <BackupManagement backups={data?.backups || []} isLoading={isLoading} />
+      case 'security':
+        return <SecurityCenter clients={data?.clients || []} isLoading={isLoading} />
+      case 'support':
+        return <SupportTickets tickets={data?.supportTickets || []} isLoading={isLoading} />
+      case 'billing':
+        return <BillingManagement clients={data?.clients || []} isLoading={isLoading} />
+      case 'settings':
+        return <PlatformSettings />
+      default:
+        return <EnhancedSaaSOverview data={data} isLoading={isLoading} />
+    }
+  }
+
+// Session Tracking Management Component
+function SessionTrackingManagement({ sessions, isLoading }: { sessions: any[]; isLoading: boolean }) {
+  const [selectedSession, setSelectedSession] = useState<any>(null)
+  
+  if (isLoading) return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        {[...Array(4)].map((_, i) => (
+          <div key={i} className="glass-card p-6">
+            <div className="animate-pulse">
+              <div className="h-4 bg-white/10 rounded mb-2"></div>
+              <div className="h-8 bg-white/10 rounded"></div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+  
+  return (
+    <div className="space-y-6">
+      {/* Enhanced Session Analytics */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="glass-card p-6"
+        >
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-lg font-semibold text-white">Active Sessions</h3>
+              <p className="text-2xl font-bold text-green-400">{sessions.filter(s => s.is_active).length}</p>
+              <p className="text-sm text-white/60">Currently online</p>
+            </div>
+            <div className="p-3 rounded-full bg-green-500/20">
+              <WifiIcon className="w-6 h-6 text-green-400" />
+            </div>
+          </div>
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1 }}
+          className="glass-card p-6"
+        >
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-lg font-semibold text-white">Total Sessions</h3>
+              <p className="text-2xl font-bold text-blue-400">{sessions.length}</p>
+              <p className="text-sm text-white/60">Today</p>
+            </div>
+            <div className="p-3 rounded-full bg-blue-500/20">
+              <GlobeAltIcon className="w-6 h-6 text-blue-400" />
+            </div>
+          </div>
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2 }}
+          className="glass-card p-6"
+        >
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-lg font-semibold text-white">Unique Locations</h3>
+              <p className="text-2xl font-bold text-purple-400">{new Set(sessions.map(s => s.location?.city)).size}</p>
+              <p className="text-sm text-white/60">Cities</p>
+            </div>
+            <div className="p-3 rounded-full bg-purple-500/20">
+              <MapPinIcon className="w-6 h-6 text-purple-400" />
+            </div>
+          </div>
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.3 }}
+          className="glass-card p-6"
+        >
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-lg font-semibold text-white">High Activity</h3>
+              <p className="text-2xl font-bold text-yellow-400">{sessions.filter(s => s.actions_count > 100).length}</p>
+              <p className="text-sm text-white/60">Suspicious behavior</p>
+            </div>
+            <div className="p-3 rounded-full bg-yellow-500/20">
+              <ExclamationTriangleIcon className="w-6 h-6 text-yellow-400" />
+            </div>
+          </div>
+        </motion.div>
+      </div>
+
+      {/* Enhanced Session Table */}
+      <div className="glass-card overflow-hidden">
+        <div className="p-6 border-b border-white/10">
+          <h3 className="text-lg font-semibold text-white">Live Session Monitor</h3>
+          <p className="text-white/60">Real-time tracking of all user sessions with location detection</p>
+        </div>
+        
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead className="bg-white/5">
+              <tr>
+                <th className="px-6 py-4 text-left text-white/60 font-medium">User & Location</th>
+                <th className="px-6 py-4 text-left text-white/60 font-medium">Device & Browser</th>
+                <th className="px-6 py-4 text-left text-white/60 font-medium">IP Address</th>
+                <th className="px-6 py-4 text-left text-white/60 font-medium">Status & Duration</th>
+                <th className="px-6 py-4 text-left text-white/60 font-medium">Activity</th>
+                <th className="px-6 py-4 text-left text-white/60 font-medium">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/10">
+              {sessions.slice(0, 15).map((session, index) => (
+                <motion.tr
+                  key={session.id}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: index * 0.05 }}
+                  className="hover:bg-white/5 transition-colors duration-200"
+                >
+                  <td className="px-6 py-4">
+                    <div className="flex items-center space-x-3">
+                      <div className="w-8 h-8 bg-gradient-to-r from-purple-500 to-blue-500 rounded-full flex items-center justify-center">
+                        <span className="text-white font-semibold text-xs">
+                          {session.user_name.charAt(0).toUpperCase()}
+                        </span>
+                      </div>
+                      <div>
+                        <p className="text-white font-medium">{session.user_name}</p>
+                        <div className="flex items-center space-x-1 text-sm text-white/60">
+                          <MapPinIcon className="w-3 h-3" />
+                          <span>{session.location?.city}, {session.location?.country}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </td>
+
+                  <td className="px-6 py-4">
+                    <div className="flex items-center space-x-2">
+                      {session.device_type === 'desktop' ? (
+                        <ComputerDesktopIcon className="w-4 h-4 text-blue-400" />
+                      ) : (
+                        <DevicePhoneMobileIcon className="w-4 h-4 text-green-400" />
+                      )}
+                      <div>
+                        <p className="text-white text-sm capitalize">{session.device_type}</p>
+                        <p className="text-white/60 text-xs">{session.browser}</p>
+                      </div>
+                    </div>
+                  </td>
+
+                  <td className="px-6 py-4">
+                    <span className="text-white font-mono text-sm">{session.ip_address}</span>
+                  </td>
+
+                  <td className="px-6 py-4">
+                    <div className="space-y-1">
+                      <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                        session.is_active ? 'bg-green-500/20 text-green-400' : 'bg-gray-500/20 text-gray-400'
+                      }`}>
+                        {session.is_active ? 'Active' : 'Ended'}
+                      </span>
+                      <p className="text-white/60 text-xs">{Math.floor(session.session_duration / 60)}m duration</p>
+                    </div>
+                  </td>
+
+                  <td className="px-6 py-4">
+                    <div className="space-y-1">
+                      <p className="text-white text-sm">{session.actions_count} actions</p>
+                      {session.actions_count > 100 && (
+                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-red-500/20 text-red-400">
+                          High Activity
+                        </span>
+                      )}
+                    </div>
+                  </td>
+
+                  <td className="px-6 py-4">
+                    <div className="flex items-center space-x-2">
+                      <motion.button
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        onClick={() => setSelectedSession(session)}
+                        className="p-2 text-blue-400 hover:text-blue-300 hover:bg-blue-500/20 rounded-lg transition-colors duration-200"
+                        title="View Details"
+                      >
+                        <EyeIcon className="w-4 h-4" />
+                      </motion.button>
+                      
+                      {session.is_active && (
+                        <motion.button
+                          whileHover={{ scale: 1.05 }}
+                          whileTap={{ scale: 0.95 }}
+                          onClick={() => {
+                            toast.success(`Terminating session for ${session.user_name}`)
+                          }}
+                          className="p-2 text-red-400 hover:text-red-300 hover:bg-red-500/20 rounded-lg transition-colors duration-200"
+                          title="Terminate Session"
+                        >
+                          <XCircleIcon className="w-4 h-4" />
+                        </motion.button>
+                      )}
+                    </div>
+                  </td>
+                </motion.tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Session Details Modal */}
+      {selectedSession && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-gradient-to-br from-gray-900/90 to-gray-800/90 backdrop-blur-xl border border-white/20 rounded-2xl p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto"
+          >
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-2xl font-bold text-white">Session Details</h2>
+              <button
+                onClick={() => setSelectedSession(null)}
+                className="p-2 text-white/60 hover:text-white hover:bg-white/10 rounded-lg"
+              >
+                <XCircleIcon className="w-6 h-6" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div className="space-y-4">
+                <h3 className="text-lg font-semibold text-white">User Information</h3>
+                <div className="glass-card p-4 space-y-3">
+                  <div className="flex justify-between">
+                    <span className="text-white/60">User:</span>
+                    <span className="text-white">{selectedSession.user_name}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-white/60">Device:</span>
+                    <span className="text-white capitalize">{selectedSession.device_type}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-white/60">Browser:</span>
+                    <span className="text-white">{selectedSession.browser}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-white/60">IP Address:</span>
+                    <span className="text-white font-mono">{selectedSession.ip_address}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <h3 className="text-lg font-semibold text-white">Location & Activity</h3>
+                <div className="glass-card p-4 space-y-3">
+                  <div className="flex justify-between">
+                    <span className="text-white/60">City:</span>
+                    <span className="text-white">{selectedSession.location?.city}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-white/60">Country:</span>
+                    <span className="text-white">{selectedSession.location?.country}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-white/60">Actions:</span>
+                    <span className="text-white">{selectedSession.actions_count}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-white/60">Duration:</span>
+                    <span className="text-white">{Math.floor(selectedSession.session_duration / 60)}m</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end space-x-4 mt-6">
+              {selectedSession.is_active && (
+                <button className="px-4 py-2 bg-red-500/20 text-red-400 border border-red-500/30 rounded-lg hover:bg-red-500/30">
+                  Terminate Session
+                </button>
+              )}
+              <button
+                onClick={() => setSelectedSession(null)}
+                className="px-6 py-2 glass-button hover-glow"
+              >
+                Close
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Data Management Component
+function DataManagement({ clientData, isLoading }: { clientData: any[]; isLoading: boolean }) {
+  if (isLoading) return <div className="text-white">Loading data...</div>
+  
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <div className="glass-card p-6">
+          <h3 className="text-lg font-semibold text-white">Total Tables</h3>
+          <p className="text-2xl font-bold text-blue-400">{clientData.length}</p>
+        </div>
+        <div className="glass-card p-6">
+          <h3 className="text-lg font-semibold text-white">Total Records</h3>
+          <p className="text-2xl font-bold text-green-400">{clientData.reduce((acc, d) => acc + d.record_count, 0).toLocaleString()}</p>
+        </div>
+        <div className="glass-card p-6">
+          <h3 className="text-lg font-semibold text-white">Synced</h3>
+          <p className="text-2xl font-bold text-purple-400">{clientData.filter(d => d.sync_status === 'synced').length}</p>
+        </div>
+        <div className="glass-card p-6">
+          <h3 className="text-lg font-semibold text-white">Pending</h3>
+          <p className="text-2xl font-bold text-yellow-400">{clientData.filter(d => d.sync_status === 'pending').length}</p>
+        </div>
+      </div>
+
+      <div className="glass-card overflow-hidden">
+        <table className="w-full">
+          <thead className="bg-white/5">
+            <tr>
+              <th className="px-6 py-4 text-left text-white/60">Table</th>
+              <th className="px-6 py-4 text-left text-white/60">Records</th>
+              <th className="px-6 py-4 text-left text-white/60">Size</th>
+              <th className="px-6 py-4 text-left text-white/60">Sync Status</th>
+              <th className="px-6 py-4 text-left text-white/60">Backup Status</th>
+              <th className="px-6 py-4 text-left text-white/60">Actions</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-white/10">
+            {clientData.map((data, index) => (
+              <tr key={data.id} className="hover:bg-white/5">
+                <td className="px-6 py-4 text-white font-medium">{data.table_name}</td>
+                <td className="px-6 py-4 text-white/60">{data.record_count.toLocaleString()}</td>
+                <td className="px-6 py-4 text-white/60">{data.data_size}</td>
+                <td className="px-6 py-4">
+                  <span className={`px-2 py-1 rounded text-xs ${
+                    data.sync_status === 'synced' ? 'bg-green-500/20 text-green-400' :
+                    data.sync_status === 'pending' ? 'bg-yellow-500/20 text-yellow-400' :
+                    'bg-red-500/20 text-red-400'
+                  }`}>
+                    {data.sync_status}
+                  </span>
+                </td>
+                <td className="px-6 py-4">
+                  <span className={`px-2 py-1 rounded text-xs ${
+                    data.backup_status === 'backed_up' ? 'bg-green-500/20 text-green-400' :
+                    data.backup_status === 'pending' ? 'bg-yellow-500/20 text-yellow-400' :
+                    'bg-red-500/20 text-red-400'
+                  }`}>
+                    {data.backup_status.replace('_', ' ')}
+                  </span>
+                </td>
+                <td className="px-6 py-4">
+                  <div className="flex space-x-2">
+                    <button className="p-2 text-blue-400 hover:bg-blue-500/20 rounded" title="View Data">
+                      <EyeIcon className="w-4 h-4" />
+                    </button>
+                    <button className="p-2 text-green-400 hover:bg-green-500/20 rounded" title="Sync">
+                      <ArrowPathIcon className="w-4 h-4" />
+                    </button>
+                    <button className="p-2 text-purple-400 hover:bg-purple-500/20 rounded" title="Backup">
+                      <CloudArrowUpIcon className="w-4 h-4" />
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+// Advanced Analytics Component
+function AdvancedAnalytics({ analytics, isLoading }: { analytics: any; isLoading: boolean }) {
+  if (isLoading) return <div className="text-white">Loading analytics...</div>
+  
+  const clientAnalytics = Object.values(analytics)[0] as any || {}
+  
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <div className="glass-card p-6">
+          <h3 className="text-lg font-semibold text-white">Daily Active Users</h3>
+          <p className="text-2xl font-bold text-blue-400">{clientAnalytics.daily_active_users || 0}</p>
+        </div>
+        <div className="glass-card p-6">
+          <h3 className="text-lg font-semibold text-white">Monthly Active Users</h3>
+          <p className="text-2xl font-bold text-green-400">{clientAnalytics.monthly_active_users || 0}</p>
+        </div>
+        <div className="glass-card p-6">
+          <h3 className="text-lg font-semibold text-white">Avg Session Time</h3>
+          <p className="text-2xl font-bold text-purple-400">{Math.floor((clientAnalytics.user_engagement?.avg_session_duration || 0) / 60)}m</p>
+        </div>
+        <div className="glass-card p-6">
+          <h3 className="text-lg font-semibold text-white">System Uptime</h3>
+          <p className="text-2xl font-bold text-yellow-400">{clientAnalytics.system_performance?.uptime || 0}%</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="glass-card p-6">
+          <h3 className="text-lg font-semibold text-white mb-4">Feature Usage</h3>
+          {clientAnalytics.feature_usage && Object.entries(clientAnalytics.feature_usage).map(([feature, count]: [string, any]) => (
+            <div key={feature} className="flex justify-between items-center py-2">
+              <span className="text-white capitalize">{feature}</span>
+              <span className="text-blue-400 font-semibold">{count}</span>
+            </div>
+          ))}
+        </div>
+
+        <div className="glass-card p-6">
+          <h3 className="text-lg font-semibold text-white mb-4">User Engagement</h3>
+          {clientAnalytics.user_engagement && Object.entries(clientAnalytics.user_engagement).map(([metric, value]: [string, any]) => (
+            <div key={metric} className="flex justify-between items-center py-2">
+              <span className="text-white capitalize">{metric.replace('_', ' ')}</span>
+              <span className="text-green-400 font-semibold">
+                {typeof value === 'number' && metric.includes('time') ? `${Math.floor(value / 60)}m` : 
+                 typeof value === 'number' && metric.includes('rate') ? `${value}%` : value}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// Backup Management Component
+function BackupManagement({ backups, isLoading }: { backups: any[]; isLoading: boolean }) {
+  if (isLoading) return <div className="text-white">Loading backups...</div>
+  
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <div className="glass-card p-6">
+          <h3 className="text-lg font-semibold text-white">Total Backups</h3>
+          <p className="text-2xl font-bold text-blue-400">{backups.length}</p>
+        </div>
+        <div className="glass-card p-6">
+          <h3 className="text-lg font-semibold text-white">Completed</h3>
+          <p className="text-2xl font-bold text-green-400">{backups.filter(b => b.status === 'completed').length}</p>
+        </div>
+        <div className="glass-card p-6">
+          <h3 className="text-lg font-semibold text-white">In Progress</h3>
+          <p className="text-2xl font-bold text-yellow-400">{backups.filter(b => b.status === 'in_progress').length}</p>
+        </div>
+        <div className="glass-card p-6">
+          <h3 className="text-lg font-semibold text-white">Failed</h3>
+          <p className="text-2xl font-bold text-red-400">{backups.filter(b => b.status === 'failed').length}</p>
+        </div>
+      </div>
+
+      <div className="glass-card overflow-hidden">
+        <table className="w-full">
+          <thead className="bg-white/5">
+            <tr>
+              <th className="px-6 py-4 text-left text-white/60">Backup Details</th>
+              <th className="px-6 py-4 text-left text-white/60">Type</th>
+              <th className="px-6 py-4 text-left text-white/60">Size</th>
+              <th className="px-6 py-4 text-left text-white/60">Created</th>
+              <th className="px-6 py-4 text-left text-white/60">Status</th>
+              <th className="px-6 py-4 text-left text-white/60">Actions</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-white/10">
+            {backups.map((backup, index) => (
+              <tr key={backup.id} className="hover:bg-white/5">
+                <td className="px-6 py-4">
+                  <div>
+                    <p className="text-white font-medium">Client: {backup.client_id}</p>
+                    <p className="text-white/60 text-sm">ID: {backup.id}</p>
+                  </div>
+                </td>
+                <td className="px-6 py-4">
+                  <span className="px-2 py-1 bg-blue-500/20 text-blue-400 rounded text-xs capitalize">
+                    {backup.backup_type}
+                  </span>
+                </td>
+                <td className="px-6 py-4 text-white/60">{backup.file_size}</td>
+                <td className="px-6 py-4 text-white/60">{new Date(backup.created_at).toLocaleDateString()}</td>
+                <td className="px-6 py-4">
+                  <span className={`px-2 py-1 rounded text-xs ${
+                    backup.status === 'completed' ? 'bg-green-500/20 text-green-400' :
+                    backup.status === 'in_progress' ? 'bg-yellow-500/20 text-yellow-400' :
+                    'bg-red-500/20 text-red-400'
+                  }`}>
+                    {backup.status.replace('_', ' ')}
+                  </span>
+                </td>
+                <td className="px-6 py-4">
+                  <div className="flex space-x-2">
+                    {backup.download_url && (
+                      <button className="p-2 text-blue-400 hover:bg-blue-500/20 rounded" title="Download">
+                        <CloudArrowDownIcon className="w-4 h-4" />
+                      </button>
+                    )}
+                    <button className="p-2 text-green-400 hover:bg-green-500/20 rounded" title="Restore">
+                      <ArrowPathIcon className="w-4 h-4" />
+                    </button>
+                    <button className="p-2 text-red-400 hover:bg-red-500/20 rounded" title="Delete">
+                      <TrashIcon className="w-4 h-4" />
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+// Security Center Component
+function SecurityCenter({ clients, isLoading }: { clients: any[]; isLoading: boolean }) {
+  if (isLoading) return <div className="text-white">Loading security info...</div>
+  
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <div className="glass-card p-6">
+          <h3 className="text-lg font-semibold text-white">MFA Enabled</h3>
+          <p className="text-2xl font-bold text-green-400">{clients.filter(c => c.mfa_enabled).length}</p>
+        </div>
+        <div className="glass-card p-6">
+          <h3 className="text-lg font-semibold text-white">SSO Enabled</h3>
+          <p className="text-2xl font-bold text-blue-400">{clients.filter(c => c.sso_enabled).length}</p>
+        </div>
+        <div className="glass-card p-6">
+          <h3 className="text-lg font-semibold text-white">Security Score</h3>
+          <p className="text-2xl font-bold text-purple-400">98.5%</p>
+        </div>
+        <div className="glass-card p-6">
+          <h3 className="text-lg font-semibold text-white">Threats Blocked</h3>
+          <p className="text-2xl font-bold text-yellow-400">0</p>
+        </div>
+      </div>
+
+      <div className="glass-card overflow-hidden">
+        <table className="w-full">
+          <thead className="bg-white/5">
+            <tr>
+              <th className="px-6 py-4 text-left text-white/60">Client</th>
+              <th className="px-6 py-4 text-left text-white/60">MFA Status</th>
+              <th className="px-6 py-4 text-left text-white/60">SSO Status</th>
+              <th className="px-6 py-4 text-left text-white/60">Last Password Change</th>
+              <th className="px-6 py-4 text-left text-white/60">Actions</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-white/10">
+            {clients.map((client, index) => (
+              <tr key={client.id} className="hover:bg-white/5">
+                <td className="px-6 py-4">
+                  <div>
+                    <p className="text-white font-medium">{client.salon_name}</p>
+                    <p className="text-white/60 text-sm">{client.email}</p>
+                  </div>
+                </td>
+                <td className="px-6 py-4">
+                  <span className={`px-2 py-1 rounded text-xs ${
+                    client.mfa_enabled ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
+                  }`}>
+                    {client.mfa_enabled ? 'Enabled' : 'Disabled'}
+                  </span>
+                </td>
+                <td className="px-6 py-4">
+                  <span className={`px-2 py-1 rounded text-xs ${
+                    client.sso_enabled ? 'bg-green-500/20 text-green-400' : 'bg-gray-500/20 text-gray-400'
+                  }`}>
+                    {client.sso_enabled ? 'Enabled' : 'Disabled'}
+                  </span>
+                </td>
+                <td className="px-6 py-4 text-white/60">{new Date(client.password_last_changed).toLocaleDateString()}</td>
+                <td className="px-6 py-4">
+                  <div className="flex space-x-2">
+                    <button className="p-2 text-blue-400 hover:bg-blue-500/20 rounded" title="Reset Password">
+                      <KeyIcon className="w-4 h-4" />
+                    </button>
+                    <button className="p-2 text-green-400 hover:bg-green-500/20 rounded" title="Security Settings">
+                      <ShieldCheckIcon className="w-4 h-4" />
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+// Support Tickets Component
+function SupportTickets({ tickets, isLoading }: { tickets: any[]; isLoading: boolean }) {
+  if (isLoading) return <div className="text-white">Loading tickets...</div>
+  
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <div className="glass-card p-6">
+          <h3 className="text-lg font-semibold text-white">Total Tickets</h3>
+          <p className="text-2xl font-bold text-blue-400">{tickets.length}</p>
+        </div>
+        <div className="glass-card p-6">
+          <h3 className="text-lg font-semibold text-white">Open</h3>
+          <p className="text-2xl font-bold text-red-400">{tickets.filter(t => t.status === 'open').length}</p>
+        </div>
+        <div className="glass-card p-6">
+          <h3 className="text-lg font-semibold text-white">In Progress</h3>
+          <p className="text-2xl font-bold text-yellow-400">{tickets.filter(t => t.status === 'in_progress').length}</p>
+        </div>
+        <div className="glass-card p-6">
+          <h3 className="text-lg font-semibold text-white">Resolved</h3>
+          <p className="text-2xl font-bold text-green-400">{tickets.filter(t => t.status === 'resolved').length}</p>
+        </div>
+      </div>
+
+      <div className="glass-card overflow-hidden">
+        <table className="w-full">
+          <thead className="bg-white/5">
+            <tr>
+              <th className="px-6 py-4 text-left text-white/60">Ticket Details</th>
+              <th className="px-6 py-4 text-left text-white/60">Client</th>
+              <th className="px-6 py-4 text-left text-white/60">Priority</th>
+              <th className="px-6 py-4 text-left text-white/60">Status</th>
+              <th className="px-6 py-4 text-left text-white/60">Created</th>
+              <th className="px-6 py-4 text-left text-white/60">Actions</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-white/10">
+            {tickets.map((ticket, index) => (
+              <tr key={ticket.id} className="hover:bg-white/5">
+                <td className="px-6 py-4">
+                  <div>
+                    <p className="text-white font-medium">{ticket.title}</p>
+                    <p className="text-white/60 text-sm">{ticket.description.substring(0, 50)}...</p>
+                  </div>
+                </td>
+                <td className="px-6 py-4 text-white/60">{ticket.salon_name}</td>
+                <td className="px-6 py-4">
+                  <span className={`px-2 py-1 rounded text-xs ${
+                    ticket.priority === 'high' ? 'bg-red-500/20 text-red-400' :
+                    ticket.priority === 'medium' ? 'bg-yellow-500/20 text-yellow-400' :
+                    'bg-green-500/20 text-green-400'
+                  }`}>
+                    {ticket.priority}
+                  </span>
+                </td>
+                <td className="px-6 py-4">
+                  <span className={`px-2 py-1 rounded text-xs ${
+                    ticket.status === 'open' ? 'bg-red-500/20 text-red-400' :
+                    ticket.status === 'in_progress' ? 'bg-yellow-500/20 text-yellow-400' :
+                    'bg-green-500/20 text-green-400'
+                  }`}>
+                    {ticket.status.replace('_', ' ')}
+                  </span>
+                </td>
+                <td className="px-6 py-4 text-white/60">{new Date(ticket.created_at).toLocaleDateString()}</td>
+                <td className="px-6 py-4">
+                  <div className="flex space-x-2">
+                    <button className="p-2 text-blue-400 hover:bg-blue-500/20 rounded" title="View">
+                      <EyeIcon className="w-4 h-4" />
+                    </button>
+                    <button className="p-2 text-green-400 hover:bg-green-500/20 rounded" title="Reply">
+                      <PencilIcon className="w-4 h-4" />
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+// Billing Management Component  
+function BillingManagement({ clients, isLoading }: { clients: any[]; isLoading: boolean }) {
+  if (isLoading) return <div className="text-white">Loading billing...</div>
+  
+  const totalRevenue = clients.reduce((acc, c) => acc + c.total_revenue, 0)
+  const monthlyRevenue = clients.reduce((acc, c) => acc + c.monthly_revenue, 0)
+  
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <div className="glass-card p-6">
+          <h3 className="text-lg font-semibold text-white">Total Revenue</h3>
+          <p className="text-2xl font-bold text-green-400">${totalRevenue.toLocaleString()}</p>
+        </div>
+        <div className="glass-card p-6">
+          <h3 className="text-lg font-semibold text-white">Monthly Revenue</h3>
+          <p className="text-2xl font-bold text-blue-400">${monthlyRevenue.toLocaleString()}</p>
+        </div>
+        <div className="glass-card p-6">
+          <h3 className="text-lg font-semibold text-white">Active Subscriptions</h3>
+          <p className="text-2xl font-bold text-purple-400">{clients.filter(c => c.subscription_status === 'active').length}</p>
+        </div>
+        <div className="glass-card p-6">
+          <h3 className="text-lg font-semibold text-white">Pending Payments</h3>
+          <p className="text-2xl font-bold text-yellow-400">2</p>
+        </div>
+      </div>
+
+      <div className="glass-card overflow-hidden">
+        <table className="w-full">
+          <thead className="bg-white/5">
+            <tr>
+              <th className="px-6 py-4 text-left text-white/60">Client</th>
+              <th className="px-6 py-4 text-left text-white/60">Plan</th>
+              <th className="px-6 py-4 text-left text-white/60">Monthly Revenue</th>
+              <th className="px-6 py-4 text-left text-white/60">Total Revenue</th>
+              <th className="px-6 py-4 text-left text-white/60">Payment Method</th>
+              <th className="px-6 py-4 text-left text-white/60">Status</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-white/10">
+            {clients.map((client, index) => (
+              <tr key={client.id} className="hover:bg-white/5">
+                <td className="px-6 py-4">
+                  <div>
+                    <p className="text-white font-medium">{client.salon_name}</p>
+                    <p className="text-white/60 text-sm">{client.email}</p>
+                  </div>
+                </td>
+                <td className="px-6 py-4">
+                  <span className="px-2 py-1 bg-blue-500/20 text-blue-400 rounded text-xs capitalize">
+                    {client.subscription_plan}
+                  </span>
+                </td>
+                <td className="px-6 py-4 text-white">${client.monthly_revenue.toLocaleString()}</td>
+                <td className="px-6 py-4 text-white">${client.total_revenue.toLocaleString()}</td>
+                <td className="px-6 py-4 text-white/60">{client.payment_method}</td>
+                <td className="px-6 py-4">
+                  <span className={`px-2 py-1 rounded text-xs ${
+                    client.subscription_status === 'active' ? 'bg-green-500/20 text-green-400' :
+                    client.subscription_status === 'trial' ? 'bg-blue-500/20 text-blue-400' :
+                    'bg-red-500/20 text-red-400'
+                  }`}>
+                    {client.subscription_status}
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+// Platform Settings Component
+function PlatformSettings() {
+  return (
+    <div className="space-y-6">
+      <div className="glass-card p-6">
+        <h3 className="text-lg font-semibold text-white mb-4">Platform Configuration</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div>
+            <label className="text-white/60 text-sm">Default Trial Period</label>
+            <input 
+              type="number" 
+              value="14" 
+              className="w-full mt-1 bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white"
+            />
+          </div>
+          <div>
+            <label className="text-white/60 text-sm">Max Clients per Plan</label>
+            <input 
+              type="number" 
+              value="1000" 
+              className="w-full mt-1 bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white"
+            />
+          </div>
+          <div>
+            <label className="text-white/60 text-sm">Backup Retention (days)</label>
+            <input 
+              type="number" 
+              value="365" 
+              className="w-full mt-1 bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white"
+            />
+          </div>
+          <div>
+            <label className="text-white/60 text-sm">API Rate Limit (per hour)</label>
+            <input 
+              type="number" 
+              value="1000" 
+              className="w-full mt-1 bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white"
+            />
+          </div>
+        </div>
+        <div className="mt-6">
+          <button className="glass-button px-6 py-2 hover-glow">
+            Save Settings
+          </button>
+        </div>
+      </div>
+
+      <div className="glass-card p-6">
+        <h3 className="text-lg font-semibold text-white mb-4">Security Settings</h3>
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-white">Require MFA for Admin Access</p>
+              <p className="text-white/60 text-sm">Force multi-factor authentication for admin users</p>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input type="checkbox" className="sr-only peer" defaultChecked />
+              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
+            </label>
+          </div>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-white">Auto-suspend Inactive Clients</p>
+              <p className="text-white/60 text-sm">Suspend clients after 90 days of inactivity</p>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input type="checkbox" className="sr-only peer" />
+              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
+            </label>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+      default:
+        return <EnhancedSaaSOverview data={data} isLoading={isLoading} />
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Enhanced Header */}
+      <motion.div
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5 }}
+        className="flex flex-col sm:flex-row sm:items-center sm:justify-between"
+      >
+        <div>
+          <h1 className="text-3xl font-bold text-gradient mb-2">
+            Enterprise SaaS Management Center
+          </h1>
+          <p className="text-white/60">
+            Complete multi-tenant platform with advanced analytics, security, and automation
+          </p>
+        </div>
+        
+        <div className="flex items-center space-x-4 mt-4 sm:mt-0">
+          <div className="flex items-center space-x-2 glass-card px-4 py-2">
+            <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+            <span className="text-sm text-white">
+              {data?.systemOverview?.activeClients || 0} Active Clients
+            </span>
+          </div>
+          <div className="flex items-center space-x-2 glass-card px-4 py-2">
+            <WifiIcon className="w-4 h-4 text-blue-400" />
+            <span className="text-sm text-white">
+              {data?.systemOverview?.activeSessions || 0} Live Sessions
+            </span>
+          </div>
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={() => setShowCreateModal(true)}
+            className="glass-button px-4 py-2 hover-glow flex items-center space-x-2"
+          >
+            <PlusIcon className="w-4 h-4" />
+            <span>Add New Client</span>
+          </motion.button>
+        </div>
+      </motion.div>
+
+      {/* Enhanced Navigation Tabs */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5, delay: 0.1 }}
+      >
+        <div className="glass-card p-2">
+          <div className="flex space-x-2 overflow-x-auto">
+            {tabs.map((tab) => (
+              <motion.button
+                key={tab.id}
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={() => setActiveTab(tab.id)}
+                className={`flex items-center space-x-2 px-4 py-3 rounded-lg transition-all duration-200 whitespace-nowrap ${
+                  activeTab === tab.id
+                    ? 'glass-button text-white shadow-lg'
+                    : 'text-white/70 hover:text-white hover:bg-white/5'
+                }`}
+              >
+                <tab.icon className="w-5 h-5" />
+                <span className="font-medium">{tab.name}</span>
+              </motion.button>
+            ))}
+          </div>
+        </div>
+      </motion.div>
+
+      {/* Tab Content */}
+      <motion.div
+        key={activeTab}
+        initial={{ opacity: 0, x: 20 }}
+        animate={{ opacity: 1, x: 0 }}
+        transition={{ duration: 0.3 }}
+      >
+        {renderTabContent()}
+      </motion.div>
+
+      {/* Enhanced Modals */}
+      {selectedClient && !showPasswordResetModal && !showDataModal && !showAnalyticsModal && !showBackupModal && !showSessionModal && (
+        <EnhancedClientDetailsModal
+          client={selectedClient}
+          onClose={() => setSelectedClient(null)}
+          onAction={handleClientAction}
+        />
+      )}
+
+      {showPasswordResetModal && selectedClient && (
+        <PasswordResetModal
+          client={selectedClient}
+          onClose={() => {
+            setShowPasswordResetModal(false)
+            setSelectedClient(null)
+          }}
+          onSuccess={() => {
+            setShowPasswordResetModal(false)
+            setSelectedClient(null)
+            toast.success('Password reset successfully!')
+            refetch()
+          }}
+        />
+      )}
+
+      {showDataModal && selectedClient && (
+        <ClientDataModal
+          client={selectedClient}
+          clientData={data?.clientData?.filter(d => d.client_id === selectedClient.id) || []}
+          onClose={() => {
+            setShowDataModal(false)
+            setSelectedClient(null)
+          }}
+        />
+      )}
+
+      {showAnalyticsModal && selectedClient && (
+        <ClientAnalyticsModal
+          client={selectedClient}
+          analytics={data?.analytics ? (data.analytics as any)[selectedClient.id] : null}
+          onClose={() => {
+            setShowAnalyticsModal(false)
+            setSelectedClient(null)
+          }}
+        />
+      )}
+
+      {showBackupModal && selectedClient && (
+        <ClientBackupModal
+          client={selectedClient}
+          backups={data?.backups?.filter(b => b.client_id === selectedClient.id) || []}
+          onClose={() => {
+            setShowBackupModal(false)
+            setSelectedClient(null)
+          }}
+        />
+      )}
+
+      {showSessionModal && selectedClient && (
+        <ClientSessionModal
+          client={selectedClient}
+          sessions={data?.sessions?.filter(s => s.client_id === selectedClient.id) || []}
+          onClose={() => {
+            setShowSessionModal(false)
+            setSelectedClient(null)
+          }}
+        />
+      )}
+
+      {showCreateModal && (
+        <EnhancedCreateClientModal
+          onClose={() => setShowCreateModal(false)}
+          onSuccess={() => {
+            setShowCreateModal(false)
+            toast.success('New client created successfully!')
+            refetch()
+          }}
+        />
+      )}
+    </div>
+  )
+}
+
+// Enhanced SaaS Overview Component
+function EnhancedSaaSOverview({ data, isLoading }: { data: any; isLoading: boolean }) {
+  if (isLoading) return <div className="text-white">Loading overview...</div>
+  
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <div className="glass-card p-6">
+          <h3 className="text-lg font-semibold text-white">Total Clients</h3>
+          <p className="text-2xl font-bold text-blue-400">{data?.systemOverview?.totalClients || 0}</p>
+        </div>
+        <div className="glass-card p-6">
+          <h3 className="text-lg font-semibold text-white">Monthly Revenue</h3>
+          <p className="text-2xl font-bold text-green-400">${data?.systemOverview?.monthlyRevenue?.toLocaleString() || 0}</p>
+        </div>
+        <div className="glass-card p-6">
+          <h3 className="text-lg font-semibold text-white">Active Sessions</h3>
+          <p className="text-2xl font-bold text-purple-400">{data?.systemOverview?.activeSessions || 0}</p>
+        </div>
+        <div className="glass-card p-6">
+          <h3 className="text-lg font-semibold text-white">Support Tickets</h3>
+          <p className="text-2xl font-bold text-yellow-400">{data?.systemOverview?.openTickets || 0}</p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// Enhanced Clients Management Component
+function EnhancedClientsManagement({ clients, isLoading, onClientAction, onCreateClient, searchTerm, setSearchTerm }: any) {
+  if (isLoading) return <div className="text-white">Loading clients...</div>
+  
+  const filteredClients = clients.filter((client: any) => 
+    client.salon_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    client.email.toLowerCase().includes(searchTerm.toLowerCase())
+  )
+  
+  return (
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <div className="relative">
+          <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-white/40" />
+          <input
+            type="text"
+            placeholder="Search clients..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="bg-white/10 border border-white/20 rounded-lg pl-10 pr-4 py-2 text-white placeholder-white/60 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+        <button
+          onClick={onCreateClient}
+          className="glass-button px-4 py-2 hover-glow flex items-center space-x-2"
+        >
+          <PlusIcon className="w-4 h-4" />
+          <span>Add Client</span>
+        </button>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {filteredClients.map((client: any, index: number) => (
+          <div key={client.id} className="glass-card p-6">
+            <div className="flex items-start justify-between mb-4">
+              <div>
+                <h3 className="text-lg font-semibold text-white">{client.salon_name}</h3>
+                <p className="text-white/60">{client.owner_name}</p>
+                <p className="text-white/50 text-sm">{client.email}</p>
+              </div>
+              <span className={`px-2 py-1 rounded text-xs ${
+                client.subscription_status === 'active' ? 'bg-green-500/20 text-green-400' :
+                client.subscription_status === 'trial' ? 'bg-blue-500/20 text-blue-400' :
+                'bg-red-500/20 text-red-400'
+              }`}>
+                {client.subscription_status}
+              </span>
+            </div>
+            
+            <div className="space-y-2 mb-4">
+              <div className="flex justify-between">
+                <span className="text-white/60">Revenue:</span>
+                <span className="text-white">${client.monthly_revenue.toLocaleString()}/mo</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-white/60">Users:</span>
+                <span className="text-white">{client.users_count}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-white/60">Plan:</span>
+                <span className="text-white capitalize">{client.subscription_plan}</span>
+              </div>
+            </div>
+
+            <div className="flex space-x-2">
+              <button
+                onClick={() => onClientAction('view', client)}
+                className="flex-1 glass-button py-2 text-sm"
+              >
+                View Details
+              </button>
+              <button
+                onClick={() => onClientAction('reset-password', client)}
+                className="p-2 text-yellow-400 hover:bg-yellow-500/20 rounded"
+                title="Reset Password"
+              >
+                <KeyIcon className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// Enhanced Client Details Modal
+function EnhancedClientDetailsModal({ client, onClose, onAction }: any) {
+  return (
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-gradient-to-br from-gray-900/90 to-gray-800/90 backdrop-blur-xl border border-white/20 rounded-2xl p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between mb-6">
+          <h2 className="text-2xl font-bold text-white">{client.salon_name} - Details</h2>
+          <button
+            onClick={onClose}
+            className="p-2 text-white/60 hover:text-white hover:bg-white/10 rounded-lg transition-colors duration-200"
+          >
+            <XCircleIcon className="w-6 h-6" />
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="space-y-4">
+            <h3 className="text-lg font-semibold text-white">Client Information</h3>
+            <div className="glass-card p-4 space-y-3">
+              <div className="flex justify-between">
+                <span className="text-white/60">Owner:</span>
+                <span className="text-white">{client.owner_name}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-white/60">Email:</span>
+                <span className="text-white">{client.email}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-white/60">Phone:</span>
+                <span className="text-white">{client.phone}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-white/60">Location:</span>
+                <span className="text-white">{client.city}, {client.country}</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <h3 className="text-lg font-semibold text-white">Subscription Details</h3>
+            <div className="glass-card p-4 space-y-3">
+              <div className="flex justify-between">
+                <span className="text-white/60">Plan:</span>
+                <span className="text-white capitalize">{client.subscription_plan}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-white/60">Status:</span>
+                <span className="text-white capitalize">{client.subscription_status}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-white/60">Monthly Revenue:</span>
+                <span className="text-white">${client.monthly_revenue.toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-white/60">Total Revenue:</span>
+                <span className="text-white">${client.total_revenue.toLocaleString()}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex justify-end space-x-4 mt-6">
+          <button
+            onClick={() => onAction('view-sessions', client)}
+            className="glass-button px-4 py-2"
+          >
+            View Sessions
+          </button>
+          <button
+            onClick={() => onAction('view-data', client)}
+            className="glass-button px-4 py-2"
+          >
+            View Data
+          </button>
+          <button
+            onClick={onClose}
+            className="glass-button px-6 py-2 hover-glow"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// Password Reset Modal
+function PasswordResetModal({ client, onClose, onSuccess }: any) {
+  return (
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-gradient-to-br from-gray-900/90 to-gray-800/90 backdrop-blur-xl border border-white/20 rounded-2xl p-6 w-full max-w-md">
+        <h2 className="text-xl font-bold text-white mb-4">Reset Password</h2>
+        <p className="text-white/60 mb-6">Reset password for {client.salon_name}?</p>
+        <div className="flex space-x-4">
+          <button onClick={onClose} className="flex-1 glass-button py-2">Cancel</button>
+          <button onClick={onSuccess} className="flex-1 glass-button py-2 bg-red-500/20 text-red-400">Reset</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// Client Data Modal
+function ClientDataModal({ client, clientData, onClose }: any) {
+  return (
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-gradient-to-br from-gray-900/90 to-gray-800/90 backdrop-blur-xl border border-white/20 rounded-2xl p-6 w-full max-w-4xl">
+        <h2 className="text-xl font-bold text-white mb-4">{client.salon_name} - Data Tables</h2>
+        <div className="space-y-4">
+          {clientData.map((data: any) => (
+            <div key={data.id} className="glass-card p-4 flex justify-between items-center">
+              <div>
+                <h3 className="text-white font-medium">{data.table_name}</h3>
+                <p className="text-white/60 text-sm">{data.record_count} records, {data.data_size}</p>
+              </div>
+              <span className={`px-2 py-1 rounded text-xs ${
+                data.sync_status === 'synced' ? 'bg-green-500/20 text-green-400' : 'bg-yellow-500/20 text-yellow-400'
+              }`}>
+                {data.sync_status}
+              </span>
+            </div>
+          ))}
+        </div>
+        <button onClick={onClose} className="glass-button px-6 py-2 mt-6">Close</button>
+      </div>
+    </div>
+  )
+}
+
+// Client Analytics Modal
+function ClientAnalyticsModal({ client, analytics, onClose }: any) {
+  return (
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-gradient-to-br from-gray-900/90 to-gray-800/90 backdrop-blur-xl border border-white/20 rounded-2xl p-6 w-full max-w-4xl">
+        <h2 className="text-xl font-bold text-white mb-4">{client.salon_name} - Analytics</h2>
+        {analytics ? (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="glass-card p-4">
+                <h3 className="text-white">Daily Active Users</h3>
+                <p className="text-2xl font-bold text-blue-400">{analytics.daily_active_users}</p>
+              </div>
+              <div className="glass-card p-4">
+                <h3 className="text-white">Monthly Active Users</h3>
+                <p className="text-2xl font-bold text-green-400">{analytics.monthly_active_users}</p>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <p className="text-white/60">No analytics data available</p>
+        )}
+        <button onClick={onClose} className="glass-button px-6 py-2 mt-6">Close</button>
+      </div>
+    </div>
+  )
+}
+
+// Client Backup Modal
+function ClientBackupModal({ client, backups, onClose }: any) {
+  return (
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-gradient-to-br from-gray-900/90 to-gray-800/90 backdrop-blur-xl border border-white/20 rounded-2xl p-6 w-full max-w-4xl">
+        <h2 className="text-xl font-bold text-white mb-4">{client.salon_name} - Backups</h2>
+        <div className="space-y-4">
+          {backups.map((backup: any) => (
+            <div key={backup.id} className="glass-card p-4 flex justify-between items-center">
+              <div>
+                <h3 className="text-white font-medium">{backup.backup_type} backup</h3>
+                <p className="text-white/60 text-sm">{backup.file_size} - {new Date(backup.created_at).toLocaleDateString()}</p>
+              </div>
+              <span className={`px-2 py-1 rounded text-xs ${
+                backup.status === 'completed' ? 'bg-green-500/20 text-green-400' : 'bg-yellow-500/20 text-yellow-400'
+              }`}>
+                {backup.status}
+              </span>
+            </div>
+          ))}
+        </div>
+        <button onClick={onClose} className="glass-button px-6 py-2 mt-6">Close</button>
+      </div>
+    </div>
+  )
+}
+
+// Client Session Modal
+function ClientSessionModal({ client, sessions, onClose }: any) {
+  return (
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-gradient-to-br from-gray-900/90 to-gray-800/90 backdrop-blur-xl border border-white/20 rounded-2xl p-6 w-full max-w-4xl">
+        <h2 className="text-xl font-bold text-white mb-4">{client.salon_name} - Sessions</h2>
+        <div className="space-y-4">
+          {sessions.map((session: any) => (
+            <div key={session.id} className="glass-card p-4 flex justify-between items-center">
+              <div>
+                <h3 className="text-white font-medium">{session.user_name}</h3>
+                <p className="text-white/60 text-sm">{session.device_type} from {session.location?.city}</p>
+              </div>
+              <span className={`px-2 py-1 rounded text-xs ${
+                session.is_active ? 'bg-green-500/20 text-green-400' : 'bg-gray-500/20 text-gray-400'
+              }`}>
+                {session.is_active ? 'Active' : 'Ended'}
+              </span>
+            </div>
+          ))}
+        </div>
+        <button onClick={onClose} className="glass-button px-6 py-2 mt-6">Close</button>
+      </div>
+    </div>
+  )
+}
+
+// Enhanced Create Client Modal
+function EnhancedCreateClientModal({ onClose, onSuccess }: any) {
+  return (
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-gradient-to-br from-gray-900/90 to-gray-800/90 backdrop-blur-xl border border-white/20 rounded-2xl p-6 w-full max-w-2xl">
+        <h2 className="text-xl font-bold text-white mb-4">Create New Client</h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+          <input placeholder="Salon Name" className="bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white placeholder-white/60" />
+          <input placeholder="Owner Name" className="bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white placeholder-white/60" />
+          <input placeholder="Email" className="bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white placeholder-white/60" />
+          <input placeholder="Phone" className="bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white placeholder-white/60" />
+          <select className="bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white">
+            <option value="basic">Basic Plan</option>
+            <option value="pro">Pro Plan</option>
+            <option value="premium">Premium Plan</option>
+            <option value="enterprise">Enterprise Plan</option>
+          </select>
+        </div>
+        <div className="flex space-x-4">
+          <button onClick={onClose} className="flex-1 glass-button py-2">Cancel</button>
+          <button onClick={onSuccess} className="flex-1 glass-button py-2 bg-blue-500/20 text-blue-400">Create Client</button>
+        </div>
+      </div>
+    </div>
+  )
+} 
