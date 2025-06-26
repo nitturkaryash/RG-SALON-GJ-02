@@ -22,7 +22,9 @@ import {
   Tooltip,
   InputAdornment,
   Alert,
-  DialogContentText
+  DialogContentText,
+  Pagination,
+  Stack
 } from '@mui/material'
 import {
   PersonAdd as PersonAddIcon,
@@ -33,8 +35,10 @@ import {
   Event as EventIcon,
   Wc as WcIcon,
   ConfirmationNumber as ConfirmationNumberIcon,
-  Delete as DeleteIcon
+  Delete as DeleteIcon,
+  FileDownload as FileDownloadIcon
 } from '@mui/icons-material'
+import * as XLSX from 'xlsx'
 import { useClients, Client } from '../hooks/useClients'
 import { useOrders } from '../hooks/useOrders'
 import { formatCurrency } from '../utils/format'
@@ -43,14 +47,27 @@ import { isValidPhoneNumber, isValidEmail } from '../utils/validation'
 import ScrollIndicator from '../components/ScrollIndicator'
 
 export default function Clients() {
-  const { clients, totalClientsCount, isLoading, createClient, updateClient, processPendingPayment, deleteClient } = useClients()
+  const [page, setPage] = useState(1)
+  const [searchQuery, setSearchQuery] = useState('')
+  const pageSize = 50
+
+  const { 
+    clients, 
+    totalClientsCount, 
+    allClients, 
+    isLoading, 
+    refetchAllClients,
+    createClient, 
+    updateClient, 
+    processPendingPayment, 
+    deleteClient 
+  } = useClients(page, pageSize, searchQuery)
   const { orders, isLoading: isLoadingOrders } = useOrders()
+  
   const [openAddDialog, setOpenAddDialog] = useState(false)
   const [openEditDialog, setOpenEditDialog] = useState(false)
   const [openPaymentDialog, setOpenPaymentDialog] = useState(false)
   const [openDeleteDialog, setOpenDeleteDialog] = useState(false)
-
-  const [searchQuery, setSearchQuery] = useState('')
   const [selectedClient, setSelectedClient] = useState<Client | null>(null)
   const [paymentAmount, setPaymentAmount] = useState<number>(0)
   
@@ -123,12 +140,95 @@ export default function Clients() {
     return isValid
   }
   
-  // Filter clients based on search query
-  const filteredClients = clients?.filter(client => 
-    client.full_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    client.phone.includes(searchQuery) ||
-    client.email.toLowerCase().includes(searchQuery.toLowerCase())
-  ) || []
+  // Handle search with debouncing to reset to page 1
+  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setSearchQuery(e.target.value)
+    setPage(1) // Reset to first page when searching
+  }
+
+  // Handle page change
+  const handlePageChange = (event: React.ChangeEvent<unknown>, newPage: number) => {
+    setPage(newPage)
+  }
+
+  // Calculate total pages
+  const totalPages = Math.ceil(totalClientsCount / pageSize)
+
+  // Export clients to Excel
+  const exportToExcel = async () => {
+    try {
+      // First fetch all clients for export
+      const { data } = await refetchAllClients()
+      const clientsToExport = data?.clients || allClients
+
+      if (!clientsToExport || clientsToExport.length === 0) {
+        toast.error('No client data to export')
+        return
+      }
+
+      // Prepare data for Excel export
+      const exportData = clientsToExport.map((client, index) => {
+      // Calculate lifetime visits for each client
+      const lifetimeVisits = orders?.filter(
+        order => 
+          ((order as any).client_name === client.full_name || (order as any).customer_name === client.full_name) && 
+          (order as any).status !== 'cancelled' && 
+          !(order as any).consumption_purpose && 
+          (order as any).client_name !== 'Salon Consumption'
+      ).length || 0
+
+      return {
+        'S.No.': index + 1,
+        'Name': client.full_name,
+        'Phone': client.phone,
+        'Email': client.email || '',
+        'Gender': client.gender || '',
+        'Birth Date': client.birth_date ? new Date(client.birth_date).toLocaleDateString() : '',
+        'Anniversary Date': client.anniversary_date ? new Date(client.anniversary_date).toLocaleDateString() : '',
+        'Last Visit': client.last_visit ? new Date(client.last_visit).toLocaleDateString() : 'Never',
+        'Lifetime Visits': lifetimeVisits,
+        'Total Spent (₹)': client.total_spent,
+        'Pending Payment (₹)': client.pending_payment || 0,
+        'Notes': client.notes || ''
+      }
+    })
+
+    // Create workbook and worksheet
+    const workbook = XLSX.utils.book_new()
+    const worksheet = XLSX.utils.json_to_sheet(exportData)
+
+    // Set column widths
+    const columnWidths = [
+      { wch: 8 },   // S.No.
+      { wch: 20 },  // Name
+      { wch: 15 },  // Phone
+      { wch: 25 },  // Email
+      { wch: 10 },  // Gender
+      { wch: 12 },  // Birth Date
+      { wch: 15 },  // Anniversary Date
+      { wch: 12 },  // Last Visit
+      { wch: 15 },  // Lifetime Visits
+      { wch: 15 },  // Total Spent
+      { wch: 18 },  // Pending Payment
+      { wch: 30 }   // Notes
+    ]
+    worksheet['!cols'] = columnWidths
+
+    // Add worksheet to workbook
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Clients')
+
+    // Generate filename with current date
+    const currentDate = new Date().toISOString().split('T')[0]
+    const filename = `Clients_Export_${currentDate}.xlsx`
+
+      // Save file
+      XLSX.writeFile(workbook, filename)
+      toast.success(`Client data exported successfully as ${filename}`)
+    } catch (error) {
+      console.error('Export error:', error)
+      toast.error('Failed to export client data')
+    }
+  }
   
   // Handle add client
   const handleAddClient = async () => {
@@ -286,12 +386,27 @@ export default function Clients() {
           <Typography variant="h1">Clients</Typography>
           <Typography variant="body2" color="text.secondary">
             Showing {clients?.length || 0} of {totalClientsCount} total clients
+            {searchQuery && ` (filtered by "${searchQuery}")`}
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            Page {page} of {totalPages} • {pageSize} clients per page
           </Typography>
           <Typography variant="caption" color="success.main" sx={{ display: 'block', mt: 0.5 }}>
-            ✨ Serial numbers are auto-generated on frontend (always sequential: 1,2,3...)
+            ✨ Serial numbers are based on current page (page {page}: {((page - 1) * pageSize) + 1}-{Math.min(page * pageSize, totalClientsCount)})
           </Typography>
         </Box>
-        <Box>
+        <Box sx={{ display: 'flex', gap: 2 }}>
+          <Tooltip title={`Export all ${totalClientsCount} clients to Excel`}>
+            <Button
+              variant="outlined"
+              startIcon={<FileDownloadIcon />}
+              onClick={exportToExcel}
+              sx={{ height: 'fit-content' }}
+              disabled={totalClientsCount === 0}
+            >
+              Export All ({totalClientsCount})
+            </Button>
+          </Tooltip>
           <Button
             variant="contained"
             startIcon={<PersonAddIcon />}
@@ -309,7 +424,7 @@ export default function Clients() {
         variant="outlined"
         placeholder="Search clients by name, phone, or email..."
         value={searchQuery}
-        onChange={(e) => setSearchQuery(e.target.value)}
+        onChange={handleSearchChange}
         InputProps={{
           startAdornment: (
             <InputAdornment position="start">
@@ -347,7 +462,7 @@ export default function Clients() {
                 </TableRow>
               </TableHead>
               <TableBody>
-                {filteredClients.map((client, index) => {
+                {clients.map((client, index) => {
                   // Calculate lifetime visits dynamically
                   const lifetimeVisits = orders?.filter(
                     order => 
@@ -357,11 +472,14 @@ export default function Clients() {
                       (order as any).client_name !== 'Salon Consumption'
                   ).length || 0
 
+                  // Calculate serial number based on current page
+                  const serialNumber = ((page - 1) * pageSize) + index + 1
+
                   return (
                     <TableRow key={client.id}>
                       <TableCell>
                         <Typography variant="body2" fontWeight="bold">
-                          {index + 1}
+                          {serialNumber}
                         </Typography>
                       </TableCell>
                       <TableCell>{client.full_name}</TableCell>
@@ -430,10 +548,31 @@ export default function Clients() {
           </TableContainer>
         ) : (
           <Typography variant="body1" color="text.secondary">
-            No clients in the database. Add a client to get started.
+            {searchQuery ? `No clients found matching "${searchQuery}"` : 'No clients in the database. Add a client to get started.'}
           </Typography>
         )}
       </Paper>
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <Stack direction="row" justifyContent="center" alignItems="center" spacing={2} sx={{ mt: 3 }}>
+          <Typography variant="body2" color="text.secondary">
+            Page {page} of {totalPages}
+          </Typography>
+          <Pagination
+            count={totalPages}
+            page={page}
+            onChange={handlePageChange}
+            color="primary"
+            showFirstButton
+            showLastButton
+            size="large"
+          />
+          <Typography variant="body2" color="text.secondary">
+            {((page - 1) * pageSize) + 1}-{Math.min(page * pageSize, totalClientsCount)} of {totalClientsCount}
+          </Typography>
+        </Stack>
+      )}
       
       {/* Add Client Dialog */}
       <Dialog open={openAddDialog} onClose={() => setOpenAddDialog(false)} maxWidth="sm" fullWidth>

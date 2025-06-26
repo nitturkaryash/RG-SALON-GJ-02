@@ -21,33 +21,59 @@ export interface Client {
   membership?: string; // Optional membership tier name for POS badge
 }
 
-export function useClients() {
+export function useClients(page: number = 1, pageSize: number = 50, searchQuery: string = '') {
   const queryClient = useQueryClient();
 
-  // Query for all clients with pagination
+  // Query for clients with pagination and search
   const { data: clientsData, isLoading } = useQuery({
-    queryKey: ['clients'],
+    queryKey: ['clients', page, pageSize, searchQuery],
     queryFn: async () => {
-      // First, get the total count
-      const { count, error: countError } = await supabase
+      let query = supabase
         .from('clients')
-        .select('*', { count: 'exact', head: true });
+        .select('*', { count: 'exact' })
+        .order('created_at', { ascending: false }); // Most recent first
 
-      if (countError) {
-        console.error('Error getting clients count:', countError);
-        throw countError;
+      // Apply search filter if provided
+      if (searchQuery.trim()) {
+        query = query.or(`full_name.ilike.%${searchQuery}%,phone.ilike.%${searchQuery}%,email.ilike.%${searchQuery}%`);
       }
 
-      // Then get all clients in batches to avoid pagination limits
+      // Apply pagination
+      const from = (page - 1) * pageSize;
+      const to = from + pageSize - 1;
+      
+      const { data, error, count } = await query.range(from, to);
+
+      if (error) {
+        console.error('Error fetching clients:', error);
+        throw error;
+      }
+      
+      return {
+        clients: data || [],
+        totalCount: count || 0
+      };
+    },
+  });
+
+  const clients = clientsData?.clients || [];
+  const totalClientsCount = clientsData?.totalCount || 0;
+
+  // Query for all clients (for export functionality)
+  const { data: allClientsData, refetch: refetchAllClients } = useQuery({
+    queryKey: ['all-clients'],
+    queryFn: async () => {
+      // Get all clients in batches to avoid pagination limits
       const allClients = [];
       const batchSize = 1000;
       let from = 0;
+      let hasMore = true;
       
-      while (from < (count || 0)) {
-        const { data, error } = await supabase
+      while (hasMore) {
+        const { data, error, count } = await supabase
           .from('clients')
-          .select('*')
-          .order('created_at', { ascending: true })
+          .select('*', { count: 'exact' })
+          .order('created_at', { ascending: false })
           .range(from, from + batchSize - 1);
         
         if (error) {
@@ -57,20 +83,22 @@ export function useClients() {
         
         if (data) {
           allClients.push(...data);
+          hasMore = data.length === batchSize;
+          from += batchSize;
+        } else {
+          hasMore = false;
         }
-        
-        from += batchSize;
       }
       
       return {
         clients: allClients,
-        totalCount: count || 0
+        totalCount: allClients.length
       };
     },
+    enabled: false, // Only fetch when explicitly called for export
   });
 
-  const clients = clientsData?.clients || [];
-  const totalClientsCount = clientsData?.totalCount || 0;
+  const allClients = allClientsData?.clients || [];
 
   // Create a new client
   const createClient = useMutation({
@@ -702,7 +730,9 @@ export function useClients() {
   return {
     clients,
     totalClientsCount,
+    allClients,
     isLoading,
+    refetchAllClients,
     createClient: createClient.mutate,
     createClientAsync: createClient.mutateAsync,
     updateClient: updateClient.mutate,

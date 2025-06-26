@@ -4240,11 +4240,45 @@ export default function POS() {
 							<Grid container spacing={2}>
 								<Grid item xs={12} sm={4}>
 									<Autocomplete
+										freeSolo
 										options={clients || []}
-										getOptionLabel={(option) => option.full_name || ""}
+										getOptionLabel={(option) => {
+											// Handle both Client objects and string input
+											if (typeof option === 'string') {
+												return option;
+											}
+											return `${option.full_name}${option.phone ? ` (${option.phone})` : ''}`;
+										}}
+										filterOptions={(options, params) => {
+											const { inputValue } = params;
+											
+											// If no input, return all options
+											if (!inputValue) return options;
+											
+											// Filter options based on name or phone number
+											return options.filter(option => 
+												option.full_name.toLowerCase().includes(inputValue.toLowerCase()) ||
+												(option.phone && option.phone.includes(inputValue))
+											);
+										}}
 										value={selectedClient}
 										onChange={(_, newValue) => {
-											handleClientSelect(newValue);
+											if (typeof newValue === 'string') {
+												// User typed a custom value - clear selected client and set customer name
+												setSelectedClient(null);
+												setCustomerName(newValue);
+											} else {
+												handleClientSelect(newValue);
+											}
+										}}
+										onInputChange={(_, newInputValue) => {
+											// Update customer name as user types
+											setCustomerName(newInputValue);
+											
+											// If input doesn't match any existing client, clear selection
+											if (selectedClient && !newInputValue.includes(selectedClient.full_name)) {
+												setSelectedClient(null);
+											}
 										}}
 										isOptionEqualToValue={(option, value) => option.id === value.id}
 										renderInput={(params) => (
@@ -4254,6 +4288,7 @@ export default function POS() {
 												variant="outlined"
 												fullWidth
 												size="small"
+												placeholder="Search by name or phone number"
 												helperText={clients && clients.length === 0 ? "No clients available. Type a name to add a new one." : "Select an existing client or type a new name below."}
 											/>
 										)}
