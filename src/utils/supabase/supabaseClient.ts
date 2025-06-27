@@ -117,11 +117,8 @@ function initializeSupabaseClient() {
 // Initialize the client
 const supabase = initializeSupabaseClient();
 
-// Test the connection asynchronously - DISABLED to prevent startup errors
-// The inventory_sales_new table doesn't exist in the current database schema
-// This was causing 404 errors and preventing the app from loading properly
-/*
-(async () => {
+// Test the connection asynchronously
+const testConnection = async () => {
   try {
     const { data, error } = await supabase
       .from('inventory_sales_new')
@@ -133,14 +130,13 @@ const supabase = initializeSupabaseClient();
     } else {
       connectionStatus = 'connected';
     }
-  } catch (e) {
+  } catch (error) {
     connectionStatus = 'connection-test-exception';
-    connectionError = e instanceof Error ? e : new Error('Unknown error during connection test');
+    connectionError = error instanceof Error ? error : new Error('Unknown error during connection test');
   }
-})();
-*/
+};
 
-// Set connection status to connected since we're not testing the problematic table
+// Set connection status to connected since we're not testing the connection
 connectionStatus = 'connected';
 
 // Export the client
