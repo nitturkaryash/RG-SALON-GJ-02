@@ -15,221 +15,93 @@ export const TABLES = {
   SALON_CONSUMPTION_PRODUCTS: 'salon_consumption_products'
 };
 
-// Global variable to track connection status and error for diagnostics - initialize first
-export let connectionStatus = 'initializing';
-export let connectionError: Error | null = null;
-
-// Function to validate JWT token format
-const validateJwtFormat = (token: string): boolean => {
-  if (!token) return false;
-  
-  // JWT should have 3 parts separated by dots
-  const parts = token.split('.');
-  if (parts.length !== 3) return false;
-  
-  // Each part should be base64url encoded
-  for (const part of parts) {
-    if (!/^[A-Za-z0-9_-]+$/g.test(part)) return false;
-  }
-  
-  return true;
+// Global state management
+export const connectionState = {
+  status: 'initializing',
+  error: null as Error | null
 };
 
-// Initialize supabase client creation in a controlled function
-function initializeSupabaseClient() {
-  // Get environment variables for Supabase
-  let supabaseUrl = 'https://mtyudylsozncvilibxda.supabase.co';
-  let supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im10eXVkeWxzb3puY3ZpbGlieGRhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDk4OTE0MTIsImV4cCI6MjA2NTQ2NzQxMn0.KJP6Pu3jaheEj8wTPioZsRUNRnkKH88hcRgvS97FOZA';
+// Initialize supabase client with fallback values
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://mtyudylsozncvilibxda.supabase.co';
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im10eXVkeWxzb3puY3ZpbGlieGRhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDk4OTE0MTIsImV4cCI6MjA2NTQ2NzQxMn0.KJP6Pu3jaheEj8wTPioZsRUNRnkKH88hcRgvS97FOZA';
 
-  // Try different environment variable formats (Vite, Next.js, etc.)
-  if (import.meta.env.VITE_SUPABASE_URL) {
-    supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
-  } else if (import.meta.env.NEXT_PUBLIC_SUPABASE_URL) {
-    supabaseUrl = import.meta.env.NEXT_PUBLIC_SUPABASE_URL as string;
-  }
-
-  if (import.meta.env.VITE_SUPABASE_ANON_KEY) {
-    supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
-  } else if (import.meta.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
-    supabaseAnonKey = import.meta.env.NEXT_PUBLIC_SUPABASE_ANON_KEY as string;
-  }
-
-  // Clean the key very aggressively
-  let cleanedSupabaseUrl = supabaseUrl ? supabaseUrl.trim() : import.meta.env.VITE_SUPABASE_URL || '';
-  let cleanedSupabaseAnonKey = '';
-
-  if (supabaseAnonKey) {
-    // Remove ALL whitespace, quotes, and non-essential characters
-    cleanedSupabaseAnonKey = supabaseAnonKey.replace(/[\s\n\r"'`]/g, '');
-    
-    // Check if it has the correct format (3 parts separated by periods)
-    const parts = cleanedSupabaseAnonKey.split('.');
-    
-    if (parts.length !== 3) {
-      // Use a valid format fallback key from environment variable
-      cleanedSupabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
-      
-      connectionStatus = 'using-fallback-token';
-      connectionError = new Error(`Invalid JWT format (${parts.length} parts), using fallback`);
-    }
-  }
-
-  // Validate environment variables
-  if (!cleanedSupabaseUrl || !cleanedSupabaseAnonKey) {
-    connectionStatus = 'missing-credentials';
-    connectionError = new Error('Missing Supabase credentials');
-  }
-
-  // Create the Supabase client
-  let client: SupabaseClient;
-
-  try {
-    // Create the client with the cleaned URL and key
-    client = createClient(cleanedSupabaseUrl, cleanedSupabaseAnonKey, {
-      auth: {
-        autoRefreshToken: true,
-        persistSession: true,
-      },
-    });
-    
-    connectionStatus = 'initialized';
-    
-  } catch (error) {
-    connectionStatus = 'initialization-error';
-    connectionError = error instanceof Error ? error : new Error('Unknown error during initialization');
-    
-    // Create a fallback client with a properly formatted JWT token
-    client = createClient(
-      import.meta.env.VITE_SUPABASE_URL || '',
-      import.meta.env.VITE_SUPABASE_ANON_KEY || '',
-      { 
-        auth: { 
-          autoRefreshToken: false, 
-          persistSession: false 
-        } 
-      }
-    );
-  }
-
-  return client;
-}
-
-// Initialize the client
-const supabase = initializeSupabaseClient();
-
-// Test the connection asynchronously
-const testConnection = async () => {
-  try {
-    const { data, error } = await supabase
-      .from('inventory_sales_new')
-      .select('*', { count: 'exact', head: true });
-      
-    if (error) {
-      connectionStatus = 'connection-test-failed';
-      connectionError = new Error(`Connection test failed: ${error.message}`);
-    } else {
-      connectionStatus = 'connected';
-    }
-  } catch (error) {
-    connectionStatus = 'connection-test-exception';
-    connectionError = error instanceof Error ? error : new Error('Unknown error during connection test');
-  }
-};
-
-// Set connection status to connected since we're not testing the connection
-connectionStatus = 'connected';
-
-// Export the client
-export { supabase };
+// Create the Supabase client
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    autoRefreshToken: true,
+    persistSession: true,
+  },
+});
 
 // Helper function to handle Supabase errors
 export const handleSupabaseError = (error: any): Error => {
-  // Check for JWT-specific errors
-  if (error?.message && (
-    error.message.includes('JWSError') || 
-    error.message.includes('JWT') ||
-    error.message.includes('CompactDecodeError')
-  )) {
-    return new Error(`Authentication token error. Please check the console for details. Status: ${connectionStatus}`);
+  if (!error) {
+    return new Error('Unknown error occurred');
   }
-  
-  // Check for connection errors
-  if (error?.code === 'PGRST16' || (error?.message && error.message.includes('Failed to fetch'))) {
-    return new Error('Unable to connect to the database. Please check your internet connection.');
+
+  // JWT errors
+  if (error.message?.includes('JWT') || error.message?.includes('JWS')) {
+    return new Error('Authentication error. Please log in again.');
   }
-  
-  return new Error(error?.message || 'An error occurred with the database operation');
+
+  // Connection errors
+  if (error.code === 'PGRST16' || error.message?.includes('Failed to fetch')) {
+    return new Error('Database connection error. Please check your internet connection.');
+  }
+
+  return new Error(error.message || 'Database operation failed');
 };
 
-// Helper function to check if user is authenticated
+// Check if user is authenticated
 export const checkAuthentication = async () => {
   try {
     const { data, error } = await supabase.auth.getSession();
-  
-    if (error) {
-      return null;
-    }
-    
+    if (error) return null;
     return data.session?.user || null;
-  } catch (error) {
+  } catch {
     return null;
   }
 };
 
-// Helper function to check database connection
+// Check database connection
 export const checkDatabaseConnection = async () => {
   try {
     const { data, error } = await supabase
       .from(TABLES.SALES)
       .select('*', { count: 'exact', head: true });
-      
+
     if (error) {
-      return {
-        connected: false,
-        status: connectionStatus,
-        error: error
-      };
+      connectionState.status = 'error';
+      connectionState.error = error;
+      return { connected: false, error };
     }
-    
-    return {
-      connected: true,
-      status: 'connected',
-      error: null
-    };
+
+    connectionState.status = 'connected';
+    connectionState.error = null;
+    return { connected: true, error: null };
   } catch (error) {
-    return {
-      connected: false,
-      status: 'exception',
-      error: error
-    };
+    connectionState.status = 'error';
+    connectionState.error = error instanceof Error ? error : new Error('Unknown error');
+    return { connected: false, error: connectionState.error };
   }
 };
 
-/**
- * Retry a database operation with exponential backoff
- * @param operation Function to retry
- * @param maxRetries Maximum number of retries
- * @returns Promise with the result of the operation
- */
+// Retry failed database operations
 export const retryDatabaseOperation = async <T>(
-  operation: () => Promise<T>, 
+  operation: () => Promise<T>,
   maxRetries = 3
 ): Promise<T> => {
-  let lastError: any;
+  let lastError: Error | null = null;
   
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       return await operation();
     } catch (error) {
-      lastError = error;
-      
-      // Calculate delay with exponential backoff (starts at 500ms)
-      const delay = Math.min(500 * Math.pow(2, attempt - 1), 5000);
-      
-      // Wait before retrying
-      await new Promise(resolve => setTimeout(resolve, delay));
+      lastError = error instanceof Error ? error : new Error('Unknown error');
+      if (attempt === maxRetries) break;
+      await new Promise(resolve => setTimeout(resolve, attempt * 1000));
     }
   }
   
-  throw handleSupabaseError(lastError);
+  throw lastError || new Error('Operation failed after multiple retries');
 }; 
