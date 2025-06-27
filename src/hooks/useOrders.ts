@@ -5,11 +5,17 @@ import { Order, PaymentMethod } from '../models/orderTypes'
 import { toast } from 'react-toastify'
 import { supabase } from '../utils/supabase/supabaseClient'
 import { normalizeOrders } from '../utils/orderHelpers'
+import { useAuthContext } from '../contexts/AuthContext'
 
 export function useOrders() {
   const [orders, setOrders] = useState<Order[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<Error | null>(null)
+  const { session, user, loading } = useAuthContext();
+
+  // Only fetch data if user is authenticated and auth is not loading
+  const isAuthenticated = !!(session || user);
+  const shouldFetch = isAuthenticated && !loading;
   
   const loadOrders = async () => {
     try {
@@ -107,7 +113,14 @@ export function useOrders() {
   
   // Load orders from Supabase or localStorage
   useEffect(() => {
-    loadOrders()
+    // Only load orders if user is authenticated and auth is not loading
+    if (shouldFetch) {
+      loadOrders()
+    } else if (!loading) {
+      // Reset orders when not authenticated (but only after loading is complete)
+      setOrders([])
+      setIsLoading(false)
+    }
     
     // Add event listener for refreshing orders
     const handleRefreshOrders = () => {
@@ -128,7 +141,7 @@ export function useOrders() {
       window.removeEventListener('refresh-orders', handleRefreshOrders)
       window.removeEventListener('order-deleted', handleOrderDeleted)
     }
-  }, [])
+  }, [shouldFetch, loading])
   
   // Get an order by ID
   const getOrder = (id: string): Order | undefined => {

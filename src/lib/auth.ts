@@ -19,21 +19,12 @@ export async function signInWithEmail(email: string, password: string) {
 }
 
 export async function signUp(email: string, password: string) {
-  try {
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-    })
-    
-    if (error) throw error
-    
-    toast.success('Check your email for the confirmation link!')
-    return { data, error: null }
-  } catch (error) {
-    console.error('Error signing up:', error)
-    toast.error('Failed to sign up. Please try again.')
-    return { data: null, error }
-  }
+  return {
+    data: null,
+    error: {
+      message: 'Registration is disabled. Please contact administrators at nitturkashyash@gmail.com or pankajhadole@gmail.com to create an account.'
+    }
+  };
 }
 
 export async function signOut() {

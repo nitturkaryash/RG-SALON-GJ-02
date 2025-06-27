@@ -1,16 +1,27 @@
 {
-  "name": "salon_reschedule",
+  "name": "appointment_reschedule",
   "language": "en",
   "category": "UTILITY",
   "components": [
     {
-      "type": "HEADER",
-      "format": "TEXT",
-      "text": "Appointment Update"
+      "type": "header",
+      "parameters": [
+        {
+          "type": "text",
+          "text": "Appointment Rescheduled"
+        }
+      ]
     },
     {
-      "type": "BODY",
-      "text": "Hello {{1}},\n\nYour appointment has been rescheduled:\n\nOld timing:\nDate: {{2}}\nTime: {{3}}\n\nNew timing:\nDate: {{4}}\nTime: {{5}}\n\nService: {{6}}\n\nPlease confirm if this works for you."
+      "type": "body",
+      "text": "Hello {{1}},\n\nYour appointment has been rescheduled:\n\nFrom: {{2}}\nTo: {{3}}\n\nStylist: {{4}}\nServices: {{5}}\n\nIf this change doesn't work for you, please contact us to find a better time.",
+      "parameters": [
+        { "type": "text", "text": "{{client_name}}" },
+        { "type": "text", "text": "{{old_datetime}}" },
+        { "type": "text", "text": "{{new_datetime}}" },
+        { "type": "text", "text": "{{stylist_name}}" },
+        { "type": "text", "text": "{{services_list}}" }
+      ]
     },
     {
       "type": "FOOTER",

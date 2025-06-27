@@ -1,4 +1,5 @@
-import { format } from 'date-fns';
+const axios = require('axios');
+const { format } = require('date-fns');
 
 // Helper function to safely access environment variables in both server and client contexts
 const getEnvVariable = (key: string, fallback: string): string => {
@@ -848,4 +849,11 @@ export async function sendDirectTextMessage(phoneNumber: string, messageText: st
     console.error('ERROR: Failed to send WhatsApp message:', error);
     throw error;
   }
-} 
+}
+
+module.exports = {
+  sendDirectTextMessage,
+  sendTemplateMessage,
+  sendWhatsAppMessage,
+  sendAppointmentNotification
+}; 

@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'react-toastify'
 import { StylistBreak } from './useStylists'
 import { supabase } from '../utils/supabase/supabaseClient'
+import { useAuthContext } from '../contexts/AuthContext'
 import { 
   // sendDirectTextMessage,
   sendAppointmentNotification,
@@ -9,6 +10,7 @@ import {
   AppointmentNotificationData
 } from '../utils/whatsapp'
 import { integrateWithAppointmentHooks } from '../utils/professionalWhatsApp'
+import { useAppointmentNotifications } from './useAppointmentNotifications'
 
 // Import from useClients
 // import { useClients } from './useClients'
@@ -538,6 +540,16 @@ const sendNotificationWithTemplateCheck = async (action: 'created' | 'updated' |
 
 export function useAppointments() {
   const queryClient = useQueryClient()
+  const { session, user, loading } = useAuthContext();
+  const { 
+    sendConfirmationMessage,
+    sendRescheduleMessage,
+    sendCancellationMessage
+  } = useAppointmentNotifications();
+
+  // Only fetch data if user is authenticated and auth is not loading
+  const isAuthenticated = !!(session || user);
+  const shouldFetch = isAuthenticated && !loading;
 
   const { data: appointments, isLoading } = useQuery<MergedAppointment[], Error>({
     queryKey: ['appointments'],
@@ -675,6 +687,7 @@ export function useAppointments() {
         return []; // Return empty array on error to prevent breaking UI
       }
     },
+    enabled: shouldFetch, // Only run when authenticated and not loading
   });
 
   const createAppointment = useMutation({
@@ -850,6 +863,31 @@ export function useAppointments() {
         console.error('❌ Error sending professional WhatsApp notification:', notificationError);
         // Don't throw error here as appointment was created successfully
         toast.warning('⚠️ Appointment booked successfully, but WhatsApp notification could not be sent.');
+      }
+
+      // After successful creation, send WhatsApp confirmation
+      try {
+        const appointmentData = await prepareNotificationData(newAppointmentId);
+        if (appointmentData) {
+          await sendConfirmationMessage({
+            client: {
+              name: appointmentData.clientName,
+              phone: appointmentData.clientPhone
+            },
+            datetime: new Date(appointmentData.startTime),
+            stylist: {
+              name: appointmentData.stylists[0] // Primary stylist
+            },
+            services: appointmentData.services.map(service => ({
+              name: service,
+              price: appointmentData.totalAmount / appointmentData.services.length, // Approximate price per service
+              duration: 60 // Default duration, update if you have actual duration data
+            }))
+          });
+        }
+      } catch (error) {
+        console.error('Failed to send confirmation message:', error);
+        // Don't throw error here, as appointment was created successfully
       }
 
       return newAppointment;
@@ -1146,6 +1184,35 @@ For any queries, call us at: ${import.meta.env.VITE_SALON_PHONE || '+91-XXXXXXXX
             // Don't throw error here as appointment was updated successfully
           }
 
+          // After successful update, send WhatsApp notification if it's a reschedule
+          if (start_time && oldAppointmentData) {
+            try {
+              const newAppointmentData = await prepareNotificationData(appointmentId);
+              if (newAppointmentData) {
+                await sendRescheduleMessage(
+                  {
+                    client: {
+                      name: newAppointmentData.clientName,
+                      phone: newAppointmentData.clientPhone
+                    },
+                    datetime: new Date(newAppointmentData.startTime),
+                    stylist: {
+                      name: newAppointmentData.stylists[0]
+                    },
+                    services: newAppointmentData.services.map(service => ({
+                      name: service,
+                      price: newAppointmentData.totalAmount / newAppointmentData.services.length,
+                      duration: 60
+                    }))
+                  },
+                  new Date(oldAppointmentData.startTime)
+                );
+              }
+            } catch (error) {
+              console.error('Failed to send reschedule message:', error);
+            }
+          }
+
         } catch (joinError) {
           // If inserting new joins fails, the base appointment is already updated.
           console.error(`Error inserting new join table records for appointment ${appointmentId}:`, joinError);
@@ -1266,6 +1333,29 @@ RG Salon Team 💖`;
         } else {
           console.warn('⚠️ Cannot send WhatsApp notification: Missing client phone number');
           toast.warning('⚠️ Appointment cancelled, but client phone number is missing for notification.');
+        }
+
+        // Send WhatsApp cancellation notification
+        if (notificationData) {
+          try {
+            await sendCancellationMessage({
+              client: {
+                name: notificationData.clientName,
+                phone: notificationData.clientPhone
+              },
+              datetime: new Date(notificationData.startTime),
+              stylist: {
+                name: notificationData.stylists[0]
+              },
+              services: notificationData.services.map(service => ({
+                name: service,
+                price: notificationData.totalAmount / notificationData.services.length,
+                duration: 60
+              }))
+            });
+          } catch (error) {
+            console.error('Failed to send cancellation message:', error);
+          }
         }
 
         return { id, success: true };

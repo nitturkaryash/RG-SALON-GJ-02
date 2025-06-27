@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'react-toastify'
 import { v4 as uuidv4 } from 'uuid'
 import { supabase } from '../utils/supabase/supabaseClient'
+import { useAuthContext } from '../contexts/AuthContext'
 
 export interface Client {
   id: string;
@@ -23,6 +24,11 @@ export interface Client {
 
 export function useClients(page: number = 1, pageSize: number = 50, searchQuery: string = '') {
   const queryClient = useQueryClient();
+  const { session, user, loading } = useAuthContext();
+
+  // Only fetch data if user is authenticated and auth is not loading
+  const isAuthenticated = !!(session || user);
+  const shouldFetch = isAuthenticated && !loading;
 
   // Query for clients with pagination and search
   const { data: clientsData, isLoading } = useQuery({
@@ -54,6 +60,7 @@ export function useClients(page: number = 1, pageSize: number = 50, searchQuery:
         totalCount: count || 0
       };
     },
+    enabled: shouldFetch, // Only run when authenticated and not loading
   });
 
   const clients = clientsData?.clients || [];

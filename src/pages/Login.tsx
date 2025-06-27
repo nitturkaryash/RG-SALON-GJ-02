@@ -12,7 +12,7 @@ import {
   Divider,
 } from '@mui/material';
 import { styled } from '@mui/material/styles';
-import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
+import { useNavigate, useLocation, useSearchParams, Link } from 'react-router-dom';
 import { useAuthContext } from '../contexts/AuthContext';
 import { supabase } from '../utils/supabase/supabaseClient.js';
 import { ContentCut, LockPerson } from '@mui/icons-material';
@@ -139,37 +139,28 @@ export default function Login() {
     setLoading(true);
 
     try {
-      const { data: user, error: queryError } = await supabase
-        .from('auth')
-        .select('id, username, role, password_hash, is_active')
-        .eq('username', credentials.username)
-        .single();
+      // Use Supabase authentication instead of custom auth table
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: credentials.username, // Treating username as email for Supabase auth
+        password: credentials.password,
+      });
 
-      if (queryError || !user) {
-        console.error('Login query error:', queryError);
-        throw new Error('Invalid username or password');
-      }
-      
-      if (!user.is_active) {
-        throw new Error('Account is inactive.');
+      if (error) {
+        console.error('Supabase login error:', error);
+        throw new Error(error.message || 'Invalid email or password');
       }
 
-      if (user.password_hash !== credentials.password) {
-        throw new Error('Invalid username or password');
+      if (!data.user) {
+        throw new Error('Authentication failed');
       }
 
-      const authUser = {
-        id: user.id,
-        username: user.username,
-        role: user.role,
-      };
+      // Clear any old localStorage auth data
+      localStorage.removeItem('auth_token');
+      localStorage.removeItem('auth_user');
       
-      // Set localStorage items for auth
-      localStorage.setItem('auth_token', 'dummy-token-' + Date.now());
-      localStorage.setItem('auth_user', JSON.stringify(authUser));
-      
-      // Force navigation with reload to ensure the protected route picks up the localStorage changes
-      window.location.href = location.state?.from?.pathname || '/dashboard';
+      // Navigate to dashboard - the AuthContext will handle the session
+      const from = location.state?.from?.pathname || '/dashboard';
+      navigate(from, { replace: true });
 
     } catch (err: any) {
       setError(err.message || 'Login failed. Please try again.');
@@ -312,7 +303,8 @@ export default function Login() {
                 <GoldTextField
                   required
                   fullWidth
-                  label="Username"
+                  label="Email"
+                  type="email"
                   value={credentials.username}
                   onChange={(e) => setCredentials({ ...credentials, username: e.target.value })}
                   sx={{ mt: 2 }}
@@ -336,6 +328,28 @@ export default function Login() {
                 >
                   {loading ? 'Signing In...' : 'Sign In to Dashboard'}
                 </LoginButton>
+
+                <Box sx={{ textAlign: 'center', mt: 2 }}>
+                  <Typography 
+                    variant="body2" 
+                    sx={{ 
+                      color: 'rgba(255, 255, 255, 0.7)',
+                      mb: 1,
+                    }}
+                  >
+                    Don't have an account?{' '}
+                    <Link 
+                      to="/register" 
+                      style={{ 
+                        color: '#FFD700',
+                        textDecoration: 'none',
+                        fontWeight: 'bold'
+                      }}
+                    >
+                      Sign Up
+                    </Link>
+                  </Typography>
+                </Box>
 
                 <Typography 
                   variant="body2" 

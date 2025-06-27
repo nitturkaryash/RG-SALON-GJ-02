@@ -34,34 +34,170 @@ export const checkAuthentication = async () => {
 };
 
 /**
- * Refreshes the user's session
- * Returns the session data if successful, throws an error otherwise
+ * Creates a new user account using Supabase Auth
  */
-export const refreshSession = async () => {
+export const createUserAccount = async (email: string, password: string) => {
   try {
-    console.log('Attempting to refresh session...');
-    const { data, error } = await supabase.auth.refreshSession();
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+    });
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    return data;
+  } catch (error) {
+    console.error('Error creating user account:', error);
+    throw error;
+  }
+};
+
+/**
+ * Signs in a user using Supabase Auth
+ */
+export const signInUser = async (email: string, password: string) => {
+  try {
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    return data;
+  } catch (error) {
+    console.error('Error signing in user:', error);
+    throw error;
+  }
+};
+
+/**
+ * Signs out the current user
+ */
+export const signOutUser = async () => {
+  try {
+    const { error } = await supabase.auth.signOut();
     
     if (error) {
-      console.error('Error refreshing session:', error);
-      toast.error(`Session refresh failed: ${error.message}`);
-      throw new Error(`Failed to refresh session: ${error.message}`);
+      throw new Error(error.message);
     }
+
+    // Clear localStorage
+    localStorage.removeItem('auth_token');
+    localStorage.removeItem('auth_user');
     
-    if (!data.session) {
-      const errorMsg = 'No valid session found. Please log in again.';
-      console.error(errorMsg);
-      toast.error(errorMsg);
-      throw new Error(errorMsg);
-    }
-    
-    console.log('Session refreshed successfully');
-    return data.session;
+    return true;
   } catch (error) {
-    console.error('Error in refreshSession:', error);
-    if (!(error instanceof Error)) {
-      throw new Error('Unknown error refreshing session');
+    console.error('Error signing out user:', error);
+    throw error;
+  }
+};
+
+/**
+ * Generic function to insert data with automatic user_id assignment
+ */
+export const insertWithAuth = async (table: string, data: any) => {
+  try {
+    const user = await checkAuthentication();
+    
+    const { data: result, error } = await supabase
+      .from(table)
+      .insert({
+        ...data,
+        user_id: user.id
+      })
+      .select();
+
+    if (error) {
+      throw new Error(error.message);
     }
+
+    return result;
+  } catch (error) {
+    console.error(`Error inserting into ${table}:`, error);
+    throw error;
+  }
+};
+
+/**
+ * Generic function to select data scoped to current user
+ */
+export const selectWithAuth = async (table: string, select: string = '*', filters: any = {}) => {
+  try {
+    const user = await checkAuthentication();
+    
+    let query = supabase
+      .from(table)
+      .select(select);
+
+    // Add additional filters
+    Object.keys(filters).forEach(key => {
+      query = query.eq(key, filters[key]);
+    });
+
+    const { data, error } = await query;
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    return data;
+  } catch (error) {
+    console.error(`Error selecting from ${table}:`, error);
+    throw error;
+  }
+};
+
+/**
+ * Generic function to update data scoped to current user
+ */
+export const updateWithAuth = async (table: string, id: string, updates: any) => {
+  try {
+    const user = await checkAuthentication();
+    
+    const { data, error } = await supabase
+      .from(table)
+      .update(updates)
+      .eq('id', id)
+      .eq('user_id', user.id)
+      .select();
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    return data;
+  } catch (error) {
+    console.error(`Error updating ${table}:`, error);
+    throw error;
+  }
+};
+
+/**
+ * Generic function to delete data scoped to current user
+ */
+export const deleteWithAuth = async (table: string, id: string) => {
+  try {
+    const user = await checkAuthentication();
+    
+    const { data, error } = await supabase
+      .from(table)
+      .delete()
+      .eq('id', id)
+      .eq('user_id', user.id)
+      .select();
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    return data;
+  } catch (error) {
+    console.error(`Error deleting from ${table}:`, error);
     throw error;
   }
 };

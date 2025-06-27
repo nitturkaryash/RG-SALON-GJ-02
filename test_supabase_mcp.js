@@ -3,8 +3,7 @@
  * This script tests the connection to Supabase with the new credentials
  */
 
-// For Node.js, we'll use require instead of import
-const { createClient } = require('@supabase/supabase-js');
+import { createClient } from '@supabase/supabase-js';
 
 // New Supabase credentials
 const SUPABASE_URL = 'https://mtyudylsozncvilibxda.supabase.co';
@@ -13,7 +12,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 console.log('🔍 Testing Supabase MCP Connection');
 console.log('📡 URL:', SUPABASE_URL);
 console.log('🔑 Key length:', SUPABASE_ANON_KEY.length);
-console.log('='.repeat(50));
+console.log('==================================================');
 
 // Create Supabase client
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
@@ -214,16 +213,6 @@ async function runTests() {
   return allPassed;
 }
 
-// Run the tests
-if (require.main === module) {
-  runTests()
-    .then(success => {
-      process.exit(success ? 0 : 1);
-    })
-    .catch(err => {
-      console.error('💥 Test runner error:', err);
-      process.exit(1);
-    });
-}
-
-module.exports = { runTests, testConnection, testTables, testAuthTable, testDataInsertion }; 
+// Run all tests
+const success = await runTests();
+process.exit(success ? 0 : 1); 

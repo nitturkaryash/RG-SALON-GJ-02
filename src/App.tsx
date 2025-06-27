@@ -5,6 +5,7 @@ import { CssBaseline } from '@mui/material';
 import Layout from './components/Layout';
 import { DevRefresher } from './components/DevRefresher';
 import Login from './pages/Login';
+import Register from './pages/Register';
 import { theme } from './theme';
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
@@ -117,6 +118,7 @@ function App() {
         <ToastContainer position="top-right" theme="dark" />
         <Routes>
           <Route path="/login" element={<Login />} />
+          <Route path="/register" element={<Register />} />
           <Route
             path="/"
             element={

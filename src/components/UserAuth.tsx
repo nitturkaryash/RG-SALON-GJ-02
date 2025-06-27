@@ -9,14 +9,12 @@ import {
   Alert,
   Fade,
   useTheme,
-  Tab,
-  Tabs,
-  Divider,
 } from '@mui/material';
 import { styled } from '@mui/material/styles';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { useAuth } from '../contexts/AuthContext';
-import { ContentCut, PersonAdd, Login as LoginIcon } from '@mui/icons-material';
+import { useAuthContext } from '../contexts/AuthContext';
+import { supabase } from '../utils/supabase/supabaseClient';
+import { ContentCut, Login as LoginIcon } from '@mui/icons-material';
 
 const AuthContainer = styled(Paper)(({ theme }) => ({
   background: 'linear-gradient(135deg, #111111 0%, #000000 100%)',
@@ -101,24 +99,11 @@ const LogoBox = styled(Box)(({ theme }) => ({
   },
 }));
 
-const StyledTabs = styled(Tabs)(({ theme }) => ({
-  '& .MuiTabs-indicator': {
-    backgroundColor: '#FFD700',
-  },
-  '& .MuiTab-root': {
-    color: 'rgba(255, 255, 255, 0.7)',
-    '&.Mui-selected': {
-      color: '#FFD700',
-    },
-  },
-}));
-
 export default function UserAuth() {
   const theme = useTheme();
   const navigate = useNavigate();
   const location = useLocation();
-  const { session, signIn, signUp } = useAuth();
-  const [activeTab, setActiveTab] = useState(0);
+  const { session } = useAuthContext();
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
@@ -128,13 +113,6 @@ export default function UserAuth() {
     password: '',
   });
 
-  const [registerData, setRegisterData] = useState({
-    email: '',
-    password: '',
-    confirmPassword: '',
-    businessName: '',
-  });
-
   useEffect(() => {
     if (session) {
       const from = location.state?.from?.pathname || '/dashboard';
@@ -142,7 +120,6 @@ export default function UserAuth() {
     }
   }, [session, navigate, location]);
 
-  // Auto-clear messages after 5 seconds
   useEffect(() => {
     if (error || success) {
       const timer = setTimeout(() => {
@@ -153,12 +130,6 @@ export default function UserAuth() {
     }
   }, [error, success]);
 
-  const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
-    setActiveTab(newValue);
-    setError('');
-    setSuccess('');
-  };
-
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -166,7 +137,10 @@ export default function UserAuth() {
     setLoading(true);
 
     try {
-      const { error } = await signIn(loginData.email, loginData.password);
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: loginData.email,
+        password: loginData.password,
+      });
 
       if (error) {
         throw new Error(error.message || 'Login failed');
@@ -178,79 +152,6 @@ export default function UserAuth() {
       setLoginData({ email: '', password: '' });
     } catch (err: any) {
       setError(err.message || 'Login failed. Please try again.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleRegister = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-    setSuccess('');
-
-    // Validation
-    if (registerData.password !== registerData.confirmPassword) {
-      setError('Passwords do not match');
-      return;
-    }
-
-    if (registerData.password.length < 6) {
-      setError('Password must be at least 6 characters');
-      return;
-    }
-
-    if (!registerData.businessName.trim()) {
-      setError('Business name is required');
-      return;
-    }
-
-    setLoading(true);
-
-    try {
-      console.log('Starting registration process...');
-      
-      const { error } = await signUp(registerData.email, registerData.password, {
-        role: 'user',
-        salon_name: registerData.businessName,
-      });
-
-      if (error) {
-        console.error('Registration error:', error);
-        
-        // Provide more specific error messages
-        let errorMessage = 'Registration failed. Please try again.';
-        
-        if (error.message?.includes('User already registered')) {
-          errorMessage = 'An account with this email already exists. Please try logging in instead.';
-        } else if (error.message?.includes('Invalid email')) {
-          errorMessage = 'Please enter a valid email address.';
-        } else if (error.message?.includes('Password')) {
-          errorMessage = 'Password must be at least 6 characters long.';
-        } else if (error.message?.includes('relation "user_profiles" does not exist')) {
-          errorMessage = 'Database is not properly set up. Please contact support.';
-        } else if (error.message) {
-          errorMessage = error.message;
-        }
-        
-        throw new Error(errorMessage);
-      }
-
-      console.log('Registration successful');
-      setSuccess('Registration successful! Please check your email to confirm your account, then use the login tab.');
-      
-      // Reset form and switch to login tab
-      setRegisterData({
-        email: '',
-        password: '',
-        confirmPassword: '',
-        businessName: '',
-      });
-      
-      // Switch to login tab after successful registration
-      setTimeout(() => setActiveTab(0), 2000);
-    } catch (err: any) {
-      console.error('Registration error in component:', err);
-      setError(err.message || 'Registration failed. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -275,7 +176,7 @@ export default function UserAuth() {
             </LogoBox>
             
             <AuthContainer>
-              <Box sx={{ textAlign: 'center', mb: 3 }}>
+              <Box sx={{ textAlign: 'center', mb: 4 }}>
                 <Typography 
                   variant="h4" 
                   sx={{ 
@@ -285,41 +186,20 @@ export default function UserAuth() {
                     textShadow: '0 0 20px rgba(255, 215, 0, 0.3)',
                   }}
                 >
-                  Welcome to R&G Salon
+                  Sign In
                 </Typography>
                 <Typography 
-                  variant="body1" 
+                  variant="h6" 
                   sx={{ 
-                    color: 'rgba(255, 255, 255, 0.7)',
-                    maxWidth: '400px',
-                    margin: '0 auto',
+                    color: 'rgba(255, 255, 255, 0.9)',
+                    mb: 2,
+                    fontWeight: 500,
                   }}
                 >
-                  Login to your account or create a new one to manage your salon
+                  R&G Salon Management
                 </Typography>
               </Box>
 
-              <StyledTabs
-                value={activeTab}
-                onChange={handleTabChange}
-                centered
-                sx={{ mb: 3 }}
-              >
-                <Tab 
-                  icon={<LoginIcon />} 
-                  label="Login" 
-                  iconPosition="start"
-                />
-                <Tab 
-                  icon={<PersonAdd />} 
-                  label="Register" 
-                  iconPosition="start"
-                />
-              </StyledTabs>
-
-              <Divider sx={{ mb: 3, backgroundColor: 'rgba(255, 215, 0, 0.2)' }} />
-
-              {/* Messages */}
               {error && (
                 <Fade in>
                   <Alert 
@@ -356,109 +236,73 @@ export default function UserAuth() {
                 </Fade>
               )}
 
-              {/* Login Form */}
-              {activeTab === 0 && (
-                <Box
-                  component="form"
-                  onSubmit={handleLogin}
-                  sx={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: 3,
+              <Box
+                component="form"
+                onSubmit={handleLogin}
+                sx={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 3,
+                }}
+              >
+                <GoldTextField
+                  required
+                  fullWidth
+                  label="Email"
+                  type="email"
+                  value={loginData.email}
+                  onChange={(e) => setLoginData({ ...loginData, email: e.target.value })}
+                />
+
+                <GoldTextField
+                  required
+                  fullWidth
+                  label="Password"
+                  type="password"
+                  value={loginData.password}
+                  onChange={(e) => setLoginData({ ...loginData, password: e.target.value })}
+                />
+
+                <ActionButton
+                  type="submit"
+                  fullWidth
+                  size="large"
+                  disabled={loading || !loginData.email || !loginData.password}
+                  startIcon={<LoginIcon />}
+                >
+                  {loading ? 'Signing In...' : 'Sign In'}
+                </ActionButton>
+
+                <Typography 
+                  variant="body1" 
+                  align="center" 
+                  sx={{ 
+                    mt: 3,
+                    color: 'rgba(255, 255, 255, 0.7)',
                   }}
                 >
-                  <GoldTextField
-                    required
-                    fullWidth
-                    label="Email"
-                    type="email"
-                    value={loginData.email}
-                    onChange={(e) => setLoginData({ ...loginData, email: e.target.value })}
-                  />
-
-                  <GoldTextField
-                    required
-                    fullWidth
-                    label="Password"
-                    type="password"
-                    value={loginData.password}
-                    onChange={(e) => setLoginData({ ...loginData, password: e.target.value })}
-                  />
-
-                  <ActionButton
-                    type="submit"
-                    fullWidth
-                    size="large"
-                    disabled={loading || !loginData.email || !loginData.password}
-                    startIcon={<LoginIcon />}
-                  >
-                    {loading ? 'Signing In...' : 'Sign In'}
-                  </ActionButton>
-                </Box>
-              )}
-
-              {/* Register Form */}
-              {activeTab === 1 && (
-                <Box
-                  component="form"
-                  onSubmit={handleRegister}
-                  sx={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: 3,
+                  Need an account? Contact our administrators:
+                </Typography>
+                <Typography 
+                  variant="body1" 
+                  component="div"
+                  align="center"
+                  sx={{ 
+                    color: '#FFD700',
+                    '& a': {
+                      color: '#FFD700',
+                      textDecoration: 'none',
+                      '&:hover': {
+                        textDecoration: 'underline',
+                      },
+                    },
                   }}
                 >
-                  <GoldTextField
-                    required
-                    fullWidth
-                    label="Business Name"
-                    value={registerData.businessName}
-                    onChange={(e) => setRegisterData({ ...registerData, businessName: e.target.value })}
-                    placeholder="Enter your salon/business name"
-                  />
-
-                  <GoldTextField
-                    required
-                    fullWidth
-                    label="Email"
-                    type="email"
-                    value={registerData.email}
-                    onChange={(e) => setRegisterData({ ...registerData, email: e.target.value })}
-                    placeholder="Enter your email address"
-                  />
-
-                  <GoldTextField
-                    required
-                    fullWidth
-                    label="Password"
-                    type="password"
-                    value={registerData.password}
-                    onChange={(e) => setRegisterData({ ...registerData, password: e.target.value })}
-                    placeholder="Enter password (min 6 characters)"
-                    inputProps={{ minLength: 6 }}
-                  />
-
-                  <GoldTextField
-                    required
-                    fullWidth
-                    label="Confirm Password"
-                    type="password"
-                    value={registerData.confirmPassword}
-                    onChange={(e) => setRegisterData({ ...registerData, confirmPassword: e.target.value })}
-                    placeholder="Confirm your password"
-                  />
-
-                  <ActionButton
-                    type="submit"
-                    fullWidth
-                    size="large"
-                    disabled={loading || !registerData.email || !registerData.password || !registerData.confirmPassword || !registerData.businessName}
-                    startIcon={<PersonAdd />}
-                  >
-                    {loading ? 'Creating Account...' : 'Create Account'}
-                  </ActionButton>
-                </Box>
-              )}
+                  <a href="mailto:nitturkashyash@gmail.com">nitturkashyash@gmail.com</a>
+                  <br />
+                  <a href="mailto:pankajhadole@gmail.com">pankajhadole@gmail.com</a>
+                </Typography>
+              </Box>
 
               <Typography 
                 variant="body2" 

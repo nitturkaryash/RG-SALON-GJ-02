@@ -299,13 +299,49 @@ export async function processAppointmentReminders(): Promise<void> {
  */
 export function startAutomaticReminders(): void {
   console.log('🚀 Starting automatic appointment reminder system...');
+  
+  // Check if we're in a client environment
+  if (typeof window === 'undefined') {
+    console.log('⚠️ Server environment detected, skipping automatic reminders');
+    return;
+  }
 
-  // Process reminders immediately
-  processAppointmentReminders();
+  // Function to check authentication and run reminders
+  const runRemindersIfAuthenticated = async () => {
+    try {
+      // Import supabase client to check auth state
+      const { supabase } = await import('../utils/supabase/supabaseClient');
+      const { data: { session }, error } = await supabase.auth.getSession();
+      
+      if (error) {
+        console.log('⚠️ Auth check error, skipping reminders:', error.message);
+        return;
+      }
+      
+      if (!session) {
+        console.log('⚠️ No authenticated user, skipping reminders');
+        return;
+      }
+      
+      // User is authenticated, run reminders
+      await processAppointmentReminders();
+    } catch (error) {
+      console.error('❌ Error checking auth for reminders:', error);
+    }
+  };
+
+  // Initial run after a short delay to allow auth to initialize
+  setTimeout(() => {
+    runRemindersIfAuthenticated().catch(error => {
+      console.error('❌ Error in initial reminder processing:', error);
+    });
+  }, 5000); // Wait 5 seconds for auth to initialize
 
   // Set up interval to process reminders every hour
   setInterval(() => {
-    processAppointmentReminders();
+    runRemindersIfAuthenticated().catch(error => {
+      console.error('❌ Error in scheduled reminder processing:', error);
+    });
   }, 60 * 60 * 1000); // 1 hour
 
   console.log('✅ Automatic reminder system started (will check every hour)');
