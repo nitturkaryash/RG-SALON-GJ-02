@@ -14,7 +14,10 @@ import {
   TablePagination,
   Button,
   IconButton,
-  Snackbar
+  Snackbar,
+  Tabs,
+  Tab,
+  Chip
 } from '@mui/material';
 import { 
   Refresh as RefreshIcon,
@@ -26,6 +29,8 @@ import { BalanceStock } from '../../models/inventoryTypes';
 import { convertToCSV, downloadCSV } from '../../utils';
 import { toast } from 'react-toastify';
 import DeleteButton from '../DeleteButton';
+import { useSupabase } from '../../hooks/useSupabase';
+import { format } from 'date-fns';
 
 interface ProductStockSummary {
   id: string;
@@ -44,11 +49,25 @@ interface ProductStockSummary {
   reference_id?: string;
 }
 
+interface StockTransaction {
+  id: string;
+  created_at: string;
+  product_name: string;
+  quantity: number;
+  previous_stock: number;
+  new_stock: number;
+  transaction_type: string;
+  source: string;
+  source_type: string;
+  display_type: string;
+  notes: string;
+}
+
 interface BalanceStockTabProps {
   balanceStock: BalanceStock[];
   isLoading: boolean;
   error: Error | null;
-  recalculateBalanceStock?: () => Promise<any>;
+  recalculateBalanceStock: () => Promise<void>;
 }
 
 const StyledTableCell = styled(TableCell)(({ theme }) => ({
@@ -76,219 +95,124 @@ const StyledDataCell = styled(TableCell)(({ theme }) => ({
   textAlign: 'right', // Right align for numerical values
 }));
 
+interface TabPanelProps {
+  children?: React.ReactNode;
+  index: number;
+  value: number;
+}
+
+function TabPanel(props: TabPanelProps) {
+  const { children, value, index, ...other } = props;
+
+  return (
+    <div
+      role="tabpanel"
+      hidden={value !== index}
+      id={`balance-stock-tabpanel-${index}`}
+      aria-labelledby={`balance-stock-tab-${index}`}
+      {...other}
+    >
+      {value === index && (
+        <Box sx={{ p: 3 }}>
+          {children}
+        </Box>
+      )}
+    </div>
+  );
+}
+
 const BalanceStockTab: React.FC<BalanceStockTabProps> = ({ balanceStock, isLoading, error, recalculateBalanceStock }) => {
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [isRecalculating, setIsRecalculating] = useState(false);
   const [exportingCSV, setExportingCSV] = useState(false);
-  const [stockSummary, setStockSummary] = useState<ProductStockSummary[]>([]);
-  const { purchasesQuery, salesQuery, consumptionQuery, deleteProduct } = useInventory();
   const [isDeleting, setIsDeleting] = useState(false);
-
-  // Generate the summary data that includes purchases, sales, consumption, and balance quantities
-  useEffect(() => {
-    const purchases = purchasesQuery?.data || [];
-    const sales = salesQuery?.data || [];
-    const consumption = consumptionQuery?.data || [];
-    
-    // Create a map to aggregate by product
-    const productMap = new Map<string, ProductStockSummary>();
-    
-    // Process purchases
-    purchases.forEach(purchase => {
-      const rawName = purchase.product_name || 'Unknown Product';
-      const productName = rawName.trim();
-      if (!productMap.has(productName)) {
-        productMap.set(productName, {
-          id: purchase.id || `purchase-${Date.now()}-${Math.random()}`,
-          product_name: productName,
-          hsn_code: purchase.hsn_code,
-          units: purchase.units,
-          purchased_quantity: 0,
-          sold_quantity: 0,
-          consumed_quantity: 0,
-          balance_quantity: 0,
-          taxable_value: 0,
-          igst: 0,
-          cgst: 0,
-          sgst: 0,
-          invoice_value: 0,
-          reference_id: (purchase as any).order_id || purchase.id
-        });
-      }
-      
-      const record = productMap.get(productName)!;
-      record.purchased_quantity += purchase.purchase_qty || 0;
-      record.taxable_value += purchase.purchase_taxable_value || purchase.taxable_value || 0;
-      record.igst += purchase.purchase_igst || purchase.igst || 0;
-      record.cgst += purchase.purchase_cgst || purchase.cgst || 0;
-      record.sgst += purchase.purchase_sgst || purchase.sgst || 0;
-      record.invoice_value += purchase.purchase_invoice_value_rs || purchase.invoice_value || 0;
-      // Update reference_id with the latest order_id if available
-      if ((purchase as any).order_id) {
-        record.reference_id = (purchase as any).order_id;
-      }
-    });
-    
-    // Process sales with deduplication logic
-    // First, deduplicate sales by order_id and product_name to prevent duplicate counting
-    const uniqueSales = new Map<string, typeof sales[0]>();
-    sales.forEach(sale => {
-      const rawName = sale.product_name || 'Unknown Product';
-      const productName = rawName.trim();
-      const orderId = (sale as any).order_id || (sale as any).invoice_no || sale.id;
-      const dedupeKey = `${orderId}-${productName}`;
-      
-      // Only keep the first occurrence of each order_id + product_name combination
-      if (!uniqueSales.has(dedupeKey)) {
-        uniqueSales.set(dedupeKey, sale);
-      } else {
-        console.warn(`Duplicate sale detected for order ${orderId}, product ${productName}. Skipping duplicate.`);
-      }
-    });
-    
-    // Process the deduplicated sales
-    Array.from(uniqueSales.values()).forEach(sale => {
-      const rawName = sale.product_name || 'Unknown Product';
-      const productName = rawName.trim();
-      if (!productMap.has(productName)) {
-        productMap.set(productName, {
-          id: sale.id || `sale-${Date.now()}-${Math.random()}`,
-          product_name: productName,
-          hsn_code: sale.hsn_code,
-          units: sale.units,
-          purchased_quantity: 0,
-          sold_quantity: 0,
-          consumed_quantity: 0,
-          balance_quantity: 0,
-          taxable_value: 0,
-          igst: 0,
-          cgst: 0,
-          sgst: 0,
-          invoice_value: 0,
-          reference_id: (sale as any).order_id || sale.id
-        });
-      }
-      
-      const record = productMap.get(productName)!;
-      record.sold_quantity += sale.sales_qty || (sale.quantity as number | undefined) || 0;
-      // Subtract sales values from balance financial values
-      record.taxable_value -= sale.taxable_value || 0;
-      record.igst -= sale.igst || 0;
-      record.cgst -= sale.cgst || 0;
-      record.sgst -= sale.sgst || 0;
-      record.invoice_value -= sale.invoice_value || 0;
-      // Update reference_id with the latest order_id if available
-      if ((sale as any).order_id) {
-        record.reference_id = (sale as any).order_id;
-      }
-    });
-    
-    // Process consumption with deduplication logic
-    // First, deduplicate consumption by order_id and product_name
-    const uniqueConsumption = new Map<string, typeof consumption[0]>();
-    consumption.forEach(cons => {
-      const rawName = cons.product_name || 'Unknown Product';
-      const productName = rawName.trim();
-      const orderId = (cons as any).order_id || (cons as any).requisition_voucher_no || cons.id;
-      const dedupeKey = `${orderId}-${productName}`;
-      
-      // Only keep the first occurrence of each order_id + product_name combination
-      if (!uniqueConsumption.has(dedupeKey)) {
-        uniqueConsumption.set(dedupeKey, cons);
-      } else {
-        console.warn(`Duplicate consumption detected for order ${orderId}, product ${productName}. Skipping duplicate.`);
-      }
-    });
-    
-    // Process the deduplicated consumption
-    Array.from(uniqueConsumption.values()).forEach(cons => {
-      const rawName = cons.product_name || 'Unknown Product';
-      const productName = rawName.trim();
-      if (!productMap.has(productName)) {
-        productMap.set(productName, {
-          id: cons.id || `consumption-${Date.now()}-${Math.random()}`,
-          product_name: productName,
-          hsn_code: cons.hsn_code,
-          units: cons.units,
-          purchased_quantity: 0,
-          sold_quantity: 0,
-          consumed_quantity: 0,
-          balance_quantity: 0,
-          taxable_value: 0,
-          igst: 0,
-          cgst: 0,
-          sgst: 0,
-          invoice_value: 0,
-          reference_id: (cons as any).order_id || cons.id
-        });
-      }
-      
-      const record = productMap.get(productName)!;
-      record.consumed_quantity += cons.consumption_qty || cons.quantity || 0;
-      // Subtract consumption values from balance financial values
-      record.taxable_value -= cons.taxable_value || 0;
-      record.igst -= cons.igst || 0;
-      record.cgst -= cons.cgst || 0;
-      record.sgst -= cons.sgst || 0;
-      record.invoice_value -= cons.invoice_value || 0;
-      // Update reference_id with the latest order_id if available
-      if ((cons as any).order_id) {
-        record.reference_id = (cons as any).order_id;
-      }
-    });
-    
-    // Calculate balance
-    productMap.forEach(record => {
-      record.balance_quantity = record.purchased_quantity - (record.sold_quantity + record.consumed_quantity);
-      
-      // Round financial values to 2 decimal places
-      record.taxable_value = parseFloat(record.taxable_value.toFixed(2));
-      record.igst = parseFloat(record.igst.toFixed(2));
-      record.cgst = parseFloat(record.cgst.toFixed(2));
-      record.sgst = parseFloat(record.sgst.toFixed(2));
-      record.invoice_value = parseFloat(record.invoice_value.toFixed(2));
-    });
-    
-    // Convert map to array and sort by product name
-    const summaryArray = Array.from(productMap.values())
-      .sort((a, b) => a.product_name.localeCompare(b.product_name));
-    
-    console.log(`Balance stock calculated: ${summaryArray.length} unique products, ${uniqueSales.size} unique sales, ${uniqueConsumption.size} unique consumption records`);
-    
-    setStockSummary(summaryArray);
-  }, [purchasesQuery.data, salesQuery.data, consumptionQuery.data]);
+  const [stockTransactions, setStockTransactions] = useState<StockTransaction[]>([]);
+  const [loadingTransactions, setLoadingTransactions] = useState(false);
+  const [tabValue, setTabValue] = useState(0);
+  const { supabase } = useSupabase();
 
   const handleChangePage = (event: unknown, newPage: number) => {
     setPage(newPage);
   };
 
   const handleChangeRowsPerPage = (event: React.ChangeEvent<HTMLInputElement>) => {
-    setRowsPerPage(+event.target.value);
+    setRowsPerPage(parseInt(event.target.value, 10));
     setPage(0);
   };
 
+  const handleChangeTab = (event: React.SyntheticEvent, newValue: number) => {
+    setTabValue(newValue);
+  };
+
   const handleRecalculate = async () => {
+    if (isRecalculating) return;
+    setIsRecalculating(true);
     try {
-      setIsRecalculating(true);
-      await recalculateBalanceStock?.();
+      await recalculateBalanceStock();
+      toast.success('Balance stock recalculated successfully');
     } catch (error) {
       console.error('Error recalculating balance stock:', error);
+      toast.error('Failed to recalculate balance stock');
     } finally {
       setIsRecalculating(false);
     }
   };
 
-  const exportToCSV = () => {
+  // Fetch stock transactions
+  useEffect(() => {
+    const fetchTransactions = async () => {
+      setLoadingTransactions(true);
+      try {
+        const { data, error } = await supabase
+          .from('vw_stock_transactions')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        if (error) throw error;
+        setStockTransactions(data || []);
+      } catch (error) {
+        console.error('Error fetching stock transactions:', error);
+        toast.error('Failed to load stock transactions');
+      } finally {
+        setLoadingTransactions(false);
+      }
+    };
+
+    fetchTransactions();
+  }, [supabase]);
+
+  const getTransactionTypeColor = (type: string) => {
+    switch (type.toLowerCase()) {
+      case 'addition':
+      case 'increment':
+        return 'success';
+      case 'reduction':
+      case 'decrement':
+        return 'error';
+      default:
+        return 'default';
+    }
+  };
+
+  const formatDateTime = (dateStr: string) => {
+    try {
+      return format(new Date(dateStr), 'dd/MM/yyyy hh:mm a');
+    } catch (error) {
+      return dateStr;
+    }
+  };
+
+  const exportToCSV = async () => {
     try {
       setExportingCSV(true);
       
       // Format data for CSV export
-      const csvData = stockSummary.map(item => ({
+      const csvData = balanceStock.map(item => ({
         'Product Name': item.product_name,
         'HSN Code': item.hsn_code || 'N/A',
         'Units': item.units || 'pcs',
-        'Balance Qty': item.balance_quantity,
+        'Balance Qty': item.balance_qty,
         'Reference ID': item.reference_id || 'N/A',
         'Taxable Value (Rs.)': item.taxable_value,
         'IGST (Rs.)': item.igst,
@@ -302,7 +226,7 @@ const BalanceStockTab: React.FC<BalanceStockTabProps> = ({ balanceStock, isLoadi
       downloadCSV(csvString, `Balance_Stock_${new Date().toISOString().split('T')[0]}.csv`);
     } catch (error) {
       console.error('Error exporting balance stock to CSV:', error);
-      alert('Failed to export balance stock to CSV');
+      toast.error('Failed to export balance stock to CSV');
     } finally {
       setExportingCSV(false);
     }
@@ -312,145 +236,207 @@ const BalanceStockTab: React.FC<BalanceStockTabProps> = ({ balanceStock, isLoadi
     if (isDeleting) return;
     setIsDeleting(true);
     try {
-      const result = await deleteProduct(productName);
-      if (result.success) {
-        toast.success(`Successfully deleted "${productName}" from inventory`);
-      } else {
-        toast.error(`Failed to delete "${productName}": ${result.error}`);
+      const { data: product } = await supabase
+        .from('product_master')
+        .select('id')
+        .eq('name', productName)
+        .single();
+
+      if (!product) {
+        throw new Error('Product not found');
       }
+
+      const { error: deleteError } = await supabase
+        .from('product_master')
+        .delete()
+        .eq('id', product.id);
+
+      if (deleteError) throw deleteError;
+      
+      toast.success(`Successfully deleted "${productName}" from inventory`);
+      // Trigger a refresh of the balance stock data
+      recalculateBalanceStock();
     } catch (error) {
       console.error(`Error deleting product "${productName}":`, error);
-      toast.error(`An error occurred while deleting "${productName}"`);
+      toast.error(`Failed to delete "${productName}": ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setIsDeleting(false);
     }
   };
 
-  // Calculate the paginated data
-  const paginatedData = stockSummary.slice(
-    page * rowsPerPage, 
-    page * rowsPerPage + rowsPerPage
-  );
-
-  // Format currency values for display
-  const formatCurrency = (amount: number | undefined) => {
-    if (amount === undefined || amount === null) return '₹0.00';
-    return `₹${amount.toFixed(2).replace(/\d(?=(\d{3})+\.)/g, '$&,')}`;
-  };
-
   return (
     <Box>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Typography variant="h6">Balance Stock</Typography>
-        <Box>
-          <Button
-            sx={{ mr: 2 }}
-            variant="outlined"
-            color="primary"
-            startIcon={isRecalculating ? <CircularProgress size={20} color="inherit" /> : <RefreshIcon />}
-            onClick={handleRecalculate}
-            disabled={isRecalculating}
-          >
-            Recalculate
-          </Button>
-          <Button
-            variant="outlined"
-            color="secondary"
-            startIcon={exportingCSV ? <CircularProgress size={20} /> : <FileDownloadIcon />}
-            onClick={exportToCSV}
-            disabled={exportingCSV || stockSummary.length === 0}
-          >
-            Export CSV
-          </Button>
-        </Box>
+      <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}>
+        <Tabs value={tabValue} onChange={handleChangeTab} aria-label="balance stock tabs">
+          <Tab label="Current Stock" />
+          <Tab label="Stock History" />
+        </Tabs>
       </Box>
 
-      {error && (
-        <Alert severity="error" sx={{ mb: 2 }}>
-          Error loading balance stock data: {error.message}
-        </Alert>
-      )}
-
-      {isLoading ? (
-        <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
-          <CircularProgress />
+      <TabPanel value={tabValue} index={0}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+          <Typography variant="h6">Current Stock Levels</Typography>
+          <Box>
+            <Button
+              sx={{ mr: 2 }}
+              variant="outlined"
+              color="primary"
+              startIcon={isRecalculating ? <CircularProgress size={20} color="inherit" /> : <RefreshIcon />}
+              onClick={handleRecalculate}
+              disabled={isRecalculating}
+            >
+              Recalculate
+            </Button>
+            <Button
+              variant="outlined"
+              color="secondary"
+              startIcon={exportingCSV ? <CircularProgress size={20} /> : <FileDownloadIcon />}
+              onClick={exportToCSV}
+              disabled={exportingCSV || balanceStock.length === 0}
+            >
+              Export CSV
+            </Button>
+          </Box>
         </Box>
-      ) : (
-        <>
-          {stockSummary.length === 0 ? (
-            <Alert severity="info">
-              No balance stock data available. Please add purchases, sales, or consumption records.
-            </Alert>
-          ) : (
-            <Paper>
-              <TableContainer component={Paper} sx={{ maxHeight: 440 }}>
-                <Table stickyHeader aria-label="balance stock table">
-                  <TableHead>
-                    <StyledTableHeaderRow>
-                      <StyledTableCell>Product Name</StyledTableCell>
-                      <StyledTableCell align="right">Balance Qty.</StyledTableCell>
-                      <StyledTableCell align="center">Reference ID</StyledTableCell>
-                      <StyledTableCell align="right">Taxable Value (Rs.)</StyledTableCell>
-                      <StyledTableCell align="right">IGST (Rs.)</StyledTableCell>
-                      <StyledTableCell align="right">CGST (Rs.)</StyledTableCell>
-                      <StyledTableCell align="right">SGST (Rs.)</StyledTableCell>
-                      <StyledTableCell align="right">Invoice Value (Rs.)</StyledTableCell>
-                      <StyledTableCell align="center">Actions</StyledTableCell>
-                    </StyledTableHeaderRow>
-                  </TableHead>
-                  <TableBody>
-                    {paginatedData.map((item) => (
-                      <TableRow 
-                        key={item.id}
-                        hover
-                        sx={{ 
-                          '&:last-child td, &:last-child th': { border: 0 },
-                          backgroundColor: item.balance_quantity <= 0 ? '#ffdddd' : 'inherit'
-                        }}
-                      >
-                        <TableCell>{item.product_name}</TableCell>
-                        <TableCell align="right"
-                          sx={{ 
-                            fontWeight: 'bold',
-                            color: item.balance_quantity <= 0 ? 'error.main' : 'success.main'
-                          }}
-                        >
-                          {item.balance_quantity}
-                        </TableCell>
-                        <TableCell align="center">{item.reference_id || 'N/A'}</TableCell>
-                        <TableCell align="right">{formatCurrency(item.taxable_value)}</TableCell>
-                        <TableCell align="right">{formatCurrency(item.igst)}</TableCell>
-                        <TableCell align="right">{formatCurrency(item.cgst)}</TableCell>
-                        <TableCell align="right">{formatCurrency(item.sgst)}</TableCell>
-                        <TableCell align="right">{formatCurrency(item.invoice_value)}</TableCell>
-                        <TableCell align="center">
-                          <DeleteButton
-                            onDelete={() => handleDeleteProduct(item.product_name)}
-                            itemName={item.product_name}
-                            itemType="product"
-                            disabled={isDeleting}
+
+        {error && (
+          <Alert severity="error" sx={{ mb: 2 }}>
+            Error loading balance stock data: {error.message}
+          </Alert>
+        )}
+
+        {isLoading ? (
+          <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
+            <CircularProgress />
+          </Box>
+        ) : (
+          <>
+            {balanceStock.length === 0 ? (
+              <Alert severity="info">
+                No balance stock data available. Please add purchases, sales, or consumption records.
+              </Alert>
+            ) : (
+              <Paper>
+                <TableContainer component={Paper} sx={{ maxHeight: 440 }}>
+                  <Table stickyHeader aria-label="balance stock table">
+                    <TableHead>
+                      <StyledTableHeaderRow>
+                        <StyledTableCell>Product Name</StyledTableCell>
+                        <StyledTableCell align="right">Balance Qty.</StyledTableCell>
+                        <StyledTableCell align="center">Reference ID</StyledTableCell>
+                        <StyledTableCell align="right">Taxable Value (Rs.)</StyledTableCell>
+                        <StyledTableCell align="right">IGST (Rs.)</StyledTableCell>
+                        <StyledTableCell align="right">CGST (Rs.)</StyledTableCell>
+                        <StyledTableCell align="right">SGST (Rs.)</StyledTableCell>
+                        <StyledTableCell align="right">Invoice Value (Rs.)</StyledTableCell>
+                        <StyledTableCell align="center">Actions</StyledTableCell>
+                      </StyledTableHeaderRow>
+                    </TableHead>
+                    <TableBody>
+                      {balanceStock
+                        .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
+                        .map((item) => (
+                          <TableRow key={item.id}>
+                            <StyledDataCell component="th" scope="row" align="left">
+                              {item.product_name}
+                            </StyledDataCell>
+                            <StyledDataCell align="right">{item.balance_qty}</StyledDataCell>
+                            <StyledDataCell align="center">{item.reference_id || '-'}</StyledDataCell>
+                            <StyledDataCell align="right">{item.taxable_value?.toFixed(2)}</StyledDataCell>
+                            <StyledDataCell align="right">{item.igst?.toFixed(2)}</StyledDataCell>
+                            <StyledDataCell align="right">{item.cgst?.toFixed(2)}</StyledDataCell>
+                            <StyledDataCell align="right">{item.sgst?.toFixed(2)}</StyledDataCell>
+                            <StyledDataCell align="right">{item.invoice_value?.toFixed(2)}</StyledDataCell>
+                            <StyledDataCell align="center">
+                              <DeleteButton
+                                onDelete={() => handleDeleteProduct(item.product_name)}
+                                disabled={isDeleting}
+                                confirmMessage={`Are you sure you want to delete "${item.product_name}" from inventory?`}
+                              />
+                            </StyledDataCell>
+                          </TableRow>
+                        ))}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+                <TablePagination
+                  rowsPerPageOptions={[5, 10, 25, 50]}
+                  component="div"
+                  count={balanceStock.length}
+                  rowsPerPage={rowsPerPage}
+                  page={page}
+                  onPageChange={handleChangePage}
+                  onRowsPerPageChange={handleChangeRowsPerPage}
+                />
+              </Paper>
+            )}
+          </>
+        )}
+      </TabPanel>
+
+      <TabPanel value={tabValue} index={1}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+          <Typography variant="h6">Stock Transaction History</Typography>
+        </Box>
+
+        {loadingTransactions ? (
+          <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
+            <CircularProgress />
+          </Box>
+        ) : (
+          <Paper>
+            <TableContainer component={Paper} sx={{ maxHeight: 440 }}>
+              <Table stickyHeader aria-label="stock transactions table">
+                <TableHead>
+                  <StyledTableHeaderRow>
+                    <StyledTableCell>Date & Time</StyledTableCell>
+                    <StyledTableCell>Product Name</StyledTableCell>
+                    <StyledTableCell align="center">Transaction Type</StyledTableCell>
+                    <StyledTableCell align="right">Quantity</StyledTableCell>
+                    <StyledTableCell align="right">Previous Stock</StyledTableCell>
+                    <StyledTableCell align="right">New Stock</StyledTableCell>
+                    <StyledTableCell>Source</StyledTableCell>
+                    <StyledTableCell>Notes</StyledTableCell>
+                  </StyledTableHeaderRow>
+                </TableHead>
+                <TableBody>
+                  {stockTransactions
+                    .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
+                    .map((transaction) => (
+                      <TableRow key={transaction.id}>
+                        <StyledDataCell align="left">
+                          {formatDateTime(transaction.created_at)}
+                        </StyledDataCell>
+                        <StyledDataCell align="left">{transaction.product_name}</StyledDataCell>
+                        <StyledDataCell align="center">
+                          <Chip 
+                            label={transaction.transaction_type} 
+                            color={getTransactionTypeColor(transaction.transaction_type)}
                             size="small"
                           />
-                        </TableCell>
+                        </StyledDataCell>
+                        <StyledDataCell align="right">{transaction.quantity}</StyledDataCell>
+                        <StyledDataCell align="right">{transaction.previous_stock}</StyledDataCell>
+                        <StyledDataCell align="right">{transaction.new_stock}</StyledDataCell>
+                        <StyledDataCell align="left">{transaction.source}</StyledDataCell>
+                        <StyledDataCell align="left">{transaction.notes}</StyledDataCell>
                       </TableRow>
                     ))}
-                  </TableBody>
-                </Table>
-              </TableContainer>
-              
-              <TablePagination
-                rowsPerPageOptions={[5, 10, 25, 50]}
-                component="div"
-                count={stockSummary.length}
-                rowsPerPage={rowsPerPage}
-                page={page}
-                onPageChange={handleChangePage}
-                onRowsPerPageChange={handleChangeRowsPerPage}
-              />
-            </Paper>
-          )}
-        </>
-      )}
+                </TableBody>
+              </Table>
+            </TableContainer>
+            <TablePagination
+              rowsPerPageOptions={[5, 10, 25, 50]}
+              component="div"
+              count={stockTransactions.length}
+              rowsPerPage={rowsPerPage}
+              page={page}
+              onPageChange={handleChangePage}
+              onRowsPerPageChange={handleChangeRowsPerPage}
+            />
+          </Paper>
+        )}
+      </TabPanel>
     </Box>
   );
 };

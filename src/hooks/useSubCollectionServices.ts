@@ -7,6 +7,21 @@ import { supabase } from '../utils/supabase/supabaseClient.js'
 export function useSubCollectionServices(collectionId?: string, subCollectionId?: string) {
   const queryClient = useQueryClient()
 
+  // Get current user's profile ID
+  const getProfileId = async () => {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) throw new Error('No authenticated user')
+
+    const { data: profile, error } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('auth_user_id', user.id)
+      .single()
+
+    if (error || !profile) throw new Error('Could not get profile ID')
+    return profile.id
+  }
+
   const { data: services, isLoading, refetch } = useQuery({
     queryKey: ['services', { collectionId, subCollectionId }],
     queryFn: async () => {
@@ -43,6 +58,7 @@ export function useSubCollectionServices(collectionId?: string, subCollectionId?
 
   const createService = useMutation({
     mutationFn: async (newService: Omit<ServiceItem, 'id' | 'created_at'>) => {
+      const profileId = await getProfileId()
       const serviceId = uuidv4()
       const timestamp = new Date().toISOString()
       const serviceToInsert = {
@@ -58,6 +74,7 @@ export function useSubCollectionServices(collectionId?: string, subCollectionId?
         membership_eligible: newService.membership_eligible ?? true,
         created_at: timestamp,
         updated_at: timestamp,
+        user_id: profileId,
       }
       const { data, error } = await supabase
         .from('services')

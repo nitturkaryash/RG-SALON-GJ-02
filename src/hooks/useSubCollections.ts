@@ -7,6 +7,21 @@ import { supabase } from '../utils/supabase/supabaseClient.js'
 export function useSubCollections(collectionId?: string) {
   const queryClient = useQueryClient()
 
+  // Get current user's profile ID
+  const getProfileId = async () => {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) throw new Error('No authenticated user')
+
+    const { data: profile, error } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('auth_user_id', user.id)
+      .single()
+
+    if (error || !profile) throw new Error('Could not get profile ID')
+    return profile.id
+  }
+
   const { data: subCollections, isLoading } = useQuery({
     queryKey: ['subCollections', { collectionId }],
     queryFn: async () => {
@@ -25,9 +40,11 @@ export function useSubCollections(collectionId?: string) {
 
   const createSubCollection = useMutation({
     mutationFn: async (newSub: Omit<ServiceSubCollection, 'id' | 'created_at'>) => {
+      const profileId = await getProfileId()
       const subCollection = {
         id: uuidv4(),
         created_at: new Date().toISOString(),
+        user_id: profileId,
         ...newSub,
       }
       const { data, error } = await supabase

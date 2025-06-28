@@ -191,8 +191,9 @@ DROP POLICY IF EXISTS "user_access_expired_products" ON public.expired_products;
 CREATE POLICY "user_access_expired_products" ON public.expired_products
   FOR ALL USING (user_id = auth.user_id());
 
--- Step 6: Create trigger function to auto-set user_id on insert
-CREATE OR REPLACE FUNCTION public.set_user_id() RETURNS TRIGGER LANGUAGE plpgsql AS $$
+-- Step 6: Create function to auto-set user_id on insert
+CREATE OR REPLACE FUNCTION public.set_user_id()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
 BEGIN
   IF NEW.user_id IS NULL THEN
     NEW.user_id := auth.user_id();
@@ -282,42 +283,36 @@ DROP TRIGGER IF EXISTS set_user_id_expired_products ON public.expired_products;
 CREATE TRIGGER set_user_id_expired_products BEFORE INSERT ON public.expired_products
   FOR EACH ROW EXECUTE FUNCTION public.set_user_id();
 
--- Step 8: Update the admin login function to work with new schema
-CREATE OR REPLACE FUNCTION public.check_admin_login_with_user(email_input text, password_input text)
-RETURNS TABLE(
-  id integer,
-  email text,
-  user_id uuid,
-  is_active boolean,
-  gst_percentage text,
-  hsn_code text,
-  igst text
-) 
-LANGUAGE SQL SECURITY DEFINER AS $$
-  SELECT 
-    au.id,
-    au.email::text,
-    au.user_id,
-    au.is_active,
-    au.gst_percentage,
-    au.hsn_code,
-    au.igst
-  FROM public.admin_users au
-  WHERE au.email = email_input 
-    AND au.password = password_input
-    AND au.is_active = true;
-$$;
+-- Step 8: Create indexes for performance
+CREATE INDEX IF NOT EXISTS idx_admin_users_user_id ON public.admin_users(user_id);
+CREATE INDEX IF NOT EXISTS idx_appointments_user_id ON public.appointments(user_id);
+CREATE INDEX IF NOT EXISTS idx_clients_user_id ON public.clients(user_id);
+CREATE INDEX IF NOT EXISTS idx_stylists_user_id ON public.stylists(user_id);
+CREATE INDEX IF NOT EXISTS idx_services_user_id ON public.services(user_id);
+CREATE INDEX IF NOT EXISTS idx_product_master_user_id ON public.product_master(user_id);
+CREATE INDEX IF NOT EXISTS idx_inventory_purchases_user_id ON public.inventory_purchases(user_id);
+CREATE INDEX IF NOT EXISTS idx_inventory_sales_new_user_id ON public.inventory_sales_new(user_id);
+CREATE INDEX IF NOT EXISTS idx_inventory_salon_consumption_user_id ON public.inventory_salon_consumption(user_id);
+CREATE INDEX IF NOT EXISTS idx_pos_orders_user_id ON public.pos_orders(user_id);
+CREATE INDEX IF NOT EXISTS idx_pos_order_items_user_id ON public.pos_order_items(user_id);
+CREATE INDEX IF NOT EXISTS idx_sales_products_user_id ON public.sales_products(user_id);
+CREATE INDEX IF NOT EXISTS idx_members_user_id ON public.members(user_id);
+CREATE INDEX IF NOT EXISTS idx_membership_tiers_user_id ON public.membership_tiers(user_id);
+CREATE INDEX IF NOT EXISTS idx_loyalty_points_user_id ON public.loyalty_points(user_id);
+CREATE INDEX IF NOT EXISTS idx_product_stock_transactions_user_id ON public.product_stock_transactions(user_id);
+CREATE INDEX IF NOT EXISTS idx_balance_stock_transactions_user_id ON public.balance_stock_transactions(user_id);
+CREATE INDEX IF NOT EXISTS idx_stock_reductions_user_id ON public.stock_reductions(user_id);
+CREATE INDEX IF NOT EXISTS idx_consumption_user_id ON public.consumption(user_id);
+CREATE INDEX IF NOT EXISTS idx_expired_products_user_id ON public.expired_products(user_id);
 
--- Step 9: Create function to create admin user with Supabase auth integration
+-- Step 9: Create function to create new admin user with tenant setup
 CREATE OR REPLACE FUNCTION public.create_admin_user(
   admin_email text,
   admin_password text,
-  gst_percentage_param text DEFAULT '18',
-  hsn_code_param text DEFAULT '',
-  igst_param text DEFAULT '0'
-)
-RETURNS json
-LANGUAGE plpgsql SECURITY DEFINER AS $$
+  gst_percentage_param text DEFAULT NULL,
+  hsn_code_param text DEFAULT NULL,
+  igst_param text DEFAULT NULL
+) RETURNS json LANGUAGE plpgsql SECURITY DEFINER AS $$
 DECLARE
   new_user_id uuid;
   result json;
@@ -363,28 +358,6 @@ EXCEPTION
     RETURN json_build_object('success', false, 'message', SQLERRM);
 END;
 $$;
-
--- Step 10: Create indexes for performance
-CREATE INDEX IF NOT EXISTS idx_admin_users_user_id ON public.admin_users(user_id);
-CREATE INDEX IF NOT EXISTS idx_appointments_user_id ON public.appointments(user_id);
-CREATE INDEX IF NOT EXISTS idx_clients_user_id ON public.clients(user_id);
-CREATE INDEX IF NOT EXISTS idx_stylists_user_id ON public.stylists(user_id);
-CREATE INDEX IF NOT EXISTS idx_services_user_id ON public.services(user_id);
-CREATE INDEX IF NOT EXISTS idx_product_master_user_id ON public.product_master(user_id);
-CREATE INDEX IF NOT EXISTS idx_inventory_purchases_user_id ON public.inventory_purchases(user_id);
-CREATE INDEX IF NOT EXISTS idx_inventory_sales_new_user_id ON public.inventory_sales_new(user_id);
-CREATE INDEX IF NOT EXISTS idx_inventory_salon_consumption_user_id ON public.inventory_salon_consumption(user_id);
-CREATE INDEX IF NOT EXISTS idx_pos_orders_user_id ON public.pos_orders(user_id);
-CREATE INDEX IF NOT EXISTS idx_pos_order_items_user_id ON public.pos_order_items(user_id);
-CREATE INDEX IF NOT EXISTS idx_sales_products_user_id ON public.sales_products(user_id);
-CREATE INDEX IF NOT EXISTS idx_members_user_id ON public.members(user_id);
-CREATE INDEX IF NOT EXISTS idx_membership_tiers_user_id ON public.membership_tiers(user_id);
-CREATE INDEX IF NOT EXISTS idx_loyalty_points_user_id ON public.loyalty_points(user_id);
-CREATE INDEX IF NOT EXISTS idx_product_stock_transactions_user_id ON public.product_stock_transactions(user_id);
-CREATE INDEX IF NOT EXISTS idx_balance_stock_transactions_user_id ON public.balance_stock_transactions(user_id);
-CREATE INDEX IF NOT EXISTS idx_stock_reductions_user_id ON public.stock_reductions(user_id);
-CREATE INDEX IF NOT EXISTS idx_consumption_user_id ON public.consumption(user_id);
-CREATE INDEX IF NOT EXISTS idx_expired_products_user_id ON public.expired_products(user_id);
 
 COMMIT;
 

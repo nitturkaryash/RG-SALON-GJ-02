@@ -4,6 +4,7 @@ export interface ServiceCollection {
   name: string;
   description: string;
   created_at?: string;
+  user_id?: string;
 }
 
 // Service represents a salon service with pricing and duration
@@ -19,6 +20,8 @@ export interface ServiceItem {
   gender?: 'male' | 'female' | null;
   membership_eligible?: boolean; // Controls if service can be purchased with membership balance
   created_at?: string;
+  updated_at?: string;
+  user_id?: string;
 }
 
 // ServiceSubCollection represents a sub-grouping within a service collection
@@ -28,4 +31,5 @@ export interface ServiceSubCollection {
   name: string;
   description: string;
   created_at?: string;
+  user_id?: string;
 } 

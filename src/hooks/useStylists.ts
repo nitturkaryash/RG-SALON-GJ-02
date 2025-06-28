@@ -30,10 +30,66 @@ export interface Stylist {
   phone?: string;
   breaks?: StylistBreak[]; // Add breaks array to stylist
   holidays?: StylistHoliday[]; // Add holidays array to stylist
+  user_id?: string;
 }
 
 export function useStylists() {
   const queryClient = useQueryClient()
+
+  // Get current user's profile ID
+  const getProfileId = async () => {
+    try {
+      // First try to get the user from Supabase auth
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        const { data: profile, error } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('auth_user_id', user.id)
+          .single()
+
+        if (error || !profile) throw new Error('Could not get profile ID')
+        return profile.id
+      }
+
+      // Fallback to localStorage auth
+      const authUser = localStorage.getItem('auth_user')
+      if (authUser) {
+        const userData = JSON.parse(authUser)
+        const { data: profile, error } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('auth_user_id', userData.id)
+          .single()
+
+        if (error || !profile) {
+          // If no profile exists, get the first available profile
+          const { data: firstProfile, error: firstProfileError } = await supabase
+            .from('profiles')
+            .select('id')
+            .limit(1)
+            .single()
+
+          if (firstProfileError || !firstProfile) throw new Error('Could not get any profile ID')
+          return firstProfile.id
+        }
+        return profile.id
+      }
+
+      throw new Error('No authenticated user')
+    } catch (error) {
+      console.error('Error getting profile ID:', error)
+      // Fallback to getting the first available profile
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('id')
+        .limit(1)
+        .single()
+
+      if (profileError || !profile) throw new Error('Could not get any profile ID')
+      return profile.id
+    }
+  }
 
   const { data: stylists = [], isLoading } = useQuery({
     queryKey: ['stylists'],
@@ -81,48 +137,55 @@ export function useStylists() {
 
   const createStylist = useMutation({
     mutationFn: async (newStylist: Omit<Stylist, 'id'>) => {
-      const stylistId = uuidv4();
-      
-      // Ensure specialties is an array
-      if (!Array.isArray(newStylist.specialties)) {
-        newStylist.specialties = [];
-      }
-      
-      // Create stylist object with snake_case field names for database
-      const stylist = {
-        id: stylistId,
-        name: newStylist.name,
-        specialties: newStylist.specialties || [],
-        bio: newStylist.bio || '',
-        gender: newStylist.gender || 'other',
-        available: newStylist.available,
-        image_url: newStylist.imageUrl || '', // Convert camelCase to snake_case
-        email: newStylist.email || '',
-        phone: newStylist.phone || '',
-        breaks: newStylist.breaks || [],
-        holidays: newStylist.holidays || [],
-        created_at: new Date().toISOString()
-      };
-      
-      const { data, error } = await supabase
-        .from('stylists')
-        .insert(stylist)
-        .select();
-      
-      if (error) {
-        console.error("Supabase error:", error);
+      try {
+        const stylistId = uuidv4();
+        const profileId = await getProfileId();
+        
+        // Ensure specialties is an array
+        if (!Array.isArray(newStylist.specialties)) {
+          newStylist.specialties = [];
+        }
+        
+        // Create stylist object with snake_case field names for database
+        const stylist = {
+          id: stylistId,
+          name: newStylist.name,
+          specialties: newStylist.specialties || [],
+          bio: newStylist.bio || '',
+          gender: newStylist.gender || 'other',
+          available: newStylist.available,
+          image_url: newStylist.imageUrl || '', // Convert camelCase to snake_case
+          email: newStylist.email || '',
+          phone: newStylist.phone || '',
+          breaks: newStylist.breaks || [],
+          holidays: newStylist.holidays || [],
+          created_at: new Date().toISOString(),
+          user_id: profileId
+        };
+
+        // Create new stylist
+        const { data, error } = await supabase
+          .from('stylists')
+          .insert(stylist)
+          .select();
+
+        if (error) {
+          console.error("Supabase error:", error);
+          throw error;
+        }
+
+        if (data && data[0]) {
+          return {
+            ...data[0],
+            imageUrl: data[0].image_url
+          } as Stylist;
+        }
+        
+        return stylist as unknown as Stylist;
+      } catch (error) {
+        console.error("Error in createStylist:", error);
         throw error;
       }
-
-      // Convert snake_case back to camelCase for returned data
-      if (data && data[0]) {
-        return {
-          ...data[0],
-          imageUrl: data[0].image_url
-        } as Stylist;
-      }
-      
-      return stylist as unknown as Stylist;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['stylists'] });
@@ -249,52 +312,34 @@ export function useStylists() {
           console.error('Error checking stylist appointments:', appointmentsError);
           throw appointmentsError;
         }
-        
-        // Check appointment_stylists table as well
-        const { data: appointmentStylistsData, error: appointmentStylistsError } = await supabase
-          .from('appointment_stylists')
-          .select('id')
-          .eq('stylist_id', id);
-          
-        if (appointmentStylistsError) {
-          console.error('Error checking appointment_stylists:', appointmentStylistsError);
-          throw appointmentStylistsError;
-        }
-        
-        // If stylist has appointments, update them to set stylist_id to null
+
+        // If stylist has appointments, don't allow deletion
         if (appointmentsData && appointmentsData.length > 0) {
-          const { error: updateError } = await supabase
-            .from('appointments')
-            .update({ stylist_id: null })
-            .eq('stylist_id', id);
-            
-          if (updateError) {
-            console.error('Error updating appointments:', updateError);
-            throw updateError;
-          }
+          throw new Error('Cannot delete stylist with existing appointments');
         }
-        
-        // Delete entries from appointment_stylists
-        if (appointmentStylistsData && appointmentStylistsData.length > 0) {
-          const { error: deleteJoinError } = await supabase
-            .from('appointment_stylists')
-            .delete()
-            .eq('stylist_id', id);
-            
-          if (deleteJoinError) {
-            console.error('Error deleting from appointment_stylists:', deleteJoinError);
-            throw deleteJoinError;
-          }
+
+        // Delete all breaks for this stylist
+        const { error: breaksError } = await supabase
+          .from('breaks')
+          .delete()
+          .eq('stylist_id', id);
+
+        if (breaksError) {
+          console.error('Error deleting stylist breaks:', breaksError);
+          throw breaksError;
         }
-        
-        // Finally delete the stylist
-        const { error } = await supabase
+
+        // Delete the stylist
+        const { error: deleteError } = await supabase
           .from('stylists')
           .delete()
           .eq('id', id);
-        
-        if (error) throw error;
-        return { success: true };
+
+        if (deleteError) {
+          throw deleteError;
+        }
+
+        return true;
       } catch (error) {
         console.error('Error in deleteStylist:', error);
         throw error;
@@ -304,8 +349,12 @@ export function useStylists() {
       queryClient.invalidateQueries({ queryKey: ['stylists'] });
       toast.success('Stylist deleted successfully');
     },
-    onError: (error) => {
-      toast.error('Failed to delete stylist');
+    onError: (error: any) => {
+      if (error.message === 'Cannot delete stylist with existing appointments') {
+        toast.error('Cannot delete stylist with existing appointments');
+      } else {
+        toast.error('Failed to delete stylist');
+      }
       console.error('Error deleting stylist:', error);
     },
   });
@@ -316,5 +365,5 @@ export function useStylists() {
     createStylist: createStylist.mutate,
     updateStylist: updateStylist.mutate,
     deleteStylist: deleteStylist.mutate,
-  };
+  }
 } 
