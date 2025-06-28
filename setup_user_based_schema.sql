@@ -353,7 +353,7 @@ BEGIN
   RAISE NOTICE '   • Indexes created for all user_id columns';
   RAISE NOTICE '';
   RAISE NOTICE '🔑 New Supabase Credentials:';
-  RAISE NOTICE '   URL: https://mlwlhrewrhcjfyqicjvn.supabase.co';
+  RAISE NOTICE '   URL: https://mtyudylsozncvilibxda.supabase.co';
   RAISE NOTICE '   Key: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...';
   RAISE NOTICE '';
   RAISE NOTICE '📋 Next Steps:';

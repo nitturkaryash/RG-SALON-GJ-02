@@ -22,8 +22,8 @@ export const connectionState = {
 };
 
 // Initialize supabase client with fallback values
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://mtyudylsozncvilibxda.supabase.co';
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im10eXVkeWxzb3puY3ZpbGlieGRhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDk4OTE0MTIsImV4cCI6MjA2NTQ2NzQxMn0.KJP6Pu3jaheEj8wTPioZsRUNRnkKH88hcRgvS97FOZA';
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://mlwlhrewrhcjfyqicjvn.supabase.co';
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1sd2xocmV3cmhjamZ5cWljanZuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTAxODU1NzEsImV4cCI6MjA2NTc2MTU3MX0.z10Ix_HdYBGvHDqHQK9SR1kO7tp8YZ7-nmrk_7xelmQ';
 
 // Create the Supabase client
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
