@@ -309,8 +309,7 @@ export function startAutomaticReminders(): void {
   // Function to check authentication and run reminders
   const runRemindersIfAuthenticated = async () => {
     try {
-      // Import supabase client to check auth state
-      const { supabase } = await import('../utils/supabase/supabaseClient');
+      // Check auth state using the static import
       const { data: { session }, error } = await supabase.auth.getSession();
       
       if (error) {
