@@ -175,21 +175,21 @@ export interface PurchaseFormState {
   date: string;
   product_name: string;
   hsn_code: string;
-  units: string;
+  unit_type: string;
+  purchase_invoice_number: string;
   purchase_qty: number;
   mrp_incl_gst: number;
-  gst_percentage: number;
-  purchase_cost_per_unit_ex_gst?: number;
+  mrp_excl_gst: number;
   discount_on_purchase_percentage: number;
-  vendor_name: string;
-  invoice_no: string;
-  purchase_invoice_number?: string;
-  purchase_taxable_value?: number;
-  purchase_igst?: number;
-  purchase_cgst?: number;
-  purchase_sgst?: number;
-  purchase_invoice_value_rs?: number;
-  tax_inlcuding_disc?: number;
+  gst_percentage: number;
+  purchase_cost_taxable_value: number;
+  purchase_igst: number;
+  purchase_cgst: number;
+  purchase_sgst: number;
+  purchase_invoice_value: number;
+  purchase_excl_gst: number;
+  vendor: string;
+  is_interstate: boolean;
 }
 
 // Processing stats for batch operations

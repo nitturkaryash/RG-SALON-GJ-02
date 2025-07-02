@@ -28,16 +28,20 @@ import {
   InputLabel,
   Select,
   MenuItem,
-  FormHelperText
+  FormHelperText,
+  FormControlLabel,
+  Switch,
+  InputAdornment,
+  SelectChangeEvent
 } from '@mui/material';
 import { Add as AddIcon, Delete as DeleteIcon, Refresh as RefreshIcon, FileDownload as FileDownloadIcon } from '@mui/icons-material';
 import { styled } from '@mui/material/styles';
-import { Purchase, PurchaseFormState, Product, SelectChangeEvent } from '../../models/inventoryTypes';
+import { Purchase, PurchaseFormState, Product } from '../../models/inventoryTypes';
 import { useInventory } from '../../hooks/useInventory';
 import { useProducts } from '../../hooks/useProducts';
 import { toast } from 'react-toastify';
 import { formatCurrency, formatDateKolkata, formatAsiaKolkataTime } from '../../utils/formatters';
-import { convertToCSV, downloadCSV } from '../../utils/csvExporter';
+import { downloadCsv } from '../../utils/csvExporter';
 import { fetchProductsWithStock } from '../../utils/inventoryHelpers';
 import { supabase, handleSupabaseError } from '../../utils/supabase/supabaseClient';
 
@@ -67,19 +71,21 @@ const PurchaseTab: React.FC<PurchaseTabProps> = ({ purchases, isLoading, error }
     date: new Date().toISOString().split('T')[0],
     product_name: '',
     hsn_code: '',
-    units: '',
+    unit_type: '',
     purchase_invoice_number: '',
     purchase_qty: 0,
     mrp_incl_gst: 0,
+    mrp_excl_gst: 0,
     discount_on_purchase_percentage: 0,
     gst_percentage: 18,
-    purchase_taxable_value: 0,
+    purchase_cost_taxable_value: 0,
     purchase_igst: 0,
     purchase_cgst: 0,
     purchase_sgst: 0,
-    purchase_invoice_value_rs: 0,
-    vendor_name: '',
-    invoice_no: ''
+    purchase_invoice_value: 0,
+    purchase_excl_gst: 0,
+    vendor: '',
+    is_interstate: false
   });
   const [formErrors, setFormErrors] = useState<Partial<Record<keyof PurchaseFormState, string>>>({});
   const [exportingCSV, setExportingCSV] = useState(false);
@@ -197,7 +203,7 @@ const PurchaseTab: React.FC<PurchaseTabProps> = ({ purchases, isLoading, error }
         ...prevState,
         product_name: product.name,
         hsn_code: product.hsn_code || '',
-        units: product.units || '',
+        unit_type: product.unit_type || '',
         mrp_incl_gst: product.mrp || 0,
         gst_percentage: product.gst || 18
       }));
@@ -209,7 +215,7 @@ const PurchaseTab: React.FC<PurchaseTabProps> = ({ purchases, isLoading, error }
     
     if (!formState.product_name) errors.product_name = 'Product name is required';
     if (!formState.hsn_code) errors.hsn_code = 'HSN code is required';
-    if (!formState.units) errors.units = 'Units is required';
+    if (!formState.unit_type) errors.unit_type = 'Unit type is required';
     if (!formState.purchase_invoice_number) errors.purchase_invoice_number = 'Invoice number is required';
     if (!formState.purchase_qty || formState.purchase_qty <= 0) errors.purchase_qty = 'Quantity must be greater than 0';
     if (!formState.mrp_incl_gst || formState.mrp_incl_gst <= 0) errors.mrp_incl_gst = 'MRP must be greater than 0';
@@ -290,7 +296,7 @@ const PurchaseTab: React.FC<PurchaseTabProps> = ({ purchases, isLoading, error }
 
   const createProductManually = async () => {
     try {
-      if (!formState.product_name || !formState.hsn_code || !formState.units) {
+      if (!formState.product_name || !formState.hsn_code || !formState.unit_type) {
         toast.error('Please fill in Product Name, HSN Code, and Units');
         return null;
       }
@@ -299,7 +305,7 @@ const PurchaseTab: React.FC<PurchaseTabProps> = ({ purchases, isLoading, error }
         id: `manual-${Date.now()}`,
         name: formState.product_name,
         hsn_code: formState.hsn_code,
-        units: formState.units,
+        units: formState.unit_type,
         mrp: formState.mrp_incl_gst,
         gst: formState.gst_percentage,
         stock: formState.purchase_qty
@@ -342,7 +348,7 @@ const PurchaseTab: React.FC<PurchaseTabProps> = ({ purchases, isLoading, error }
           addSuccess = await addProductToCatalog({
             name: formState.product_name,
             hsn_code: formState.hsn_code,
-            units: formState.units,
+            units: formState.unit_type,
             price: formState.mrp_incl_gst,
           });
         } catch (error) {
@@ -396,11 +402,11 @@ const PurchaseTab: React.FC<PurchaseTabProps> = ({ purchases, isLoading, error }
                   mrp_excl_gst: formState.mrp_excl_gst,
                   discount_on_purchase_percentage: formState.discount_on_purchase_percentage,
                   gst_percentage: formState.gst_percentage,
-                  purchase_taxable_value: formState.purchase_taxable_value,
+                  purchase_taxable_value: formState.purchase_cost_taxable_value,
                   purchase_igst: formState.purchase_igst,
                   purchase_cgst: formState.purchase_cgst,
                   purchase_sgst: formState.purchase_sgst,
-                  purchase_invoice_value_rs: formState.purchase_invoice_value_rs,
+                  purchase_invoice_value_rs: formState.purchase_invoice_value,
                   tax_inlcuding_disc: parseFloat(purchaseCostPerUnitExGst.toFixed(2)),
                   updated_at: new Date().toISOString()
                 })
@@ -425,10 +431,10 @@ const PurchaseTab: React.FC<PurchaseTabProps> = ({ purchases, isLoading, error }
       
       const updatedFormState = {
         ...formState,
-        purchase_taxable_value: parseFloat(taxableValue.toFixed(2)),
+        purchase_cost_taxable_value: parseFloat(taxableValue.toFixed(2)),
         purchase_cgst: parseFloat(cgstAmount.toFixed(2)),
         purchase_sgst: parseFloat(sgstAmount.toFixed(2)),
-        purchase_invoice_value_rs: parseFloat((taxableValue + totalGstAmount).toFixed(2)),
+        purchase_invoice_value: parseFloat((taxableValue + totalGstAmount).toFixed(2)),
         tax_inlcuding_disc: parseFloat(purchaseCostPerUnitExGst.toFixed(2)),
         invoice_no: formState.purchase_invoice_number
       };
@@ -446,19 +452,21 @@ const PurchaseTab: React.FC<PurchaseTabProps> = ({ purchases, isLoading, error }
         date: new Date().toISOString().split('T')[0],
         product_name: '',
         hsn_code: '',
-        units: '',
+        unit_type: '',
         purchase_invoice_number: '',
         purchase_qty: 0,
         mrp_incl_gst: 0,
+        mrp_excl_gst: 0,
         discount_on_purchase_percentage: 0,
         gst_percentage: 18,
-        purchase_taxable_value: 0,
+        purchase_cost_taxable_value: 0,
         purchase_igst: 0,
         purchase_cgst: 0,
         purchase_sgst: 0,
-        purchase_invoice_value_rs: 0,
-        vendor_name: '',
-        invoice_no: ''
+        purchase_invoice_value: 0,
+        purchase_excl_gst: 0,
+        vendor: '',
+        is_interstate: false
       });
     } catch (error) {
       console.error('Error creating purchase:', error);
@@ -908,13 +916,13 @@ const PurchaseTab: React.FC<PurchaseTabProps> = ({ purchases, isLoading, error }
             </Grid>
             
             <Grid item xs={12} sm={6} md={2}>
-              <FormControl fullWidth error={!!formErrors.units} required>
+              <FormControl fullWidth error={!!formErrors.unit_type} required>
                 <InputLabel id="units-select-label">Units *</InputLabel>
                 <Select
                   labelId="units-select-label"
                   id="units-select"
-                  name="units"
-                  value={formState.units}
+                  name="unit_type"
+                  value={formState.unit_type}
                   label="Units *"
                   onChange={handleSelectChange}
                   disabled={!!formState.product_name && existingProducts.some(p => p.name === formState.product_name && p.units)}
@@ -931,8 +939,8 @@ const PurchaseTab: React.FC<PurchaseTabProps> = ({ purchases, isLoading, error }
                     <MenuItem value="" disabled><em>Setup in Product Master</em></MenuItem>
                   )}
                 </Select>
-                {(formErrors.units || (!!formState.product_name && existingProducts.some(p => p.name === formState.product_name && p.units) && "Auto-filled")) &&
-                  <FormHelperText>{formErrors.units || "Auto-filled from selected product"}</FormHelperText>
+                {(formErrors.unit_type || (!!formState.product_name && existingProducts.some(p => p.name === formState.product_name && p.units) && "Auto-filled")) &&
+                  <FormHelperText>{formErrors.unit_type || "Auto-filled from selected product"}</FormHelperText>
                 }
               </FormControl>
             </Grid>
@@ -1009,14 +1017,14 @@ const PurchaseTab: React.FC<PurchaseTabProps> = ({ purchases, isLoading, error }
             <Grid item xs={12} sm={6} md={3}>
               <TextField
                 label="Taxable Value (Rs.)"
-                name="purchase_taxable_value"
+                name="purchase_cost_taxable_value"
                 type="number"
-                value={formState.purchase_taxable_value}
+                value={formState.purchase_cost_taxable_value}
                 onChange={handleInputChange}
                 fullWidth
                 margin="normal"
-                error={!!formErrors.purchase_taxable_value}
-                helperText={formErrors.purchase_taxable_value}
+                error={!!formErrors.purchase_cost_taxable_value}
+                helperText={formErrors.purchase_cost_taxable_value}
               />
             </Grid>
             
@@ -1065,14 +1073,14 @@ const PurchaseTab: React.FC<PurchaseTabProps> = ({ purchases, isLoading, error }
             <Grid item xs={12} sm={6} md={3}>
               <TextField
                 label="Purchase Invoice Value (Rs.)"
-                name="purchase_invoice_value_rs"
+                name="purchase_invoice_value"
                 type="number"
-                value={formState.purchase_invoice_value_rs}
+                value={formState.purchase_invoice_value}
                 onChange={handleInputChange}
                 fullWidth
                 margin="normal"
-                error={!!formErrors.purchase_invoice_value_rs}
-                helperText={formErrors.purchase_invoice_value_rs}
+                error={!!formErrors.purchase_invoice_value}
+                helperText={formErrors.purchase_invoice_value}
               />
             </Grid>
             

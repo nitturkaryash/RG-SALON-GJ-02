@@ -1980,77 +1980,101 @@ export default function InventoryManager() {
         // Fix timezone issue: Create date in India timezone (Asia/Kolkata)
         const dateValue = typeof value === 'string' ? value : String(value);
         if (dateValue) {
-          // Create a date object and adjust for India timezone
           const localDate = new Date(dateValue);
-          
-          // Get current time in India timezone
           const now = new Date();
           const indiaOffset = 5.5 * 60; // India is UTC+5:30
           const utcTime = now.getTime() + (now.getTimezoneOffset() * 60000);
           const indiaTime = new Date(utcTime + (indiaOffset * 60000));
           
-          // Set the time components to current India time
           localDate.setHours(indiaTime.getHours());
           localDate.setMinutes(indiaTime.getMinutes());
           localDate.setSeconds(indiaTime.getSeconds());
           localDate.setMilliseconds(indiaTime.getMilliseconds());
           
-          // Store the date with system timezone
           updated.date = localDate.toISOString();
-          console.log(`Date updated to: ${updated.date} (System timezone: ${localDate.toLocaleString('en-IN')})`);
         }
       } else {
         // Use type assertion to handle the dynamic property assignment
         (updated as any)[name] = value;
       }
 
-      // Automatic calculation logic (same as before)
-      let {
-        mrp_incl_gst,
-        mrp_excl_gst,
-        gst_percentage,
-        discount_on_purchase_percentage,
-        purchase_qty,
-        is_interstate
-      } = updated;
+      // Define which fields trigger auto-calculation
+      const calculationTriggerFields = [
+        'mrp_incl_gst',
+        'mrp_excl_gst',
+        'gst_percentage',
+        'purchase_qty',
+        'discount_on_purchase_percentage',
+        'is_interstate',
+        'purchase_excl_gst',
+        'purchase_cost_per_unit_ex_gst'
+      ];
 
-      mrp_incl_gst = parseNumericInput(mrp_incl_gst);
-      mrp_excl_gst = parseNumericInput(mrp_excl_gst);
-      gst_percentage = parseNumericInput(gst_percentage);
-      discount_on_purchase_percentage = parseNumericInput(discount_on_purchase_percentage);
-      purchase_qty = parseNumericInput(purchase_qty);
+      // Only auto-calculate if a trigger field was changed
+      if (calculationTriggerFields.includes(name)) {
+        let {
+          mrp_incl_gst,
+          mrp_excl_gst,
+          gst_percentage,
+          discount_on_purchase_percentage,
+          purchase_qty,
+          is_interstate
+        } = updated;
 
-      // Recalculate prices based on which one was changed
-      if (name === 'mrp_incl_gst' || name === 'gst_percentage') {
-        updated.mrp_excl_gst = calculatePriceExcludingGST(mrp_incl_gst, gst_percentage);
-      } else if (name === 'mrp_excl_gst') {
-        updated.mrp_incl_gst = mrp_excl_gst * (1 + gst_percentage / 100);
-      }
+        mrp_incl_gst = parseNumericInput(mrp_incl_gst);
+        mrp_excl_gst = parseNumericInput(mrp_excl_gst);
+        gst_percentage = parseNumericInput(gst_percentage);
+        discount_on_purchase_percentage = parseNumericInput(discount_on_purchase_percentage);
+        purchase_qty = parseNumericInput(purchase_qty);
 
-      const final_mrp_excl_gst = parseNumericInput(updated.mrp_excl_gst);
+        // Recalculate prices based on which one was changed
+        if (name === 'mrp_incl_gst' || name === 'gst_percentage') {
+          updated.mrp_excl_gst = calculatePriceExcludingGST(mrp_incl_gst, gst_percentage);
+        } else if (name === 'mrp_excl_gst') {
+          updated.mrp_incl_gst = mrp_excl_gst * (1 + gst_percentage / 100);
+        }
 
-      // Recalculate purchase_excl_gst
-      const discount = discount_on_purchase_percentage / 100;
-      const purchase_excl_gst = final_mrp_excl_gst * (1 - discount);
-      updated.purchase_excl_gst = purchase_excl_gst;
+        const final_mrp_excl_gst = parseNumericInput(updated.mrp_excl_gst);
 
-      // Recalculate taxable value
-      const taxableValue = purchase_excl_gst * purchase_qty;
-      updated.purchase_cost_taxable_value = taxableValue;
+        // Handle purchase cost changes
+        let purchase_excl_gst = updated.purchase_excl_gst;
+        
+        if (name === 'purchase_cost_per_unit_ex_gst') {
+          // If purchase cost per unit was changed directly
+          purchase_excl_gst = parseNumericInput(value);
+          updated.purchase_excl_gst = purchase_excl_gst;
+          
+          // Update MRP and discount based on the new purchase cost
+          if (purchase_excl_gst > 0) {
+            const implied_discount = 1 - (purchase_excl_gst / final_mrp_excl_gst);
+            updated.discount_on_purchase_percentage = Math.round(implied_discount * 100 * 100) / 100; // Round to 2 decimals
+          }
+        } else if (!['purchase_excl_gst'].includes(name)) {
+          // Normal calculation from MRP and discount
+          const discount = discount_on_purchase_percentage / 100;
+          purchase_excl_gst = final_mrp_excl_gst * (1 - discount);
+          updated.purchase_excl_gst = purchase_excl_gst;
+        }
 
-      // Recalculate GST amounts
-      const gstAmounts = calculateGSTAmounts(taxableValue, gst_percentage, is_interstate);
-      updated.purchase_igst = gstAmounts.igst;
-      updated.purchase_cgst = gstAmounts.cgst;
-      updated.purchase_sgst = gstAmounts.sgst;
-
-      // Calculate final invoice value
-      updated.purchase_invoice_value = taxableValue + gstAmounts.igst + gstAmounts.cgst + gstAmounts.sgst;
-
-      // Calculate per unit values
-      if (purchase_qty > 0) {
-        updated.mrp_per_unit_excl_gst = final_mrp_excl_gst;
+        // Recalculate taxable value
+        const taxableValue = purchase_excl_gst * purchase_qty;
+        updated.purchase_cost_taxable_value = taxableValue;
         updated.purchase_cost_per_unit_ex_gst = purchase_excl_gst;
+
+        // Recalculate GST amounts
+        const gstAmounts = calculateGSTAmounts(taxableValue, gst_percentage, is_interstate);
+        updated.purchase_igst = gstAmounts.igst;
+        updated.purchase_cgst = gstAmounts.cgst;
+        updated.purchase_sgst = gstAmounts.sgst;
+
+        // Calculate final invoice value
+        updated.purchase_invoice_value = taxableValue + gstAmounts.igst + gstAmounts.cgst + gstAmounts.sgst;
+
+        // Calculate per unit values
+        if (purchase_qty > 0) {
+          updated.mrp_per_unit_excl_gst = final_mrp_excl_gst;
+          updated.purchase_cost_per_unit_ex_gst = purchase_excl_gst;
+        }
       }
 
       return updated;
@@ -4456,9 +4480,9 @@ export default function InventoryManager() {
                 name="product_name"
                 label="Product Name"
                 value={purchaseFormData.product_name}
+                onChange={(e) => handleInputChange('product_name', e.target.value)}
                 fullWidth
-                disabled
-                helperText="Auto-filled from Product Master"
+                helperText="Enter product name or select from Product Master"
                 FormHelperTextProps={{ sx: { color: 'text.secondary', fontStyle: 'italic' } }}
               />
             </Grid>
@@ -4468,9 +4492,9 @@ export default function InventoryManager() {
                 name="hsn_code"
                 label="HSN Code"
                 value={purchaseFormData.hsn_code}
+                onChange={(e) => handleInputChange('hsn_code', e.target.value)}
                 fullWidth
-                disabled
-                helperText="Auto-filled from Product Master"
+                helperText="Enter HSN code or select from Product Master"
                 FormHelperTextProps={{ sx: { color: 'text.secondary', fontStyle: 'italic' } }}
               />
             </Grid>
@@ -4480,9 +4504,9 @@ export default function InventoryManager() {
                 name="unit_type"
                 label="Units"
                 value={purchaseFormData.unit_type}
+                onChange={(e) => handleInputChange('unit_type', e.target.value)}
                 fullWidth
-                disabled
-                helperText="Auto-filled from Product Master"
+                helperText="Enter unit type or select from Product Master"
                 FormHelperTextProps={{ sx: { color: 'text.secondary', fontStyle: 'italic' } }}
               />
             </Grid>
@@ -4492,9 +4516,14 @@ export default function InventoryManager() {
                 name="gst_percentage"
                 label="GST %"
                 value={purchaseFormData.gst_percentage}
+                onChange={(e) => handleInputChange('gst_percentage', parseFloat(e.target.value) || 0)}
                 fullWidth
-                disabled
-                helperText="Auto-filled from Product Master"
+                type="number"
+                InputProps={{
+                  endAdornment: <InputAdornment position="end">%</InputAdornment>,
+                  inputProps: { min: 0, max: 100, step: 0.01 }
+                }}
+                helperText="Enter GST percentage"
                 FormHelperTextProps={{ sx: { color: 'text.secondary', fontStyle: 'italic' } }}
               />
             </Grid>
@@ -4505,9 +4534,12 @@ export default function InventoryManager() {
                 label="MRP (Incl. GST)"
                 type="number"
                 value={purchaseFormData.mrp_incl_gst}
-                onChange={(e) => handleInputChange('mrp_incl_gst', e.target.value)}
+                onChange={(e) => handleInputChange('mrp_incl_gst', parseFloat(e.target.value) || 0)}
                 fullWidth
-                helperText="Editable. Updates Excl. GST price."
+                InputProps={{
+                  startAdornment: <InputAdornment position="start">₹</InputAdornment>
+                }}
+                helperText="Enter MRP including GST"
                 FormHelperTextProps={{ sx: { color: 'text.secondary', fontStyle: 'italic' } }}
               />
             </Grid>
@@ -4518,9 +4550,12 @@ export default function InventoryManager() {
                 label="MRP (Excl. GST)"
                 type="number"
                 value={purchaseFormData.mrp_excl_gst}
-                onChange={(e) => handleInputChange('mrp_excl_gst', e.target.value)}
+                onChange={(e) => handleInputChange('mrp_excl_gst', parseFloat(e.target.value) || 0)}
                 fullWidth
-                helperText="Editable. Updates Incl. GST price."
+                InputProps={{
+                  startAdornment: <InputAdornment position="start">₹</InputAdornment>
+                }}
+                helperText="Enter MRP excluding GST"
                 FormHelperTextProps={{ sx: { color: 'text.secondary', fontStyle: 'italic' } }}
               />
             </Grid>
@@ -4565,6 +4600,7 @@ export default function InventoryManager() {
                   endAdornment: <InputAdornment position="end">%</InputAdornment>,
                   inputProps: { min: 0, max: 100, step: 0.01 }
                 }}
+                helperText="Enter discount percentage"
               />
             </Grid>
             
@@ -4573,9 +4609,12 @@ export default function InventoryManager() {
                 label="Purchase Cost per Unit (Ex. GST)"
                 type="number"
                 value={purchaseFormData.purchase_excl_gst || 0}
+                onChange={(e) => handleInputChange('purchase_excl_gst', parseFloat(e.target.value) || 0)}
                 fullWidth
-                InputProps={{ readOnly: true, startAdornment: <InputAdornment position="start">₹</InputAdornment> }}
-                helperText="Auto-calculated (MRP Ex. GST - Discount)"
+                InputProps={{
+                  startAdornment: <InputAdornment position="start">₹</InputAdornment>
+                }}
+                helperText="Enter purchase cost excluding GST"
               />
             </Grid>
             
@@ -4584,9 +4623,12 @@ export default function InventoryManager() {
                 label="Purchase Taxable Value (Rs.)"
                 type="number"
                 value={purchaseFormData.purchase_cost_taxable_value || 0}
+                onChange={(e) => handleInputChange('purchase_cost_taxable_value', parseFloat(e.target.value) || 0)}
                 fullWidth
-                InputProps={{ readOnly: true, startAdornment: <InputAdornment position="start">₹</InputAdornment> }}
-                helperText="Auto-calculated (Cost × Quantity)"
+                InputProps={{
+                  startAdornment: <InputAdornment position="start">₹</InputAdornment>
+                }}
+                helperText="Enter purchase taxable value"
               />
             </Grid>
             
@@ -4595,9 +4637,12 @@ export default function InventoryManager() {
                 label="IGST Amount (Rs.)"
                 type="number"
                 value={purchaseFormData.purchase_igst || 0}
+                onChange={(e) => handleInputChange('purchase_igst', parseFloat(e.target.value) || 0)}
                 fullWidth
-                InputProps={{ readOnly: true, startAdornment: <InputAdornment position="start">₹</InputAdornment> }}
-                helperText="Auto-calculated"
+                InputProps={{
+                  startAdornment: <InputAdornment position="start">₹</InputAdornment>
+                }}
+                helperText="Enter IGST amount"
               />
             </Grid>
             
@@ -4606,9 +4651,12 @@ export default function InventoryManager() {
                 label="CGST Amount (Rs.)"
                 type="number"
                 value={purchaseFormData.purchase_cgst || 0}
+                onChange={(e) => handleInputChange('purchase_cgst', parseFloat(e.target.value) || 0)}
                 fullWidth
-                InputProps={{ readOnly: true, startAdornment: <InputAdornment position="start">₹</InputAdornment> }}
-                helperText="Auto-calculated"
+                InputProps={{
+                  startAdornment: <InputAdornment position="start">₹</InputAdornment>
+                }}
+                helperText="Enter CGST amount"
               />
             </Grid>
             
@@ -4617,9 +4665,12 @@ export default function InventoryManager() {
                 label="SGST Amount (Rs.)"
                 type="number"
                 value={purchaseFormData.purchase_sgst || 0}
+                onChange={(e) => handleInputChange('purchase_sgst', parseFloat(e.target.value) || 0)}
                 fullWidth
-                InputProps={{ readOnly: true, startAdornment: <InputAdornment position="start">₹</InputAdornment> }}
-                helperText="Auto-calculated"
+                InputProps={{
+                  startAdornment: <InputAdornment position="start">₹</InputAdornment>
+                }}
+                helperText="Enter SGST amount"
               />
             </Grid>
             
@@ -4628,15 +4679,18 @@ export default function InventoryManager() {
                 label="Total Invoice Value (Rs.)"
                 type="number"
                 value={purchaseFormData.purchase_invoice_value || 0}
+                onChange={(e) => handleInputChange('purchase_invoice_value', parseFloat(e.target.value) || 0)}
                 fullWidth
-                InputProps={{ readOnly: true, startAdornment: <InputAdornment position="start">₹</InputAdornment> }}
-                helperText="Auto-calculated (Taxable + GST)"
+                InputProps={{
+                  startAdornment: <InputAdornment position="start">₹</InputAdornment>
+                }}
+                helperText="Enter total invoice value"
               />
             </Grid>
 
             <Grid item xs={12}>
               <Paper elevation={0} sx={{ p: 2, backgroundColor: '#f0f7ff', border: '1px solid #c7e1fd', borderRadius: 1 }}>
-                <Typography variant="subtitle2" gutterBottom>GST Breakdown (based on calculated Purchase Cost/Unit)</Typography>
+                <Typography variant="subtitle2" gutterBottom>GST Breakdown (based on entered values)</Typography>
                 <Grid container spacing={1}>
                    <Grid item xs={6}><Typography variant="body2">Purchase Cost/Unit (Ex.GST):</Typography></Grid>
                    <Grid item xs={6} textAlign="right"><Typography variant="body2">₹{purchaseFormData.purchase_excl_gst.toFixed(2)}</Typography></Grid>
