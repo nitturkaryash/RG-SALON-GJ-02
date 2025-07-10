@@ -23,79 +23,51 @@ export function useOrders() {
       
       // First try to load from Supabase
       try {
-        const { data: supabaseOrders, error: supabaseError } = await supabase
-          .from('pos_orders')
-          .select('*')
-          .order('created_at', { ascending: false });
+        // Fetch all orders in chunks to overcome the 1000 row limit
+        let allOrders: any[] = []
+        let from = 0
+        const chunkSize = 1000
+        let hasMore = true
         
-        if (supabaseError) {
-          console.error('Error fetching orders from Supabase:', supabaseError);
-          // If Supabase fails, fall back to localStorage
-          const storedOrders = localStorage.getItem('orders')
-          if (storedOrders) {
-            const parsedOrders = JSON.parse(storedOrders)
-            console.log(`🔍 USEORDERS DEBUG - Loading ${parsedOrders.length} orders from localStorage`);
-            setOrders(normalizeOrders(parsedOrders))
+        while (hasMore) {
+          const { data: supabaseOrders, error: supabaseError } = await supabase
+            .from('pos_orders')
+            .select('*, pos_order_items(*)') // Fetch orders and their items in one go
+            .order('created_at', { ascending: false })
+            .range(from, from + chunkSize - 1)
+
+          if (supabaseError) {
+            console.error('Error fetching orders from Supabase:', supabaseError);
+            // If Supabase fails, fall back to localStorage
+            const storedOrders = localStorage.getItem('orders')
+            if (storedOrders) {
+              const parsedOrders = JSON.parse(storedOrders)
+              console.log(`🔍 USEORDERS DEBUG - Loading ${parsedOrders.length} orders from localStorage`);
+              setOrders(normalizeOrders(parsedOrders))
+            }
+            return;
           }
-        } else if (supabaseOrders && supabaseOrders.length > 0) {
-          // We have orders from Supabase - fetch their services first
-          console.log(`🔍 USEORDERS DEBUG - Loading ${supabaseOrders.length} orders from Supabase`);
           
-          const ordersWithServices = await Promise.all(supabaseOrders.map(async (order) => {
-            const { data: services, error: servicesError } = await supabase
-              .from('pos_order_items')
-              .select('*')
-              .eq('order_id', order.id);
-              
-            if (servicesError) {
-              console.error(`Error fetching services for order ${order.id}:`, servicesError);
-            }
-            
-            // Prefer items table result, but fall back to embedded services array (for legacy/walk-in orders)
-            let resolvedServices = servicesError ? [] : services || [];
-            if ((resolvedServices.length === 0) && Array.isArray(order.services) && order.services.length > 0) {
-              resolvedServices = order.services as any[];
-            }
-            
-            const orderWithServices = {
-              ...order,
-              services: resolvedServices
-            };
-            
-            // Debug specific orders
-            if (order.id === 'sales-0022' || order.stylist_name === 'Sangam') {
-              console.log(`🔍 USEORDERS DEBUG - Order ${order.id}:`, {
-                id: order.id,
-                stylist_name: order.stylist_name,
-                stylist_id: order.stylist_id,
-                status: order.status,
-                servicesCount: orderWithServices.services.length,
-                services: orderWithServices.services
-              });
-            }
-            
-            return orderWithServices;
-          }));
-          
-          const normalizedOrders = normalizeOrders(ordersWithServices);
-          console.log(`🔍 USEORDERS DEBUG - Normalized orders count:`, normalizedOrders.length);
-          setOrders(normalizedOrders)
-        } else {
-          // No orders in Supabase, check localStorage
-          console.log(`🔍 USEORDERS DEBUG - No orders in Supabase, checking localStorage`);
-          const storedOrders = localStorage.getItem('orders')
-          if (storedOrders) {
-            const parsedOrders = JSON.parse(storedOrders)
-            console.log(`🔍 USEORDERS DEBUG - Loading ${parsedOrders.length} orders from localStorage (fallback)`);
-            setOrders(normalizeOrders(parsedOrders))
+          if (supabaseOrders && supabaseOrders.length > 0) {
+            allOrders = [...allOrders, ...supabaseOrders]
+            from += chunkSize
           } else {
-            // No orders anywhere
-            console.log(`🔍 USEORDERS DEBUG - No orders found anywhere`);
-            setOrders([])
+            hasMore = false
           }
         }
-      } catch (supabaseErr) {
-        console.error('Error in Supabase query:', supabaseErr)
+
+        console.log(`Loaded a total of ${allOrders.length} orders from Supabase.`);
+
+        const processedOrders = allOrders.map(order => ({
+          ...order,
+          services: order.pos_order_items || [],
+        }));
+
+        setOrders(processedOrders);
+        localStorage.setItem('orders', JSON.stringify(processedOrders));
+        
+      } catch (error) {
+        console.error('An error occurred during order loading:', error);
         // Fall back to localStorage
         const storedOrders = localStorage.getItem('orders')
         if (storedOrders) {

@@ -1,0 +1,256 @@
+/* Holographic Card Styles */
+.hc-wrapper {
+  position: relative;
+  transform-style: preserve-3d;
+  transition: transform 0.15s ease-out;
+}
+
+.hc-wrapper.active {
+  transform: rotateX(var(--rotate-x, 0deg)) rotateY(var(--rotate-y, 0deg));
+}
+
+.hc-card {
+  position: relative;
+  background: var(--card-background, #000);
+  border-radius: 12px;
+  overflow: hidden;
+  transform-style: preserve-3d;
+  transition: transform 0.15s ease-out;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+}
+
+.hc-card.active {
+  transform: rotateX(var(--rotate-x, 0deg)) rotateY(var(--rotate-y, 0deg));
+}
+
+.hc-inside {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background: 
+    radial-gradient(
+      circle at var(--pointer-x, 50%) var(--pointer-y, 50%),
+      rgba(255, 255, 255, 0.1) 0%,
+      rgba(255, 255, 255, 0.05) 40%,
+      transparent 80%
+    ),
+    var(--card-background, #000);
+  border-radius: inherit;
+  overflow: hidden;
+}
+
+.hc-shine {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: radial-gradient(
+    circle at var(--pointer-x, 50%) var(--pointer-y, 50%),
+    rgba(255, 255, 255, 0.2) 0%,
+    rgba(255, 255, 255, 0.1) 30%,
+    transparent 60%
+  );
+  opacity: calc(var(--pointer-from-center, 0) * 0.8);
+  transition: opacity 0.2s ease;
+  pointer-events: none;
+  border-radius: inherit;
+}
+
+.hc-glare {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    115deg,
+    transparent 20%,
+    rgba(255, 255, 255, 0.15) var(--background-x, 50%),
+    transparent 80%
+  );
+  opacity: calc(var(--pointer-from-center, 0) * 0.6);
+  transition: opacity 0.2s ease;
+  pointer-events: none;
+  border-radius: inherit;
+  mix-blend-mode: overlay;
+}
+
+.hc-content-wrapper {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  border-radius: inherit;
+}
+
+/* Active state enhancements */
+.hc-wrapper.active .hc-shine {
+  opacity: calc(var(--pointer-from-center, 0) * 1.2);
+}
+
+.hc-wrapper.active .hc-glare {
+  opacity: calc(var(--pointer-from-center, 0) * 0.8);
+}
+
+/* Holographic effect overlays */
+.hc-inside::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: 
+    linear-gradient(
+      45deg,
+      rgba(255, 0, 255, 0.05) 0%,
+      rgba(0, 255, 255, 0.05) 25%,
+      rgba(255, 255, 0, 0.05) 50%,
+      rgba(255, 0, 0, 0.05) 75%,
+      rgba(0, 255, 0, 0.05) 100%
+    );
+  opacity: calc(var(--pointer-from-center, 0) * 0.3);
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+  border-radius: inherit;
+  mix-blend-mode: color-dodge;
+}
+
+.hc-inside::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: 
+    conic-gradient(
+      from 0deg at var(--pointer-x, 50%) var(--pointer-y, 50%),
+      rgba(255, 255, 255, 0) 0deg,
+      rgba(255, 255, 255, 0.1) 45deg,
+      rgba(255, 255, 255, 0) 90deg,
+      rgba(255, 255, 255, 0.1) 135deg,
+      rgba(255, 255, 255, 0) 180deg,
+      rgba(255, 255, 255, 0.1) 225deg,
+      rgba(255, 255, 255, 0) 270deg,
+      rgba(255, 255, 255, 0.1) 315deg,
+      rgba(255, 255, 255, 0) 360deg
+    );
+  opacity: calc(var(--pointer-from-center, 0) * 0.4);
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+  border-radius: inherit;
+}
+
+/* Legacy compatibility */
+.membership-tier-card-container {
+  perspective: 1000px;
+  perspective-origin: center center;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+/* Action buttons styling */
+.hc-content-wrapper button {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.hc-content-wrapper button:hover {
+  transform: translateY(-1px) scale(1.05);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  background-color: rgba(255, 255, 255, 0.25) !important;
+}
+
+.hc-content-wrapper button:active {
+  transform: translateY(0) scale(0.95);
+}
+
+/* Enhanced shimmer effect */
+@keyframes holographic-shimmer {
+  0% {
+    transform: translateX(-100%) rotateZ(45deg);
+    opacity: 0;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(200%) rotateZ(45deg);
+    opacity: 0;
+  }
+}
+
+.hc-card::before {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: linear-gradient(
+    90deg,
+    transparent 20%,
+    rgba(255, 255, 255, 0.2) 50%,
+    transparent 80%
+  );
+  animation: holographic-shimmer 4s infinite;
+  pointer-events: none;
+  z-index: 2;
+}
+
+/* Mobile responsiveness */
+@media (max-width: 768px) {
+  .hc-wrapper {
+    width: 280px !important;
+    height: 160px !important;
+  }
+  
+  .hc-content-wrapper {
+    padding: 16px !important;
+  }
+  
+  .hc-card::before {
+    display: none;
+  }
+}
+
+@media (max-width: 480px) {
+  .hc-wrapper {
+    width: 260px !important;
+    height: 140px !important;
+  }
+  
+  .hc-content-wrapper {
+    padding: 12px !important;
+  }
+}
+
+/* Focus states for accessibility */
+.hc-card:focus-within {
+  outline: 2px solid rgba(255, 255, 255, 0.5);
+  outline-offset: 2px;
+}
+
+/* Reduced motion for accessibility */
+@media (prefers-reduced-motion: reduce) {
+  .hc-wrapper,
+  .hc-card,
+  .hc-shine,
+  .hc-glare,
+  .hc-inside::before,
+  .hc-inside::after,
+  .hc-card::before {
+    animation: none !important;
+    transition: none !important;
+    transform: none !important;
+  }
+  
+  .hc-wrapper.active,
+  .hc-card.active {
+    transform: none !important;
+  }
+} 

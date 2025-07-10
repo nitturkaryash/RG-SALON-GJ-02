@@ -1,4 +1,6 @@
-import { useState } from 'react';
+'use client';
+
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { 
   Container, 
@@ -30,6 +32,317 @@ import { supabase } from '../utils/supabase/supabaseClient';
 import { Search, Person, CardMembership, Star, CalendarMonth, AttachMoney, AccountBalanceWallet, Delete } from '@mui/icons-material';
 import { format, differenceInMonths } from 'date-fns';
 import { toast } from 'react-toastify';
+
+// Animation constants
+const ANIMATION_CONFIG = {
+  SMOOTH_DURATION: 600,
+  INITIAL_DURATION: 1500,
+};
+
+const clamp = (val: number, min = 0, max = 100) => Math.min(Math.max(val, min), max);
+const round = (val: number, p = 3) => parseFloat(val.toFixed(p));
+const adjust = (val: number, fromMin: number, fromMax: number, toMin: number, toMax: number) =>
+  round(toMin + ((toMax - toMin) * (val - fromMin)) / (fromMax - fromMin));
+const easeInOutCubic = (x: number) =>
+  x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+
+// Holographic Card Component
+const HolographicMemberCard = ({ member, onDelete }: { member: Member; onDelete: (member: Member) => void }) => {
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const cardRef = useRef<HTMLDivElement>(null);
+
+  const animationHandlers = useMemo(() => {
+    let rafId: number | null = null;
+
+    const updateTransform = (offsetX: number, offsetY: number, card: HTMLElement, wrap: HTMLElement) => {
+      const { clientWidth: width, clientHeight: height } = card;
+      const percentX = clamp((100 / width) * offsetX);
+      const percentY = clamp((100 / height) * offsetY);
+      const centerX = percentX - 50;
+      const centerY = percentY - 50;
+
+      const props: Record<string, string> = {
+        '--pointer-x': `${percentX}%`,
+        '--pointer-y': `${percentY}%`,
+        '--background-x': `${adjust(percentX, 0, 100, 35, 65)}%`,
+        '--background-y': `${adjust(percentY, 0, 100, 35, 65)}%`,
+        '--pointer-from-center': `${clamp(Math.hypot(centerY, centerX) / 50, 0, 1)}`,
+        '--rotate-x': `${round(-(centerY / 5))}deg`,
+        '--rotate-y': `${round(centerX / 4)}deg`,
+      };
+      Object.entries(props).forEach(([p, v]) => wrap.style.setProperty(p, v));
+    };
+
+    const smoothAnimation = (duration: number, startX: number, startY: number, card: HTMLElement, wrap: HTMLElement) => {
+      const startTime = performance.now();
+      const targetX = wrap.clientWidth / 2;
+      const targetY = wrap.clientHeight / 2;
+
+      const loop = (currentTime: number) => {
+        const progress = clamp((currentTime - startTime) / duration);
+        const eased = easeInOutCubic(progress);
+        const currentX = adjust(eased, 0, 1, startX, targetX);
+        const currentY = adjust(eased, 0, 1, startY, targetY);
+        updateTransform(currentX, currentY, card, wrap);
+        if (progress < 1) rafId = requestAnimationFrame(loop);
+      };
+      rafId = requestAnimationFrame(loop);
+    };
+
+    return {
+      updateTransform,
+      smoothAnimation,
+      cancel: () => rafId && cancelAnimationFrame(rafId),
+    };
+  }, []);
+
+  const handlePointerMove = useCallback((e: React.PointerEvent) => {
+    if (!cardRef.current || !wrapRef.current || !animationHandlers) return;
+    const rect = cardRef.current.getBoundingClientRect();
+    animationHandlers.updateTransform(e.clientX - rect.left, e.clientY - rect.top, cardRef.current, wrapRef.current);
+  }, [animationHandlers]);
+
+  const handlePointerEnter = useCallback(() => {
+    if (!wrapRef.current || !cardRef.current || !animationHandlers) return;
+    animationHandlers.cancel();
+    wrapRef.current.classList.add('active');
+    cardRef.current.classList.add('active');
+  }, [animationHandlers]);
+
+  const handlePointerLeave = useCallback((e: React.PointerEvent) => {
+    if (!wrapRef.current || !cardRef.current || !animationHandlers) return;
+    wrapRef.current.classList.remove('active');
+    cardRef.current.classList.remove('active');
+    animationHandlers.smoothAnimation(ANIMATION_CONFIG.SMOOTH_DURATION, e.nativeEvent.offsetX, e.nativeEvent.offsetY, cardRef.current, wrapRef.current);
+  }, [animationHandlers]);
+  
+  useEffect(() => {
+    if (!animationHandlers || !wrapRef.current || !cardRef.current) return;
+
+    const wrap = wrapRef.current;
+    const card = cardRef.current;
+    const { INITIAL_DURATION } = ANIMATION_CONFIG;
+    
+    const initialX = wrap.clientWidth / 2;
+    const initialY = wrap.clientHeight / 2;
+
+    animationHandlers.updateTransform(initialX, initialY, card, wrap);
+    animationHandlers.smoothAnimation(INITIAL_DURATION, initialX, initialY, card, wrap);
+
+  }, [animationHandlers]);
+
+  // Calculate membership status within the component
+  const membershipStatus = useMemo(() => {
+    const startDate = new Date(member.purchaseDate);
+    const today = new Date();
+    const monthsPassed = differenceInMonths(today, startDate);
+    const durationMonths = member.membershipDuration || 12;
+    const remainingMonths = durationMonths - monthsPassed;
+    
+    return {
+      isActive: remainingMonths > 0,
+      remainingMonths: Math.max(0, remainingMonths),
+      expiryDate: new Date(startDate.setMonth(startDate.getMonth() + durationMonths))
+    };
+  }, [member.purchaseDate, member.membershipDuration]);
+
+  // Get color based on membership tier
+  const membershipColor = useMemo(() => {
+    const tier = (member.membershipTier || '').toLowerCase();
+    if (tier.includes('gold')) return '#FFD700';  // Gold
+    if (tier.includes('silver')) return '#C0C0C0'; // Silver
+    if (tier.includes('platinum')) return '#E5E4E2'; // Platinum
+    if (tier.includes('diamond')) return '#B9F2FF'; // Diamond
+    return '#6B8E23'; // Default - Olive
+  }, [member.membershipTier]);
+  const membershipPrice = member.membershipPrice || 0;
+
+  return (
+    <div
+      ref={wrapRef}
+      className="hc-wrapper"
+      style={{
+        height: '100%',
+        perspective: '1000px',
+      }}
+    >
+      <div
+        ref={cardRef}
+        className="hc-card"
+        onPointerEnter={handlePointerEnter}
+        onPointerMove={handlePointerMove}
+        onPointerLeave={handlePointerLeave}
+        style={{
+          height: '100%',
+          borderRadius: '8px',
+          background: 'white',
+          position: 'relative',
+          transformStyle: 'preserve-3d',
+          cursor: 'pointer',
+          boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
+          overflow: 'hidden',
+        }}
+      >
+        <div className="hc-inside" style={{ 
+          width: '100%', 
+          height: '100%', 
+          borderRadius: '8px', 
+          overflow: 'hidden',
+          background: 'white'
+        }}>
+          <div className="hc-shine" />
+          <div className="hc-glare" />
+          <div className="hc-content-wrapper" style={{ 
+            width: '100%', 
+            height: '100%', 
+            position: 'relative',
+            display: 'flex',
+            flexDirection: 'column',
+          }}>
+            {/* Delete button */}
+            <IconButton
+              sx={{
+                position: 'absolute',
+                top: 8,
+                right: membershipStatus.isActive ? 80 : 8,
+                zIndex: 2,
+                transition: 'all 0.3s ease',
+                '&:hover': {
+                  transform: 'scale(1.1)',
+                  backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                }
+              }}
+              color="error"
+              onClick={() => onDelete(member)}
+            >
+              <Delete />
+            </IconButton>
+            
+            {/* Status indicator */}
+            {membershipStatus.isActive && (
+              <Box sx={{
+                position: 'absolute',
+                top: 0,
+                right: 0,
+                backgroundColor: 'success.main',
+                color: 'white',
+                px: 2,
+                py: 0.5,
+                borderBottomLeftRadius: 8,
+                fontSize: '0.75rem',
+                fontWeight: 'bold',
+                zIndex: 1
+              }}>
+                ACTIVE
+              </Box>
+            )}
+            
+            <CardContent sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+              <Box sx={{ display: 'flex', alignItems: 'flex-start', mb: 2 }}>
+                <Avatar sx={{ 
+                  bgcolor: membershipColor, 
+                  width: 56, 
+                  height: 56,
+                  mr: 2,
+                  color: member.membershipTier?.toLowerCase().includes('gold') ? '#000' : '#fff',
+                  transition: 'all 0.3s ease',
+                }}>
+                  {member.name.charAt(0).toUpperCase()}
+                </Avatar>
+                <Box>
+                  <Typography variant="h6" sx={{ fontWeight: 500, mb: 0.5 }}>
+                    {member.name}
+                  </Typography>
+                  
+                  {/* Membership Tier Badge */}
+                  <Box sx={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    mb: 0.5,
+                    p: 0.75,
+                    borderRadius: 1,
+                    backgroundColor: membershipColor,
+                    color: member.membershipTier?.toLowerCase().includes('gold') ? '#000' : '#fff',
+                    fontWeight: 'bold',
+                    width: 'fit-content',
+                    transition: 'all 0.3s ease',
+                  }}>
+                    <CardMembership fontSize="small" sx={{ mr: 0.5 }} />
+                    {member.membershipTier}
+                  </Box>
+                </Box>
+              </Box>
+              
+              <Divider sx={{ my: 1.5 }} />
+              
+              <Box sx={{ mt: 2, flexGrow: 1 }}>
+                {member.phone && (
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5, display: 'flex', alignItems: 'center' }}>
+                    <span style={{ minWidth: '70px' }}>Phone:</span> {member.phone}
+                  </Typography>
+                )}
+                {member.email && (
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5, display: 'flex', alignItems: 'center' }}>
+                    <span style={{ minWidth: '70px' }}>Email:</span> {member.email}
+                  </Typography>
+                )}
+                
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5, display: 'flex', alignItems: 'center' }}>
+                  <CalendarMonth fontSize="small" sx={{ mr: 1 }} />
+                  <span style={{ minWidth: '70px' }}>Member since:</span> {format(new Date(member.purchaseDate), 'MMM d, yyyy')}
+                </Typography>
+                
+                {membershipPrice > 0 && (
+                  <>
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5, display: 'flex', alignItems: 'center' }}>
+                      <AttachMoney fontSize="small" sx={{ mr: 1 }} />
+                      <span style={{ minWidth: '70px' }}>Total Amount:</span> Rs. {member.totalMembershipAmount?.toLocaleString() || membershipPrice.toLocaleString()}
+                    </Typography>
+                    <Box sx={{ mb: 1, display: 'flex', alignItems: 'center' }}>
+                      <AccountBalanceWallet sx={{ mr: 1, color: 'text.secondary' }} />
+                      <Typography variant="body2">Balance: <span style={{ fontWeight: 'bold' }}>Rs. {member.currentBalance?.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span></Typography>
+                    </Box>
+
+                    {member.benefitAmount && member.benefitAmount > 0 && (
+                      <Box sx={{ mb: 1, display: 'flex', alignItems: 'center' }}>
+                        <Star sx={{ mr: 1, color: 'gold' }} />
+                        <Typography variant="body2">Benefit Amount: <span style={{ fontWeight: 'bold' }}>Rs. {member.benefitAmount.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span></Typography>
+                      </Box>
+                    )}
+                  </>
+                )}
+                
+                <Box sx={{ 
+                  mt: 'auto',
+                  pt: 1.5,
+                  borderTop: '1px dashed rgba(0,0,0,0.1)',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center'
+                }}>
+                  <Typography variant="body2" fontWeight="500" color={membershipStatus.isActive ? 'success.main' : 'text.secondary'}>
+                    {membershipStatus.isActive 
+                      ? `${membershipStatus.remainingMonths} months remaining` 
+                      : 'Membership expired'}
+                  </Typography>
+                  
+                  <Chip 
+                    size="small" 
+                    label={membershipStatus.isActive 
+                      ? `Expires ${format(membershipStatus.expiryDate, 'MMM d, yyyy')}` 
+                      : 'Renew membership'} 
+                    color={membershipStatus.isActive ? 'default' : 'primary'}
+                    variant={membershipStatus.isActive ? 'outlined' : 'filled'}
+                  />
+                </Box>
+              </Box>
+            </CardContent>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 interface Member {
   id: string;
@@ -217,160 +530,11 @@ const MembersPage = () => {
           </Alert>
         ) : filteredMembers && filteredMembers.length > 0 ? (
           <Grid container spacing={2}>
-            {filteredMembers.map((member) => {
-              const membershipStatus = getMembershipStatus(member.purchaseDate, member.membershipDuration);
-              const membershipColor = getMembershipColor(member.membershipTier || '');
-              const membershipPrice = member.membershipPrice || 0;
-              
-              return (
-                <Grid item xs={12} sm={6} md={4} key={member.id || member.name}>
-                  <Card sx={{ 
-                    height: '100%', 
-                    borderRadius: 2, 
-                    boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
-                    transition: 'transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out',
-                    '&:hover': {
-                      transform: 'translateY(-4px)',
-                      boxShadow: '0 4px 12px rgba(0,0,0,0.15)'
-                    },
-                    position: 'relative',
-                    overflow: 'hidden'
-                  }}>
-                    {/* Delete button */}
-                    <IconButton
-                      sx={{
-                        position: 'absolute',
-                        top: 8,
-                        right: membershipStatus.isActive ? 80 : 8, // Adjust position if "ACTIVE" badge exists
-                        zIndex: 2
-                      }}
-                      color="error"
-                      onClick={() => handleDeleteClick(member)}
-                    >
-                      <Delete />
-                    </IconButton>
-                    
-                    {/* Status indicator */}
-                    {membershipStatus.isActive && (
-                      <Box sx={{
-                        position: 'absolute',
-                        top: 0,
-                        right: 0,
-                        backgroundColor: 'success.main',
-                        color: 'white',
-                        px: 2,
-                        py: 0.5,
-                        borderBottomLeftRadius: 8,
-                        fontSize: '0.75rem',
-                        fontWeight: 'bold',
-                        zIndex: 1
-                      }}>
-                        ACTIVE
-                      </Box>
-                    )}
-                    
-                    <CardContent>
-                      <Box sx={{ display: 'flex', alignItems: 'flex-start', mb: 2 }}>
-                        <Avatar sx={{ 
-                          bgcolor: membershipColor, 
-                          width: 56, 
-                          height: 56,
-                          mr: 2,
-                          color: member.membershipTier?.toLowerCase().includes('gold') ? '#000' : '#fff'
-                        }}>
-                          {member.name.charAt(0).toUpperCase()}
-                        </Avatar>
-                        <Box>
-                          <Typography variant="h6" sx={{ fontWeight: 500, mb: 0.5 }}>
-                            {member.name}
-                          </Typography>
-                          
-                          {/* Membership Tier Badge */}
-                          <Box sx={{ 
-                            display: 'flex', 
-                            alignItems: 'center', 
-                            mb: 0.5,
-                            p: 0.75,
-                            borderRadius: 1,
-                            backgroundColor: membershipColor,
-                            color: member.membershipTier?.toLowerCase().includes('gold') ? '#000' : '#fff',
-                            fontWeight: 'bold',
-                            width: 'fit-content'
-                          }}>
-                            <CardMembership fontSize="small" sx={{ mr: 0.5 }} />
-                            {member.membershipTier}
-                          </Box>
-                        </Box>
-                      </Box>
-                      
-                      <Divider sx={{ my: 1.5 }} />
-                      
-                      <Box sx={{ mt: 2 }}>
-                        {member.phone && (
-                          <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5, display: 'flex', alignItems: 'center' }}>
-                            <span style={{ minWidth: '70px' }}>Phone:</span> {member.phone}
-                          </Typography>
-                        )}
-                        {member.email && (
-                          <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5, display: 'flex', alignItems: 'center' }}>
-                            <span style={{ minWidth: '70px' }}>Email:</span> {member.email}
-                          </Typography>
-                        )}
-                        
-                        <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5, display: 'flex', alignItems: 'center' }}>
-                          <CalendarMonth fontSize="small" sx={{ mr: 1 }} />
-                          <span style={{ minWidth: '70px' }}>Member since:</span> {format(new Date(member.purchaseDate), 'MMM d, yyyy')}
-                        </Typography>
-                        
-                        {membershipPrice > 0 && (
-                          <>
-                            <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5, display: 'flex', alignItems: 'center' }}>
-                              <AttachMoney fontSize="small" sx={{ mr: 1 }} />
-                              <span style={{ minWidth: '70px' }}>Total Amount:</span> Rs. {member.totalMembershipAmount?.toLocaleString() || membershipPrice.toLocaleString()}
-                            </Typography>
-                            <Box sx={{ mb: 1, display: 'flex', alignItems: 'center' }}>
-                              <AccountBalanceWallet sx={{ mr: 1, color: 'text.secondary' }} />
-                              <Typography variant="body2">Balance: <span style={{ fontWeight: 'bold' }}>Rs. {member.currentBalance?.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span></Typography>
-                            </Box>
-
-                            {member.benefitAmount && member.benefitAmount > 0 && (
-                              <Box sx={{ mb: 1, display: 'flex', alignItems: 'center' }}>
-                                <Star sx={{ mr: 1, color: 'gold' }} />
-                                <Typography variant="body2">Benefit Amount: <span style={{ fontWeight: 'bold' }}>Rs. {member.benefitAmount.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span></Typography>
-                              </Box>
-                            )}
-                          </>
-                        )}
-                        
-                        <Box sx={{ 
-                          mt: 1.5,
-                          pt: 1.5,
-                          borderTop: '1px dashed rgba(0,0,0,0.1)',
-                          display: 'flex',
-                          justifyContent: 'space-between',
-                          alignItems: 'center'
-                        }}>
-                          <Typography variant="body2" fontWeight="500" color={membershipStatus.isActive ? 'success.main' : 'text.secondary'}>
-                            {membershipStatus.isActive 
-                              ? `${membershipStatus.remainingMonths} months remaining` 
-                              : 'Membership expired'}
-                          </Typography>
-                          
-                          <Chip 
-                            size="small" 
-                            label={membershipStatus.isActive 
-                              ? `Expires ${format(membershipStatus.expiryDate, 'MMM d, yyyy')}` 
-                              : 'Renew membership'} 
-                            color={membershipStatus.isActive ? 'default' : 'primary'}
-                            variant={membershipStatus.isActive ? 'outlined' : 'filled'}
-                          />
-                        </Box>
-                      </Box>
-                    </CardContent>
-                  </Card>
-                </Grid>
-              );
-            })}
+            {filteredMembers.map((member) => (
+              <Grid item xs={12} sm={6} md={4} key={member.id || member.name}>
+                <HolographicMemberCard member={member} onDelete={handleDeleteClick} />
+              </Grid>
+            ))}
           </Grid>
         ) : (
           <Box sx={{ 
@@ -409,6 +573,155 @@ const MembersPage = () => {
           </Button>
         </DialogActions>
       </Dialog>
+
+      <style>{`
+        .hc-wrapper {
+          position: relative;
+          transform-style: preserve-3d;
+          transition: transform 0.15s ease-out;
+        }
+
+        .hc-wrapper.active {
+          transform: rotateX(var(--rotate-x, 0deg)) rotateY(var(--rotate-y, 0deg));
+        }
+
+        .hc-card {
+          position: relative;
+          transform-style: preserve-3d;
+          transition: transform 0.15s ease-out;
+        }
+
+        .hc-card.active {
+          transform: rotateX(var(--rotate-x, 0deg)) rotateY(var(--rotate-y, 0deg));
+        }
+
+        .hc-inside {
+          position: relative;
+          width: 100%;
+          height: 100%;
+          background: 
+            radial-gradient(
+              circle at var(--pointer-x, 50%) var(--pointer-y, 50%),
+              rgba(107, 142, 35, 0.1) 0%,
+              rgba(107, 142, 35, 0.05) 40%,
+              transparent 80%
+            ),
+            white;
+          border-radius: inherit;
+          overflow: hidden;
+        }
+
+        .hc-shine {
+          position: absolute;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          background: radial-gradient(
+            circle at var(--pointer-x, 50%) var(--pointer-y, 50%),
+            rgba(255, 255, 255, 0.3) 0%,
+            rgba(255, 255, 255, 0.1) 30%,
+            transparent 60%
+          );
+          opacity: calc(var(--pointer-from-center, 0) * 0.8);
+          transition: opacity 0.2s ease;
+          pointer-events: none;
+          border-radius: inherit;
+        }
+
+        .hc-glare {
+          position: absolute;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          background: linear-gradient(
+            115deg,
+            transparent 20%,
+            rgba(107, 142, 35, 0.15) var(--background-x, 50%),
+            transparent 80%
+          );
+          opacity: calc(var(--pointer-from-center, 0) * 0.6);
+          transition: opacity 0.2s ease;
+          pointer-events: none;
+          border-radius: inherit;
+          mix-blend-mode: overlay;
+        }
+
+        .hc-content-wrapper {
+          position: relative;
+          z-index: 1;
+          width: 100%;
+          height: 100%;
+          display: flex;
+          flex-direction: column;
+          border-radius: inherit;
+        }
+
+        .hc-wrapper.active .hc-shine {
+          opacity: calc(var(--pointer-from-center, 0) * 1.2);
+        }
+
+        .hc-wrapper.active .hc-glare {
+          opacity: calc(var(--pointer-from-center, 0) * 0.8);
+        }
+
+        .hc-inside::before {
+          content: '';
+          position: absolute;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          background: 
+            linear-gradient(
+              45deg,
+              rgba(107, 142, 35, 0.05) 0%,
+              rgba(255, 215, 0, 0.05) 25%,
+              rgba(107, 142, 35, 0.05) 50%,
+              rgba(255, 215, 0, 0.05) 75%,
+              rgba(107, 142, 35, 0.05) 100%
+            );
+          opacity: calc(var(--pointer-from-center, 0) * 0.3);
+          transition: opacity 0.3s ease;
+          pointer-events: none;
+          border-radius: inherit;
+          mix-blend-mode: overlay;
+        }
+
+        @media (max-width: 768px) {
+          .hc-wrapper {
+            transform: none !important;
+          }
+          
+          .hc-card {
+            transform: none !important;
+          }
+          
+          .hc-shine,
+          .hc-glare,
+          .hc-inside::before {
+            opacity: 0 !important;
+          }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          .hc-wrapper,
+          .hc-card,
+          .hc-shine,
+          .hc-glare,
+          .hc-inside::before {
+            animation: none !important;
+            transition: none !important;
+            transform: none !important;
+          }
+          
+          .hc-wrapper.active,
+          .hc-card.active {
+            transform: none !important;
+          }
+        }
+      `}</style>
     </Container>
   );
 };

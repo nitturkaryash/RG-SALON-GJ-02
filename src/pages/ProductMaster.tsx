@@ -31,6 +31,7 @@ import {
   Autocomplete,
   Chip,
   Tooltip,
+  LinearProgress,
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -42,10 +43,13 @@ import {
   History as HistoryIcon,
   ToggleOff as ToggleOffIcon,
   ToggleOn as ToggleOnIcon,
+  Upload as UploadIcon,
+  CloudUpload as CloudUploadIcon,
 } from '@mui/icons-material';
 import { styled } from '@mui/material/styles';
 import { supabase, handleSupabaseError } from '../utils/supabase/supabaseClient';
 import { usePurchaseHistory } from '../hooks/usePurchaseHistory';
+import * as XLSX from 'xlsx';
 
 const StyledTableCell = styled(TableCell)(({ theme }) => ({
   fontWeight: 'bold',
@@ -136,6 +140,12 @@ export default function ProductMaster() {
   const [historyDialogOpen, setHistoryDialogOpen] = useState(false);
   const [selectedProductForHistory, setSelectedProductForHistory] = useState<Product | null>(null);
 
+  // Excel import states
+  const [isImporting, setIsImporting] = useState(false);
+  const [importProgress, setImportProgress] = useState(0);
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [parsedExcelData, setParsedExcelData] = useState<any[]>([]);
+
   // Fetch purchase history data
   const { purchases, isLoading: isLoadingPurchases } = usePurchaseHistory();
 
@@ -150,9 +160,13 @@ export default function ProductMaster() {
     setError(null);
 
     try {
+      // Use the correct user ID from profiles table
+      const userId = 'f1ab5143-1129-4557-a694-63a010292c14'; // pankajhadole24@gmail.com
+
       const { data, error } = await supabase
         .from('product_master')
         .select('*')
+        .eq('user_id', userId)
         .order('name');
 
       if (error) throw handleSupabaseError(error);
@@ -370,6 +384,9 @@ export default function ProductMaster() {
     setIsLoading(true);
     
     try {
+      // Use the correct user ID from profiles table
+      const userId = 'f1ab5143-1129-4557-a694-63a010292c14'; // pankajhadole24@gmail.com
+
       // Prepare data to insert/update
       const productData = {
         name: formData.name,
@@ -383,6 +400,7 @@ export default function ProductMaster() {
         category: formData.category,
         product_type: formData.product_type,
         updated_at: new Date().toISOString(),
+        user_id: userId,
       };
       
       let result;
@@ -516,6 +534,154 @@ export default function ProductMaster() {
     setSnackbar(prev => ({ ...prev, open: false }));
   };
 
+  // Excel import functions
+  const handleExcelUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = new Uint8Array(e.target?.result as ArrayBuffer);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const sheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[sheetName];
+        const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+
+        if (jsonData.length > 1) {
+          // Skip header row and parse data
+          const parsedData = (jsonData.slice(1) as any[][]).map((row: any[]) => {
+            // Excel columns: PRODUCT NAME, Category, MRP Incl. GST, MRP Ex. GST, HSN CODE, TYPRE
+            const [productName, category, mrpInclGst, mrpExclGst, hsnCode, productType] = row;
+            
+            // Calculate GST percentage from price difference
+            const mrpIncl = Number(mrpInclGst) || 0;
+            const mrpExcl = Number(mrpExclGst) || 0;
+            const gstPercentage = mrpExcl && mrpIncl 
+              ? Math.round(((mrpIncl - mrpExcl) / mrpExcl) * 100)
+              : 18; // Default to 18% if calculation fails
+
+            return {
+              name: String(productName || '').trim(),
+              category: String(category || 'General').trim(),
+              mrp_incl_gst: mrpIncl,
+              mrp_excl_gst: mrpExcl,
+              hsn_code: String(hsnCode || '').trim(),
+              product_type: String(productType || '').trim(),
+              gst_percentage: gstPercentage,
+              active: true,
+              price: mrpExcl, // Use mrp_excl_gst as the base price
+              stock_quantity: 0,
+              description: '',
+              units: 'pieces', // Default unit
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            };
+          }).filter(item => item.name && item.name.trim() !== ''); // Filter out empty rows
+
+          setParsedExcelData(parsedData);
+          setImportDialogOpen(true);
+        }
+      } catch (error) {
+        console.error('Error parsing Excel file:', error);
+        setSnackbar({
+          open: true,
+          message: 'Error parsing Excel file. Please check the file format.',
+          severity: 'error'
+        });
+      }
+    };
+    reader.readAsArrayBuffer(file);
+    // Reset the input
+    event.target.value = '';
+  };
+
+  const handleBulkImport = async () => {
+    if (parsedExcelData.length === 0) return;
+
+    setIsImporting(true);
+    setImportProgress(0);
+
+    try {
+      // Use the correct user ID from profiles table
+      const userId = 'f1ab5143-1129-4557-a694-63a010292c14'; // pankajhadole24@gmail.com
+      
+      const batchSize = 10; // Process in batches to avoid overwhelming the database
+      const totalBatches = Math.ceil(parsedExcelData.length / batchSize);
+      let successCount = 0;
+      let errorCount = 0;
+
+      for (let i = 0; i < totalBatches; i++) {
+        const batch = parsedExcelData.slice(i * batchSize, (i + 1) * batchSize).map(product => ({
+          ...product,
+          user_id: userId // Add user_id to each product
+        }));
+        
+        try {
+          const { data, error } = await supabase
+            .from('product_master')
+            .upsert(batch, { 
+              onConflict: 'name,user_id',
+              ignoreDuplicates: false 
+            });
+
+          if (error) {
+            console.error('Batch import error:', error);
+            errorCount += batch.length;
+          } else {
+            successCount += batch.length;
+          }
+        } catch (batchError) {
+          console.error('Batch processing error:', batchError);
+          errorCount += batch.length;
+        }
+
+        // Update progress
+        const progress = ((i + 1) / totalBatches) * 100;
+        setImportProgress(progress);
+        
+        // Small delay to prevent overwhelming the database
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+
+      // Show results
+      if (successCount > 0) {
+        setSnackbar({
+          open: true,
+          message: `Successfully imported ${successCount} products${errorCount > 0 ? ` (${errorCount} errors)` : ''}`,
+          severity: successCount === parsedExcelData.length ? 'success' : 'warning'
+        });
+        
+        // Refresh the products list
+        await fetchProducts();
+      } else {
+        setSnackbar({
+          open: true,
+          message: 'Failed to import products. Please check the data format.',
+          severity: 'error'
+        });
+      }
+
+    } catch (error) {
+      console.error('Import error:', error);
+      setSnackbar({
+        open: true,
+        message: 'Error during import process.',
+        severity: 'error'
+      });
+    } finally {
+      setIsImporting(false);
+      setImportProgress(0);
+      setImportDialogOpen(false);
+      setParsedExcelData([]);
+    }
+  };
+
+  const handleCloseImportDialog = () => {
+    setImportDialogOpen(false);
+    setParsedExcelData([]);
+  };
+
   return (
     <Box sx={{ p: 3 }}>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
@@ -531,6 +697,22 @@ export default function ProductMaster() {
             disabled={isLoading}
           >
             Refresh
+          </Button>
+          <Button
+            component="label"
+            variant="outlined"
+            startIcon={<CloudUploadIcon />}
+            sx={{ mr: 1 }}
+            disabled={isLoading || isImporting}
+          >
+            Import Excel
+            <input
+              type="file"
+              accept=".xlsx,.xls"
+              onChange={handleExcelUpload}
+              style={{ display: 'none' }}
+              aria-label="Upload Excel file"
+            />
           </Button>
           <Button
             variant="contained"
@@ -555,6 +737,7 @@ export default function ProductMaster() {
             <TableHead>
               <TableRow>
                 <StyledTableCell>Name</StyledTableCell>
+                <StyledTableCell>Category</StyledTableCell>
                 <StyledTableCell>HSN Code</StyledTableCell>
                 <StyledTableCell align="right">GST %</StyledTableCell>
                 <StyledTableCell align="right">Price (Excl. GST)</StyledTableCell>
@@ -568,7 +751,7 @@ export default function ProductMaster() {
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={9} align="center" sx={{ py: 3 }}>
+                  <TableCell colSpan={10} align="center" sx={{ py: 3 }}>
                     <CircularProgress size={40} />
                   </TableCell>
                 </TableRow>
@@ -585,6 +768,7 @@ export default function ProductMaster() {
                       }}
                     >
                       <TableCell>{product.name}</TableCell>
+                      <TableCell>{product.category || '-'}</TableCell>
                       <TableCell>{product.hsn_code || '-'}</TableCell>
                       <TableCell align="right">{product.gst_percentage || 0}%</TableCell>
                       <TableCell align="right">₹{product.mrp_excl_gst?.toFixed(2) || '0.00'}</TableCell>
@@ -676,7 +860,7 @@ export default function ProductMaster() {
                   ))
               ) : (
                 <TableRow>
-                  <TableCell colSpan={9} align="center" sx={{ py: 3 }}>
+                  <TableCell colSpan={10} align="center" sx={{ py: 3 }}>
                     No products found. Click "Add Product" to create one.
                   </TableCell>
                 </TableRow>
@@ -1027,10 +1211,83 @@ export default function ProductMaster() {
         </DialogContent>
         <DialogActions>
           <Button onClick={handleCloseHistoryDialog} variant="outlined">
-            Close
-          </Button>
-        </DialogActions>
-      </Dialog>
-    </Box>
-  );
+                      Close
+        </Button>
+      </DialogActions>
+    </Dialog>
+
+    {/* Excel Import Preview Dialog */}
+    <Dialog open={importDialogOpen} onClose={handleCloseImportDialog} maxWidth="lg" fullWidth>
+      <DialogTitle>
+        <Box display="flex" alignItems="center" gap={1}>
+          <CloudUploadIcon />
+          Import Products from Excel ({parsedExcelData.length} products found)
+        </Box>
+      </DialogTitle>
+      <DialogContent>
+        {isImporting && (
+          <Box sx={{ mb: 2 }}>
+            <Typography variant="body2" sx={{ mb: 1 }}>
+              Importing products... ({Math.round(importProgress)}%)
+            </Typography>
+            <LinearProgress variant="determinate" value={importProgress} />
+          </Box>
+        )}
+        
+        <Typography variant="body2" sx={{ mb: 2, color: 'text.secondary' }}>
+          Preview of products to be imported. This will update existing products with the same name.
+        </Typography>
+        
+        <TableContainer sx={{ maxHeight: 400 }}>
+          <Table size="small">
+            <TableHead>
+              <TableRow>
+                <TableCell><strong>Product Name</strong></TableCell>
+                <TableCell><strong>Category</strong></TableCell>
+                <TableCell align="right"><strong>MRP (Incl. GST)</strong></TableCell>
+                <TableCell align="right"><strong>MRP (Excl. GST)</strong></TableCell>
+                <TableCell><strong>HSN Code</strong></TableCell>
+                <TableCell><strong>Product Type</strong></TableCell>
+                <TableCell align="right"><strong>GST %</strong></TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {parsedExcelData.slice(0, 10).map((product, index) => (
+                <TableRow key={index} sx={{ '&:nth-of-type(odd)': { backgroundColor: 'action.hover' } }}>
+                  <TableCell>{product.name}</TableCell>
+                  <TableCell>{product.category}</TableCell>
+                  <TableCell align="right">₹{product.mrp_incl_gst.toFixed(2)}</TableCell>
+                  <TableCell align="right">₹{product.mrp_excl_gst.toFixed(2)}</TableCell>
+                  <TableCell>{product.hsn_code}</TableCell>
+                  <TableCell>{product.product_type}</TableCell>
+                  <TableCell align="right">{product.gst_percentage}%</TableCell>
+                </TableRow>
+              ))}
+              {parsedExcelData.length > 10 && (
+                <TableRow>
+                  <TableCell colSpan={7} align="center" sx={{ fontStyle: 'italic', color: 'text.secondary' }}>
+                    ... and {parsedExcelData.length - 10} more products
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={handleCloseImportDialog} disabled={isImporting}>
+          Cancel
+        </Button>
+        <Button 
+          onClick={handleBulkImport} 
+          variant="contained" 
+          disabled={isImporting || parsedExcelData.length === 0}
+          startIcon={isImporting ? <CircularProgress size={20} /> : <UploadIcon />}
+        >
+          {isImporting ? 'Importing...' : `Import ${parsedExcelData.length} Products`}
+        </Button>
+      </DialogActions>
+    </Dialog>
+  </Box>
+);
 } 

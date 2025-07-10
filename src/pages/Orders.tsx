@@ -63,6 +63,7 @@ import {
   Info as InfoIcon,
   Edit as EditIcon,
   AccountBalanceWallet as AccountBalanceWalletIcon,
+  UploadFile as UploadFileIcon,
 } from '@mui/icons-material'
 import { useOrders } from '../hooks/useOrders'
 import { formatCurrency } from '../utils/format'
@@ -79,6 +80,8 @@ import { Order as BaseOrder } from '../models/orderTypes'
 import { useServiceCollections } from '../hooks/useServiceCollections'
 import { supabase, TABLES } from '../utils/supabase/supabaseClient'
 import { useQueryClient } from '@tanstack/react-query'
+import * as XLSX from 'xlsx'
+import { v4 as uuidv4 } from 'uuid'
 
 // Extended Order interface that encapsulates all the properties we need
 type ExtendedOrder = {
@@ -157,6 +160,10 @@ export default function Orders() {
     totalRevenue: 0,
   })
 
+  // New state for import dialog
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+
   // Convert any order to our ExtendedOrder type
   const normalizeOrder = (order: any): ExtendedOrder => {
     return {
@@ -167,6 +174,231 @@ export default function Orders() {
       total: order.total || order.total_amount || 0,
       total_amount: order.total_amount || order.total || 0,
     } as ExtendedOrder;
+  };
+
+  const handleImportOrders = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      toast.error('No file selected');
+      return;
+    }
+
+    setIsImporting(true);
+    setImportDialogOpen(false);
+    const loadingToast = toast.info('Importing orders...', { autoClose: false });
+
+    try {
+      const data = await file.arrayBuffer();
+      const workbook = XLSX.read(data);
+      const sheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[sheetName];
+      const json: any[] = XLSX.utils.sheet_to_json(worksheet, {
+        raw: false, // Ensure dates are parsed as strings
+      });
+
+      if (json.length === 0) {
+        toast.warn('The selected file is empty or has no data.');
+        setIsImporting(false);
+        toast.dismiss(loadingToast);
+        return;
+      }
+
+      const user = supabase.auth.getUser ? (await supabase.auth.getUser()).data.user : null;
+      const tenantId = '';
+
+      let successCount = 0;
+      let failCount = 0;
+      let isProductImport = false;
+      
+      // Check if this is a product or service import based on columns
+      if (json[0] && json[0]['PRODUCT NAME']) {
+        isProductImport = true;
+      }
+
+      for (const row of json) {
+        try {
+          const orderId = uuidv4();
+          
+          let orderPayload: any = {};
+
+          if (isProductImport) {
+            // Product import logic
+            orderPayload = {
+              id: orderId,
+              created_at: new Date(row['Date']).toISOString(),
+              client_name: row['Guest Name'] || '-',
+              stylist_name: row['Staff'] || '-',
+              total: row['Total'] || 0,
+              total_amount: row['Total'] || 0,
+              payment_method: 'cash', // Default to cash
+              status: 'completed',
+              services: [{
+                service_name: row['PRODUCT NAME'],
+                quantity: row['Qty'] || 1,
+                price: row['Unit Price'] || 0,
+                category: row['Category'] || 'product',
+                type: 'product',
+                hsn_code: row['HSN CODE'] || null
+              }],
+              subtotal: (row['Unit Price'] || 0) * (row['Qty'] || 1),
+              tax: (row['Cgst'] || 0) + (row['Sgst'] || 0),
+              discount: row['Discount'] || 0,
+              payments: [{
+                payment_method: 'cash',
+                amount: row['Total'] || 0,
+              }],
+              is_walk_in: true,
+              tenant_id: tenantId,
+              user_id: user?.id,
+            };
+
+          } else {
+            // Service import logic
+            const rawPayment: string = row['Payment Mode'] || 'Cash';
+            const methodMatch = rawPayment.match(/^[A-Za-z ]+/);
+            const method = (methodMatch ? methodMatch[0].trim().toLowerCase() : 'cash').replace(' ', '_');
+
+            orderPayload = {
+              id: orderId,
+              created_at: new Date(row['Date']).toISOString(),
+              client_name: row['Guest Name'] || '-',
+              stylist_name: row['Staff'] || '-',
+              total: row['Total'] || 0,
+              total_amount: row['Total'] || 0,
+              payment_method: method,
+              status: 'completed',
+              services: [{
+                service_name: row['Service'],
+                quantity: row['Qty'] || 1,
+                price: row['Unit Price'] || 0,
+                category: row['Category'] || 'service',
+                type: 'service'
+              }],
+              subtotal: row['Subtotal(without tax & redemption)'] || 0,
+              tax: row['Tax'] || 0,
+              discount: row['Discount'] || 0,
+              payments: [{
+                payment_method: method,
+                amount: row['Total'] || 0,
+              }],
+              is_walk_in: true,
+              tenant_id: tenantId,
+              user_id: user?.id,
+            };
+          }
+
+          console.log('Inserting order payload:', orderPayload);
+
+          const { error: insertError } = await supabase.from('pos_orders').insert(orderPayload);
+          if (insertError) {
+            console.error('Error inserting order:', insertError);
+            failCount++;
+          } else {
+            successCount++;
+          }
+        } catch (rowError) {
+          console.error('Error processing row:', rowError);
+          failCount++;
+        }
+      }
+
+      toast.dismiss(loadingToast);
+      toast.success(`Import complete! ${successCount} orders imported successfully.`);
+      if (failCount > 0) {
+        toast.error(`${failCount} orders failed to import. Check console for details.`);
+      }
+      refreshOrders(); // Refresh the orders list
+    } catch (error) {
+      console.error('Error importing orders:', error);
+      toast.dismiss(loadingToast);
+      toast.error('Failed to import orders. Check console for details.');
+    } finally {
+      setIsImporting(false);
+      // Reset file input
+      const fileInput = document.getElementById('import-orders-input') as HTMLInputElement;
+      if (fileInput) {
+        fileInput.value = '';
+      }
+    }
+  };
+
+  const handleProductImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      toast.error('No file selected');
+      return;
+    }
+
+    const loadingToast = toast.info('Importing product orders...', { autoClose: false });
+
+    try {
+      const data = await file.arrayBuffer();
+      const workbook = XLSX.read(data);
+      const sheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[sheetName];
+      const json: any[] = XLSX.utils.sheet_to_json(worksheet);
+
+      let successCount = 0;
+      let failCount = 0;
+
+      for (const row of json) {
+        try {
+          const orderId = uuidv4();
+          const totalAmount = parseFloat(row['Total']) || 0;
+          const tax = (parseFloat(row['Cgst']) || 0) + (parseFloat(row['Sgst']) || 0);
+
+          const orderPayload = {
+            id: orderId,
+            created_at: new Date(row['Date']),
+            client_name: row['Guest Name'] || 'Walk-in',
+            stylist_name: row['Staff'] || 'Admin',
+            total: totalAmount,
+            total_amount: totalAmount,
+            payment_method: 'cash', // Defaulting as not present in product sheet
+            status: 'completed',
+            subtotal: parseFloat(row['Taxable Value']) || 0,
+            tax: tax,
+            discount: parseFloat(row['Discount']) || 0,
+            is_walk_in: true,
+            payments: JSON.stringify([{ payment_method: 'cash', amount: totalAmount }]),
+            services: JSON.stringify([
+              {
+                id: uuidv4(),
+                product_name: row['PRODUCT NAME'],
+                category: row['Category'],
+                quantity: parseInt(row['Qty'], 10) || 1,
+                price: parseFloat(row['Unit Price']) || 0,
+                hsn_code: row['HSN CODE'],
+                type: 'product',
+              },
+            ]),
+          };
+
+          const { error } = await supabase.from('pos_orders').insert(orderPayload);
+
+          if (error) {
+            console.error('Error inserting order:', error);
+            failCount++;
+          } else {
+            successCount++;
+          }
+        } catch (rowError) {
+          console.error('Error processing row:', row, rowError);
+          failCount++;
+        }
+      }
+
+      toast.dismiss(loadingToast);
+      if (failCount > 0) {
+        toast.error(`${failCount} product orders failed to import. ${successCount} succeeded.`);
+      } else {
+        toast.success(`${successCount} product orders imported successfully!`);
+      }
+    } catch (error) {
+      toast.dismiss(loadingToast);
+      toast.error('An unexpected error occurred during product import.');
+      console.error('Product import error:', error);
+    }
   };
 
   // Aggregate multi-expert orders with same appointment_id
@@ -1402,7 +1634,8 @@ export default function Orders() {
   };
   
   const handleChangeRowsPerPage = (event: React.ChangeEvent<HTMLInputElement>) => {
-    setRowsPerPage(parseInt(event.target.value, 10));
+    const value = parseInt(event.target.value, 10);
+    setRowsPerPage(value);
     setPage(0);
   };
 
@@ -1521,6 +1754,10 @@ export default function Orders() {
   
   // Apply pagination
   const paginatedOrders = useMemo(() => {
+    if (rowsPerPage === -1) {
+      // Show all orders when "All" is selected
+      return filteredOrders;
+    }
     return filteredOrders.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
   }, [filteredOrders, page, rowsPerPage]);
 
@@ -1891,6 +2128,40 @@ export default function Orders() {
                 </Button>
               </>
             )}
+            <input
+              type="file"
+              id="import-orders-input"
+              style={{ display: 'none' }}
+              onChange={handleImportOrders}
+              accept=".xlsx, .xls"
+            />
+            <label htmlFor="import-orders-input">
+              <Button
+                variant="outlined"
+                component="span"
+                startIcon={<UploadFileIcon />}
+                sx={{ mr: 1 }}
+              >
+                Import Services
+              </Button>
+            </label>
+
+            <input
+              type="file"
+              id="import-products-input"
+              style={{ display: 'none' }}
+              onChange={handleProductImport}
+              accept=".xlsx, .xls"
+            />
+            <label htmlFor="import-products-input">
+              <Button
+                variant="outlined"
+                component="span"
+                startIcon={<UploadFileIcon />}
+              >
+                Import Products
+              </Button>
+            </label>
             <Button 
               variant="contained" 
               color="error"
@@ -2198,9 +2469,9 @@ export default function Orders() {
                       Reset to Last 30 Days
                     </Button>
                     
-                    {filteredOrders.length > 0 && (
+                    {orders && orders.length > 0 && (
                       <Typography variant="body2" color="text.secondary" sx={{ ml: 2 }}>
-                        Showing {filteredOrders.length} orders from {startDate.toLocaleDateString()} to {endDate.toLocaleDateString()}
+                        Loaded {orders.length} total orders | Showing {filteredOrders.length} filtered orders from {startDate.toLocaleDateString()} to {endDate.toLocaleDateString()}
                       </Typography>
                     )}
                   </Grid>
@@ -2528,7 +2799,7 @@ export default function Orders() {
                 onPageChange={handleChangePage}
                 rowsPerPage={rowsPerPage}
                 onRowsPerPageChange={handleChangeRowsPerPage}
-                rowsPerPageOptions={[5, 10, 25, 50, 100]}
+                rowsPerPageOptions={[5, 10, 25, 50, 100, 250, 500, 1000, { label: 'All', value: -1 }]}
               />
             </Box>
           </>
@@ -3242,6 +3513,32 @@ export default function Orders() {
             >
               Yes, Delete Date Range Orders
             </Button>
+          </DialogActions>
+        </Dialog>
+
+        {/* Import Orders Dialog */}
+        <Dialog open={importDialogOpen} onClose={() => setImportDialogOpen(false)}>
+          <DialogTitle>Import Orders from Excel</DialogTitle>
+          <DialogContent>
+            <DialogContentText>
+              Select an Excel file (.xlsx) to import orders. Please ensure the columns match the required format.
+            </DialogContentText>
+            <Button
+              variant="contained"
+              component="label"
+              sx={{ mt: 2 }}
+            >
+              Upload File
+              <input
+                type="file"
+                hidden
+                accept=".xlsx"
+                onChange={handleImportOrders}
+              />
+            </Button>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setImportDialogOpen(false)}>Cancel</Button>
           </DialogActions>
         </Dialog>
       </Box>

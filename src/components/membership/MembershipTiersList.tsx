@@ -89,18 +89,25 @@ const MembershipTiersList: React.FC = () => {
           No membership tiers found. Create your first tier to get started.
         </Alert>
       ) : (
-        <Grid container spacing={3}>
+        <Box 
+          sx={{ 
+            display: 'flex', 
+            flexWrap: 'wrap', 
+            gap: 3, 
+            justifyContent: 'flex-start',
+            alignItems: 'flex-start'
+          }}
+        >
           {tiers.map(tier => (
-            <Grid item xs={12} sm={6} md={4} key={tier.id}>
-              <MembershipTierCard
-                tier={tier}
-                onEdit={handleEditTier}
-                onDelete={deleteTier}
-                onViewDetails={handleViewDetails}
-              />
-            </Grid>
-          ))}
-        </Grid>
+            <MembershipTierCard
+              key={tier.id}
+              tier={tier}
+              onEdit={handleEditTier}
+              onDelete={deleteTier}
+              onViewDetails={handleViewDetails}
+            />
+                      ))}
+          </Box>
       )}
 
       <AddMembershipTierForm
