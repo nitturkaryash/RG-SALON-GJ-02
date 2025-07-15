@@ -50,7 +50,7 @@ const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
 	cash: 'Cash',
 	credit_card: 'Credit Card',
 	debit_card: 'Debit Card',
-	upi: 'UPI',
+	upi: 'UPI / GPay',
 	bnpl: 'Pay Later',
 	membership: 'Membership'
 };
@@ -62,6 +62,16 @@ const PAYMENT_METHOD_ICONS: Record<PaymentMethod, React.ReactNode> = {
 	upi: <QrCode fontSize="small" />,
 	bnpl: <AttachMoney fontSize="small" />,
 	membership: <AccountBalanceWalletIcon fontSize="small" />
+};
+
+// Add payment method descriptions
+const PAYMENT_METHOD_DESCRIPTIONS: Record<PaymentMethod, string> = {
+	cash: 'Pay with physical cash',
+	credit_card: 'Pay with credit card',
+	debit_card: 'Pay with debit card',
+	upi: 'Pay using UPI apps like GPay, PhonePe, or BHIM',
+	bnpl: 'Buy now, pay later option',
+	membership: 'Pay using membership balance'
 };
 
 export const PaymentSection: React.FC<PaymentSectionProps> = ({
@@ -419,80 +429,81 @@ export const PaymentSection: React.FC<PaymentSectionProps> = ({
 			{/* Payment Method Cards */}
 			<Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, mb: 2 }}>
 				{(['cash', 'credit_card', 'debit_card', 'upi', 'bnpl'] as const).map(method => (
-					<Box
-						key={method}
-						onClick={() => {
-							if (!isSplitPayment) {
-								handleSinglePaymentMethod(method);
-							}
-						}}
-						sx={{
-							minWidth: '140px',
-							flex: '1 1 0',
-							p: 1.5,
-							border: '2px solid',
-							borderColor: paymentAmounts[method] > 0 ? 'primary.main' : 
-								validationErrors[method] ? 'error.main' : 'divider',
-							borderRadius: '8px',
-							bgcolor: paymentAmounts[method] > 0 ? 'primary.lighter' : 
-								validationErrors[method] ? 'error.lighter' : 'background.paper',
-							transition: 'all 0.2s ease',
-							cursor: !isSplitPayment ? 'pointer' : 'default',
-							'&:hover': !isSplitPayment ? {
-								borderColor: 'primary.main',
-								bgcolor: 'primary.lightest'
-							} : {}
-						}}
-					>
-						<Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-							{React.cloneElement(PAYMENT_METHOD_ICONS[method] as React.ReactElement, {
-								sx: { 
-									mr: 1, 
-									color: paymentAmounts[method] > 0 ? 'primary.main' : 
-										validationErrors[method] ? 'error.main' : 'text.secondary'
+					<Tooltip key={method} title={PAYMENT_METHOD_DESCRIPTIONS[method]} arrow placement="top">
+						<Box
+							onClick={() => {
+								if (!isSplitPayment) {
+									handleSinglePaymentMethod(method);
 								}
-							})}
-							<Typography variant="body2" fontWeight={paymentAmounts[method] > 0 ? 'bold' : 'normal'}>
-								{PAYMENT_METHOD_LABELS[method]}
-							</Typography>
-						</Box>
-						<TextField
-							fullWidth
-							size="small"
-							type="number"
-							value={paymentAmounts[method]}
-							onChange={(e) => handlePaymentAmountChange(method, Number(e.target.value))}
-							InputProps={{
-								startAdornment: <InputAdornment position="start">₹</InputAdornment>
 							}}
-							inputProps={{
-								min: 0,
-								step: 1
+							sx={{
+								minWidth: '140px',
+								flex: '1 1 0',
+								p: 1.5,
+								border: '2px solid',
+								borderColor: paymentAmounts[method] > 0 ? 'primary.main' : 
+									validationErrors[method] ? 'error.main' : 'divider',
+								borderRadius: '8px',
+								bgcolor: paymentAmounts[method] > 0 ? 'primary.lighter' : 
+									validationErrors[method] ? 'error.lighter' : 'background.paper',
+								transition: 'all 0.2s ease',
+								cursor: !isSplitPayment ? 'pointer' : 'default',
+								'&:hover': !isSplitPayment ? {
+									borderColor: 'primary.main',
+									bgcolor: 'primary.lightest'
+								} : {}
 							}}
-							error={!!validationErrors[method]}
-							helperText={validationErrors[method]}
-							disabled={false}
-						/>
-						{isSplitPayment && paymentAmounts[method] > 0 && (
-							<Box sx={{ mt: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-								<Typography variant="caption" color="text.secondary">
-									{totalAmount > 0 ? ((paymentAmounts[method] / totalAmount) * 100).toFixed(1) : 0}%
+						>
+							<Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+								{React.cloneElement(PAYMENT_METHOD_ICONS[method] as React.ReactElement, {
+									sx: { 
+										mr: 1, 
+										color: paymentAmounts[method] > 0 ? 'primary.main' : 
+											validationErrors[method] ? 'error.main' : 'text.secondary'
+									}
+								})}
+								<Typography variant="body2" fontWeight={paymentAmounts[method] > 0 ? 'bold' : 'normal'}>
+									{PAYMENT_METHOD_LABELS[method]}
 								</Typography>
-								<Button
-									size="small"
-									variant="text"
-									color="error"
-									onClick={(e) => {
-										e.stopPropagation();
-										handlePaymentAmountChange(method, 0);
-									}}
-									sx={{ minWidth: 'auto', p: 0.5 }}
-								>
-									Clear
-								</Button>
 							</Box>
-						)}
-					</Box>
+							<TextField
+								fullWidth
+								size="small"
+								type="number"
+								value={paymentAmounts[method]}
+								onChange={(e) => handlePaymentAmountChange(method, Number(e.target.value))}
+								InputProps={{
+									startAdornment: <InputAdornment position="start">₹</InputAdornment>
+								}}
+								inputProps={{
+									min: 0,
+									step: 1
+								}}
+								error={!!validationErrors[method]}
+								helperText={validationErrors[method]}
+								disabled={false}
+							/>
+							{isSplitPayment && paymentAmounts[method] > 0 && (
+								<Box sx={{ mt: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+									<Typography variant="caption" color="text.secondary">
+										{totalAmount > 0 ? ((paymentAmounts[method] / totalAmount) * 100).toFixed(1) : 0}%
+									</Typography>
+									<Button
+										size="small"
+										variant="text"
+										color="error"
+										onClick={(e) => {
+											e.stopPropagation();
+											handlePaymentAmountChange(method, 0);
+										}}
+										sx={{ minWidth: 'auto', p: 0.5 }}
+									>
+										Clear
+									</Button>
+								</Box>
+							)}
+						</Box>
+					</Tooltip>
 				))}
 			</Box>
 

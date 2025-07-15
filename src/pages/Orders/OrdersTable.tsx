@@ -99,64 +99,62 @@ const OrdersTable: React.FC<OrdersTableProps> = ({
 
   // Helper to determine purchase type with membership support
   const getPurchaseType = (order: Order): string => {
+    if (!order) return 'unknown';
+
+    // Ensure services is an array
+    const services = Array.isArray(order.services) ? order.services : [];
+    
     // If services array exists with detailed type info, use enhanced logic
-    // Fallback to basic helper otherwise
-    // @ts-ignore optional property
-    const services = order.services as any[] | undefined;
-    if (services && Array.isArray(services) && services.length) {
-      const hasMemberships = services.some(s => (s?.type === 'membership') || s?.category === 'membership');
-      const hasServices = services.some(s => (s?.type === 'service') && !(s?.category === 'membership'));
+    if (services.length > 0) {
+      const hasMemberships = services.some(s => s?.type === 'membership' || s?.category === 'membership');
+      const hasServices = services.some(s => s?.type === 'service' && s?.category !== 'membership');
       const hasProducts = services.some(s => s?.type === 'product' || s?.category === 'product');
 
       // For items without explicit type, check if they come from product tables or have product-like attributes
       const hasUnknownProducts = services.some(s => 
-        !s?.type && 
-        !s?.category && 
-        (s?.product_id || s?.product_name || s?.hsn_code || s?.stock_quantity !== undefined)
+        s && !s.type && !s.category && 
+        (s.product_id || s.product_name || s.hsn_code || s.stock_quantity !== undefined)
       );
 
       if (hasMemberships && !hasServices && !hasProducts && !hasUnknownProducts) return 'membership';
+      
       const types: string[] = [];
       if (hasServices) types.push('service');
       if (hasProducts || hasUnknownProducts) types.push('product');
       if (hasMemberships) types.push('membership');
 
       if (types.length > 1) return types.join('_'); // e.g., service_product
-      if (hasServices) return 'service';
-      if (hasProducts || hasUnknownProducts) return 'product';
+      if (types.length === 1) return types[0];
       return 'unknown';
     }
+    
     // Basic fallback (service | product | both | unknown)
-    // @ts-ignore ignore mismatch
-    return baseGetPurchaseType(order);
+    const baseType = baseGetPurchaseType(order);
+    return baseType || 'unknown';
   };
 
   const renderPurchaseTypeChip = (type: string) => {
-    switch (type) {
-      case 'service':
-        return <Chip size="small" icon={<SpaIcon fontSize="small" />} label="Service" color="primary" variant="outlined" />;
-      case 'product':
-        return <Chip size="small" icon={<ShoppingBagIcon fontSize="small" />} label="Product" color="info" variant="outlined" />;
-      case 'membership':
-        return <Chip size="small" icon={<CardMembershipIcon fontSize="small" />} label="Membership" color="warning" variant="outlined" />;
-      case 'service_product':
-      case 'product_service':
-        return <Chip size="small" icon={<StoreIcon fontSize="small" />} label="Service & Product" color="success" variant="outlined" />;
-      case 'service_membership':
-      case 'membership_service':
-        return <Chip size="small" icon={<StoreIcon fontSize="small" />} label="Service & Membership" color="secondary" variant="outlined" />;
-      case 'product_membership':
-      case 'membership_product':
-        return <Chip size="small" icon={<StoreIcon fontSize="small" />} label="Product & Membership" color="secondary" variant="outlined" />;
-      case 'both':
-        return <Chip size="small" icon={<StoreIcon fontSize="small" />} label="Service & Product" color="success" variant="outlined" />;
-      case 'service_product_membership':
-      case 'product_service_membership':
-      case 'membership_service_product':
-        return <Chip size="small" icon={<StoreIcon fontSize="small" />} label="Service, Product & Membership" color="secondary" variant="outlined" />;
-      default:
-        return <Chip size="small" label="Unknown" variant="outlined" />;
-    }
+    if (!type) return <Chip size="small" label="Unknown" variant="outlined" />;
+    
+    const normalizedType = type.toLowerCase();
+    
+    const typeMap: Record<string, JSX.Element> = {
+      'service': <Chip size="small" icon={<SpaIcon fontSize="small" />} label="Service" color="primary" variant="outlined" />,
+      'product': <Chip size="small" icon={<ShoppingBagIcon fontSize="small" />} label="Product" color="info" variant="outlined" />,
+      'membership': <Chip size="small" icon={<CardMembershipIcon fontSize="small" />} label="Membership" color="warning" variant="outlined" />,
+      'service_product': <Chip size="small" icon={<StoreIcon fontSize="small" />} label="Service & Product" color="success" variant="outlined" />,
+      'product_service': <Chip size="small" icon={<StoreIcon fontSize="small" />} label="Service & Product" color="success" variant="outlined" />,
+      'service_membership': <Chip size="small" icon={<StoreIcon fontSize="small" />} label="Service & Membership" color="secondary" variant="outlined" />,
+      'membership_service': <Chip size="small" icon={<StoreIcon fontSize="small" />} label="Service & Membership" color="secondary" variant="outlined" />,
+      'product_membership': <Chip size="small" icon={<StoreIcon fontSize="small" />} label="Product & Membership" color="secondary" variant="outlined" />,
+      'membership_product': <Chip size="small" icon={<StoreIcon fontSize="small" />} label="Product & Membership" color="secondary" variant="outlined" />,
+      'both': <Chip size="small" icon={<StoreIcon fontSize="small" />} label="Service & Product" color="success" variant="outlined" />,
+      'service_product_membership': <Chip size="small" icon={<StoreIcon fontSize="small" />} label="Service, Product & Membership" color="secondary" variant="outlined" />,
+      'product_service_membership': <Chip size="small" icon={<StoreIcon fontSize="small" />} label="Service, Product & Membership" color="secondary" variant="outlined" />,
+      'membership_service_product': <Chip size="small" icon={<StoreIcon fontSize="small" />} label="Service, Product & Membership" color="secondary" variant="outlined" />
+    };
+
+    return typeMap[normalizedType] || <Chip size="small" label="Unknown" variant="outlined" />;
   };
 
   // Calculate paginated data
@@ -200,82 +198,64 @@ const OrdersTable: React.FC<OrdersTableProps> = ({
       <Typography variant="h6" sx={{ mb: 2 }}>
         {title}
       </Typography>
-      
-      <TableContainer sx={{ maxHeight: 440 }}>
-        <Table stickyHeader aria-label="orders table" size="small">
+
+      <TableContainer>
+        <Table>
           <TableHead>
             <TableRow>
-              <TableCell>Order ID</TableCell>
               <TableCell>Date</TableCell>
+              <TableCell>Order ID</TableCell>
               <TableCell>Customer</TableCell>
-              <TableCell>Payment Method</TableCell>
-              <TableCell align="right">Total</TableCell>
+              <TableCell>Type</TableCell>
               <TableCell>Status</TableCell>
-              <TableCell>Purchase Type</TableCell>
-              <TableCell align="center">Actions</TableCell>
+              <TableCell align="right">Total</TableCell>
+              <TableCell align="right">Actions</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
             {isLoading ? (
               loadingSkeleton
-            ) : paginatedOrders.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={8} align="center" sx={{ py: 6 }}>
-                  <Typography variant="body2" color="text.secondary">
-                    No orders found
-                  </Typography>
-                </TableCell>
-              </TableRow>
-            ) : (
+            ) : paginatedOrders.length > 0 ? (
               paginatedOrders.map((order) => (
-                <TableRow
-                  hover
-                  key={order.id}
-                  sx={{ '&:last-child td, &:last-child th': { border: 0 } }}
-                >
-                  <TableCell>
-                    {order.order_id || order.id}
-                  </TableCell>
-                  <TableCell>{formatDate(order.date || order.created_at)}</TableCell>
-                  <TableCell>{order.customer_name || order.client_name || 'Walk-in'}</TableCell>
-                  <TableCell>
-                    <Chip
-                      label={order.payment_method || 'Unknown'}
-                      size="small"
-                      variant="outlined"
-                    />
-                  </TableCell>
-                  <TableCell align="right">
-                    {formatCurrency(order.total_amount || order.total || 0)}
-                  </TableCell>
-                  <TableCell>{getStatusChip(order.status)}</TableCell>
+                <TableRow key={order.id}>
+                  <TableCell>{formatDate(order.date)}</TableCell>
+                  <TableCell>{order.order_id || order.id}</TableCell>
+                  <TableCell>{order.customer_name || order.client_name || 'N/A'}</TableCell>
                   <TableCell>{renderPurchaseTypeChip(getPurchaseType(order))}</TableCell>
-                  <TableCell align="center">
+                  <TableCell>{getStatusChip(order.status)}</TableCell>
+                  <TableCell align="right">{formatCurrency(order.total || order.total_amount)}</TableCell>
+                  <TableCell align="right">
                     <ButtonGroup size="small">
                       <Tooltip title="Print Bill">
-                        <IconButton 
-                          size="small" 
-                          color="primary" 
+                        <IconButton
                           onClick={() => handlePrintBill(order)}
+                          size="small"
                         >
                           <PrintIcon fontSize="small" />
                         </IconButton>
                       </Tooltip>
                       <DeleteButton
-                        onDelete={() => handleDeleteOrder(order.order_id || order.id)}
-                        itemName={`Order ${order.order_id || order.id}`}
-                        itemType="order"
+                        onDelete={() => handleDeleteOrder(order.id)}
                         size="small"
+                        tooltip="Delete Order"
                       />
                     </ButtonGroup>
                   </TableCell>
                 </TableRow>
               ))
+            ) : (
+              <TableRow>
+                <TableCell colSpan={7} align="center">
+                  <Typography variant="body2" color="textSecondary">
+                    No orders found
+                  </Typography>
+                </TableCell>
+              </TableRow>
             )}
           </TableBody>
         </Table>
       </TableContainer>
-      
+
       <TablePagination
         rowsPerPageOptions={[5, 10, 25, 50]}
         component="div"
