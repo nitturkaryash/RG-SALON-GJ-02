@@ -132,8 +132,8 @@ export default function Orders() {
   const [activeTab, setActiveTab] = useState<OrderTab>(OrderTab.ALL)
   
   // Updated date range state to work with DateRangePicker
-  const [startDate, setStartDate] = useState<Date>(new Date(new Date().setDate(new Date().getDate() - 30))) // Last 30 days
-  const [endDate, setEndDate] = useState<Date>(new Date())
+  const [startDate, setStartDate] = useState<Date | null>(null) // Show all orders by default
+  const [endDate, setEndDate] = useState<Date | null>(new Date())
   
   const [isSalonPurchaseFilter, setIsSalonPurchaseFilter] = useState<string>('all')
   
@@ -166,8 +166,38 @@ export default function Orders() {
 
   // Convert any order to our ExtendedOrder type
   const normalizeOrder = (order: any): ExtendedOrder => {
+    let services = order.services;
+    if (typeof services === 'string') {
+      try {
+        services = JSON.parse(services);
+      } catch (e) {
+        console.warn(`Could not parse services for order ${order.id}`, e);
+        services = [];
+      }
+    }
+
+    let payments = order.payments;
+    if (typeof payments === 'string') {
+      try {
+        payments = JSON.parse(payments);
+      } catch (e) {
+        console.warn(`Could not parse payments for order ${order.id}`, e);
+        payments = [];
+      }
+    }
+
+    // Ensure services and payments are arrays
+    if (!Array.isArray(services)) {
+      services = [];
+    }
+    if (!Array.isArray(payments)) {
+      payments = [];
+    }
+
     return {
       ...order,
+      services,
+      payments,
       status: order.status || 'pending',
       client_name: order.client_name || order.customer_name,
       customer_name: order.customer_name || order.client_name,
@@ -360,18 +390,20 @@ export default function Orders() {
             tax: tax,
             discount: parseFloat(row['Discount']) || 0,
             is_walk_in: true,
-            payments: JSON.stringify([{ payment_method: 'cash', amount: totalAmount }]),
-            services: JSON.stringify([
+            payments: [{ method: 'cash', amount: totalAmount }],
+            services: [
               {
                 id: uuidv4(),
+                name: row['PRODUCT NAME'],
                 product_name: row['PRODUCT NAME'],
                 category: row['Category'],
                 quantity: parseInt(row['Qty'], 10) || 1,
                 price: parseFloat(row['Unit Price']) || 0,
+                unitPrice: parseFloat(row['Unit Price']) || 0,
                 hsn_code: row['HSN CODE'],
                 type: 'product',
               },
-            ]),
+            ],
           };
 
           const { error } = await supabase.from('pos_orders').insert(orderPayload);
@@ -486,9 +518,11 @@ export default function Orders() {
         appointmentOrders.forEach(order => {
           if (order.services && Array.isArray(order.services)) {
             order.services.forEach((service: any) => {
-              const serviceName = service.service_name || service.item_name || service.name;
+              // Handle both old and new service field names - prioritize 'name' field from actual data
+              const serviceName = service.name || service.service_name || service.item_name;
               const quantity = service.quantity || 1;
-              const price = service.price || 0;
+              // Handle different price field names - prioritize 'unitPrice' from actual data
+              const price = service.unitPrice || service.price || service.unit_price || 0;
               
               if (!serviceAggregation[serviceName]) {
                 serviceAggregation[serviceName] = {
@@ -637,25 +671,301 @@ export default function Orders() {
     });
   }, [orders]);
   
-  // Update order stats when orders change
+  const isSalonConsumptionOrder = (order: ExtendedOrder) => {
+    // Check all possible ways an order can be marked as salon consumption
+    return (
+      order.is_salon_consumption === true || 
+      order.consumption_purpose || // Check for consumption_purpose field we added
+      order.client_name === 'Salon Consumption' || // Match the client_name we set in handleCreateSalonConsumption
+      (order.services && order.services.some((s: any) => s.for_salon_use === true)) // Check if any service is marked for salon use
+    );
+  };
+
+  const getPurchaseType = (order: ExtendedOrder) => {
+    if (!order) {
+      return 'service'; // Default fallback
+    }
+
+    // Handle orders that might not have services array or have empty services
+    if (!order.services || !Array.isArray(order.services) || order.services.length === 0) {
+      // Check if this is a salon consumption order
+      if (isSalonConsumptionOrder(order)) {
+        return 'service'; // Salon consumption orders are typically service-related
+      }
+      
+      // Try to determine type from other indicators
+      // Check for membership-related amounts
+      if (order.payments && order.payments.some((p: any) => p.payment_method === 'membership')) {
+        return 'service'; // Services paid with membership
+      }
+      
+      // Check for typical membership purchase amounts
+      const total = order.total || order.total_amount || 0;
+      if ([1000, 5000, 10000, 15000, 25000, 50000, 100000].includes(total)) {
+        return 'membership'; // Likely membership purchase
+      }
+      
+      // Default to service if we can't determine
+      return 'service';
+    }
+    
+    // Helper function to check if a service is a membership
+    const isMembershipService = (service: any) => {
+      if (!service) return false;
+      
+      // Check explicit type/category
+      if (service.type === 'membership' || service.category === 'membership') {
+        return true;
+      }
+      
+      // Check for membership fields
+      if (service.duration_months || service.benefit_amount || service.benefitAmount) {
+        return true;
+      }
+      
+      // Check name patterns (more comprehensive)
+      const serviceName = (service.item_name || service.service_name || service.name || '').toLowerCase();
+      const membershipPatterns = [
+        'silver', 'gold', 'platinum', 'diamond', 
+        'membership', 'member', 'tier', 'package',
+        'subscription', 'plan'
+      ];
+      
+      return membershipPatterns.some(pattern => serviceName.includes(pattern));
+    };
+    
+    // Check for membership services first
+    const hasMemberships = order.services.some(isMembershipService) || 
+    // Check if this is a membership purchase (NOT using membership balance to pay)
+    // Look for orders where someone bought a membership (paid with cash/card, not membership balance)
+    (order.payments && 
+     order.payments.every((payment: any) => payment.payment_method !== 'membership') && // Not paid with membership balance
+     [1000, 5000, 10000, 15000, 25000, 50000, 100000].includes(order.total || order.total_amount || 0)) || // Common membership prices
+    // Or check for specific membership-related fields
+    (order.services && order.services.some((service: any) => 
+      service.benefit_amount || service.benefitAmount || service.duration_months
+    ));
+    
+    // Removed debug logging for production
+
+    // Enhanced product detection with smart fallbacks
+    const hasProducts = order.services.some((service: any) => {
+      if (!service) return false;
+      const isMembership = isMembershipService(service);
+      
+      // Check for explicit product type/category
+      if (service.type === 'product' || service.category === 'product') {
+        return !isMembership;
+      }
+      
+      // Smart detection for products based on product-like attributes
+      const hasProductAttributes = service.product_id || service.product_name || 
+                                   service.hsn_code || service.stock_quantity !== undefined;
+      
+      return hasProductAttributes && !isMembership;
+    });
+    
+    // Check for regular services (exclude membership services and products)
+    const hasServices = order.services.some((service: any) => {
+      if (!service) return false;
+      const isMembership = isMembershipService(service);
+      
+      // Explicit service type
+      if (service.type === 'service' || service.category === 'service') {
+        return !isMembership;
+      }
+      
+      // Check if it's explicitly a product
+      const isExplicitProduct = service.type === 'product' || service.category === 'product';
+      const hasProductAttributes = service.product_id || service.product_name || 
+                                   service.hsn_code || service.stock_quantity !== undefined;
+      const isProduct = isExplicitProduct || hasProductAttributes;
+      
+      // Only treat as service if it's not a product or membership
+      return !isProduct && !isMembership;
+    });
+    
+    // Check product, service, and membership subcategories
+    const productCategories = new Set();
+    const serviceCategories = new Set();
+    const membershipCategories = new Set();
+    
+    order.services.forEach((service: any) => {
+      if (service) {
+        const isMembershipItem = isMembershipService(service);
+        
+        if (service.type === 'product' && service.category && !isMembershipItem) {
+          productCategories.add(service.category.toLowerCase());
+        } else if ((!service.type || service.type === 'service') && service.category && !isMembershipItem) {
+          serviceCategories.add(service.category.toLowerCase());
+        } else if (isMembershipItem) {
+          membershipCategories.add('membership');
+        }
+      }
+    });
+    
+    // Store the categories for filtering
+    (order as any)._productCategories = Array.from(productCategories);
+    (order as any)._serviceCategories = Array.from(serviceCategories);
+    (order as any)._membershipCategories = Array.from(membershipCategories);
+    
+    // Return membership if only memberships are present
+    if (hasMemberships && !hasServices && !hasProducts) return 'membership';
+    
+    // Return combined types if multiple types are present
+    const types = [];
+    if (hasServices) types.push('service');
+    if (hasProducts) types.push('product');
+    if (hasMemberships) types.push('membership');
+    
+    if (types.length > 1) {
+      // Return specific combination instead of generic "both"
+      if (types.includes('membership') && types.includes('service') && types.includes('product')) {
+        return 'service_product_membership';
+      } else if (types.includes('membership') && types.includes('service')) {
+        return 'service_membership';
+      } else if (types.includes('membership') && types.includes('product')) {
+        return 'product_membership';
+      } else {
+        return 'both'; // service + product (no membership)
+      }
+    }
+    if (hasProducts) return 'product';
+    if (hasMemberships) return 'membership';
+    return 'service'; // Default to service for all remaining cases
+  };
+
+  const filteredOrders = useMemo(() => {
+    if (!aggregatedOrders) return [];
+    
+    return aggregatedOrders.map(orderRaw => {
+      // Create a copy of the order to modify and normalize it
+      const order = normalizeOrder(orderRaw);
+      
+      // If this is a salon consumption order, always set status to completed
+      if (isSalonConsumptionOrder(order)) {
+        order.status = 'completed';
+      }
+      
+      return order; // order is now ExtendedOrder
+    }).filter((order) => { // order here is ExtendedOrder
+      // Text search
+      const searchLower = searchQuery.toLowerCase();
+      const matchesSearch = 
+        !searchQuery ||
+        (order.id && order.id.toLowerCase().includes(searchLower)) ||
+        ((order.client_name || order.customer_name) && 
+         (order.client_name || order.customer_name || '').toLowerCase().includes(searchLower)) ||
+        (order.stylist && order.stylist.name && order.stylist.name.toLowerCase().includes(searchLower)) ||
+        (order.created_at && new Date(order.created_at).toLocaleDateString().includes(searchLower));
+        
+      // Payment method filter
+      const matchesPayment = 
+        paymentFilter === 'all' || 
+        order.payment_method === paymentFilter ||
+        (paymentFilter === 'split' && Array.isArray(order.payments) && order.payments.length > 0);
+      
+      // Status filter  
+      const matchesStatus = statusFilter === 'all' || order.status === statusFilter;
+      
+      // Salon consumption filter
+      const matchesSalonConsumption = 
+        isSalonPurchaseFilter === 'all' || 
+        (isSalonPurchaseFilter === 'true' && isSalonConsumptionOrder(order)) ||
+        (isSalonPurchaseFilter === 'false' && !isSalonConsumptionOrder(order));
+      
+      // Purchase type filter - enhanced with categories and membership combinations
+      const orderType = getPurchaseType(order);
+      let matchesPurchaseType = false;
+      
+      if (purchaseTypeFilter === 'all') {
+        matchesPurchaseType = true;
+      } else if (purchaseTypeFilter === orderType) {
+        // Exact match
+        matchesPurchaseType = true;
+      } else if (purchaseTypeFilter === 'membership') {
+        // Match any order containing memberships
+        matchesPurchaseType = orderType === 'membership' || 
+                            orderType === 'service_membership' || 
+                            orderType === 'product_membership' || 
+                            orderType === 'service_product_membership';
+      } else if (purchaseTypeFilter === 'service') {
+        // Match any order containing services
+        matchesPurchaseType = orderType === 'service' || 
+                            orderType === 'both' || 
+                            orderType === 'service_membership' || 
+                            orderType === 'service_product_membership';
+      } else if (purchaseTypeFilter === 'product') {
+        // Match any order containing products
+        matchesPurchaseType = orderType === 'product' || 
+                            orderType === 'both' || 
+                            orderType === 'product_membership' || 
+                            orderType === 'service_product_membership';
+      } else if (purchaseTypeFilter === 'both') {
+        // Match mixed service/product orders (legacy support)
+        matchesPurchaseType = orderType === 'both' || 
+                            orderType === 'service_product_membership';
+      } else if (purchaseTypeFilter.startsWith('product:')) {
+        // Product category filtering
+        const category = purchaseTypeFilter.split(':')[1];
+        matchesPurchaseType = (orderType === 'product' || orderType === 'both' || 
+                            orderType === 'product_membership' || orderType === 'service_product_membership') && 
+                            (order as any)._productCategories && 
+                            (order as any)._productCategories.some((cat: string) => cat.includes(category));
+      } else if (purchaseTypeFilter.startsWith('service:')) {
+        // Service category filtering
+        const category = purchaseTypeFilter.split(':')[1];
+        matchesPurchaseType = (orderType === 'service' || orderType === 'both' || 
+                            orderType === 'service_membership' || orderType === 'service_product_membership') && 
+                            (order as any)._serviceCategories && 
+                            (order as any)._serviceCategories.some((cat: string) => cat.includes(category));
+      }
+        
+      // Date range filter using startDate and endDate
+      let matchesDateRange = true;
+      if (startDate) {
+        const orderDate = new Date(order.created_at || '');
+        const startOfDay = new Date(startDate);
+        startOfDay.setHours(0, 0, 0, 0);
+        
+        if (orderDate < startOfDay) {
+          matchesDateRange = false;
+        }
+      }
+      
+      if (endDate && matchesDateRange) {
+        const orderDate = new Date(order.created_at || '');
+        const endOfDay = new Date(endDate);
+        endOfDay.setHours(23, 59, 59, 999);
+        
+        if (orderDate > endOfDay) {
+          matchesDateRange = false;
+        }
+      }
+      
+      return matchesSearch && matchesPayment && matchesStatus && matchesSalonConsumption && matchesPurchaseType && matchesDateRange;
+    });
+  }, [aggregatedOrders, searchQuery, paymentFilter, statusFilter, purchaseTypeFilter, isSalonPurchaseFilter, startDate, endDate]);
+
+  // Update order stats when filtered orders change (based on date range and other filters)
   useEffect(() => {
-    if (aggregatedOrders) {
+    if (filteredOrders) {
       const stats = {
-        total: aggregatedOrders.length,
-        completed: aggregatedOrders.filter(order => normalizeOrder(order).status === 'completed').length,
-        pending: aggregatedOrders.filter(order => normalizeOrder(order).status === 'pending').length,
-        salonPurchases: aggregatedOrders.filter(order => isSalonConsumptionOrder(normalizeOrder(order))).length,
-        services: aggregatedOrders.filter(order => {
+        total: filteredOrders.length,
+        completed: filteredOrders.filter(order => normalizeOrder(order).status === 'completed').length,
+        pending: filteredOrders.filter(order => normalizeOrder(order).status === 'pending').length,
+        salonPurchases: filteredOrders.filter(order => isSalonConsumptionOrder(normalizeOrder(order))).length,
+        services: filteredOrders.filter(order => {
           const normalized = normalizeOrder(order);
           const type = getPurchaseType(normalized);
           return type === 'service' || type === 'both';
         }).length,
-        products: aggregatedOrders.filter(order => {
+        products: filteredOrders.filter(order => {
           const normalized = normalizeOrder(order);
           const type = getPurchaseType(normalized);
           return type === 'product' || type === 'both';
         }).length,
-        memberships: aggregatedOrders.filter(order => {
+        memberships: filteredOrders.filter(order => {
           const normalized = normalizeOrder(order);
           const type = getPurchaseType(normalized);
           return type === 'membership' || 
@@ -663,7 +973,7 @@ export default function Orders() {
                  type === 'product_membership' || 
                  type === 'service_product_membership';
         }).length,
-        totalRevenue: aggregatedOrders.reduce((sum, orderRaw) => {
+        totalRevenue: filteredOrders.reduce((sum, orderRaw) => {
           const order = normalizeOrder(orderRaw);
           // Only count completed orders or the paid portion of pending orders
           if (order.status === 'completed') {
@@ -676,7 +986,7 @@ export default function Orders() {
       };
       setOrderStats(stats);
     }
-  }, [aggregatedOrders]);
+  }, [filteredOrders]);
 
   // When orders are loaded from the API, normalize them (commented out to prevent recursion)
   /*
@@ -757,12 +1067,12 @@ export default function Orders() {
       // Get orders within the selected date range
       const ordersToDelete = filteredOrders.filter(order => {
         const orderDate = new Date(order.created_at || '');
-        const startOfDay = new Date(startDate);
-        startOfDay.setHours(0, 0, 0, 0);
-        const endOfDay = new Date(endDate);
-        endOfDay.setHours(23, 59, 59, 999);
         
-        return orderDate >= startOfDay && orderDate <= endOfDay;
+        // Handle null dates safely
+        const startCheck = !startDate || orderDate >= new Date(new Date(startDate).setHours(0, 0, 0, 0));
+        const endCheck = !endDate || orderDate <= new Date(new Date(endDate).setHours(23, 59, 59, 999));
+        
+        return startCheck && endCheck;
       });
 
       if (ordersToDelete.length === 0) {
@@ -788,7 +1098,7 @@ export default function Orders() {
       toast.dismiss(loadingToast);
       
       if (successCount > 0) {
-        toast.success(`Successfully deleted ${successCount} orders from ${startDate.toLocaleDateString()} to ${endDate.toLocaleDateString()}`);
+        toast.success(`Successfully deleted ${successCount} orders from ${startDate ? startDate.toLocaleDateString() : 'the beginning'} to ${endDate ? endDate.toLocaleDateString() : 'today'}`);
         // Close the dialog
         setDeleteAllConfirmOpen(false);
         // Reset to first page
@@ -1410,172 +1720,6 @@ export default function Orders() {
     );
   }
 
-  // Determine purchase type for an order
-  const getPurchaseType = (order: ExtendedOrder) => {
-    if (!order) {
-      return 'service'; // Default fallback
-    }
-
-    // Handle orders that might not have services array or have empty services
-    if (!order.services || !Array.isArray(order.services) || order.services.length === 0) {
-      // Check if this is a salon consumption order
-      if (isSalonConsumptionOrder(order)) {
-        return 'service'; // Salon consumption orders are typically service-related
-      }
-      
-      // Try to determine type from other indicators
-      // Check for membership-related amounts
-      if (order.payments && order.payments.some((p: any) => p.payment_method === 'membership')) {
-        return 'service'; // Services paid with membership
-      }
-      
-      // Check for typical membership purchase amounts
-      const total = order.total || order.total_amount || 0;
-      if ([1000, 5000, 10000, 15000, 25000, 50000, 100000].includes(total)) {
-        return 'membership'; // Likely membership purchase
-      }
-      
-      // Default to service if we can't determine
-      return 'service';
-    }
-    
-    // Helper function to check if a service is a membership
-    const isMembershipService = (service: any) => {
-      if (!service) return false;
-      
-      // Check explicit type/category
-      if (service.type === 'membership' || service.category === 'membership') {
-        return true;
-      }
-      
-      // Check for membership fields
-      if (service.duration_months || service.benefit_amount || service.benefitAmount) {
-        return true;
-      }
-      
-      // Check name patterns (more comprehensive)
-      const serviceName = (service.item_name || service.service_name || service.name || '').toLowerCase();
-      const membershipPatterns = [
-        'silver', 'gold', 'platinum', 'diamond', 
-        'membership', 'member', 'tier', 'package',
-        'subscription', 'plan'
-      ];
-      
-      return membershipPatterns.some(pattern => serviceName.includes(pattern));
-    };
-    
-    // Check for membership services first
-    const hasMemberships = order.services.some(isMembershipService) || 
-    // Check if this is a membership purchase (NOT using membership balance to pay)
-    // Look for orders where someone bought a membership (paid with cash/card, not membership balance)
-    (order.payments && 
-     order.payments.every((payment: any) => payment.payment_method !== 'membership') && // Not paid with membership balance
-     [1000, 5000, 10000, 15000, 25000, 50000, 100000].includes(order.total || order.total_amount || 0)) || // Common membership prices
-    // Or check for specific membership-related fields
-    (order.services && order.services.some((service: any) => 
-      service.benefit_amount || service.benefitAmount || service.duration_months
-    ));
-    
-    // Removed debug logging for production
-
-    // Enhanced product detection with smart fallbacks
-    const hasProducts = order.services.some((service: any) => {
-      if (!service) return false;
-      const isMembership = isMembershipService(service);
-      
-      // Check for explicit product type/category
-      if (service.type === 'product' || service.category === 'product') {
-        return !isMembership;
-      }
-      
-      // Smart detection for products based on product-like attributes
-      const hasProductAttributes = service.product_id || service.product_name || 
-                                   service.hsn_code || service.stock_quantity !== undefined;
-      
-      return hasProductAttributes && !isMembership;
-    });
-    
-    // Check for regular services (exclude membership services and products)
-    const hasServices = order.services.some((service: any) => {
-      if (!service) return false;
-      const isMembership = isMembershipService(service);
-      
-      // Explicit service type
-      if (service.type === 'service' || service.category === 'service') {
-        return !isMembership;
-      }
-      
-      // Check if it's explicitly a product
-      const isExplicitProduct = service.type === 'product' || service.category === 'product';
-      const hasProductAttributes = service.product_id || service.product_name || 
-                                   service.hsn_code || service.stock_quantity !== undefined;
-      const isProduct = isExplicitProduct || hasProductAttributes;
-      
-      // Only treat as service if it's not a product or membership
-      return !isProduct && !isMembership;
-    });
-    
-    // Check product, service, and membership subcategories
-    const productCategories = new Set();
-    const serviceCategories = new Set();
-    const membershipCategories = new Set();
-    
-    order.services.forEach((service: any) => {
-      if (service) {
-        const isMembershipItem = isMembershipService(service);
-        
-        if (service.type === 'product' && service.category && !isMembershipItem) {
-          productCategories.add(service.category.toLowerCase());
-        } else if ((!service.type || service.type === 'service') && service.category && !isMembershipItem) {
-          serviceCategories.add(service.category.toLowerCase());
-        } else if (isMembershipItem) {
-          membershipCategories.add('membership');
-        }
-      }
-    });
-    
-    // Store the categories for filtering
-    (order as any)._productCategories = Array.from(productCategories);
-    (order as any)._serviceCategories = Array.from(serviceCategories);
-    (order as any)._membershipCategories = Array.from(membershipCategories);
-    
-    // Return membership if only memberships are present
-    if (hasMemberships && !hasServices && !hasProducts) return 'membership';
-    
-    // Return combined types if multiple types are present
-    const types = [];
-    if (hasServices) types.push('service');
-    if (hasProducts) types.push('product');
-    if (hasMemberships) types.push('membership');
-    
-    if (types.length > 1) {
-      // Return specific combination instead of generic "both"
-      if (types.includes('membership') && types.includes('service') && types.includes('product')) {
-        return 'service_product_membership';
-      } else if (types.includes('membership') && types.includes('service')) {
-        return 'service_membership';
-      } else if (types.includes('membership') && types.includes('product')) {
-        return 'product_membership';
-      } else {
-        return 'both'; // service + product (no membership)
-      }
-    }
-    if (hasProducts) return 'product';
-    if (hasMemberships) return 'membership';
-    return 'service'; // Default to service for all remaining cases
-  };
-
-  // Function to detect if an order is a salon consumption order
-  const isSalonConsumptionOrder = (order: ExtendedOrder) => {
-    // Check all possible ways an order can be marked as salon consumption
-    return (
-      order.is_salon_consumption === true || 
-      order.consumption_purpose || // Check for consumption_purpose field we added
-      order.client_name === 'Salon Consumption' || // Match the client_name we set in handleCreateSalonConsumption
-      (order.services && order.services.some((s: any) => s.for_salon_use === true)) // Check if any service is marked for salon use
-    );
-  };
-
   // Function that bridges between the component's expected prop name and our implementation
   const handleCompletePayment = (order: ExtendedOrder) => {
     setSelectedOrder(order)
@@ -1639,119 +1783,6 @@ export default function Orders() {
     setPage(0);
   };
 
-  // Filter orders based on all filters
-  const filteredOrders = useMemo(() => {
-    if (!aggregatedOrders) return [];
-    
-    return aggregatedOrders.map(orderRaw => {
-      // Create a copy of the order to modify and normalize it
-      const order = normalizeOrder(orderRaw);
-      
-      // If this is a salon consumption order, always set status to completed
-      if (isSalonConsumptionOrder(order)) {
-        order.status = 'completed';
-      }
-      
-      return order; // order is now ExtendedOrder
-    }).filter((order) => { // order here is ExtendedOrder
-      // Text search
-      const searchLower = searchQuery.toLowerCase();
-      const matchesSearch = 
-        !searchQuery ||
-        (order.id && order.id.toLowerCase().includes(searchLower)) ||
-        ((order.client_name || order.customer_name) && 
-         (order.client_name || order.customer_name || '').toLowerCase().includes(searchLower)) ||
-        (order.stylist && order.stylist.name && order.stylist.name.toLowerCase().includes(searchLower)) ||
-        (order.created_at && new Date(order.created_at).toLocaleDateString().includes(searchLower));
-        
-      // Payment method filter
-      const matchesPayment = 
-        paymentFilter === 'all' || 
-        order.payment_method === paymentFilter ||
-        (paymentFilter === 'split' && Array.isArray(order.payments) && order.payments.length > 0);
-      
-      // Status filter  
-      const matchesStatus = statusFilter === 'all' || order.status === statusFilter;
-      
-      // Salon consumption filter
-      const matchesSalonConsumption = 
-        isSalonPurchaseFilter === 'all' || 
-        (isSalonPurchaseFilter === 'true' && isSalonConsumptionOrder(order)) ||
-        (isSalonPurchaseFilter === 'false' && !isSalonConsumptionOrder(order));
-      
-      // Purchase type filter - enhanced with categories and membership combinations
-      const orderType = getPurchaseType(order);
-      let matchesPurchaseType = false;
-      
-      if (purchaseTypeFilter === 'all') {
-        matchesPurchaseType = true;
-      } else if (purchaseTypeFilter === orderType) {
-        // Exact match
-        matchesPurchaseType = true;
-      } else if (purchaseTypeFilter === 'membership') {
-        // Match any order containing memberships
-        matchesPurchaseType = orderType === 'membership' || 
-                            orderType === 'service_membership' || 
-                            orderType === 'product_membership' || 
-                            orderType === 'service_product_membership';
-      } else if (purchaseTypeFilter === 'service') {
-        // Match any order containing services
-        matchesPurchaseType = orderType === 'service' || 
-                            orderType === 'both' || 
-                            orderType === 'service_membership' || 
-                            orderType === 'service_product_membership';
-      } else if (purchaseTypeFilter === 'product') {
-        // Match any order containing products
-        matchesPurchaseType = orderType === 'product' || 
-                            orderType === 'both' || 
-                            orderType === 'product_membership' || 
-                            orderType === 'service_product_membership';
-      } else if (purchaseTypeFilter === 'both') {
-        // Match mixed service/product orders (legacy support)
-        matchesPurchaseType = orderType === 'both' || 
-                            orderType === 'service_product_membership';
-      } else if (purchaseTypeFilter.startsWith('product:')) {
-        // Product category filtering
-        const category = purchaseTypeFilter.split(':')[1];
-        matchesPurchaseType = (orderType === 'product' || orderType === 'both' || 
-                            orderType === 'product_membership' || orderType === 'service_product_membership') && 
-                            (order as any)._productCategories && 
-                            (order as any)._productCategories.some((cat: string) => cat.includes(category));
-      } else if (purchaseTypeFilter.startsWith('service:')) {
-        // Service category filtering
-        const category = purchaseTypeFilter.split(':')[1];
-        matchesPurchaseType = (orderType === 'service' || orderType === 'both' || 
-                            orderType === 'service_membership' || orderType === 'service_product_membership') && 
-                            (order as any)._serviceCategories && 
-                            (order as any)._serviceCategories.some((cat: string) => cat.includes(category));
-      }
-        
-      // Date range filter using startDate and endDate
-      let matchesDateRange = true;
-      if (startDate) {
-        const orderDate = new Date(order.created_at || '');
-        const startOfDay = new Date(startDate);
-        startOfDay.setHours(0, 0, 0, 0);
-        
-        if (orderDate < startOfDay) {
-          matchesDateRange = false;
-        }
-      }
-      
-      if (endDate && matchesDateRange) {
-        const orderDate = new Date(order.created_at || '');
-        const endOfDay = new Date(endDate);
-        endOfDay.setHours(23, 59, 59, 999);
-        
-        if (orderDate > endOfDay) {
-          matchesDateRange = false;
-        }
-      }
-      
-      return matchesSearch && matchesPayment && matchesStatus && matchesSalonConsumption && matchesPurchaseType && matchesDateRange;
-    });
-  }, [aggregatedOrders, searchQuery, paymentFilter, statusFilter, purchaseTypeFilter, isSalonPurchaseFilter, startDate, endDate]);
-  
   // Apply pagination
   const paginatedOrders = useMemo(() => {
     if (rowsPerPage === -1) {
@@ -1920,15 +1951,8 @@ export default function Orders() {
     }
     
     // Date range filter - only show if it's not the default 30-day range
-    const thirtyDaysAgo = new Date(new Date().setDate(new Date().getDate() - 30));
-    const today = new Date();
-    const isDefaultDateRange = 
-      startDate && endDate &&
-      startDate.toDateString() === thirtyDaysAgo.toDateString() &&
-      endDate.toDateString() === today.toDateString();
-    
-    if (startDate && endDate && !isDefaultDateRange) {
-      const label = `Date: ${startDate.toLocaleDateString()} - ${endDate.toLocaleDateString()}`;
+    if (startDate) {
+      const label = `Date: ${startDate.toLocaleDateString()} - ${endDate ? endDate.toLocaleDateString() : 'Now'}`;
       
       filters.push(
         <Chip 
@@ -1937,7 +1961,7 @@ export default function Orders() {
           size="small"
           color="primary"
           onDelete={() => {
-            setStartDate(new Date(new Date().setDate(new Date().getDate() - 30)));
+            setStartDate(null);
             setEndDate(new Date());
             setPage(0); // Reset pagination when clearing date filter
           }}
@@ -2016,15 +2040,21 @@ export default function Orders() {
       // For regular orders, this will just show the payments.
       return (
         <Box>
-          {order.payments.map((payment, index) => (
-            <Box key={index} sx={{ mb: 0.5 }}>
-              <Chip
-                size="small"
-                label={`${PAYMENT_METHOD_LABELS[payment.payment_method as PaymentMethod] || payment.payment_method}: ${formatCurrency(payment.amount)}`}
-                sx={{ mr: 0.5 }}
-              />
-            </Box>
-          ))}
+          {order.payments.map((payment, index) => {
+            // Handle both 'method' and 'payment_method' fields for backward compatibility
+            const paymentMethod = payment.method || payment.payment_method;
+            const amount = payment.amount || 0;
+            
+            return (
+              <Box key={index} sx={{ mb: 0.5 }}>
+                <Chip
+                  size="small"
+                  label={`${PAYMENT_METHOD_LABELS[paymentMethod as PaymentMethod] || paymentMethod || 'Unknown'}: ${formatCurrency(amount)}`}
+                  sx={{ mr: 0.5 }}
+                />
+              </Box>
+            );
+          })}
           {(order.pending_amount || 0) > 0 && order.status !== 'completed' && (
             <Box sx={{ mt: 0.5 }}>
               <Chip
@@ -2103,7 +2133,29 @@ export default function Orders() {
     <Container maxWidth="lg">
       <Box sx={{ mb: 4 }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-          <Typography variant="h1">Orders</Typography>
+          <Box>
+            <Typography variant="h1">Orders</Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+              {(() => {
+                if (!startDate) {
+                  return `All time • ${filteredOrders.length} orders`;
+                }
+                
+                const thirtyDaysAgo = new Date(new Date().setDate(new Date().getDate() - 30));
+                const today = new Date();
+                const isLast30Days = 
+                  startDate && endDate &&
+                  startDate.toDateString() === thirtyDaysAgo.toDateString() &&
+                  endDate.toDateString() === today.toDateString();
+
+                if (isLast30Days) {
+                  return `Last 30 days • ${filteredOrders.length} orders`;
+                } else {
+                  return `${startDate.toLocaleDateString()} - ${endDate ? endDate.toLocaleDateString() : 'Now'} • ${filteredOrders.length} orders`;
+                }
+              })()}
+            </Typography>
+          </Box>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             {/* Export Buttons */}
             {filteredOrders.length > 0 && (
@@ -2175,6 +2227,27 @@ export default function Orders() {
         </Box>
         
         {/* Order Analytics */}
+        <Box sx={{ mb: 2 }}>
+          <Typography variant="h6" gutterBottom>
+            {(() => {
+              if (!startDate) {
+                return "Analytics - All Time";
+              }
+              const thirtyDaysAgo = new Date(new Date().setDate(new Date().getDate() - 30));
+              const today = new Date();
+              const isLast30Days =
+                startDate && endDate &&
+                startDate.toDateString() === thirtyDaysAgo.toDateString() &&
+                endDate.toDateString() === today.toDateString();
+
+              if (isLast30Days) {
+                return "Analytics - Last 30 Days";
+              } else {
+                return `Analytics - ${startDate.toLocaleDateString()} to ${endDate ? endDate.toLocaleDateString() : 'Now'}`;
+              }
+            })()}
+          </Typography>
+        </Box>
         <Grid container spacing={2} sx={{ mb: 3 }}>
           {/* Total Orders */}
           <Grid item xs={12} sm={6} md={3}>
@@ -2471,7 +2544,7 @@ export default function Orders() {
                     
                     {orders && orders.length > 0 && (
                       <Typography variant="body2" color="text.secondary" sx={{ ml: 2 }}>
-                        Loaded {orders.length} total orders | Showing {filteredOrders.length} filtered orders from {startDate.toLocaleDateString()} to {endDate.toLocaleDateString()}
+                        Loaded {orders.length} total orders | Showing {filteredOrders.length} orders from {startDate ? startDate.toLocaleDateString() : 'the beginning'} to {endDate ? endDate.toLocaleDateString() : 'today'}
                       </Typography>
                     )}
                   </Grid>
@@ -2617,6 +2690,17 @@ export default function Orders() {
                       </TableCell>
                       <TableCell>
                         {(() => {
+                          // Debug logging to understand the data structure
+                          console.log('🔍 Order services debug:', {
+                            orderId: order.id,
+                            services: order.services,
+                            servicesType: typeof order.services,
+                            servicesLength: order.services?.length,
+                            isArray: Array.isArray(order.services),
+                            firstService: order.services?.[0],
+                            serviceNames: order.services?.map((s: any) => s.name || s.service_name || s.item_name)
+                          });
+                          
                           if (!order.services || order.services.length === 0) return '0 items';
                           
                           // For multi-expert orders, aggregate services by name to get correct counts
@@ -2624,7 +2708,8 @@ export default function Orders() {
                             const serviceAggregation: Record<string, { quantity: number; count: number }> = {};
                             
                             order.services.forEach((service: any) => {
-                              const serviceName = service.service_name || service.item_name || service.name;
+                              // Handle both old and new service field names
+                              const serviceName = service.name || service.service_name || service.item_name;
                               const quantity = service.quantity || 1;
                               
                               if (!serviceAggregation[serviceName]) {
@@ -2659,7 +2744,10 @@ export default function Orders() {
                           
                           // For regular orders, use the existing logic
                           const itemCount = order.services.length;
-                          const totalQuantity = order.services.reduce((sum: number, service: any) => sum + (service.quantity || 1), 0);
+                          const totalQuantity = order.services.reduce((sum: number, service: any) => {
+                            // Handle both old and new service field names
+                            return sum + (service.quantity || 1);
+                          }, 0);
                           
                           if (itemCount === 0) return '0 items';
                           if (itemCount === 1) return `${totalQuantity} item${totalQuantity > 1 ? 's' : ''}`;
@@ -3486,15 +3574,13 @@ export default function Orders() {
           <DialogTitle id="alert-dialog-title-all">{"Delete Orders in Date Range"}</DialogTitle>
           <DialogContent>
             <DialogContentText id="alert-dialog-description-all">
-              Warning: This will permanently delete ALL orders from {startDate.toLocaleDateString()} to {endDate.toLocaleDateString()}. 
+              Warning: This will permanently delete ALL orders from {startDate ? startDate.toLocaleDateString() : 'the beginning'} to {endDate ? endDate.toLocaleDateString() : 'today'}. 
               {(() => {
                 const ordersInRange = filteredOrders.filter(order => {
                   const orderDate = new Date(order.created_at || '');
-                  const startOfDay = new Date(startDate);
-                  startOfDay.setHours(0, 0, 0, 0);
-                  const endOfDay = new Date(endDate);
-                  endOfDay.setHours(23, 59, 59, 999);
-                  return orderDate >= startOfDay && orderDate <= endOfDay;
+                  const startCheck = !startDate || orderDate >= new Date(new Date(startDate).setHours(0,0,0,0));
+                  const endCheck = !endDate || orderDate <= new Date(new Date(endDate).setHours(23,59,59,999));
+                  return startCheck && endCheck;
                 });
                 return ` This will delete ${ordersInRange.length} order${ordersInRange.length !== 1 ? 's' : ''}.`;
               })()} 

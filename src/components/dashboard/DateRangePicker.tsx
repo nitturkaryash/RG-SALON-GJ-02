@@ -10,8 +10,8 @@ import { format } from 'date-fns';
 import DateRangeCalendar from './DateRangeCalendar';
 
 interface DateRangePickerProps {
-  startDate: Date;
-  endDate: Date;
+  startDate?: Date | null;
+  endDate?: Date | null;
   onDateRangeChange: (startDate: Date, endDate: Date) => void;
 }
 
@@ -56,20 +56,20 @@ export default function DateRangePicker({
       >
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           <Typography variant="body2" color="text.primary">
-            {format(startDate, 'd MMM yyyy')}
+            {startDate ? format(startDate, 'd MMM yyyy') : 'All time'}
           </Typography>
           <Typography variant="body2" color="text.secondary">
             →
           </Typography>
           <Typography variant="body2" color="text.primary">
-            {format(endDate, 'd MMM yyyy')}
+            {endDate ? format(endDate, 'd MMM yyyy') : 'Now'}
           </Typography>
         </Box>
       </Button>
 
       <DateRangeCalendar
-        startDate={startDate}
-        endDate={endDate}
+        startDate={startDate ?? new Date(new Date().setDate(new Date().getDate() - 30))}
+        endDate={endDate ?? new Date()}
         onDateRangeChange={handleDateRangeChange}
         onClose={handleClose}
         anchorEl={anchorEl}

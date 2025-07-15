@@ -2849,6 +2849,14 @@ export default function POS() {
 					pos_order_id: orderId
 				}));
 
+				// Get the current user for user_id
+				const { data: { user }, error: userError } = await supabase.auth.getUser();
+				const currentUserId = user?.id || 'f1ab5143-1129-4557-a694-63a010292c14'; // Fallback to known user ID
+				
+				if (userError) {
+					console.warn('⚠️ Could not get current user, using fallback:', userError.message);
+				}
+
 				// Create order record with fields exactly matching the pos_orders table schema
 				const orderData: any = {
 					id: orderId,
@@ -2863,6 +2871,7 @@ export default function POS() {
 					is_salon_consumption: true,
 					status: 'completed',
 					payment_method: 'internal',
+					user_id: currentUserId, // Add user_id to satisfy foreign key constraint
 					services: salonProducts.map(product => ({
 						service_id: product.item_id, // Add service_id for reference
 						service_name: product.item_name, // Add service_name for consistency

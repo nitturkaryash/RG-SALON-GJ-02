@@ -58,10 +58,30 @@ export function useOrders() {
 
         console.log(`Loaded a total of ${allOrders.length} orders from Supabase.`);
 
-        const processedOrders = allOrders.map(order => ({
-          ...order,
-          services: order.pos_order_items || [],
-        }));
+        const processedOrders = allOrders.map(order => {
+          // Handle services from both pos_order_items and the services JSONB field
+          let services = order.pos_order_items || [];
+          
+          // If pos_order_items is empty but services field exists, use that
+          if (services.length === 0 && order.services) {
+            // Parse services if it's a string, otherwise use as-is
+            if (typeof order.services === 'string') {
+              try {
+                services = JSON.parse(order.services);
+              } catch (e) {
+                console.warn('Failed to parse services JSON:', e);
+                services = [];
+              }
+            } else if (Array.isArray(order.services)) {
+              services = order.services;
+            }
+          }
+          
+          return {
+            ...order,
+            services: services || [],
+          };
+        });
 
         setOrders(processedOrders);
         localStorage.setItem('orders', JSON.stringify(processedOrders));

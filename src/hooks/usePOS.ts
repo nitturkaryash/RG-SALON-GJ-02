@@ -178,6 +178,7 @@ interface PosOrder {
   salon_use?: boolean;
   stock_snapshot?: string;  // Store stock quantities before order as JSON string
   current_stock?: string;   // Same data but with different field name as JSON string
+  user_id?: string;         // User ID for foreign key constraint
 }
 
 export const GST_RATE = 0.18 // 18% GST for salon services in India
@@ -543,6 +544,41 @@ export async function createWalkInOrder(
       }]
     };
     
+    // Get the current user for user_id
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    let currentProfileId: string | null = null;
+    if (user && user.id) {
+      // Look up the profile row that belongs to the authenticated user.
+      try {
+        const { data: profileData, error: profileErr } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('auth_user_id', user.id)
+          .single();
+
+        if (profileErr) {
+          console.warn('⚠️ Could not find corresponding profile for auth user, falling back to raw auth UID:', profileErr.message);
+          // If the FK on pos_orders.user_id points to profiles.id (text), we must NOT use the UUID directly.
+        } else {
+          currentProfileId = profileData?.id || null;
+        }
+      } catch (lookupErr) {
+        console.error('❌ Failed looking up profile for user:', lookupErr);
+      }
+    }
+
+    // FINAL user_id that will be stored on the order record – must reference profiles.id to avoid FK violation
+    // If we could not resolve a profile row, leave it null and let the DB trigger set_user_id attempt to populate it.
+    const resolvedUserId = currentProfileId ?? null;
+    
+    if (!resolvedUserId) {
+      console.warn('⚠️ No profile-level user_id could be resolved – inserting order without user_id so DB trigger can populate it.');
+    }
+    
+    if (userError) {
+      console.warn('⚠️ Could not get current authenticated user:', userError.message);
+    }
+
     // Prepare order data without invoice_number if not supported
     const orderInsertData: any = {
       id: orderData.order_id,
@@ -565,7 +601,8 @@ export async function createWalkInOrder(
       created_at: orderDate || new Date().toISOString(),
       is_salon_consumption: orderData.is_salon_consumption,
       consumption_purpose: orderData.consumption_purpose,
-      type: isSalonConsumption ? 'salon_consumption' : 'sale'
+      type: isSalonConsumption ? 'salon_consumption' : 'sale',
+      user_id: resolvedUserId // Add user_id to satisfy foreign key constraint
     };
 
     // Add invoice_number if provided
@@ -925,6 +962,41 @@ export function usePOS() {
         const pendingAmount = data.pending_amount || 0
         const isSplitPayment = pendingAmount > 0
 
+        // Get the current user for user_id
+        const { data: { user }, error: userError } = await supabase.auth.getUser();
+        let currentProfileId: string | null = null;
+        if (user && user.id) {
+          // Look up the profile row that belongs to the authenticated user.
+          try {
+            const { data: profileData, error: profileErr } = await supabase
+              .from('profiles')
+              .select('id')
+              .eq('auth_user_id', user.id)
+              .single();
+
+            if (profileErr) {
+              console.warn('⚠️ Could not find corresponding profile for auth user, falling back to raw auth UID:', profileErr.message);
+              // If the FK on pos_orders.user_id points to profiles.id (text), we must NOT use the UUID directly.
+            } else {
+              currentProfileId = profileData?.id || null;
+            }
+          } catch (lookupErr) {
+            console.error('❌ Failed looking up profile for user:', lookupErr);
+          }
+        }
+
+        // FINAL user_id that will be stored on the order record – must reference profiles.id to avoid FK violation
+        // If we could not resolve a profile row, leave it null and let the DB trigger set_user_id attempt to populate it.
+        const resolvedUserId = currentProfileId ?? null;
+        
+        if (!resolvedUserId) {
+          console.warn('⚠️ No profile-level user_id could be resolved – inserting order without user_id so DB trigger can populate it.');
+        }
+        
+        if (userError) {
+          console.warn('⚠️ Could not get current authenticated user:', userError.message);
+        }
+
         const newOrder: PosOrder = {
           id: uuidv4(),
           created_at: data.order_date || new Date().toISOString(),
@@ -953,7 +1025,8 @@ export function usePOS() {
             payment_date: data.order_date || new Date().toISOString()
           }],
           pending_amount: pendingAmount,
-          is_split_payment: isSplitPayment
+          is_split_payment: isSplitPayment,
+          user_id: resolvedUserId // Add user_id to satisfy foreign key constraint
         }
 
         const { appointment_time, ...orderForDb } = newOrder;
@@ -1120,6 +1193,41 @@ export function usePOS() {
         return finalServiceObj;
       }) || []);
 
+      // Get the current user for user_id
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      let currentProfileId: string | null = null;
+      if (user && user.id) {
+        // Look up the profile row that belongs to the authenticated user.
+        try {
+          const { data: profileData, error: profileErr } = await supabase
+            .from('profiles')
+            .select('id')
+            .eq('auth_user_id', user.id)
+            .single();
+
+          if (profileErr) {
+            console.warn('⚠️ Could not find corresponding profile for auth user, falling back to raw auth UID:', profileErr.message);
+            // If the FK on pos_orders.user_id points to profiles.id (text), we must NOT use the UUID directly.
+          } else {
+            currentProfileId = profileData?.id || null;
+          }
+        } catch (lookupErr) {
+          console.error('❌ Failed looking up profile for user:', lookupErr);
+        }
+      }
+
+      // FINAL user_id that will be stored on the order record – must reference profiles.id to avoid FK violation
+      // If we could not resolve a profile row, leave it null and let the DB trigger set_user_id attempt to populate it.
+      const resolvedUserId = currentProfileId ?? null;
+      
+      if (!resolvedUserId) {
+        console.warn('⚠️ No profile-level user_id could be resolved – inserting order without user_id so DB trigger can populate it.');
+      }
+      
+      if (userError) {
+        console.warn('⚠️ Could not get current authenticated user:', userError.message);
+      }
+
       const order: PosOrder = {
         id: uuidv4(),
         created_at: data.order_date || new Date().toISOString(),
@@ -1140,7 +1248,8 @@ export function usePOS() {
         is_walk_in: true,
         payments: payments,
         pending_amount: pendingAmount,
-        is_split_payment: isSplitPayment
+        is_split_payment: isSplitPayment,
+        user_id: resolvedUserId // Add user_id to satisfy foreign key constraint
       };
       
       // Enhanced debug logging for walk-in orders
