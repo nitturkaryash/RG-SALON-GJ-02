@@ -1,0 +1,223 @@
+Excel Data Structure Analysis
+==================================================
+
+File: SHEETS/SERVICE APRIL-2025.xlsx
+Sheet: APRIL-2025
+Total rows: 790
+Total columns: 17
+
+Columns:
+1. Invoice No
+2. Date
+3. Guest Name
+4. Guest Number
+5. Staff
+6. Service
+7. Category
+8. Qty
+9. Unit Price
+10. Discount
+11. Complementary
+12. Redemption Amount
+13. Redemption Sources
+14. Tax
+15. Subtotal(without tax & redemption)
+16. Total
+17. Payment Mode
+
+==================================================
+Sample Data (first 10 rows):
+[
+  {
+    "Invoice No": 1,
+    "Date": 45748,
+    "Guest Name": "Zarna Javeri",
+    "Guest Number": 9824770184,
+    "Staff": "Rupesh Mahale",
+    "Service": "Hair Cut With Senior Hairdresser (Male)",
+    "Category": "HAIR - Hair Cut",
+    "Qty": 1,
+    "Unit Price": 1000,
+    "Discount": 0,
+    "Complementary": "-",
+    "Redemption Amount": "-",
+    "Redemption Sources": "-",
+    "Tax": 180,
+    "Subtotal(without tax & redemption)": 1000,
+    "Total": 1180,
+    "Payment Mode": "Card(1180)"
+  },
+  {
+    "Invoice No": 2,
+    "Date": 45748,
+    "Guest Name": "Tarun Vatiani",
+    "Guest Number": 9904079784,
+    "Staff": "Vandan Gohil",
+    "Service": "Hair Cut With Senior Hairdresser (Male)",
+    "Category": "HAIR - Hair Cut",
+    "Qty": 1,
+    "Unit Price": 1000,
+    "Discount": 0,
+    "Complementary": "-",
+    "Redemption Amount": "-",
+    "Redemption Sources": "-",
+    "Tax": 180,
+    "Subtotal(without tax & redemption)": 1000,
+    "Total": 1180,
+    "Payment Mode": "GPay(1652)"
+  },
+  {
+    "Invoice No": 2,
+    "Date": 45748,
+    "Guest Name": "Tarun Vatiani",
+    "Guest Number": 9904079784,
+    "Staff": "Vandan Gohil",
+    "Service": "Beard Trim",
+    "Category": "HAIR - Beard Trim",
+    "Qty": 1,
+    "Unit Price": 400,
+    "Discount": 0,
+    "Complementary": "-",
+    "Redemption Amount": "-",
+    "Redemption Sources": "-",
+    "Tax": 72,
+    "Subtotal(without tax & redemption)": 400,
+    "Total": 472,
+    "Payment Mode": "GPay(1652)"
+  },
+  {
+    "Invoice No": 3,
+    "Date": 45748,
+    "Guest Name": "Neharika Malhotra",
+    "Guest Number": 8882819968,
+    "Staff": "Rohan Patel",
+    "Service": "Haircut With Creative director(female)",
+    "Category": "HAIR - Hair Cut",
+    "Qty": 1,
+    "Unit Price": 3000,
+    "Discount": 0,
+    "Complementary": "-",
+    "Redemption Amount": "-",
+    "Redemption Sources": "-",
+    "Tax": 540,
+    "Subtotal(without tax & redemption)": 3000,
+    "Total": 3540,
+    "Payment Mode": "Card(3540)"
+  },
+  {
+    "Invoice No": 4,
+    "Date": 45748,
+    "Guest Name": "Kira",
+    "Guest Number": 8141038380,
+    "Staff": "Rohan Patel",
+    "Service": "Haircut With Creative director(female)",
+    "Category": "HAIR - Hair Cut",
+    "Qty": 1,
+    "Unit Price": 3000,
+    "Discount": 600,
+    "Complementary": "-",
+    "Redemption Amount": "-",
+    "Redemption Sources": "-",
+    "Tax": 432,
+    "Subtotal(without tax & redemption)": 2400,
+    "Total": 2832,
+    "Payment Mode": "GPay(2832)"
+  },
+  {
+    "Invoice No": 5,
+    "Date": 45748,
+    "Guest Name": "Rahul Kedia",
+    "Guest Number": 9978122122,
+    "Staff": "Rohan Patel",
+    "Service": "Hair Cut With Creative director (Male)",
+    "Category": "HAIR - Hair Cut",
+    "Qty": 1,
+    "Unit Price": 2500,
+    "Discount": 0,
+    "Complementary": "-",
+    "Redemption Amount": "-",
+    "Redemption Sources": "-",
+    "Tax": 450,
+    "Subtotal(without tax & redemption)": 2500,
+    "Total": 2950,
+    "Payment Mode": "GPay(2950)"
+  },
+  {
+    "Invoice No": 6,
+    "Date": 45748,
+    "Guest Name": "Aashi",
+    "Guest Number": 8140195963,
+    "Staff": "Juni",
+    "Service": "Intense Rituals",
+    "Category": "Hair - Hair Treatment",
+    "Qty": 1,
+    "Unit Price": 2600,
+    "Discount": 260,
+    "Complementary": "-",
+    "Redemption Amount": "-",
+    "Redemption Sources": "-",
+    "Tax": 421.2,
+    "Subtotal(without tax & redemption)": 2340,
+    "Total": 2761.2,
+    "Payment Mode": "Cash(4821),GPay(701)"
+  },
+  {
+    "Invoice No": 6,
+    "Date": 45748,
+    "Guest Name": "Aashi",
+    "Guest Number": 8140195963,
+    "Staff": "Wailed",
+    "Service": "Intense Rituals",
+    "Category": "Hair - Hair Treatment",
+    "Qty": 1,
+    "Unit Price": 2600,
+    "Discount": 260,
+    "Complementary": "-",
+    "Redemption Amount": "-",
+    "Redemption Sources": "-",
+    "Tax": 421.2,
+    "Subtotal(without tax & redemption)": 2340,
+    "Total": 2761.2,
+    "Payment Mode": "Cash(4821),GPay(701)"
+  },
+  {
+    "Invoice No": 7,
+    "Date": 45748,
+    "Guest Name": "Jigyasha Narang",
+    "Guest Number": 9825760192,
+    "Staff": "Anu Khaling Rai",
+    "Service": "Eyebrow",
+    "Category": "Skin - Threading",
+    "Qty": 2,
+    "Unit Price": 100,
+    "Discount": 0,
+    "Complementary": "-",
+    "Redemption Amount": "-",
+    "Redemption Sources": "-",
+    "Tax": 36,
+    "Subtotal(without tax & redemption)": 200,
+    "Total": 236,
+    "Payment Mode": "Cash(1062)"
+  },
+  {
+    "Invoice No": 7,
+    "Date": 45748,
+    "Guest Name": "Jigyasha Narang",
+    "Guest Number": 9825760192,
+    "Staff": "Anu Khaling Rai",
+    "Service": "Wash & Blow Dry",
+    "Category": "Hair - Hair Styling",
+    "Qty": 1,
+    "Unit Price": 700,
+    "Discount": 0,
+    "Complementary": "-",
+    "Redemption Amount": "-",
+    "Redemption Sources": "-",
+    "Tax": 126,
+    "Subtotal(without tax & redemption)": 700,
+    "Total": 826,
+    "Payment Mode": "Cash(1062)"
+  }
+]
+
+==================================================

@@ -293,6 +293,51 @@ export function useOrders() {
     }
   }
   
+  // Delete orders within a date range in a single operation
+  const deleteOrdersInDateRange = async (startDate?: Date, endDate?: Date) => {
+    try {
+      setIsLoading(true)
+      console.log(`Deleting orders from ${startDate?.toISOString() || 'beginning'} to ${endDate?.toISOString() || 'now'}`);
+      
+      // Build the query
+      let query = supabase
+        .from('pos_orders')
+        .delete();
+      
+      // Add date filters if provided
+      if (startDate) {
+        const startDateStr = new Date(startDate.setHours(0, 0, 0, 0)).toISOString();
+        query = query.gte('created_at', startDateStr);
+      }
+      
+      if (endDate) {
+        const endDateStr = new Date(endDate.setHours(23, 59, 59, 999)).toISOString();
+        query = query.lte('created_at', endDateStr);
+      }
+      
+      // Execute the delete query
+      const { error: deleteError, count } = await query;
+      
+      if (deleteError) {
+        console.error('Error deleting orders in date range:', deleteError);
+        toast.error(`Failed to delete orders: ${deleteError.message}`);
+        return false;
+      }
+      
+      console.log(`Successfully deleted orders in date range, count: ${count}`);
+      
+      // Refresh the orders list
+      loadOrders();
+      return true;
+    } catch (err) {
+      toast.error('Error deleting orders in date range')
+      console.error('Error in deleteOrdersInDateRange:', err)
+      return false
+    } finally {
+      setIsLoading(false)
+    }
+  }
+  
   return {
     orders,
     isLoading,
@@ -301,7 +346,8 @@ export function useOrders() {
     getOrdersByAppointmentId,
     refreshOrders,
     deleteOrderById,
-    deleteAllOrders
+    deleteAllOrders,
+    deleteOrdersInDateRange
   }
 }
 

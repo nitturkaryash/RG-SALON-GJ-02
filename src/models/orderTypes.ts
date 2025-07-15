@@ -10,15 +10,35 @@ export type OrderBy =
 // Type for payment methods
 export type PaymentMethod = 'cash' | 'credit_card' | 'debit_card' | 'upi' | 'bnpl' | 'membership';
 
+// Service interface for order items
+export interface Service {
+  id: string;
+  name: string;
+  type?: 'service' | 'product' | 'membership';
+  category?: string;
+  quantity?: number;
+  unitPrice?: number;
+  subtotal?: number;
+  stylist?: string;
+  product_id?: string;
+  product_name?: string;
+  hsn_code?: string;
+  stock_quantity?: number;
+}
+
 // Order interface for POS system
 export interface Order {
   id: string;
-  customer_name: string;
-  order_date: string;
-  total_amount: number;
-  payment_method: PaymentMethod;
-  staff_id: string | null;
-  invoice_number: string;
+  order_id?: string;
+  customer_name?: string;
+  client_name?: string;
+  date?: string;
+  order_date?: string;
+  total_amount?: number;
+  total?: number;
+  payment_method?: PaymentMethod;
+  staff_id?: string | null;
+  invoice_number?: string;
   status?: 'pending' | 'completed' | 'cancelled';
   // For salon consumption tracking
   is_salon_consumption?: boolean;
@@ -26,6 +46,13 @@ export interface Order {
   // Order categorization
   purchase_type?: 'salon_consumption' | 'regular_purchase' | 'service';
   order_type?: 'salon_consumption' | 'walk_in' | 'appointment';
+  // Services array
+  services?: Service[];
+  // Payment info
+  payment_info?: {
+    method: PaymentMethod;
+    amount: number;
+  };
   // Metadata
   created_at?: string;
   updated_at?: string;

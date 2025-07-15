@@ -20,7 +20,7 @@ import {
   Button
 } from '@mui/material';
 import { deleteOrder } from '../../hooks/usePOS';
-import { Order } from '../../models/orderTypes';
+import { Order, Service } from '../../models/orderTypes';
 import { formatCurrency } from '../../utils/format';
 import DeleteButton from '../../components/DeleteButton';
 import { toast } from 'react-toastify';
@@ -70,14 +70,14 @@ const OrdersTable: React.FC<OrdersTableProps> = ({
   };
 
   // Format date for display
-  const formatDate = (dateString: string) => {
+  const formatDate = (dateString: string | undefined) => {
     if (!dateString) return '';
     const date = new Date(dateString);
     return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
   // Get payment status chip
-  const getStatusChip = (status: string) => {
+  const getStatusChip = (status: string | undefined) => {
     let color: 'success' | 'warning' | 'error' | 'default' = 'default';
     
     switch (status?.toLowerCase()) {
@@ -106,12 +106,12 @@ const OrdersTable: React.FC<OrdersTableProps> = ({
     
     // If services array exists with detailed type info, use enhanced logic
     if (services.length > 0) {
-      const hasMemberships = services.some(s => s?.type === 'membership' || s?.category === 'membership');
-      const hasServices = services.some(s => s?.type === 'service' && s?.category !== 'membership');
-      const hasProducts = services.some(s => s?.type === 'product' || s?.category === 'product');
+      const hasMemberships = services.some((s: Service) => s?.type === 'membership' || s?.category === 'membership');
+      const hasServices = services.some((s: Service) => s?.type === 'service' && s?.category !== 'membership');
+      const hasProducts = services.some((s: Service) => s?.type === 'product' || s?.category === 'product');
 
       // For items without explicit type, check if they come from product tables or have product-like attributes
-      const hasUnknownProducts = services.some(s => 
+      const hasUnknownProducts = services.some((s: Service) => 
         s && !s.type && !s.category && 
         (s.product_id || s.product_name || s.hsn_code || s.stock_quantity !== undefined)
       );
@@ -198,33 +198,99 @@ const OrdersTable: React.FC<OrdersTableProps> = ({
       <Typography variant="h6" sx={{ mb: 2 }}>
         {title}
       </Typography>
-
+      
       <TableContainer>
-        <Table>
+        <Table stickyHeader aria-label="orders table" size="small">
           <TableHead>
             <TableRow>
-              <TableCell>Date</TableCell>
               <TableCell>Order ID</TableCell>
+              <TableCell>Date</TableCell>
               <TableCell>Customer</TableCell>
+              <TableCell>Stylist</TableCell>
+              <TableCell>Items</TableCell>
               <TableCell>Type</TableCell>
+              <TableCell>Payment</TableCell>
               <TableCell>Status</TableCell>
-              <TableCell align="right">Total</TableCell>
-              <TableCell align="right">Actions</TableCell>
+              <TableCell align="center">Actions</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
             {isLoading ? (
               loadingSkeleton
-            ) : paginatedOrders.length > 0 ? (
-              paginatedOrders.map((order) => (
-                <TableRow key={order.id}>
-                  <TableCell>{formatDate(order.date)}</TableCell>
-                  <TableCell>{order.order_id || order.id}</TableCell>
-                  <TableCell>{order.customer_name || order.client_name || 'N/A'}</TableCell>
+            ) : paginatedOrders.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={9} align="center" sx={{ py: 6 }}>
+                  <Typography variant="body2" color="text.secondary">
+                    No orders found
+                  </Typography>
+                </TableCell>
+              </TableRow>
+            ) : (
+              paginatedOrders.map((order: Order) => (
+                <TableRow
+                  hover
+                  key={order.id}
+                  sx={{ '&:last-child td, &:last-child th': { border: 0 } }}
+                >
+                  <TableCell>
+                    {order.order_id || order.id}
+                  </TableCell>
+                  <TableCell>{formatDate(order.date || order.created_at)}</TableCell>
+                  <TableCell>{order.customer_name || order.client_name || 'Walk-in'}</TableCell>
+                  <TableCell>
+                    {order.services && order.services.length > 0 ? (
+                      <Stack spacing={0.5}>
+                        {Array.from(
+                          new Set(
+                            order.services
+                              .map(service => service.stylist)
+                              .filter((stylist): stylist is string => Boolean(stylist))
+                          )
+                        ).map((stylist) => (
+                          <Typography key={stylist} variant="body2">
+                            {stylist}
+                          </Typography>
+                        ))}
+                      </Stack>
+                    ) : (
+                      <Typography variant="body2" color="text.secondary">
+                        N/A
+                      </Typography>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    {order.services && order.services.length > 0 ? (
+                      <Stack spacing={0.5}>
+                        {order.services.map((service: Service, index: number) => (
+                          <Box key={index} sx={{ display: 'flex', flexDirection: 'column', gap: 0.25 }}>
+                            <Typography variant="body2" fontWeight="medium">
+                              {service.quantity || 1}x {service.name}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary">
+                              ₹{service.unitPrice || service.subtotal || 0} each
+                            </Typography>
+                          </Box>
+                        ))}
+                      </Stack>
+                    ) : (
+                      <Typography variant="body2" color="text.secondary">
+                        No items
+                      </Typography>
+                    )}
+                  </TableCell>
                   <TableCell>{renderPurchaseTypeChip(getPurchaseType(order))}</TableCell>
+                  <TableCell>
+                    <Stack spacing={0.5}>
+                      <Typography variant="body2" fontWeight="medium">
+                        {order.payment_info?.method?.toUpperCase() || 'CASH'}
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        ₹{order.payment_info?.amount || order.total || 0}
+                      </Typography>
+                    </Stack>
+                  </TableCell>
                   <TableCell>{getStatusChip(order.status)}</TableCell>
-                  <TableCell align="right">{formatCurrency(order.total || order.total_amount)}</TableCell>
-                  <TableCell align="right">
+                  <TableCell align="center">
                     <ButtonGroup size="small">
                       <Tooltip title="Print Bill">
                         <IconButton
@@ -237,20 +303,12 @@ const OrdersTable: React.FC<OrdersTableProps> = ({
                       <DeleteButton
                         onDelete={() => handleDeleteOrder(order.id)}
                         size="small"
-                        tooltip="Delete Order"
+                        tooltipText="Delete Order"
                       />
                     </ButtonGroup>
                   </TableCell>
                 </TableRow>
               ))
-            ) : (
-              <TableRow>
-                <TableCell colSpan={7} align="center">
-                  <Typography variant="body2" color="textSecondary">
-                    No orders found
-                  </Typography>
-                </TableCell>
-              </TableRow>
             )}
           </TableBody>
         </Table>

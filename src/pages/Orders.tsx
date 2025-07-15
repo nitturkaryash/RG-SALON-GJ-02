@@ -82,6 +82,7 @@ import { supabase, TABLES } from '../utils/supabase/supabaseClient'
 import { useQueryClient } from '@tanstack/react-query'
 import * as XLSX from 'xlsx'
 import { v4 as uuidv4 } from 'uuid'
+import AggregatedExcelImporter from '../components/orders/AggregatedExcelImporter'
 
 // Extended Order interface that encapsulates all the properties we need
 type ExtendedOrder = {
@@ -120,7 +121,7 @@ enum OrderTab {
 export default function Orders() {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
-  const { orders, isLoading, refreshOrders, deleteOrderById, deleteAllOrders } = useOrders()
+  const { orders, isLoading, refreshOrders, deleteOrderById, deleteAllOrders, deleteOrdersInDateRange } = useOrders()
   const { updateOrderPayment } = usePOS()
   const [selectedOrder, setSelectedOrder] = useState<any | null>(null)
   const [detailsOpen, setDetailsOpen] = useState(false)
@@ -1064,41 +1065,14 @@ export default function Orders() {
         closeButton: false
       });
       
-      // Get orders within the selected date range
-      const ordersToDelete = filteredOrders.filter(order => {
-        const orderDate = new Date(order.created_at || '');
-        
-        // Handle null dates safely
-        const startCheck = !startDate || orderDate >= new Date(new Date(startDate).setHours(0, 0, 0, 0));
-        const endCheck = !endDate || orderDate <= new Date(new Date(endDate).setHours(23, 59, 59, 999));
-        
-        return startCheck && endCheck;
-      });
-
-      if (ordersToDelete.length === 0) {
-        toast.dismiss(loadingToast);
-        toast.info('No orders found in the selected date range');
-        setDeleteAllConfirmOpen(false);
-        return;
-      }
-
-      // Delete orders one by one
-      let successCount = 0;
-      for (const order of ordersToDelete) {
-        const orderId = order.order_id || order.id;
-        if (orderId) {
-          const success = await deleteOrderById(orderId);
-          if (success) {
-            successCount++;
-          }
-        }
-      }
+      // Use the bulk delete function instead of deleting one by one
+      const success = await deleteOrdersInDateRange(startDate, endDate);
       
       // Close the loading toast
       toast.dismiss(loadingToast);
       
-      if (successCount > 0) {
-        toast.success(`Successfully deleted ${successCount} orders from ${startDate ? startDate.toLocaleDateString() : 'the beginning'} to ${endDate ? endDate.toLocaleDateString() : 'today'}`);
+      if (success) {
+        toast.success(`Successfully deleted orders from ${startDate ? startDate.toLocaleDateString() : 'the beginning'} to ${endDate ? endDate.toLocaleDateString() : 'today'}`);
         // Close the dialog
         setDeleteAllConfirmOpen(false);
         // Reset to first page
@@ -2214,6 +2188,10 @@ export default function Orders() {
                 Import Products
               </Button>
             </label>
+            
+            {/* New Aggregated Excel Importer */}
+            <AggregatedExcelImporter />
+            
             <Button 
               variant="contained" 
               color="error"
