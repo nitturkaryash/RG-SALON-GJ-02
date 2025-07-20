@@ -280,7 +280,7 @@ WITH sales_data AS (
     FROM ((pos_orders po
         CROSS JOIN LATERAL jsonb_array_elements(po.services) item(value))
         LEFT JOIN product_master pm ON ((pm.id = ((item.value ->> 'service_id'::text))::uuid)))
-    WHERE ((po.type = 'sale'::text) AND ((item.value ->> 'type'::text) = 'product'::text))
+    WHERE (po.type = 'sale'::text)
     GROUP BY po.id, po.date, (item.value ->> 'service_id'::text), (item.value ->> 'service_name'::text), 
              (item.value ->> 'price'::text), (item.value ->> 'gst_percentage'::text), 
              (item.value ->> 'mrp_incl_gst'::text), (item.value ->> 'unit_price'::text), 

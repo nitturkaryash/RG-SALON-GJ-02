@@ -98,6 +98,7 @@ type ExtendedOrder = {
   total_amount?: number;
   pending_amount?: number;
   payment_method?: string;
+  invoice_number?: string; // Add this
   payments?: any[];
   services?: any[];
   consumption_purpose?: string;
@@ -147,7 +148,7 @@ export default function Orders() {
   
   // Pagination
   const [page, setPage] = useState(0)
-  const [rowsPerPage, setRowsPerPage] = useState(10)
+  const [rowsPerPage, setRowsPerPage] = useState(50)
   
   // Order stats
   const [orderStats, setOrderStats] = useState({
@@ -223,6 +224,9 @@ export default function Orders() {
       const workbook = XLSX.read(data);
       const sheetName = workbook.SheetNames[0];
       const worksheet = workbook.Sheets[sheetName];
+      
+      // Get raw data with headers for column mapping
+      const rawData = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
       const json: any[] = XLSX.utils.sheet_to_json(worksheet, {
         raw: false, // Ensure dates are parsed as strings
       });
@@ -234,110 +238,249 @@ export default function Orders() {
         return;
       }
 
+      // Helper function to find column index
+      function findColumnIndex(headers: any[], possibleNames: string[]): number {
+        for (const name of possibleNames) {
+          const index = headers.findIndex(h => h && h.toString().toLowerCase().includes(name.toLowerCase()));
+          if (index !== -1) return index;
+        }
+        return -1;
+      }
+
+      // Enhanced column mapping for flexible import
+      const headers = rawData[0] || [];
+      const columnMap = {
+        // Common columns
+        date: findColumnIndex(headers, ['Date', 'date', 'DATE']),
+        guestName: findColumnIndex(headers, ['Guest Name', 'guest name', 'Customer Name', 'customer name', 'Client Name']),
+        guestNumber: findColumnIndex(headers, ['Guest Number', 'guest number', 'Phone', 'phone', 'Mobile', 'Contact']),
+        staff: findColumnIndex(headers, ['Staff', 'staff', 'Stylist', 'stylist', 'Employee']),
+        category: findColumnIndex(headers, ['Category', 'category', 'CATEGORY']),
+        qty: findColumnIndex(headers, ['Qty', 'qty', 'Quantity', 'quantity', 'QTY']),
+        unitPrice: findColumnIndex(headers, ['Unit Price', 'unit price', 'Price', 'price', 'Rate']),
+        discount: findColumnIndex(headers, ['Discount', 'discount', 'DISCOUNT']),
+        taxableValue: findColumnIndex(headers, ['Taxable Value', 'taxable value', 'Taxable Amount']),
+        cgst: findColumnIndex(headers, ['Cgst', 'cgst', 'CGST']),
+        sgst: findColumnIndex(headers, ['Sgst', 'sgst', 'SGST']),
+        total: findColumnIndex(headers, ['Total', 'total', 'TOTAL']),
+        // Product-specific columns
+        productName: findColumnIndex(headers, ['PRODUCT NAME', 'Product Name', 'product name', 'Product']),
+        hsnCode: findColumnIndex(headers, ['HSN CODE', 'HSN Code', 'hsn code', 'HSN']),
+        type: findColumnIndex(headers, ['TYPE', 'Type', 'type', 'Product Type']),
+        // Service-specific columns
+        serviceName: findColumnIndex(headers, ['Service', 'service', 'SERVICE']),
+        paymentMode: findColumnIndex(headers, ['Payment Mode', 'payment mode', 'Payment Method', 'payment method']),
+        subtotal: findColumnIndex(headers, ['Subtotal', 'subtotal', 'Subtotal(without tax & redemption)']),
+        tax: findColumnIndex(headers, ['Tax', 'tax', 'TAX'])
+      };
+
+      // Helper function to get value from row using column mapping
+      function getValueFromRow(row: any, rowArray: any[], columnIndex: number, fallback: any = null): any {
+        if (columnIndex === -1) return fallback;
+        return rowArray[columnIndex] || row[headers[columnIndex]] || fallback;
+      }
+
+      // Helper function to parse Excel date
+      function parseExcelDate(dateValue: any): Date {
+        if (!dateValue) return new Date();
+        
+        // If it's a number (Excel serial date)
+        if (typeof dateValue === 'number') {
+          return new Date((dateValue - 25569) * 86400 * 1000);
+        }
+        
+        // If it's already a string, try to parse it
+        const parsed = new Date(dateValue);
+        return isNaN(parsed.getTime()) ? new Date() : parsed;
+      }
+
       const user = supabase.auth.getUser ? (await supabase.auth.getUser()).data.user : null;
-      const tenantId = '';
+      const tenantId = user?.email || 'salon_admin';
+
+      // Validate user authentication
+      if (!user?.id) {
+        toast.error('Please log in to import orders');
+        setIsImporting(false);
+        toast.dismiss(loadingToast);
+        return;
+      }
 
       let successCount = 0;
       let failCount = 0;
       let isProductImport = false;
       
-      // Check if this is a product or service import based on columns
-      if (json[0] && json[0]['PRODUCT NAME']) {
+      // Determine import type based on columns
+      if (columnMap.productName !== -1) {
         isProductImport = true;
+        toast.info('🛍️ Product import detected', { autoClose: 2000 });
+      } else if (columnMap.serviceName !== -1) {
+        toast.info('💄 Service import detected', { autoClose: 2000 });
       }
 
-      for (const row of json) {
+      console.log('📋 Column mapping:', columnMap);
+      console.log('📊 Import type:', isProductImport ? 'Product' : 'Service');
+
+      for (let i = 0; i < json.length; i++) {
+        const row = json[i];
+        const rowArray = rawData[i + 1]; // +1 because rawData includes header
+        
         try {
           const orderId = uuidv4();
+          
+          // Extract common data
+          const dateValue = getValueFromRow(row, rowArray, columnMap.date);
+          const parsedDate = parseExcelDate(dateValue);
+          const guestName = getValueFromRow(row, rowArray, columnMap.guestName, 'Walk-in').toString().trim();
+          const guestNumber = getValueFromRow(row, rowArray, columnMap.guestNumber, '').toString().trim();
+          const staff = getValueFromRow(row, rowArray, columnMap.staff, 'Admin').toString().trim();
+          const category = getValueFromRow(row, rowArray, columnMap.category, 'General').toString().trim();
+          const qty = Number(getValueFromRow(row, rowArray, columnMap.qty, 1)) || 1;
+          const unitPrice = Number(getValueFromRow(row, rowArray, columnMap.unitPrice, 0)) || 0;
+          const discount = Number(getValueFromRow(row, rowArray, columnMap.discount, 0)) || 0;
+          const cgst = Number(getValueFromRow(row, rowArray, columnMap.cgst, 0)) || 0;
+          const sgst = Number(getValueFromRow(row, rowArray, columnMap.sgst, 0)) || 0;
+          const total = Number(getValueFromRow(row, rowArray, columnMap.total, 0)) || 0;
           
           let orderPayload: any = {};
 
           if (isProductImport) {
             // Product import logic
+            const productName = getValueFromRow(row, rowArray, columnMap.productName, 'Unknown Product').toString().trim();
+            const hsnCode = getValueFromRow(row, rowArray, columnMap.hsnCode, '').toString().trim();
+            const productType = getValueFromRow(row, rowArray, columnMap.type, '').toString().trim();
+            const taxableValue = Number(getValueFromRow(row, rowArray, columnMap.taxableValue, 0)) || 0;
+            
             orderPayload = {
               id: orderId,
-              created_at: new Date(row['Date']).toISOString(),
-              client_name: row['Guest Name'] || '-',
-              stylist_name: row['Staff'] || '-',
-              total: row['Total'] || 0,
-              total_amount: row['Total'] || 0,
-              payment_method: 'cash', // Default to cash
+              created_at: parsedDate.toISOString(),
+              date: parsedDate.toISOString(),
+              client_name: guestName,
+              client_phone: guestNumber,
+              customer_name: guestName,
+              stylist_name: staff,
+              total: total,
+              total_amount: total,
+              payment_method: 'cash', // Default to cash for products
               status: 'completed',
-              services: [{
-                service_name: row['PRODUCT NAME'],
-                quantity: row['Qty'] || 1,
-                price: row['Unit Price'] || 0,
-                category: row['Category'] || 'product',
-                type: 'product',
-                hsn_code: row['HSN CODE'] || null
-              }],
-              subtotal: (row['Unit Price'] || 0) * (row['Qty'] || 1),
-              tax: (row['Cgst'] || 0) + (row['Sgst'] || 0),
-              discount: row['Discount'] || 0,
-              payments: [{
-                payment_method: 'cash',
-                amount: row['Total'] || 0,
-              }],
+              subtotal: taxableValue || (unitPrice * qty),
+              tax: cgst + sgst,
+              discount: discount,
               is_walk_in: true,
+              type: 'product',
               tenant_id: tenantId,
-              user_id: user?.id,
+              user_id: user.id,
+              services: JSON.stringify([{
+                id: uuidv4(),
+                name: productName,
+                service_name: productName,
+                product_name: productName,
+                category: category,
+                quantity: qty,
+                price: unitPrice,
+                unit_price: unitPrice,
+                total: unitPrice * qty,
+                type: 'product',
+                hsn_code: hsnCode,
+                product_type: productType,
+                cgst: cgst,
+                sgst: sgst,
+                taxable_value: taxableValue
+              }]),
+              payments: JSON.stringify([{
+                payment_method: 'cash',
+                amount: total,
+                method: 'cash'
+              }]),
+              // Store original Excel data for reference
+              stock_snapshot: JSON.stringify({
+                original_row: row,
+                excel_row_index: i + 1,
+                import_timestamp: new Date().toISOString(),
+                import_type: 'product'
+              })
             };
 
           } else {
             // Service import logic
-            const rawPayment: string = row['Payment Mode'] || 'Cash';
+            const serviceName = getValueFromRow(row, rowArray, columnMap.serviceName, 'General Service').toString().trim();
+            const rawPayment = getValueFromRow(row, rowArray, columnMap.paymentMode, 'Cash').toString();
+            const subtotalValue = Number(getValueFromRow(row, rowArray, columnMap.subtotal, 0)) || 0;
+            const taxValue = Number(getValueFromRow(row, rowArray, columnMap.tax, 0)) || 0;
+            
+            // Parse payment method
             const methodMatch = rawPayment.match(/^[A-Za-z ]+/);
             const method = (methodMatch ? methodMatch[0].trim().toLowerCase() : 'cash').replace(' ', '_');
 
             orderPayload = {
               id: orderId,
-              created_at: new Date(row['Date']).toISOString(),
-              client_name: row['Guest Name'] || '-',
-              stylist_name: row['Staff'] || '-',
-              total: row['Total'] || 0,
-              total_amount: row['Total'] || 0,
+              created_at: parsedDate.toISOString(),
+              date: parsedDate.toISOString(),
+              client_name: guestName,
+              client_phone: guestNumber,
+              customer_name: guestName,
+              stylist_name: staff,
+              total: total,
+              total_amount: total,
               payment_method: method,
               status: 'completed',
-              services: [{
-                service_name: row['Service'],
-                quantity: row['Qty'] || 1,
-                price: row['Unit Price'] || 0,
-                category: row['Category'] || 'service',
-                type: 'service'
-              }],
-              subtotal: row['Subtotal(without tax & redemption)'] || 0,
-              tax: row['Tax'] || 0,
-              discount: row['Discount'] || 0,
-              payments: [{
-                payment_method: method,
-                amount: row['Total'] || 0,
-              }],
+              subtotal: subtotalValue || (unitPrice * qty),
+              tax: taxValue || (cgst + sgst),
+              discount: discount,
               is_walk_in: true,
+              type: 'service',
               tenant_id: tenantId,
-              user_id: user?.id,
+              user_id: user.id,
+              services: JSON.stringify([{
+                id: uuidv4(),
+                name: serviceName,
+                service_name: serviceName,
+                category: category,
+                quantity: qty,
+                price: unitPrice,
+                unit_price: unitPrice,
+                total: unitPrice * qty,
+                type: 'service'
+              }]),
+              payments: JSON.stringify([{
+                payment_method: method,
+                amount: total,
+                method: method
+              }]),
+              // Store original Excel data for reference
+              stock_snapshot: JSON.stringify({
+                original_row: row,
+                excel_row_index: i + 1,
+                import_timestamp: new Date().toISOString(),
+                import_type: 'service'
+              })
             };
           }
 
-          console.log('Inserting order payload:', orderPayload);
+          console.log(`Processing row ${i + 1}:`, orderPayload);
 
           const { error: insertError } = await supabase.from('pos_orders').insert(orderPayload);
           if (insertError) {
-            console.error('Error inserting order:', insertError);
+            console.error(`Error inserting row ${i + 1}:`, insertError);
             failCount++;
           } else {
             successCount++;
           }
         } catch (rowError) {
-          console.error('Error processing row:', rowError);
+          console.error(`Error processing row ${i + 1}:`, rowError);
           failCount++;
         }
       }
 
       toast.dismiss(loadingToast);
-      toast.success(`Import complete! ${successCount} orders imported successfully.`);
-      if (failCount > 0) {
-        toast.error(`${failCount} orders failed to import. Check console for details.`);
+      
+      if (successCount > 0) {
+        toast.success(`✅ Import complete! ${successCount} ${isProductImport ? 'products' : 'services'} imported successfully.`);
       }
+      
+      if (failCount > 0) {
+        toast.error(`❌ ${failCount} rows failed to import. Check console for details.`);
+      }
+      
       refreshOrders(); // Refresh the orders list
     } catch (error) {
       console.error('Error importing orders:', error);
@@ -855,6 +998,7 @@ export default function Orders() {
       const matchesSearch = 
         !searchQuery ||
         (order.id && order.id.toLowerCase().includes(searchLower)) ||
+        (order.invoice_number && order.invoice_number.toLowerCase().includes(searchLower)) || // Search by invoice number
         ((order.client_name || order.customer_name) && 
          (order.client_name || order.customer_name || '').toLowerCase().includes(searchLower)) ||
         (order.stylist && order.stylist.name && order.stylist.name.toLowerCase().includes(searchLower)) ||
@@ -1066,7 +1210,7 @@ export default function Orders() {
       });
       
       // Use the bulk delete function instead of deleting one by one
-      const success = await deleteOrdersInDateRange(startDate, endDate);
+      const success = await deleteOrdersInDateRange(startDate || undefined, endDate || undefined);
       
       // Close the loading toast
       toast.dismiss(loadingToast);
@@ -1092,6 +1236,7 @@ export default function Orders() {
     // Use exactly what's displayed on frontend
     const formattedOrders = filteredOrders.map((order) => ({
       'Order ID': formatOrderId(order),
+      'Invoice #': order.invoice_number || 'N/A',
       'Date': order.created_at ? new Date(order.created_at).toLocaleString() : 'Unknown date',
       'Customer': order.client_name || 'Unknown client',
       'Stylist': order.stylist_name || 'No stylist',
@@ -1369,6 +1514,7 @@ export default function Orders() {
     // Create headers mapping for CSV export
     const headers = {
       'Order ID': 'Order ID',
+      'Invoice #': 'Invoice #',
       'Date': 'Date & Time',
       'Customer': 'Customer',
       'Stylist': 'Stylist',
@@ -1393,6 +1539,7 @@ export default function Orders() {
     // Use exactly the same format as CSV export
     const formattedOrdersPDF = filteredOrders.map((order) => ({
       'Order ID': formatOrderId(order),
+      'Invoice #': order.invoice_number || 'N/A',
       'Date': order.created_at ? new Date(order.created_at).toLocaleString() : 'Unknown date',
       'Customer': order.client_name || 'Unknown client',
       'Stylist': order.stylist_name || 'No stylist',
@@ -1653,6 +1800,7 @@ export default function Orders() {
     // Create headers mapping for PDF export - same as CSV
     const headers = {
       'Order ID': 'Order ID',
+      'Invoice #': 'Invoice #',
       'Date': 'Date & Time',
       'Customer': 'Customer',
       'Stylist': 'Stylist',
@@ -2104,11 +2252,11 @@ export default function Orders() {
   }
 
   return (
-    <Container maxWidth="lg">
-      <Box sx={{ mb: 4 }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+    <Box sx={{ p: 2 }}>
+      <Box sx={{ mb: 2 }}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
           <Box>
-            <Typography variant="h1">Orders</Typography>
+            <Typography variant="h4" sx={{ fontWeight: 'bold', color: 'primary.main' }}>Orders</Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
               {(() => {
                 if (!startDate) {
@@ -2205,8 +2353,8 @@ export default function Orders() {
         </Box>
         
         {/* Order Analytics */}
-        <Box sx={{ mb: 2 }}>
-          <Typography variant="h6" gutterBottom>
+        <Box sx={{ mb: 1.5 }}>
+          <Typography variant="body1" sx={{ fontWeight: 600, fontSize: '1.1rem', color: 'primary.main' }}>
             {(() => {
               if (!startDate) {
                 return "Analytics - All Time";
@@ -2226,15 +2374,15 @@ export default function Orders() {
             })()}
           </Typography>
         </Box>
-        <Grid container spacing={2} sx={{ mb: 3 }}>
+        <Grid container spacing={2} sx={{ mb: 2 }}>
           {/* Total Orders */}
           <Grid item xs={12} sm={6} md={3}>
-            <Card raised={false} variant="outlined" sx={{ p: 2 }}>
+            <Card raised={false} variant="outlined" sx={{ p: 1.5 }}>
               <CardContent sx={{ p: 0 }}>
-                <Typography color="text.secondary" variant="subtitle2" gutterBottom>
+                <Typography color="text.secondary" variant="caption" sx={{ fontWeight: 600 }}>
                   Total Orders
                 </Typography>
-                <Typography variant="h4" sx={{ mt: 1, mb: 2 }}>
+                <Typography variant="h5" sx={{ mt: 0.5, mb: 1.5, fontWeight: 'bold' }}>
                   {orderStats.total}
                 </Typography>
                 <LinearProgress 
@@ -2252,17 +2400,17 @@ export default function Orders() {
               raised={false}
               variant="outlined"
               sx={{
-                p: 2,
+                p: 1.5,
               }}
             >
               <CardContent sx={{ p: 0 }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                  <InventoryIcon sx={{ mr: 1 }} />
-                  <Typography color="text.secondary" variant="subtitle2">
+                <Box sx={{ display: 'flex', alignItems: 'center', mb: 0.5 }}>
+                  <InventoryIcon sx={{ mr: 1, fontSize: '1.2rem' }} />
+                  <Typography color="text.secondary" variant="caption" sx={{ fontWeight: 600 }}>
                     Salon Consumption
                   </Typography>
                 </Box>
-                <Typography variant="h4" sx={{ mt: 1, mb: 2 }}>
+                <Typography variant="h5" sx={{ mt: 0.5, mb: 1.5, fontWeight: 'bold' }}>
                   {orderStats.salonPurchases}
                 </Typography>
                 <Box sx={{ display: 'flex', alignItems: 'center' }}>
@@ -2286,12 +2434,12 @@ export default function Orders() {
 
           {/* Completed Orders */}
           <Grid item xs={12} sm={6} md={3}>
-            <Card raised={false} variant="outlined" sx={{ p: 2 }}>
+            <Card raised={false} variant="outlined" sx={{ p: 1.5 }}>
               <CardContent sx={{ p: 0 }}>
-                <Typography color="text.secondary" variant="subtitle2" gutterBottom>
+                <Typography color="text.secondary" variant="caption" sx={{ fontWeight: 600 }}>
                   Completed
                 </Typography>
-                <Typography variant="h4" sx={{ mt: 1, mb: 2 }}>
+                <Typography variant="h5" sx={{ mt: 0.5, mb: 1.5, fontWeight: 'bold' }}>
                   {orderStats.completed}
                 </Typography>
                 <Box sx={{ display: 'flex', alignItems: 'center' }}>
@@ -2311,12 +2459,12 @@ export default function Orders() {
           
           {/* Revenue */}
           <Grid item xs={12} sm={6} md={3}>
-            <Card raised={false} variant="outlined" sx={{ p: 2 }}>
+            <Card raised={false} variant="outlined" sx={{ p: 1.5 }}>
               <CardContent sx={{ p: 0 }}>
-                <Typography color="text.secondary" variant="subtitle2" gutterBottom>
+                <Typography color="text.secondary" variant="caption" sx={{ fontWeight: 600 }}>
                   Total Revenue
                 </Typography>
-                <Typography variant="h4" sx={{ mt: 1, mb: 2 }}>
+                <Typography variant="h5" sx={{ mt: 0.5, mb: 1.5, fontWeight: 'bold' }}>
                   {formatCurrency(orderStats.totalRevenue)}
                 </Typography>
                 <LinearProgress 
@@ -2331,14 +2479,24 @@ export default function Orders() {
         </Grid>
         
         {/* Order Tabs */}
-        <Paper sx={{ borderBottom: 1, borderColor: 'divider', mb: 3 }}>
+        <Paper sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}>
           <Tabs
             value={activeTab}
             onChange={handleTabChange}
             indicatorColor="primary"
-            textColor="primary"
             variant="scrollable"
             scrollButtons="auto"
+            sx={{
+              '& .MuiTab-root': {
+                minHeight: '40px',
+                textTransform: 'none',
+                fontSize: '0.875rem',
+                fontWeight: 600,
+                px: 2,
+                py: 1
+              }
+            }}
+            textColor="primary"
             aria-label="order filter tabs"
           >
             <Tab 
@@ -2392,7 +2550,7 @@ export default function Orders() {
         
         {/* Search and filter controls */}
         {orders && orders.length > 0 && (
-          <Box mb={3}>
+          <Box mb={2}>
             <Grid container spacing={2}>
               <Grid item xs={12} md={4}>
                 <TextField
@@ -2535,13 +2693,84 @@ export default function Orders() {
         {/* Render active filters */}
         {renderActiveFilters()}
         
+        {/* Horizontal Scroll Help Info */}
+        {filteredOrders.length > 0 && (
+          <Paper 
+            elevation={1} 
+            sx={{ 
+              p: 1, 
+              mb: 1.5, 
+              background: 'linear-gradient(45deg, #f8fdf0 30%, #f0f8e6 90%)',
+              border: '1px solid #8baf3f',
+              borderRadius: '8px'
+            }}
+          >
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <InfoIcon sx={{ color: '#7da237', fontSize: '20px' }} />
+              <Typography variant="body2" sx={{ color: '#7da237', fontWeight: 500 }}>
+                💡 <strong>Horizontal Scroll Tip:</strong> Hold <kbd style={{ 
+                  background: '#f0f8e6', 
+                  padding: '2px 6px', 
+                  borderRadius: '4px', 
+                  border: '1px solid #c8d9a5',
+                  fontFamily: 'monospace',
+                  fontSize: '11px'
+                }}>Shift</kbd> + Mouse Wheel to scroll horizontally, or use the scroll bar below the table
+              </Typography>
+            </Box>
+          </Paper>
+        )}
+        
         {filteredOrders.length > 0 ? (
           <>
-            <TableContainer component={Paper}>
-              <Table>
+            <TableContainer 
+              component={Paper}
+              sx={{ 
+                overflow: 'auto',
+                overflowX: 'scroll', // Force horizontal scrollbar to always show
+                cursor: 'grab',
+                '&:active': {
+                  cursor: 'grabbing'
+                },
+                // Enhanced scrollbar styling for better visibility
+                '&::-webkit-scrollbar': {
+                  height: '12px',
+                  width: '12px'
+                },
+                '&::-webkit-scrollbar-track': {
+                  background: '#f1f1f1',
+                  borderRadius: '6px',
+                  border: '1px solid #e0e0e0'
+                },
+                '&::-webkit-scrollbar-thumb': {
+                  background: 'linear-gradient(45deg, #8baf3f 30%, #7da237 90%)',
+                  borderRadius: '6px',
+                  border: '1px solid #6d8c30',
+                  '&:hover': {
+                    background: 'linear-gradient(45deg, #7da237 30%, #6d8c30 90%)',
+                    transform: 'scale(1.1)'
+                  }
+                },
+                '&::-webkit-scrollbar-corner': {
+                  background: '#f1f1f1'
+                },
+                // For Firefox
+                scrollbarWidth: 'thin',
+                scrollbarColor: '#8baf3f #f1f1f1'
+              }}
+              onWheel={(e) => {
+                // Enable horizontal scrolling with mouse wheel when shift is held
+                if (e.shiftKey) {
+                  e.preventDefault();
+                  e.currentTarget.scrollLeft += e.deltaY;
+                }
+              }}
+            >
+              <Table sx={{ minWidth: 1400 }} size="small">
                 <TableHead>
                   <TableRow>
                     <TableCell>Order ID</TableCell>
+                    <TableCell>Invoice #</TableCell>
                     <TableCell>Date & Time</TableCell>
                     <TableCell>Customer</TableCell>
                     <TableCell>Stylist</TableCell>
@@ -2584,6 +2813,11 @@ export default function Orders() {
                               sx={{ ml: 1, fontSize: '0.7rem' }} 
                             />
                           )}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="body2" fontFamily="monospace">
+                          {order.invoice_number || 'N/A'}
                         </Typography>
                       </TableCell>
                       <TableCell>
@@ -2865,7 +3099,7 @@ export default function Orders() {
                 onPageChange={handleChangePage}
                 rowsPerPage={rowsPerPage}
                 onRowsPerPageChange={handleChangeRowsPerPage}
-                rowsPerPageOptions={[5, 10, 25, 50, 100, 250, 500, 1000, { label: 'All', value: -1 }]}
+                rowsPerPageOptions={[25, 50, 100, 200, 500, 1000, { label: 'All', value: -1 }]}
               />
             </Box>
           </>
@@ -2927,6 +3161,9 @@ export default function Orders() {
                         sx={{ ml: 1 }} 
                       />
                     )}
+                  </Typography>
+                  <Typography variant="body2">
+                    <strong>Invoice #:</strong> {selectedOrder.invoice_number || 'N/A'}
                   </Typography>
                   <Typography variant="body2">
                     <strong>Date:</strong> {new Date(selectedOrder.created_at).toLocaleString()}
@@ -3606,6 +3843,6 @@ export default function Orders() {
           </DialogActions>
         </Dialog>
       </Box>
-    </Container>
+    </Box>
   );
 } 

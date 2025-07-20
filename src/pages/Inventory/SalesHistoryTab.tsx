@@ -211,18 +211,31 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
       setIsLoading(true);
       setError(null);
       
-      console.log('Fetching data from pos_orders table directly like Orders.tsx');
+      console.log('Fetching data from pos_orders and expanding services...');
       
-      // Query pos_orders directly like Orders.tsx does
       const { data: ordersData, error } = await supabase
         .from('pos_orders')
-        .select('*')
+        .select(`
+          id,
+          created_at,
+          date,
+          client_name,
+          stylist_name,
+          services,
+          payments,
+          subtotal,
+          discount,
+          tax,
+          total,
+          payment_method,
+          status,
+          serial_number
+        `)
         .eq('type', 'sale')
         .gte('created_at', dateRange.startDate)
         .lte('created_at', dateRange.endDate)
         .order('created_at', { ascending: false });
 
-      // Check for fetch error
       if (error) {
         console.error('Error fetching orders data:', error);
         setError(`Failed to load sales data: ${error.message || 'Unknown error'}`);
@@ -230,9 +243,8 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
         return;
       }
 
-      // Check if data exists
       if (!ordersData || ordersData.length === 0) {
-        console.warn('No orders data found.');
+        console.warn('No orders data found for the selected date range.');
         setSalesData([]);
         setGroupedSalesData([]);
         setFilteredData([]);
@@ -240,187 +252,122 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
         return;
       }
 
-      console.log(`Received ${ordersData.length} orders from pos_orders table`);
-      console.log('Sample order:', ordersData[0]);
+      console.log(`Received ${ordersData.length} orders. Now processing items within each order.`);
 
-      // Fetch product master data to get product types
-      console.log('[SalesHistoryTab] Fetching product master data for product types...');
-      const { data: productMasterData, error: productError } = await supabase
-        .from('products')
-        .select('*'); // Get all fields to help with debugging
-
-      if (productError) {
-        console.error('[SalesHistoryTab] Error fetching product master data:', productError);
-        // Continue without product types rather than failing completely
-      }
-
-      // Log sample of product master data
-      if (productMasterData && productMasterData.length > 0) {
-        console.log(`[SalesHistoryTab] Fetched ${productMasterData.length} products from product master`);
-        console.log('[SalesHistoryTab] Sample product:', productMasterData[0]);
-        
-        // Check field names and values availability
-        const productTypeCount = productMasterData.filter(p => p.product_type).length;
-        console.log(`[SalesHistoryTab] Products with product_type: ${productTypeCount}/${productMasterData.length}`);
-        if (productTypeCount === 0) {
-          console.warn('[SalesHistoryTab] No products have product_type set in product master!');
-        }
-      } else {
-        console.warn('[SalesHistoryTab] No products found in product master!');
-      }
-
-      // Create lookup maps for product types
-      const productTypeByName: Record<string, string> = {};
-      const productTypeByHsn: Record<string, string> = {};
-      
-      if (productMasterData) {
-        productMasterData.forEach((product: any) => {
-          if (product.name && product.product_type) {
-            // Normalize the name to improve matching
-            const normalizedName = product.name.toLowerCase().trim();
-            productTypeByName[normalizedName] = product.product_type;
-          }
-          if (product.hsn_code && product.product_type) {
-            productTypeByHsn[product.hsn_code] = product.product_type;
-          }
-        });
-      }
-
-      console.log(`[SalesHistoryTab] Created product type lookup maps with ${Object.keys(productTypeByName).length} names and ${Object.keys(productTypeByHsn).length} HSN codes`);
-      
-      // Log a few examples from the maps for debugging
-      if (Object.keys(productTypeByName).length > 0) {
-        const sampleKeys = Object.keys(productTypeByName).slice(0, 3);
-        console.log('[SalesHistoryTab] Sample product type mappings:');
-        sampleKeys.forEach(key => {
-          console.log(`  "${key}" => "${productTypeByName[key]}"`);
-        });
-      }
-      
-      // Process orders to extract and group product data like Orders.tsx does
-      const groupedData: GroupedSalesItem[] = ordersData.map((order, index) => {
-        // Extract product items from the services array
-        const productServices = order.services?.filter((service: any) => service.type === 'product') || [];
-        
-        // Calculate totals from all product services in this order
-        const totalQuantity = productServices.reduce((sum: number, service: any) => sum + (service.quantity || 1), 0);
-        const totalTaxableValue = productServices.reduce((sum: number, service: any) => {
-          const price = service.price || 0;
-          const quantity = service.quantity || 1;
-          return sum + (price * quantity);
-        }, 0);
-        const totalGstAmount = productServices.reduce((sum: number, service: any) => {
-          const price = service.price || 0;
-          const quantity = service.quantity || 1;
-          const gstRate = service.gst_percentage || 18;
-          const taxable = price * quantity;
-          return sum + (taxable * gstRate / 200); // CGST (half of total GST)
-        }, 0);
-        
-        const totalInvoiceValue = totalTaxableValue + (totalGstAmount * 2); // CGST + SGST
-        
-        // Get product names and HSN codes
-        const productNames = productServices.map((service: any) => service.service_name).join(', ');
-        const hsnCodes = [...new Set(productServices.map((service: any) => service.hsn_code).filter(Boolean))].join(', ');
-        
-        // Get product types by matching with product master data
-        const productTypes = productServices.map((service: any) => {
-          const serviceName = service.service_name;
-          const serviceHsn = service.hsn_code;
-          
-          if (!serviceName) return 'Unknown';
-          
-          const serviceNameLower = serviceName.toLowerCase().trim();
-          console.log(`[SalesHistoryTab] Trying to match product type for "${serviceName}"`);
-          
-          // First try to match by exact product name (case-insensitive)
-          if (productTypeByName[serviceNameLower]) {
-            console.log(`[SalesHistoryTab] Found product type by exact name match: ${productTypeByName[serviceNameLower]}`);
-            return productTypeByName[serviceNameLower];
-          }
-          
-          // Then try fuzzy matching by product name
-          const productMasterKeys = Object.keys(productTypeByName);
-          
-          // Try various matching approaches in order of precision
-          const exactMatchKey = productMasterKeys.find(key => key === serviceNameLower);
-          const containedMatchKey = productMasterKeys.find(key => 
-            serviceNameLower.includes(key) || key.includes(serviceNameLower)
-          );
-          
-          // Try matching by removing spaces and special characters
-          const normalizedServiceName = serviceNameLower.replace(/[^a-z0-9]/g, '');
-          const normalizedMatchKey = !exactMatchKey && !containedMatchKey ? 
-            productMasterKeys.find(key => {
-              const normalizedKey = key.replace(/[^a-z0-9]/g, '');
-              return normalizedServiceName.includes(normalizedKey) || normalizedKey.includes(normalizedServiceName);
-            }) : null;
-            
-          const matchingKey = exactMatchKey || containedMatchKey || normalizedMatchKey;
-          
-          if (matchingKey) {
-            console.log(`[SalesHistoryTab] Found product type by fuzzy name match: ${productTypeByName[matchingKey]} (${matchingKey})`);
-            return productTypeByName[matchingKey];
-          }
-          
-          // Then try to match by HSN code
-          if (serviceHsn && productTypeByHsn[serviceHsn]) {
-            console.log(`[SalesHistoryTab] Found product type by HSN code: ${productTypeByHsn[serviceHsn]}`);
-            return productTypeByHsn[serviceHsn];
-          }
-          
-          console.log(`[SalesHistoryTab] Could not find product type for "${serviceName}"`);
-          // Default fallback
-          return 'Unknown';
-        });
-        const uniqueProductTypes = [...new Set(productTypes.filter(Boolean))].join(', ');
-        
-        // Check if any product types are found
-        if (productTypes.length > 0 && productTypes.every(pt => pt === 'Unknown')) {
-          console.warn(`[SalesHistoryTab] No product types found for any products in order ${order.id}. Products:`, 
-            productServices.map((s: any) => s.service_name).join(', '));
+      // Manually expand and process sales items from the services JSON
+      const flattenedSales: SalesItem[] = ordersData.flatMap(order => {
+        if (!order.services || !Array.isArray(order.services)) {
+          console.warn(`Order ${order.id} has no services array.`);
+          return [];
         }
         
-        // Get the most common GST percentage
-        const gstPercentages = productServices.map((service: any) => service.gst_percentage || 18);
-        const avgGstPercentage = gstPercentages.length > 0 ? gstPercentages.reduce((a: number, b: number) => a + b, 0) / gstPercentages.length : 18;
+        return order.services.map((service: any, index: number) => {
+          const taxableValue = Number(service.subtotal) || (Number(service.price) * Number(service.quantity));
+          
+          return {
+            id: order.id,
+            order_item_pk: service.id || `${order.id}-${index}`,
+            serial_no: order.serial_number || order.id,
+            original_serial_no: order.serial_number,
+            order_id: order.id,
+            order_item_id: service.service_id || service.id,
+            date: order.date || order.created_at,
+            product_name: service.service_name || service.name,
+            quantity: Number(service.quantity) || 0,
+            unit_price_ex_gst: Number(service.unit_price) || Number(service.price) || 0,
+            unit_price_inc_gst: Number(service.unit_price_inc_gst) || 0,
+            gst_percentage: Number(service.gst_percentage) || 0,
+            taxable_value: taxableValue,
+            cgst_amount: (Number(service.tax_amount) / 2) || 0,
+            sgst_amount: (Number(service.tax_amount) / 2) || 0,
+            total_purchase_cost: 0, // This would need a join to product_master
+            discount: Number(service.discount_amount) || Number(service.discount) || 0,
+            discount_percentage: Number(service.discount_percentage) || 0,
+            tax: Number(service.tax_amount) || 0,
+            hsn_code: service.hsn_code || '',
+            product_type: service.type || 'unknown',
+            mrp_incl_gst: Number(service.mrp_incl_gst) || 0,
+            discounted_sales_rate_ex_gst: Number(service.unit_price) || 0,
+            invoice_value: Number(service.total_amount) || Number(service.total) || 0,
+            igst_amount: 0,
+            initial_stock: 0, // Requires join/RPC
+            remaining_stock: 0, // Requires join/RPC
+            current_stock: 0, // Requires join/RPC
+            purchase_cost_per_unit_ex_gst: 0, // Requires join
+          };
+        });
+      });
 
-        return {
-          id: order.id,
-          serial_no: 0, // Will be assigned later in tableData
-          order_id: order.id,
-          date: order.created_at || order.date,
-          products: [], // Not needed for display
-          total_quantity: totalQuantity,
-          total_taxable_value: totalTaxableValue,
-          total_cgst_amount: totalGstAmount,
-          total_sgst_amount: totalGstAmount,
-          total_discount: order.discount || 0,
-          total_invoice_value: totalInvoiceValue,
-          combined_product_names: productNames,
-          combined_hsn_codes: hsnCodes,
-          combined_product_types: uniqueProductTypes,
-          gst_percentage: avgGstPercentage
-        };
-      }).filter(item => item.total_quantity > 0); // Only include orders with products
+      console.log(`Processed ${flattenedSales.length} individual sales items.`);
+      setSalesData(flattenedSales);
 
-      console.log('Processed grouped data:', groupedData);
+      // Group the flattened data by order_id for display
+      const groupedData = new Map<string, GroupedSalesItem>();
       
-      // Set the data
-      setSalesData([]); // Not needed for the grouped approach
-      setGroupedSalesData(groupedData);
-      
-      // Apply initial sorting by date (newest first) and assign serial numbers
-      const sortedData = [...groupedData].sort((a, b) => {
-        const dateA = new Date(a.date).getTime();
-        const dateB = new Date(b.date).getTime();
-        return dateB - dateA; // Newest first
+      flattenedSales.forEach(item => {
+        if (!groupedData.has(item.order_id)) {
+          groupedData.set(item.order_id, {
+            id: item.order_id,
+            serial_no: item.serial_no,
+            order_id: item.order_id,
+            date: item.date,
+            products: [],
+            total_quantity: 0,
+            total_taxable_value: 0,
+            total_cgst_amount: 0,
+            total_sgst_amount: 0,
+            total_discount: 0,
+            total_invoice_value: 0,
+            combined_product_names: '',
+            combined_hsn_codes: '',
+            combined_product_types: '',
+            gst_percentage: 0,
+          });
+        }
+        
+        const group = groupedData.get(item.order_id)!;
+        group.products.push(item);
+        group.total_quantity += item.quantity;
+        group.total_taxable_value += item.taxable_value;
+        group.total_cgst_amount += item.cgst_amount;
+        group.total_sgst_amount += item.sgst_amount;
+        group.total_discount += item.discount;
+        group.total_invoice_value += item.invoice_value;
       });
       
-      setFilteredData(sortedData);
+      // Finalize grouped data
+      const finalGroupedData = Array.from(groupedData.values()).map(group => {
+        const productNames = group.products.map(p => p.product_name);
+        const hsnCodes = group.products.map(p => p.hsn_code).filter(Boolean);
+        const productTypes = group.products.map(p => p.product_type);
+        
+        group.combined_product_names = productNames.join(', ');
+        group.combined_hsn_codes = [...new Set(hsnCodes)].join(', ');
+        group.combined_product_types = [...new Set(productTypes)].join(', ');
+        
+        // Find most common GST percentage
+        if (group.products.length > 0) {
+          const gstRates = group.products.map(p => p.gst_percentage);
+          const rateCounts = gstRates.reduce((acc, rate) => {
+            acc[rate] = (acc[rate] || 0) + 1;
+            return acc;
+          }, {} as Record<number, number>);
+          const mostCommonRate = Object.keys(rateCounts).reduce((a, b) => rateCounts[Number(a)] > rateCounts[Number(b)] ? a : b);
+          group.gst_percentage = Number(mostCommonRate);
+        }
+        
+        return group;
+      });
+
+      console.log(`Grouped data into ${finalGroupedData.length} orders for display.`);
+      setGroupedSalesData(finalGroupedData);
+      setFilteredData(finalGroupedData);
+
     } catch (err) {
-      console.error('Error fetching data:', err);
-      setError('An unexpected error occurred while loading sales data.');
+      console.error('An unexpected error occurred:', err);
+      const errorMessage = (err instanceof Error) ? err.message : 'An unknown error occurred';
+      setError(`An unexpected error occurred: ${errorMessage}`);
+      toast.error('An unexpected error occurred while fetching sales data.');
     } finally {
       setIsLoading(false);
     }

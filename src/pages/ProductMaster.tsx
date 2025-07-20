@@ -45,6 +45,12 @@ import {
   ToggleOn as ToggleOnIcon,
   Upload as UploadIcon,
   CloudUpload as CloudUploadIcon,
+  Search as SearchIcon,
+  FilterList as FilterListIcon,
+  ViewList as ViewListIcon,
+  ViewModule as ViewModuleIcon,
+  Clear as ClearIcon,
+  Info as InfoIcon,
 } from '@mui/icons-material';
 import { styled } from '@mui/material/styles';
 import { supabase, handleSupabaseError } from '../utils/supabase/supabaseClient';
@@ -53,8 +59,22 @@ import * as XLSX from 'xlsx';
 
 const StyledTableCell = styled(TableCell)(({ theme }) => ({
   fontWeight: 'bold',
-  backgroundColor: theme.palette.primary.light,
+  backgroundColor: theme.palette.primary.main,
   color: theme.palette.common.white,
+  fontSize: '0.8rem',
+  padding: '8px 12px',
+  whiteSpace: 'nowrap',
+}));
+
+const StyledTableRow = styled(TableRow)(({ theme }) => ({
+  '&:nth-of-type(odd)': {
+    backgroundColor: theme.palette.action.hover,
+  },
+  '&:hover': {
+    backgroundColor: theme.palette.action.selected,
+    cursor: 'pointer',
+  },
+  transition: 'background-color 0.2s',
 }));
 
 // Product interface - matches your database
@@ -128,7 +148,7 @@ export default function ProductMaster() {
   const [formData, setFormData] = useState<ProductFormState>(initialFormState);
   const [isEditing, setIsEditing] = useState(false);
   const [page, setPage] = useState(0);
-  const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [rowsPerPage, setRowsPerPage] = useState(50);
   const [snackbar, setSnackbar] = useState({
     open: false,
     message: '',
@@ -146,8 +166,77 @@ export default function ProductMaster() {
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [parsedExcelData, setParsedExcelData] = useState<any[]>([]);
 
+  // Search and filtering states
+  const [searchTerm, setSearchTerm] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [viewMode, setViewMode] = useState<'table' | 'cards'>('table');
+  const [sortBy, setSortBy] = useState<'name' | 'category' | 'price' | 'stock'>('name');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+
   // Fetch purchase history data
   const { purchases, isLoading: isLoadingPurchases } = usePurchaseHistory();
+
+  // Get unique categories for filter dropdown
+  const getUniqueCategories = () => {
+    const categories = products.map(p => p.category).filter(Boolean);
+    return ['all', ...Array.from(new Set(categories))];
+  };
+
+  // Filter and sort products
+  const getFilteredAndSortedProducts = () => {
+    let filtered = products.filter(product => {
+      // Search filter
+      const searchMatch = searchTerm === '' || 
+        product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        product.hsn_code?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        product.category?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        product.product_type?.toLowerCase().includes(searchTerm.toLowerCase());
+
+      // Category filter
+      const categoryMatch = categoryFilter === 'all' || product.category === categoryFilter;
+
+      // Status filter
+      const statusMatch = statusFilter === 'all' || 
+        (statusFilter === 'active' && product.active) ||
+        (statusFilter === 'inactive' && !product.active);
+
+      return searchMatch && categoryMatch && statusMatch;
+    });
+
+    // Sort products
+    filtered.sort((a, b) => {
+      let comparison = 0;
+      
+      switch (sortBy) {
+        case 'name':
+          comparison = a.name.localeCompare(b.name);
+          break;
+        case 'category':
+          comparison = (a.category || '').localeCompare(b.category || '');
+          break;
+        case 'price':
+          comparison = (a.mrp_incl_gst || 0) - (b.mrp_incl_gst || 0);
+          break;
+        case 'stock':
+          comparison = (a.stock_quantity || 0) - (b.stock_quantity || 0);
+          break;
+        default:
+          comparison = 0;
+      }
+      
+      return sortDirection === 'asc' ? comparison : -comparison;
+    });
+
+    return filtered;
+  };
+
+  const filteredProducts = getFilteredAndSortedProducts();
+
+  // Reset page when filters change
+  useEffect(() => {
+    setPage(0);
+  }, [searchTerm, categoryFilter, statusFilter, sortBy, sortDirection]);
 
   // Fetch products on component mount
   useEffect(() => {
@@ -160,18 +249,80 @@ export default function ProductMaster() {
     setError(null);
 
     try {
-      // Use the correct user ID from profiles table
-      const userId = 'f1ab5143-1129-4557-a694-63a010292c14'; // pankajhadole24@gmail.com
+      // Get current authenticated user
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      
+      if (authError || !user) {
+        throw new Error('Please log in to view products');
+      }
 
-      const { data, error } = await supabase
-        .from('product_master')
-        .select('*')
-        .eq('user_id', userId)
-        .order('name');
+      console.log('Current user:', user.email, 'Auth User ID:', user.id);
 
-      if (error) throw handleSupabaseError(error);
+      // Direct approach: Try multiple profile IDs that might work
+      const possibleProfileIds = [
+        '3f4b718f-70cb-4873-a62c-b8806a92e25b', // Admin profile ID
+        user.id, // Auth user ID as fallback
+      ];
 
-      setProducts(data || []);
+      let products = [];
+      let lastError = null;
+
+      // Try each profile ID until we find products
+      for (const profileId of possibleProfileIds) {
+        try {
+          console.log(`Trying to fetch products with profile ID: ${profileId}`);
+          
+          const { data, error } = await supabase
+            .from('product_master')
+            .select('*')
+            .eq('user_id', profileId)
+            .order('name');
+
+          if (error) {
+            console.warn(`Error with profile ID ${profileId}:`, error);
+            lastError = error;
+            continue;
+          }
+
+          if (data && data.length > 0) {
+            console.log(`✅ Found ${data.length} products with profile ID: ${profileId}`);
+            products = data;
+            break;
+          } else {
+            console.log(`No products found with profile ID: ${profileId}`);
+          }
+        } catch (err) {
+          console.warn(`Exception with profile ID ${profileId}:`, err);
+          lastError = err;
+        }
+      }
+
+      if (products.length === 0) {
+        // If no products found, try fetching all products (for debugging)
+        console.log('No products found with any profile ID, trying to fetch all products...');
+        const { data: allProducts, error: allError } = await supabase
+          .from('product_master')
+          .select('*')
+          .order('name');
+
+                 if (allError) {
+           const errorMessage = lastError instanceof Error ? lastError.message : 
+                               (allError as any)?.message || 'Unknown error';
+           throw new Error(`Failed to fetch products: ${errorMessage}`);
+         }
+
+        console.log(`Found ${allProducts?.length || 0} total products in database`);
+        
+        if (allProducts && allProducts.length > 0) {
+          // Show first few products for debugging
+          console.log('Sample products:', allProducts.slice(0, 3));
+        }
+        
+        throw new Error('No products found for current user. Please contact administrator.');
+      }
+
+      console.log(`✅ Successfully loaded ${products.length} products`);
+      setProducts(products);
     } catch (err) {
       console.error('Error fetching products:', err);
       setError(err instanceof Error ? err.message : 'Failed to load products');
@@ -384,8 +535,27 @@ export default function ProductMaster() {
     setIsLoading(true);
     
     try {
-      // Use the correct user ID from profiles table
-      const userId = 'f1ab5143-1129-4557-a694-63a010292c14'; // pankajhadole24@gmail.com
+      // Get current authenticated user
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      
+      if (authError || !user) {
+        throw new Error('Please log in to save products');
+      }
+
+      // Get the profile ID for the current user (prefer admin profile)
+      const { data: profileData, error: profileError } = await supabase
+        .from('profiles')
+        .select('id, role')
+        .eq('auth_user_id', user.id)
+        .order('role', { ascending: false }) // admin comes before user
+        .limit(1)
+        .single();
+
+      if (profileError || !profileData) {
+        throw new Error('Profile not found. Please contact administrator.');
+      }
+
+      const profileId = profileData.id;
 
       // Prepare data to insert/update
       const productData = {
@@ -400,7 +570,7 @@ export default function ProductMaster() {
         category: formData.category,
         product_type: formData.product_type,
         updated_at: new Date().toISOString(),
-        user_id: userId,
+        user_id: profileId,
       };
       
       let result;
@@ -603,8 +773,27 @@ export default function ProductMaster() {
     setImportProgress(0);
 
     try {
-      // Use the correct user ID from profiles table
-      const userId = 'f1ab5143-1129-4557-a694-63a010292c14'; // pankajhadole24@gmail.com
+      // Get current authenticated user
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      
+      if (authError || !user) {
+        throw new Error('Please log in to import products');
+      }
+
+      // Get the profile ID for the current user (prefer admin profile)
+      const { data: profileData, error: profileError } = await supabase
+        .from('profiles')
+        .select('id, role')
+        .eq('auth_user_id', user.id)
+        .order('role', { ascending: false }) // admin comes before user
+        .limit(1)
+        .single();
+
+      if (profileError || !profileData) {
+        throw new Error('Profile not found. Please contact administrator.');
+      }
+
+      const profileId = profileData.id;
       
       const batchSize = 10; // Process in batches to avoid overwhelming the database
       const totalBatches = Math.ceil(parsedExcelData.length / batchSize);
@@ -614,7 +803,7 @@ export default function ProductMaster() {
       for (let i = 0; i < totalBatches; i++) {
         const batch = parsedExcelData.slice(i * batchSize, (i + 1) * batchSize).map(product => ({
           ...product,
-          user_id: userId // Add user_id to each product
+          user_id: profileId // Add user_id to each product
         }));
         
         try {
@@ -683,18 +872,19 @@ export default function ProductMaster() {
   };
 
   return (
-    <Box sx={{ p: 3 }}>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Typography variant="h1">
+    <Box sx={{ p: 2 }}>
+      {/* Header */}
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+        <Typography variant="h4" sx={{ fontWeight: 'bold', color: 'primary.main' }}>
           Product Master
         </Typography>
-        <Box>
+        <Box sx={{ display: 'flex', gap: 1 }}>
           <Button
             variant="outlined"
             startIcon={<RefreshIcon />}
             onClick={fetchProducts}
-            sx={{ mr: 1 }}
             disabled={isLoading}
+            size="small"
           >
             Refresh
           </Button>
@@ -702,8 +892,8 @@ export default function ProductMaster() {
             component="label"
             variant="outlined"
             startIcon={<CloudUploadIcon />}
-            sx={{ mr: 1 }}
             disabled={isLoading || isImporting}
+            size="small"
           >
             Import Excel
             <input
@@ -719,55 +909,265 @@ export default function ProductMaster() {
             startIcon={<AddIcon />}
             onClick={handleOpenAddDialog}
             disabled={isLoading}
+            size="small"
           >
             Add Product
           </Button>
         </Box>
       </Box>
 
+      {/* Search and Filter Bar */}
+      <Paper sx={{ p: 1.5, mb: 2, backgroundColor: 'grey.50' }}>
+        <Grid container spacing={2} alignItems="center">
+          {/* Search Input */}
+          <Grid item xs={12} md={4}>
+            <TextField
+              fullWidth
+              size="small"
+              placeholder="Search products, HSN, category..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <SearchIcon color="action" />
+                  </InputAdornment>
+                ),
+                endAdornment: searchTerm && (
+                  <InputAdornment position="end">
+                    <IconButton
+                      size="small"
+                      onClick={() => setSearchTerm('')}
+                      edge="end"
+                    >
+                      <ClearIcon />
+                    </IconButton>
+                  </InputAdornment>
+                ),
+              }}
+            />
+          </Grid>
+
+          {/* Category Filter */}
+          <Grid item xs={12} sm={6} md={2}>
+            <FormControl fullWidth size="small">
+              <InputLabel>Category</InputLabel>
+              <Select
+                value={categoryFilter}
+                onChange={(e) => setCategoryFilter(e.target.value)}
+                label="Category"
+              >
+                {getUniqueCategories().map((category) => (
+                  <MenuItem key={category} value={category}>
+                    {category === 'all' ? 'All Categories' : category}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Grid>
+
+          {/* Status Filter */}
+          <Grid item xs={12} sm={6} md={2}>
+            <FormControl fullWidth size="small">
+              <InputLabel>Status</InputLabel>
+              <Select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                label="Status"
+              >
+                <MenuItem value="all">All Status</MenuItem>
+                <MenuItem value="active">Active</MenuItem>
+                <MenuItem value="inactive">Inactive</MenuItem>
+              </Select>
+            </FormControl>
+          </Grid>
+
+          {/* Sort By */}
+          <Grid item xs={12} sm={6} md={2}>
+            <FormControl fullWidth size="small">
+              <InputLabel>Sort By</InputLabel>
+              <Select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value as any)}
+                label="Sort By"
+              >
+                <MenuItem value="name">Name</MenuItem>
+                <MenuItem value="category">Category</MenuItem>
+                <MenuItem value="price">Price</MenuItem>
+                <MenuItem value="stock">Stock</MenuItem>
+              </Select>
+            </FormControl>
+          </Grid>
+
+          {/* View Mode Toggle */}
+          <Grid item xs={12} sm={6} md={2}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Button
+                variant={viewMode === 'table' ? 'contained' : 'outlined'}
+                size="small"
+                onClick={() => setViewMode('table')}
+                sx={{ minWidth: 'auto', px: 1 }}
+              >
+                <ViewListIcon />
+              </Button>
+              <Button
+                variant={viewMode === 'cards' ? 'contained' : 'outlined'}
+                size="small"
+                onClick={() => setViewMode('cards')}
+                sx={{ minWidth: 'auto', px: 1 }}
+              >
+                <ViewModuleIcon />
+              </Button>
+              <IconButton
+                size="small"
+                onClick={() => setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')}
+                title={`Sort ${sortDirection === 'asc' ? 'Descending' : 'Ascending'}`}
+              >
+                {sortDirection === 'asc' ? '↑' : '↓'}
+              </IconButton>
+            </Box>
+          </Grid>
+        </Grid>
+
+        {/* Results Summary */}
+        <Box sx={{ mt: 1.5, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Typography variant="body2" color="text.secondary">
+            Showing {filteredProducts.length} of {products.length} products
+            {searchTerm && ` • Search: "${searchTerm}"`}
+            {categoryFilter !== 'all' && ` • Category: ${categoryFilter}`}
+            {statusFilter !== 'all' && ` • Status: ${statusFilter}`}
+          </Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Typography variant="body2" color="text.secondary">
+              View:
+            </Typography>
+            <Chip
+              label={viewMode === 'table' ? 'Table' : 'Cards'}
+              size="small"
+              color="primary"
+              variant="outlined"
+            />
+          </Box>
+        </Box>
+      </Paper>
+
       {error && (
-        <Alert severity="error" sx={{ mb: 2 }}>
+        <Alert severity="error" sx={{ mb: 1.5 }}>
           {error}
         </Alert>
       )}
 
-      <Paper sx={{ width: '100%', overflow: 'hidden' }}>
-        <TableContainer sx={{ maxHeight: 'calc(100vh - 300px)', overflow: 'auto' }}>
-          <Table stickyHeader aria-label="products table">
-            <TableHead>
-              <TableRow>
-                <StyledTableCell>Name</StyledTableCell>
-                <StyledTableCell>Category</StyledTableCell>
-                <StyledTableCell>HSN Code</StyledTableCell>
-                <StyledTableCell align="right">GST %</StyledTableCell>
-                <StyledTableCell align="right">Price (Excl. GST)</StyledTableCell>
-                <StyledTableCell align="right">MRP (Incl. GST)</StyledTableCell>
-                <StyledTableCell align="right">Stock Quantity</StyledTableCell>
-                <StyledTableCell>Product Type</StyledTableCell>
-                <StyledTableCell>Status</StyledTableCell>
-                <StyledTableCell align="center">Actions</StyledTableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {isLoading ? (
+      {/* Horizontal Scroll Help Info */}
+      <Paper 
+        elevation={1} 
+        sx={{ 
+          p: 1, 
+          mb: 1.5, 
+          background: 'linear-gradient(45deg, #f8fdf0 30%, #f0f8e6 90%)',
+          border: '1px solid #8baf3f',
+          borderRadius: '8px'
+        }}
+      >
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <InfoIcon sx={{ color: '#7da237', fontSize: '20px' }} />
+          <Typography variant="body2" sx={{ color: '#7da237', fontWeight: 500 }}>
+            💡 <strong>Horizontal Scroll Tip:</strong> Hold <kbd style={{ 
+              background: '#f0f8e6', 
+              padding: '2px 6px', 
+              borderRadius: '4px', 
+              border: '1px solid #c8d9a5',
+              fontFamily: 'monospace',
+              fontSize: '11px'
+            }}>Shift</kbd> + Mouse Wheel to scroll horizontally, or use the scroll bar below the table
+          </Typography>
+        </Box>
+      </Paper>
+
+      {/* Content Area */}
+      {viewMode === 'table' ? (
+        <Paper sx={{ width: '100%', overflow: 'hidden' }}>
+          <TableContainer 
+            sx={{ 
+              maxHeight: 'calc(100vh - 320px)', 
+              overflow: 'auto',
+              overflowX: 'scroll', // Force horizontal scrollbar to always show
+              cursor: 'grab',
+              '&:active': {
+                cursor: 'grabbing'
+              },
+              // Enhanced scrollbar styling for better visibility
+              '&::-webkit-scrollbar': {
+                height: '12px',
+                width: '12px'
+              },
+              '&::-webkit-scrollbar-track': {
+                background: '#f1f1f1',
+                borderRadius: '6px',
+                border: '1px solid #e0e0e0'
+              },
+              '&::-webkit-scrollbar-thumb': {
+                background: 'linear-gradient(45deg, #8baf3f 30%, #7da237 90%)',
+                borderRadius: '6px',
+                border: '1px solid #6d8c30',
+                '&:hover': {
+                  background: 'linear-gradient(45deg, #7da237 30%, #6d8c30 90%)',
+                  transform: 'scale(1.1)'
+                }
+              },
+              '&::-webkit-scrollbar-corner': {
+                background: '#f1f1f1'
+              },
+              // For Firefox
+              scrollbarWidth: 'thin',
+              scrollbarColor: '#8baf3f #f1f1f1'
+            }}
+            onWheel={(e) => {
+              // Enable horizontal scrolling with mouse wheel when shift is held
+              if (e.shiftKey) {
+                e.preventDefault();
+                e.currentTarget.scrollLeft += e.deltaY;
+              }
+            }}
+          >
+            <Table stickyHeader aria-label="products table" sx={{ minWidth: 1200 }} size="small">
+              <TableHead>
                 <TableRow>
-                  <TableCell colSpan={10} align="center" sx={{ py: 3 }}>
-                    <CircularProgress size={40} />
-                  </TableCell>
+                  <StyledTableCell>Name</StyledTableCell>
+                  <StyledTableCell>Category</StyledTableCell>
+                  <StyledTableCell>HSN Code</StyledTableCell>
+                  <StyledTableCell align="right">GST %</StyledTableCell>
+                  <StyledTableCell align="right">Price (Excl. GST)</StyledTableCell>
+                  <StyledTableCell align="right">MRP (Incl. GST)</StyledTableCell>
+                  <StyledTableCell align="right">Stock Quantity</StyledTableCell>
+                  <StyledTableCell>Product Type</StyledTableCell>
+                  <StyledTableCell>Status</StyledTableCell>
+                  <StyledTableCell align="center">Actions</StyledTableCell>
                 </TableRow>
-              ) : products.length > 0 ? (
-                products
-                  .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
-                  .map((product) => (
-                    <TableRow 
-                      key={product.id} 
-                      hover
+              </TableHead>
+              <TableBody>
+                {isLoading ? (
+                  <TableRow>
+                    <TableCell colSpan={10} align="center" sx={{ py: 3 }}>
+                      <CircularProgress size={40} />
+                    </TableCell>
+                  </TableRow>
+                ) : filteredProducts.length > 0 ? (
+                  filteredProducts
+                    .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
+                    .map((product) => (
+                    <StyledTableRow 
+                      key={product.id}
                       sx={{ 
                         backgroundColor: !product.active ? 'rgba(0, 0, 0, 0.04)' : 'inherit',
-                        opacity: !product.active ? 0.7 : 1
+                        opacity: !product.active ? 0.7 : 1,
+                        '& .MuiTableCell-root': {
+                          padding: '6px 8px',
+                          fontSize: '0.75rem',
+                          whiteSpace: 'nowrap'
+                        }
                       }}
                     >
-                      <TableCell>{product.name}</TableCell>
+                      <TableCell sx={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis' }}>{product.name}</TableCell>
                       <TableCell>{product.category || '-'}</TableCell>
                       <TableCell>{product.hsn_code || '-'}</TableCell>
                       <TableCell align="right">{product.gst_percentage || 0}%</TableCell>
@@ -856,28 +1256,224 @@ export default function ProductMaster() {
                           </Tooltip>
                         </Box>
                       </TableCell>
-                    </TableRow>
+                    </StyledTableRow>
                   ))
               ) : (
                 <TableRow>
-                  <TableCell colSpan={10} align="center" sx={{ py: 3 }}>
-                    No products found. Click "Add Product" to create one.
+                  <TableCell colSpan={10} align="center" sx={{ py: 4 }}>
+                    <Box>
+                      <Typography variant="h6" color="text.secondary" sx={{ mb: 1 }}>
+                        No products found
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        {searchTerm || categoryFilter !== 'all' || statusFilter !== 'all'
+                          ? 'Try adjusting your search or filters'
+                          : 'Click "Add Product" to create your first product'
+                        }
+                      </Typography>
+                    </Box>
                   </TableCell>
                 </TableRow>
               )}
             </TableBody>
           </Table>
         </TableContainer>
-        <TablePagination
-          rowsPerPageOptions={[5, 10, 25, 50]}
-          component="div"
-          count={products.length}
-          rowsPerPage={rowsPerPage}
-          page={page}
-          onPageChange={handleChangePage}
-          onRowsPerPageChange={handleChangeRowsPerPage}
-        />
-      </Paper>
+          <TablePagination
+            rowsPerPageOptions={[25, 50, 100, 200]}
+            component="div"
+            count={filteredProducts.length}
+            rowsPerPage={rowsPerPage}
+            page={page}
+            onPageChange={handleChangePage}
+            onRowsPerPageChange={handleChangeRowsPerPage}
+          />
+        </Paper>
+      ) : (
+        /* Card View */
+        <Box>
+          {isLoading ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
+              <CircularProgress size={40} />
+            </Box>
+          ) : filteredProducts.length > 0 ? (
+            <>
+              <Grid container spacing={2}>
+                {filteredProducts
+                  .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
+                  .map((product) => (
+                    <Grid item xs={12} sm={6} md={4} lg={3} key={product.id}>
+                      <Paper
+                        sx={{
+                          p: 2,
+                          height: '100%',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          backgroundColor: !product.active ? 'rgba(0, 0, 0, 0.04)' : 'inherit',
+                          opacity: !product.active ? 0.7 : 1,
+                          border: '1px solid',
+                          borderColor: product.active ? 'success.light' : 'error.light',
+                          '&:hover': {
+                            boxShadow: 3,
+                            transform: 'translateY(-2px)',
+                            transition: 'all 0.2s'
+                          }
+                        }}
+                      >
+                        {/* Product Header */}
+                        <Box sx={{ mb: 2 }}>
+                          <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 1, lineHeight: 1.2 }}>
+                            {product.name}
+                          </Typography>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                            <Chip
+                              label={product.active ? 'Active' : 'Inactive'}
+                              size="small"
+                              color={product.active ? 'success' : 'error'}
+                              variant="outlined"
+                            />
+                            <Chip
+                              label={product.category || 'General'}
+                              size="small"
+                              color="primary"
+                              variant="outlined"
+                            />
+                          </Box>
+                        </Box>
+
+                        {/* Product Details */}
+                        <Box sx={{ flexGrow: 1, mb: 2 }}>
+                          <Grid container spacing={1}>
+                            <Grid item xs={6}>
+                              <Typography variant="caption" color="text.secondary">
+                                HSN Code
+                              </Typography>
+                              <Typography variant="body2" sx={{ fontWeight: 'medium' }}>
+                                {product.hsn_code || '-'}
+                              </Typography>
+                            </Grid>
+                            <Grid item xs={6}>
+                              <Typography variant="caption" color="text.secondary">
+                                GST %
+                              </Typography>
+                              <Typography variant="body2" sx={{ fontWeight: 'medium' }}>
+                                {product.gst_percentage || 0}%
+                              </Typography>
+                            </Grid>
+                            <Grid item xs={6}>
+                              <Typography variant="caption" color="text.secondary">
+                                Price (Ex GST)
+                              </Typography>
+                              <Typography variant="body2" sx={{ fontWeight: 'bold', color: 'primary.main' }}>
+                                ₹{product.mrp_excl_gst?.toFixed(2) || '0.00'}
+                              </Typography>
+                            </Grid>
+                            <Grid item xs={6}>
+                              <Typography variant="caption" color="text.secondary">
+                                MRP (Inc GST)
+                              </Typography>
+                              <Typography variant="body2" sx={{ fontWeight: 'bold', color: 'success.main' }}>
+                                ₹{product.mrp_incl_gst?.toFixed(2) || '0.00'}
+                              </Typography>
+                            </Grid>
+                            <Grid item xs={6}>
+                              <Typography variant="caption" color="text.secondary">
+                                Stock
+                              </Typography>
+                              <Typography variant="body2" sx={{ fontWeight: 'medium' }}>
+                                {product.stock_quantity || 0}
+                              </Typography>
+                            </Grid>
+                            <Grid item xs={6}>
+                              <Typography variant="caption" color="text.secondary">
+                                Type
+                              </Typography>
+                              <Typography variant="body2" sx={{ fontWeight: 'medium' }}>
+                                {product.product_type || '-'}
+                              </Typography>
+                            </Grid>
+                          </Grid>
+                        </Box>
+
+                        {/* Actions */}
+                        <Box sx={{ display: 'flex', gap: 1, justifyContent: 'center', pt: 1, borderTop: '1px solid', borderColor: 'divider' }}>
+                          <Tooltip title="Edit Product">
+                            <IconButton
+                              size="small"
+                              onClick={() => handleOpenEditDialog(product)}
+                              sx={{ color: 'primary.main' }}
+                            >
+                              <EditIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                          <Tooltip title="View Price History">
+                            <IconButton
+                              size="small"
+                              onClick={() => handleOpenHistoryDialog(product)}
+                              sx={{ color: 'info.main' }}
+                            >
+                              <HistoryIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                          <Tooltip title={product.active ? "Deactivate Product" : "Activate Product"}>
+                            <IconButton
+                              size="small"
+                              onClick={() => handleToggleActive(product)}
+                              sx={{ color: product.active ? 'warning.main' : 'success.main' }}
+                            >
+                              {product.active ? <VisibilityOffIcon fontSize="small" /> : <VisibilityIcon fontSize="small" />}
+                            </IconButton>
+                          </Tooltip>
+                          <Tooltip title="Delete Product">
+                            <IconButton
+                              size="small"
+                              onClick={() => handleOpenDeleteDialog(product)}
+                              sx={{ color: 'error.main' }}
+                            >
+                              <DeleteIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                        </Box>
+                      </Paper>
+                    </Grid>
+                  ))}
+              </Grid>
+              
+              {/* Pagination for Cards */}
+              <Box sx={{ display: 'flex', justifyContent: 'center', mt: 3 }}>
+                <TablePagination
+                  rowsPerPageOptions={[8, 12, 24, 48]}
+                  component="div"
+                  count={filteredProducts.length}
+                  rowsPerPage={rowsPerPage}
+                  page={page}
+                  onPageChange={handleChangePage}
+                  onRowsPerPageChange={handleChangeRowsPerPage}
+                  labelRowsPerPage="Cards per page:"
+                />
+              </Box>
+            </>
+          ) : (
+            <Paper sx={{ p: 4, textAlign: 'center' }}>
+              <Typography variant="h6" color="text.secondary" sx={{ mb: 2 }}>
+                No products found
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+                {searchTerm || categoryFilter !== 'all' || statusFilter !== 'all'
+                  ? 'Try adjusting your search or filters'
+                  : 'Click "Add Product" to create your first product'
+                }
+              </Typography>
+              <Button
+                variant="contained"
+                startIcon={<AddIcon />}
+                onClick={handleOpenAddDialog}
+              >
+                Add Product
+              </Button>
+            </Paper>
+          )}
+        </Box>
+      )}
 
       {/* Add/Edit Product Dialog */}
       <Dialog open={open} onClose={handleClose} maxWidth="md" fullWidth>

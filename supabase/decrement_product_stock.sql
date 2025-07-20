@@ -1,145 +1,67 @@
 -- Function to decrement product stock and log the change
-CREATE OR REPLACE FUNCTION decrement_product_stock(
-  p_product_id UUID,
-  p_decrement_quantity INTEGER
+create or replace function decrement_product_stock(
+  p_hsn_code text,
+  p_quantity_sold int,
+  p_user_id uuid
 )
-RETURNS JSONB AS $$
-DECLARE
-  current_stock INTEGER;
-  product_name TEXT;
-  hsn_code TEXT;
-  units TEXT;
-  gst_percentage INTEGER;
-  price DECIMAL;
-  new_stock INTEGER;
-  timestamp TIMESTAMP;
-BEGIN
-  timestamp := NOW();
+returns text as $$
+declare
+  v_product_id uuid;
+  v_product_name text;
+  v_current_stock integer;
+  v_new_stock integer;
+  v_duplicate_key text;
+begin
+  -- Find the product by HSN code and user ID
+  select id, name, stock_quantity into v_product_id, v_product_name, v_current_stock
+  from public.product_master
+  where hsn_code = p_hsn_code and user_id = p_user_id;
 
-  -- Get product details and current stock
-  SELECT 
-    p.name,
-    p.hsn_code,
-    p.units,
-    p.gst_percentage,
-    p.price,
-    COALESCE(ph.current_stock_at_purchase, p.stock_quantity, 0) as current_stock
-  INTO 
-    product_name,
-    hsn_code,
-    units,
-    gst_percentage,
-    price,
-    current_stock
-  FROM products p
-  LEFT JOIN (
-    SELECT DISTINCT ON (product_id) 
-      product_id,
-      current_stock_at_purchase
-    FROM purchase_history_with_stock
-    ORDER BY product_id, created_at DESC
-  ) ph ON ph.product_id = p.id
-  WHERE p.id = p_product_id;
-  
-  -- Exit if product not found
-  IF product_name IS NULL THEN
-    RETURN jsonb_build_object(
-      'success', false,
-      'error', 'Product not found',
-      'product_id', p_product_id
-    );
-  END IF;
-  
-  -- Calculate new stock
-  new_stock := GREATEST(0, current_stock - p_decrement_quantity);
-  
-  -- Calculate GST values
-  DECLARE
-    gst_amount DECIMAL;
-    price_incl_gst DECIMAL;
-  BEGIN
-    gst_amount := (price * COALESCE(gst_percentage, 18)) / 100;
-    price_incl_gst := price + gst_amount;
+  -- If product is found, decrement its stock
+  if v_product_id is not null then
+    -- Calculate new stock (prevent negative)
+    v_new_stock := greatest(0, v_current_stock - p_quantity_sold);
     
-    -- Insert into purchase history
-    INSERT INTO purchase_history_with_stock (
-      purchase_id,
-      date,
+    -- Update stock quantity
+    update public.product_master
+    set
+      stock_quantity = v_new_stock,
+      updated_at = now()
+    where id = v_product_id;
+    
+    -- Generate unique duplicate protection key
+    v_duplicate_key := v_product_id::text || '_' || p_quantity_sold::text || '_' || extract(epoch from now())::bigint::text || '_' || random()::text;
+    
+    -- Log the stock transaction with conflict handling
+    insert into public.product_stock_transactions (
       product_id,
-      product_name,
-      hsn_code,
-      units,
-      purchase_invoice_number,
-      purchase_qty,
-      mrp_incl_gst,
-      mrp_excl_gst,
-      discount_on_purchase_percentage,
-      gst_percentage,
-      purchase_taxable_value,
-      purchase_igst,
-      purchase_cgst,
-      purchase_sgst,
-      purchase_invoice_value_rs,
-      supplier,
-      current_stock_at_purchase,
-      computed_stock_taxable_value,
-      computed_stock_igst,
-      computed_stock_cgst,
-      computed_stock_sgst,
-      computed_stock_total_value,
-      created_at,
-      updated_at,
-      "Purchase_Cost/Unit(Ex.GST)",
-      price_inlcuding_disc,
-      transaction_type
-    ) VALUES (
-      uuid_generate_v4(),
-      timestamp,
-      p_product_id,
-      product_name,
-      COALESCE(hsn_code, ''),
-      COALESCE(units, 'UNITS'),
-      'INV-UPDATE-' || extract(epoch from timestamp)::bigint,
-      p_decrement_quantity,
-      price_incl_gst,
-      price,
-      0,
-      COALESCE(gst_percentage, 18),
-      price * p_decrement_quantity,
-      0,
-      gst_amount / 2,
-      gst_amount / 2,
-      price_incl_gst * p_decrement_quantity,
-      'POS SALE',
+      transaction_type,
+      quantity,
+      previous_stock,
       new_stock,
-      0,
-      0,
-      0,
-      0,
-      0,
-      timestamp,
-      timestamp,
-      price,
-      price,
-      'stock_decrement'
-    );
-  END;
-
-  -- Update products table stock
-  UPDATE products
-  SET 
-    stock_quantity = new_stock,
-    updated_at = timestamp
-  WHERE id = p_product_id;
-  
-  -- Return success with details
-  RETURN jsonb_build_object(
-    'success', true,
-    'product_id', p_product_id,
-    'product_name', product_name,
-    'previous_stock', current_stock,
-    'decremented', p_decrement_quantity,
-    'new_stock', new_stock
-  );
-END;
-$$ LANGUAGE plpgsql; 
+      notes,
+      source,
+      duplicate_protection_key,
+      user_id,
+      created_at
+    ) values (
+      v_product_id,
+      'pos_sale',
+      p_quantity_sold,
+      v_current_stock,
+      v_new_stock,
+      'Stock decrement from Excel import via RPC',
+      'excel_import',
+      v_duplicate_key,
+      p_user_id,
+      now()
+    )
+    on conflict (duplicate_protection_key) do nothing;
+    
+    return 'Stock updated for ' || v_product_name || ' from ' || v_current_stock || ' to ' || v_new_stock;
+  else
+    -- If product is not found, return a warning
+    return 'Warning: Product with HSN code ' || p_hsn_code || ' not found.';
+  end if;
+end;
+$$ language plpgsql; 

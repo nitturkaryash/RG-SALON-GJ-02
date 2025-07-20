@@ -69,6 +69,10 @@ const StyledTableCell = styled(TableCell)(({ theme }) => ({
   fontWeight: 'bold',
   backgroundColor: '#8baf3f',
   color: 'white',
+  fontSize: '0.8rem',
+  padding: '8px 12px',
+  whiteSpace: 'nowrap',
+  textTransform: 'capitalize',
 }));
 
 // Define interface for sales history items
@@ -227,7 +231,7 @@ export default function InventoryManager() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [dialogMode, setDialogMode] = useState<'purchase' | 'inventory'>('purchase');
   const [page, setPage] = useState(0);
-  const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [rowsPerPage, setRowsPerPage] = useState(50);
   const [activeTab, setActiveTab] = useState<'purchaseHistory' | 'salesHistory' | 'salonConsumption' | 'balanceStock'>('purchaseHistory');
 
   // Add state for product types for the dialog's unit dropdown
@@ -604,7 +608,7 @@ export default function InventoryManager() {
             const finalHsnCode = hsnFromRecord || hsnFromProductMaster || '-';
             
             return {
-              id: item.id,
+              id: item.order_id,
               requisition_voucher_no: item['Requisition Voucher No.'],
               order_id: item.order_id,
               date: item.Date, // Changed from Date to match interface
@@ -620,7 +624,7 @@ export default function InventoryManager() {
               total_purchase_cost: Number(item.Total_Purchase_Cost_Rs),
               discounted_sales_rate: Number(item.Discounted_Sales_Rate_Rs),
               current_stock: Number(item.Current_Stock),
-              created_at: item.created_at,
+              created_at: item.Date, // Use Date as created_at
               serial_no: `SALON-${data.length - index}` // Add serial numbers in reverse order
             };
           });
@@ -630,7 +634,7 @@ export default function InventoryManager() {
           console.error('Error fetching products for HSN codes:', productError);
           // Still process the salon consumption data even if product lookup fails
           const normalizedData = data.map((item, index) => ({
-            id: item.id,
+            id: item.order_id,
             requisition_voucher_no: item['Requisition Voucher No.'],
             order_id: item.order_id,
             date: item.Date, 
@@ -646,7 +650,7 @@ export default function InventoryManager() {
             total_purchase_cost: Number(item.Total_Purchase_Cost_Rs),
             discounted_sales_rate: Number(item.Discounted_Sales_Rate_Rs),
             current_stock: Number(item.Current_Stock),
-            created_at: item.created_at,
+            created_at: item.Date,
             serial_no: `SALON-${data.length - index}`
           }));
           setSalonConsumption(normalizedData);
@@ -2696,9 +2700,9 @@ export default function InventoryManager() {
   };
 
   return (
-    <Box sx={{ p: 3 }}>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-        <Typography variant="h1">
+    <Box sx={{ p: 2 }}>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1.5 }}>
+        <Typography variant="h4" sx={{ fontWeight: 'bold', color: 'primary.main' }}>
           Inventory
         </Typography>
         
@@ -2752,8 +2756,8 @@ export default function InventoryManager() {
       <Paper 
         elevation={1} 
         sx={{ 
-          p: 2, 
-          mb: 2, 
+          p: 1.5, 
+          mb: 1.5, 
           display: 'flex', 
           alignItems: 'center', 
           justifyContent: 'space-between',
@@ -2761,8 +2765,8 @@ export default function InventoryManager() {
         }}
       >
         <Box sx={{ display: 'flex', alignItems: 'center' }}>
-          <DateRangeIcon sx={{ mr: 1, color: 'primary.main' }} />
-          <Typography variant="subtitle1" fontWeight="bold">
+          <DateRangeIcon sx={{ mr: 1, color: 'primary.main', fontSize: '1.2rem' }} />
+          <Typography variant="body1" fontWeight="600" sx={{ fontSize: '0.95rem', color: 'primary.main' }}>
             Date Filter
           </Typography>
         </Box>
@@ -2804,8 +2808,8 @@ export default function InventoryManager() {
       <Paper 
         elevation={1} 
         sx={{ 
-          p: 1.5, 
-          mb: 2, 
+          p: 1, 
+          mb: 1.5, 
           background: 'linear-gradient(45deg, #f0f8ff 30%, #e6f3ff 90%)',
           border: '1px solid #2196f3',
           borderRadius: '8px'
@@ -2831,7 +2835,21 @@ export default function InventoryManager() {
         onChange={handleTabChange} 
         indicatorColor="primary"
         textColor="primary"
-        sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}
+        variant="scrollable"
+        scrollButtons="auto"
+        sx={{ 
+          borderBottom: 1, 
+          borderColor: 'divider', 
+          mb: 1.5,
+          '& .MuiTab-root': {
+            minHeight: '40px',
+            textTransform: 'none',
+            fontSize: '0.875rem',
+            fontWeight: 600,
+            px: 2,
+            py: 1
+          }
+        }}
       >
         <Tab label="Purchase History" value="purchaseHistory" />
         <Tab label="Sales History" value="salesHistory" />
@@ -2840,29 +2858,29 @@ export default function InventoryManager() {
       </Tabs>
 
       {activeTab === 'purchaseHistory' && errorPurchases && (
-        <Alert severity="error" sx={{ mb: 2 }}>{errorPurchases}</Alert>
+        <Alert severity="error" sx={{ mb: 1.5 }}>{errorPurchases}</Alert>
       )}
 
       {activeTab === 'salesHistory' && salesHistoryError && (
-        <Alert severity="error" sx={{ mb: 2 }}>{salesHistoryError}</Alert>
+        <Alert severity="error" sx={{ mb: 1.5 }}>{salesHistoryError}</Alert>
       )}
 
       {activeTab === 'salonConsumption' && salonConsumptionError && (
-        <Alert severity="error" sx={{ mb: 2 }}>{salonConsumptionError}</Alert>
+        <Alert severity="error" sx={{ mb: 1.5 }}>{salonConsumptionError}</Alert>
       )}
 
       {activeTab === 'balanceStock' && balanceStockError && (
-        <Alert severity="error" sx={{ mb: 2 }}>{balanceStockError}</Alert>
+        <Alert severity="error" sx={{ mb: 1.5 }}>{balanceStockError}</Alert>
       )}
 
       {/* Purchase History Tab */}
       {activeTab === 'purchaseHistory' && (
         <Paper sx={{ width: '100%', overflow: 'hidden' }}>
           {/* Purchase History Filters */}
-          <Box sx={{ p: 2, borderBottom: '1px solid #e0e0e0' }}>
+          <Box sx={{ p: 1.5, borderBottom: '1px solid #e0e0e0' }}>
             <Grid container spacing={2} alignItems="center">
               <Grid item xs={12}>
-                <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
+                <Typography variant="body1" fontWeight="600" sx={{ fontSize: '0.95rem', color: 'primary.main' }}>
                   Filter Purchase Data
                 </Typography>
               </Grid>
@@ -2954,8 +2972,8 @@ export default function InventoryManager() {
               </Grid>
               
               <Grid item xs={12}>
-                <Typography variant="body2" color="textSecondary">
-                  {filteredPurchases.length} records found (filtered from {purchases.length})
+                <Typography variant="caption" color="textSecondary" sx={{ fontWeight: 500 }}>
+                  Showing {filteredPurchases.length} of {purchases.length} records
                 </Typography>
               </Grid>
             </Grid>
@@ -2963,7 +2981,7 @@ export default function InventoryManager() {
 
           <TableContainer 
             sx={{ 
-              maxHeight: 'calc(100vh - 300px)', 
+              maxHeight: 'calc(100vh - 250px)', 
               overflow: 'auto',
               overflowX: 'scroll', // Force horizontal scrollbar to always show
               cursor: 'grab',
@@ -3004,7 +3022,7 @@ export default function InventoryManager() {
               }
             }}
           >
-            <Table stickyHeader aria-label="products purchase history table" sx={{ minWidth: 2200 }}>
+            <Table stickyHeader aria-label="products purchase history table" sx={{ minWidth: 2200 }} size="small">
               <TableHead>
                 <TableRow>
                   <StyledTableCell>
@@ -3254,7 +3272,7 @@ export default function InventoryManager() {
             </Table>
           </TableContainer>
           <TablePagination
-            rowsPerPageOptions={[10, 25, 100]}
+            rowsPerPageOptions={[25, 50, 100, 200]}
             component="div"
             count={filteredPurchases.length}
             rowsPerPage={rowsPerPage}
@@ -3273,14 +3291,14 @@ export default function InventoryManager() {
         </Paper>
       )}
 
-      {/* Sales History Tab */}
-      {activeTab === 'salesHistory' && (
-         <Paper sx={{ width: '100%', overflow: 'hidden' }}>
-          {/* Sales History Filters */}
-          <Box sx={{ p: 2, borderBottom: '1px solid #e0e0e0' }}>
-            <Grid container spacing={2} alignItems="center">
-              <Grid item xs={12}>
-                <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
+             {/* Sales History Tab */}
+       {activeTab === 'salesHistory' && (
+          <Paper sx={{ width: '100%', overflow: 'hidden' }}>
+           {/* Sales History Filters */}
+           <Box sx={{ p: 1.5, borderBottom: '1px solid #e0e0e0' }}>
+             <Grid container spacing={2} alignItems="center">
+               <Grid item xs={12}>
+                                 <Typography variant="body1" fontWeight="600" sx={{ fontSize: '0.95rem', color: 'primary.main' }}>
                   Filter Sales Data
                 </Typography>
               </Grid>
@@ -3361,16 +3379,16 @@ export default function InventoryManager() {
               </Grid>
               
               <Grid item xs={12}>
-                <Typography variant="body2" color="textSecondary">
-                  {filteredSalesHistory.length} records found (filtered from {salesHistory.length})
+                <Typography variant="caption" color="textSecondary" sx={{ fontWeight: 500 }}>
+                  Showing {filteredSalesHistory.length} of {salesHistory.length} records
                 </Typography>
               </Grid>
-            </Grid>
-          </Box>
-          
-          <TableContainer 
-            sx={{ 
-              maxHeight: 'calc(100vh - 380px)', 
+          </Grid>
+        </Box>
+        
+        <TableContainer 
+          sx={{ 
+            maxHeight: 'calc(100vh - 320px)', 
               overflow: 'auto',
               overflowX: 'scroll', // Force horizontal scrollbar to always show
               cursor: 'grab',
@@ -3411,7 +3429,7 @@ export default function InventoryManager() {
               }
             }}
           >
-            <Table stickyHeader aria-label="sales history table" sx={{ minWidth: 2200 }}>
+            <Table stickyHeader aria-label="sales history table" sx={{ minWidth: 2200 }} size="small">
                <TableHead>
                  <TableRow>
                   <SortableTableCell label="S.No" property="serial_no" />
@@ -3526,7 +3544,7 @@ export default function InventoryManager() {
              </Table>
            </TableContainer>
            <TablePagination
-             rowsPerPageOptions={[10, 25, 100]}
+             rowsPerPageOptions={[25, 50, 100, 200]}
              component="div"
             count={filteredSalesHistory.length}
              rowsPerPage={rowsPerPage}
@@ -3553,10 +3571,10 @@ export default function InventoryManager() {
           )}
           
           {/* Salon Consumption Filters */}
-          <Box sx={{ p: 2, borderBottom: '1px solid #e0e0e0' }}>
+          <Box sx={{ p: 1.5, borderBottom: '1px solid #e0e0e0' }}>
             <Grid container spacing={2} alignItems="center">
               <Grid item xs={12}>
-                <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
+                <Typography variant="body1" fontWeight="600" sx={{ fontSize: '0.95rem', color: 'primary.main' }}>
                   Filter Salon Consumption Data
                 </Typography>
               </Grid>
@@ -3626,16 +3644,16 @@ export default function InventoryManager() {
               </Grid>
               
               <Grid item xs={12}>
-                <Typography variant="body2" color="textSecondary">
-                  {filteredSalonConsumption.length} records found (filtered from {salonConsumption.length})
+                <Typography variant="caption" color="textSecondary" sx={{ fontWeight: 500 }}>
+                  Showing {filteredSalonConsumption.length} of {salonConsumption.length} records
                 </Typography>
               </Grid>
-            </Grid>
-          </Box>
-          
-          <TableContainer 
-            sx={{ 
-              maxHeight: 'calc(100vh - 380px)', 
+          </Grid>
+        </Box>
+        
+        <TableContainer 
+          sx={{ 
+            maxHeight: 'calc(100vh - 320px)', 
               overflow: 'auto',
               overflowX: 'scroll', // Force horizontal scrollbar to always show
               cursor: 'grab',
@@ -3676,7 +3694,7 @@ export default function InventoryManager() {
               }
             }}
           >
-            <Table stickyHeader aria-label="salon consumption table" sx={{ minWidth: 2200 }}>
+            <Table stickyHeader aria-label="salon consumption table" sx={{ minWidth: 2200 }} size="small">
               <TableHead>
                 <TableRow>
                   <StyledTableCell>
@@ -3793,7 +3811,7 @@ export default function InventoryManager() {
             </Table>
           </TableContainer>
           <TablePagination
-            rowsPerPageOptions={[10, 25, 100]}
+            rowsPerPageOptions={[25, 50, 100, 200]}
             component="div"
             count={filteredSalonConsumption.length}
             rowsPerPage={rowsPerPage}
@@ -3839,13 +3857,13 @@ export default function InventoryManager() {
           </Box>
 
           {/* Balance Stock Summary Cards */}
-          <Box sx={{ p: 2, borderBottom: '1px solid #e0e0e0' }}>
+          <Box sx={{ p: 1.5, borderBottom: '1px solid #e0e0e0' }}>
             <Grid container spacing={2}>
               <Grid item xs={12} md={4}>
                 <Paper 
-                  elevation={3} 
+                  elevation={2} 
                   sx={{ 
-                    p: 2, 
+                    p: 1.5, 
                     display: 'flex', 
                     flexDirection: 'column', 
                     height: '100%',
@@ -3854,11 +3872,11 @@ export default function InventoryManager() {
                     borderRadius: 2
                   }}
                 >
-                  <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                  <Typography variant="caption" color="text.secondary" gutterBottom sx={{ fontWeight: 600 }}>
                     Total Stock Additions
                   </Typography>
-                  <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                    <Typography variant="h4" component="div" sx={{ color: 'success.main', fontWeight: 'bold', mr: 1 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', mb: 0.5 }}>
+                    <Typography variant="h5" component="div" sx={{ color: 'success.main', fontWeight: 'bold', mr: 1 }}>
                       +{balanceStockTotals.additions.toLocaleString()}
                     </Typography>
                     <Box sx={{ 
@@ -3882,9 +3900,9 @@ export default function InventoryManager() {
               
               <Grid item xs={12} md={4}>
                 <Paper 
-                  elevation={3} 
+                  elevation={2} 
                   sx={{ 
-                    p: 2, 
+                    p: 1.5, 
                     display: 'flex', 
                     flexDirection: 'column', 
                     height: '100%',
@@ -3893,11 +3911,11 @@ export default function InventoryManager() {
                     borderRadius: 2
                   }}
                 >
-                  <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                  <Typography variant="caption" color="text.secondary" gutterBottom sx={{ fontWeight: 600 }}>
                     Total Stock Reductions
                   </Typography>
-                  <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                    <Typography variant="h4" component="div" sx={{ color: 'error.main', fontWeight: 'bold', mr: 1 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', mb: 0.5 }}>
+                    <Typography variant="h5" component="div" sx={{ color: 'error.main', fontWeight: 'bold', mr: 1 }}>
                       -{balanceStockTotals.reductions.toLocaleString()}
                     </Typography>
                     <Box sx={{ 
@@ -3921,9 +3939,9 @@ export default function InventoryManager() {
               
               <Grid item xs={12} md={4}>
                 <Paper 
-                  elevation={3} 
+                  elevation={2} 
                   sx={{ 
-                    p: 2, 
+                    p: 1.5, 
                     display: 'flex', 
                     flexDirection: 'column', 
                     height: '100%',
@@ -3932,12 +3950,12 @@ export default function InventoryManager() {
                     borderRadius: 2
                   }}
                 >
-                  <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                  <Typography variant="caption" color="text.secondary" gutterBottom sx={{ fontWeight: 600 }}>
                     Net Stock Change
                   </Typography>
-                  <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', mb: 0.5 }}>
                     <Typography 
-                      variant="h4" 
+                      variant="h5" 
                       component="div" 
                       sx={{ 
                         color: (balanceStockTotals.additions - balanceStockTotals.reductions) >= 0 ? 'success.main' : 'error.main', 
@@ -3972,10 +3990,10 @@ export default function InventoryManager() {
           </Box>
 
           {/* Existing Balance Stock Filters */}
-          <Box sx={{ p: 2, borderBottom: '1px solid #e0e0e0' }}>
+          <Box sx={{ p: 1.5, borderBottom: '1px solid #e0e0e0' }}>
             <Grid container spacing={2} alignItems="center">
               <Grid item xs={12}>
-                <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
+                <Typography variant="body1" fontWeight="600" sx={{ fontSize: '0.95rem', color: 'primary.main' }}>
                   Filter Balance Stock Data
                 </Typography>
               </Grid>
@@ -4071,16 +4089,16 @@ export default function InventoryManager() {
               </Grid>
               
               <Grid item xs={12}>
-                <Typography variant="body2" color="textSecondary">
-                  {filteredBalanceStock.length} records found (filtered from {balanceStock.length})
+                <Typography variant="caption" color="textSecondary" sx={{ fontWeight: 500 }}>
+                  Showing {filteredBalanceStock.length} of {balanceStock.length} records
                 </Typography>
               </Grid>
-            </Grid>
-          </Box>
-          
-          <TableContainer 
-            sx={{ 
-              maxHeight: 'calc(100vh - 380px)', 
+          </Grid>
+        </Box>
+        
+        <TableContainer 
+          sx={{ 
+            maxHeight: 'calc(100vh - 320px)', 
               overflow: 'auto',
               overflowX: 'scroll', // Force horizontal scrollbar to always show
               cursor: 'grab',
@@ -4121,7 +4139,7 @@ export default function InventoryManager() {
               }
             }}
           >
-            <Table stickyHeader aria-label="balance stock table" sx={{ minWidth: 1200 }}>
+            <Table stickyHeader aria-label="balance stock table" sx={{ minWidth: 1200 }} size="small">
               <TableHead>
                 <TableRow>
                   <StyledTableCell>
@@ -4246,7 +4264,7 @@ export default function InventoryManager() {
             </Table>
           </TableContainer>
           <TablePagination
-            rowsPerPageOptions={[10, 25, 100]}
+            rowsPerPageOptions={[25, 50, 100, 200]}
             component="div"
             count={filteredBalanceStock.length}
             rowsPerPage={rowsPerPage}
@@ -4271,11 +4289,13 @@ export default function InventoryManager() {
 
       {/* Dialog for adding/editing purchases */}
       <Dialog open={open} onClose={handleClose} maxWidth="lg" fullWidth>
-        <DialogTitle>
-          {editingId 
-            ? 'Edit Purchase Details'
-            : (dialogMode === 'inventory' ? 'Add Opening Balance' : 'Add New Product Purchase')
-          }
+        <DialogTitle sx={{ pb: 1 }}>
+          <Typography variant="h6" component="div" sx={{ fontWeight: 600, fontSize: '1.1rem' }}>
+            {editingId 
+              ? 'Edit Purchase Details'
+              : (dialogMode === 'inventory' ? 'Add Opening Balance' : 'Add New Product Purchase')
+            }
+          </Typography>
         </DialogTitle>
         <DialogContent>
           {(dialogMode === 'inventory' && !editingId) && (

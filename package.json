@@ -3,16 +3,19 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "scripts": {
-    "dev": "yarn vite",
-    "build": "yarn vite build",
-    "vercel-build": "npm install @jridgewell/trace-mapping@0.3.25 --save-dev && echo \"Environment check...\" && node -e \"console.log('VITE_SUPABASE_URL:', process.env.VITE_SUPABASE_URL)\" && yarn vite build",
-    "preview": "yarn vite preview",
-    "lint": "yarn eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
-    "test": "yarn vitest",
-    "test:coverage": "yarn vitest --coverage",
-    "seed": "yarn node scripts/seedSupabase.js",
-    "migrate:salon-consumption": "yarn node --loader ts-node/esm src/utils/supabase/directTableCreation.js"
+    "dev": "vite",
+    "build": "vite build",
+    "vercel-build": "vite build",
+    "preview": "vite preview",
+    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+    "test": "vitest",
+    "test:coverage": "vitest --coverage",
+    "seed": "node scripts/seedSupabase.js",
+    "migrate:salon-consumption": "node --loader ts-node/esm src/utils/supabase/directTableCreation.js"
   },
   "dependencies": {
     "@ai-sdk/vercel": "0.0.1",
@@ -78,14 +81,8 @@
     "vercel": "41.7.8",
     "xlsx": "0.18.5"
   },
-  "optionalDependencies": {
-    "@esbuild/linux-x64": "^0.21.5",
-    "@rollup/rollup-linux-x64-gnu": "^4.9.5",
-    "lightningcss-linux-x64-gnu": "1.29.2"
-  },
   "devDependencies": {
     "@emotion/babel-plugin": "^11.11.0",
-    "@esbuild/win32-x64": "0.25.6",
     "@jridgewell/trace-mapping": "0.3.25",
     "@mantine/hooks": "7.17.8",
     "@tailwindcss/postcss": "4.1.11",
@@ -110,7 +107,6 @@
     "eslint-plugin-react-refresh": "^0.4.5",
     "jsdom": "^26.1.0",
     "postcss": "^8.5.3",
-    "supabase": "2.26.9",
     "tailwindcss": "^3.4.4",
     "terser": "^5.41.0",
     "ts-node": "10.9.2",
