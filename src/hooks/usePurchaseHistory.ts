@@ -327,20 +327,21 @@ export const usePurchaseHistory = () => {
       // Generate a UUID for the purchase_id
       const purchaseId = crypto.randomUUID();
 
-      // First get current stock to calculate the correct current_stock_at_purchase
+      // Fetch current stock for the product (if it exists). Use maybeSingle to avoid errors when no rows are returned.
       const { data: currentProduct, error: fetchError } = await supabase
         .from('products')
         .select('stock_quantity')
         .eq('id', openingData.product_id)
-        .single();
-        
-      if (fetchError) {
+        .maybeSingle();
+
+      if (fetchError && fetchError.code !== 'PGRST116') {
+        // If the error is *not* the "no rows" error, rethrow it. Otherwise we treat missing rows as zero stock.
         console.error('Error fetching current product stock:', fetchError);
         throw handleSupabaseError(fetchError);
       }
 
-      // Calculate the total stock after adding opening balance
-      const currentStock = currentProduct?.stock_quantity || 0;
+      // If the product doesn't exist in the products table yet, we assume stock is 0.
+      const currentStock = currentProduct?.stock_quantity ?? 0;
       const totalStockAfterOpening = currentStock + openingData.opening_qty;
 
       console.log(`Current stock: ${currentStock}, Opening balance: ${openingData.opening_qty}, Total after opening: ${totalStockAfterOpening}`);
@@ -394,20 +395,24 @@ export const usePurchaseHistory = () => {
 
       console.log('Opening balance inserted into purchase_history_with_stock:', insertedData);
 
-      // Update the product stock directly in the products table
-      const { error: updateError } = await supabase
-        .from('products')
-        .update({ 
-          stock_quantity: totalStockAfterOpening,
-          updated_at: new Date().toISOString() // Use system timestamp directly
-        })
-        .eq('id', openingData.product_id);
-        
-      if (updateError) {
-        console.error('Error updating product stock:', updateError);
-        // Don't throw here, just log the error as the opening balance record is already created
+      // Update the product stock directly in the products table *only if* the product exists.
+      if (currentProduct) {
+        const { error: updateError } = await supabase
+          .from('products')
+          .update({ 
+            stock_quantity: totalStockAfterOpening,
+            updated_at: new Date().toISOString() // Use system timestamp directly
+          })
+          .eq('id', openingData.product_id);
+          
+        if (updateError) {
+          console.error('Error updating product stock:', updateError);
+          // Don't throw here, just log the error as the opening balance record is already created
+        } else {
+          console.log(`Product stock updated: ${currentStock} -> ${totalStockAfterOpening}`);
+        }
       } else {
-        console.log(`Product stock updated: ${currentStock} -> ${totalStockAfterOpening}`);
+        console.warn('Product not found in products table, stock_quantity not updated (assumed new product).');
       }
 
       return { success: true };
