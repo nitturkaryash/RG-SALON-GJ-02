@@ -1644,7 +1644,9 @@ export default function InventoryManager() {
 
   const handleEdit = (purchase: PurchaseTransaction) => {
     console.log('Editing purchase:', purchase);
+    // Set both editingPurchaseId (legacy) and editingId (used by handleSubmit) to ensure correct edit behavior
     setEditingPurchaseId(purchase.purchase_id);
+    setEditingId(purchase.purchase_id || purchase.id || null);
     setIsEditing(true);
     
     // Ensure the date has proper time component in India timezone
