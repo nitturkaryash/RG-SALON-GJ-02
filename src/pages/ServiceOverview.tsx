@@ -4,14 +4,10 @@ import {
   Box,
   Typography,
   Paper,
-  List,
-  ListItemButton,
-  ListItemText,
   IconButton,
   Button,
   TextField,
   MenuItem,
-  Divider,
   CircularProgress,
   TableContainer,
   Table,
@@ -22,18 +18,40 @@ import {
   Switch,
   FormControlLabel,
   Chip,
+  Tooltip as MuiTooltip,
+  useTheme,
+  useMediaQuery,
+  Card,
+  Grid,
+  InputAdornment,
+  List,
+  ListItem,
+  ListItemText,
+  ToggleButton,
+  ToggleButtonGroup,
+  CardContent,
+  CardActions,
 } from '@mui/material';
 import {
   Add as AddIcon,
   Edit as EditIcon,
   Delete as DeleteIcon,
+  Settings as SettingsIcon,
+  Search as SearchIcon,
+  Clear as ClearIcon,
+  MoreVert as MoreVertIcon,
+  GetApp as GetAppIcon,
+  ViewList as ViewListIcon,
+  ViewModule as ViewModuleIcon,
 } from '@mui/icons-material';
 import { useServiceCollections } from '../hooks/useServiceCollections';
 import { useSubCollections } from '../hooks/useSubCollections';
 import { useSubCollectionServices } from '../hooks/useSubCollectionServices';
+import { useServiceMutations } from '../hooks/useServiceMutations';
 import type { ServiceCollection, ServiceSubCollection, ServiceItem } from '../models/serviceTypes';
 import { formatCurrency } from '../utils/format';
 import { AccessibleDialog } from '../components/AccessibleDialog';
+import { exportToExcel } from '../utils/excelExporter';
 
 const initialColForm = { name: '', description: '' };
 const initialSubForm = { name: '', description: '' };
@@ -41,6 +59,10 @@ const initialServForm = { name: '', description: '', price: 0, duration: 30, act
 
 export default function ServiceOverview() {
   const navigate = useNavigate();
+  const theme = useTheme();
+  const isSmallScreen = useMediaQuery(theme.breakpoints.down('sm'));
+  const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+  const isTablet = useMediaQuery(theme.breakpoints.between('md', 'lg'));
 
   const {
     serviceCollections,
@@ -49,7 +71,7 @@ export default function ServiceOverview() {
     updateServiceCollection,
     deleteServiceCollection,
   } = useServiceCollections();
-  const [selectedCollectionId, setSelectedCollectionId] = useState<string | null>(null);
+  const [selectedCollectionId, setSelectedCollectionId] = useState<string | null>('');
 
   const {
     subCollections,
@@ -58,15 +80,14 @@ export default function ServiceOverview() {
     updateSubCollection,
     deleteSubCollection,
   } = useSubCollections(selectedCollectionId || undefined);
-  const [selectedSubCollectionId, setSelectedSubCollectionId] = useState<string | null>(null);
+  const [selectedSubCollectionId, setSelectedSubCollectionId] = useState<string | null>('');
 
   const {
-    services,
+    data: services,
     isLoading: loadingServices,
-    createService,
-    updateService,
-    deleteService,
-  } = useSubCollectionServices(selectedCollectionId || undefined, selectedSubCollectionId || undefined);
+  } = useSubCollectionServices(selectedCollectionId || undefined, selectedSubCollectionId === 'all' ? undefined : selectedSubCollectionId);
+  
+  const { createService, updateService, deleteService } = useServiceMutations();
 
   // Dialog state and form data
   const [colDialogOpen, setColDialogOpen] = useState(false);
@@ -83,8 +104,8 @@ export default function ServiceOverview() {
 
   // Default selections
   useEffect(() => {
-    if (!loadingCols && serviceCollections.length > 0 && !selectedCollectionId) {
-      setSelectedCollectionId(serviceCollections[0].id);
+    if (!loadingCols && (serviceCollections ?? []).length > 0 && !selectedCollectionId) {
+      setSelectedCollectionId((serviceCollections ?? [])[0].id);
     }
   }, [loadingCols, serviceCollections, selectedCollectionId]);
 
@@ -97,7 +118,7 @@ export default function ServiceOverview() {
   // Selection handlers
   const handleCollectionClick = (id: string) => {
     setSelectedCollectionId(id);
-    setSelectedSubCollectionId(null);
+    setSelectedSubCollectionId('all'); // Default to all sub-collections
   };
   const handleSubClick = (id: string) => {
     setSelectedSubCollectionId(id);
@@ -152,7 +173,8 @@ export default function ServiceOverview() {
   const handleServSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!servFormData.name.trim() || servFormData.price < 0 || servFormData.duration <= 0 || !selectedCollectionId || !selectedSubCollectionId) return;
-    const serviceData = { ...servFormData, collection_id: selectedCollectionId, subcollection_id: selectedSubCollectionId };
+    const genderValue = servFormData.gender === '' ? null : (servFormData.gender as 'male' | 'female' | null | undefined);
+    const serviceData = { ...servFormData, gender: genderValue, collection_id: selectedCollectionId, subcollection_id: selectedSubCollectionId === 'all' ? null : selectedSubCollectionId };
     if (servEditingId) {
       updateService({ id: servEditingId, ...serviceData });
     } else {
@@ -178,124 +200,325 @@ export default function ServiceOverview() {
     }
   };
 
+  const [viewMode, setViewMode] = useState<'table' | 'card'>('table');
+
+  const handleViewChange = (event: React.MouseEvent<HTMLElement>, newView: 'table' | 'card' | null) => {
+    if (newView !== null) {
+      setViewMode(newView);
+    }
+  };
+  
+  const [searchTerm, setSearchTerm] = useState('');
+  
+  const [managementDialog, setManagementDialog] = useState({ open: false, type: null as 'collections' | 'sub-collections' | null, anchorEl: null as HTMLElement | null });
+
+  const handleOpenManagementDialog = (event: React.MouseEvent<HTMLElement>, type: 'collections' | 'sub-collections') => {
+    setManagementDialog({ open: true, type, anchorEl: event.currentTarget });
+  };
+  const handleCloseManagementDialog = () => {
+    setManagementDialog({ open: false, type: null, anchorEl: null });
+  };
+
+  const handleExport = () => {
+    const dataToExport = services?.map((service: ServiceItem) => {
+      const collection = serviceCollections?.find(c => c.id === service.collection_id);
+      const subCollection = subCollections?.find(s => s.id === service.subcollection_id);
+      return {
+        'Collection': collection?.name,
+        'Sub-Collection': subCollection?.name,
+        'Service Name': service.name,
+        'Description': service.description,
+        'Price': service.price,
+        'Duration (min)': service.duration,
+        'Active': service.active ? 'Yes' : 'No',
+        'Gender': service.gender || 'All',
+        'Membership Eligible': service.membership_eligible ? 'Yes' : 'No',
+      };
+    });
+
+    if (dataToExport) {
+      exportToExcel(dataToExport, 'Services');
+    }
+  };
+
+  const filteredServices = services?.filter((service: ServiceItem) =>
+    service.name.toLowerCase().includes(searchTerm.toLowerCase())
+  ) || [];
+
   // Loading
-  if (loadingCols || loadingSubs || (selectedSubCollectionId && loadingServices)) {
+  if (loadingCols) {
     return (
-      <Box display="flex" justifyContent="center" alignItems="center" height="100vh">
+      <Box display="flex" justifyContent="center" alignItems="center" height="calc(100vh - 120px)">
         <CircularProgress />
       </Box>
     );
   }
 
   return (
-    <Box sx={{ display: 'flex', width: '100%', p: 2, boxSizing: 'border-box' }}>
-      {/* Collections Column */}
-      <Paper sx={{ flex: '1 1 0', mr: 2, p: 2, height: 'calc(100vh - 32px)', overflowY: 'auto' }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-          <Typography variant="h6">Collections</Typography>
-          <Button variant="contained" size="small" startIcon={<AddIcon />} onClick={handleColOpenAdd}>New</Button>
+    <Box sx={{ p: { xs: 1, sm: 2, md: 3 }, bgcolor: '#FAFBFD' }}>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+        <Typography variant="h4" sx={{ fontWeight: 'bold', color: 'text.primary' }}>
+          Service Master
+        </Typography>
+        <Box>
+          <Button
+            variant="outlined"
+            startIcon={<GetAppIcon />}
+            onClick={handleExport}
+            sx={{ mr: 2 }}
+          >
+            Export
+          </Button>
+          <Button
+            variant="contained"
+            startIcon={<AddIcon />}
+            onClick={handleServOpenAdd}
+            disabled={!selectedSubCollectionId}
+            sx={{ bgcolor: '#6B8E23', '&:hover': { bgcolor: '#556B2F' }, borderRadius: 2, px: 3, py: 1 }}
+          >
+            Add Service
+          </Button>
         </Box>
-        <Divider />
-        <List>
-          {serviceCollections.map(col => (
-            <ListItemButton key={col.id} selected={col.id === selectedCollectionId} onClick={() => handleCollectionClick(col.id)}>
-              <ListItemText primary={col.name} secondary={col.description} />
-              <IconButton onClick={(e) => { e.stopPropagation(); handleColEdit(col); }} size="small"><EditIcon /></IconButton>
-              <IconButton onClick={(e) => { e.stopPropagation(); handleColDelete(col.id); }} size="small" color="error"><DeleteIcon /></IconButton>
-            </ListItemButton>
-          ))}
-        </List>
+      </Box>
+
+      <Paper sx={{ p: 2, mb: 3, borderRadius: 2, boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}>
+        <Grid container spacing={2} alignItems="center">
+          <Grid item xs={12} sm={6} md={4}>
+            <TextField
+              select
+              label="Collection"
+              value={selectedCollectionId || ''}
+              onChange={e => handleCollectionClick(e.target.value as string)}
+              fullWidth
+              size="small"
+              variant="outlined"
+               InputProps={{
+                endAdornment: (
+                  <InputAdornment position="end">
+                    <IconButton onClick={(e) => handleOpenManagementDialog(e, 'collections')} size="small" edge="end">
+                      <SettingsIcon fontSize="small" />
+                </IconButton>
+                  </InputAdornment>
+                )
+              }}
+            >
+              <MenuItem value="all"><em>All Collections</em></MenuItem>
+              {serviceCollections?.map(col => (
+                <MenuItem key={col.id} value={col.id}>{col.name}</MenuItem>
+              ))}
+            </TextField>
+          </Grid>
+          <Grid item xs={12} sm={6} md={4}>
+            <TextField
+              select
+              label="Sub-Collection"
+              value={selectedSubCollectionId || ''}
+              onChange={e => handleSubClick(e.target.value as string)}
+              fullWidth
+              disabled={!selectedCollectionId || loadingSubs || selectedCollectionId === 'all'}
+              size="small"
+              variant="outlined"
+              InputProps={{
+                endAdornment: (
+                  <InputAdornment position="end">
+                    <IconButton onClick={(e) => handleOpenManagementDialog(e, 'sub-collections')} disabled={!selectedCollectionId} size="small" edge="end">
+                      <SettingsIcon fontSize="small" />
+                </IconButton>
+                  </InputAdornment>
+                )
+              }}
+            >
+              <MenuItem value="all"><em>All Sub-Collections</em></MenuItem>
+              {subCollections?.map(sub => (
+                <MenuItem key={sub.id} value={sub.id}>{sub.name}</MenuItem>
+              ))}
+            </TextField>
+          </Grid>
+          <Grid item xs={12} md={4}>
+            <TextField
+              label="Search Services"
+              variant="outlined"
+              size="small"
+              fullWidth
+              value={searchTerm}
+              onChange={e => setSearchTerm(e.target.value)}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <SearchIcon />
+                  </InputAdornment>
+                ),
+                endAdornment: (
+                  <InputAdornment position="end">
+                    <IconButton onClick={() => setSearchTerm('')} edge="end" size="small" style={{ visibility: searchTerm ? 'visible' : 'hidden' }}>
+                      <ClearIcon />
+                </IconButton>
+                  </InputAdornment>
+                )
+              }}
+            />
+          </Grid>
+          <Grid item>
+             <ToggleButtonGroup
+              value={viewMode}
+              exclusive
+              onChange={handleViewChange}
+              aria-label="view mode"
+              size="small"
+            >
+              <ToggleButton value="table" aria-label="table view">
+                <ViewListIcon />
+              </ToggleButton>
+              <ToggleButton value="card" aria-label="card view">
+                <ViewModuleIcon />
+              </ToggleButton>
+            </ToggleButtonGroup>
+          </Grid>
+        </Grid>
       </Paper>
 
-      {/* Subcollections Column */}
-      <Paper sx={{ flex: '1 1 0', mr: 2, p: 2, height: 'calc(100vh - 32px)', overflowY: 'auto' }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-          <Typography variant="h6">Sub-Collections</Typography>
-          <Button variant="contained" size="small" startIcon={<AddIcon />} onClick={handleSubOpenAdd} disabled={!selectedCollectionId}>New</Button>
-        </Box>
-        <Divider />
-        <List>
-          {subCollections.map(sub => (
-            <ListItemButton key={sub.id} selected={sub.id === selectedSubCollectionId} onClick={() => handleSubClick(sub.id)}>
-              <ListItemText primary={sub.name} secondary={sub.description} />
-              <IconButton onClick={(e) => { e.stopPropagation(); handleSubEdit(sub); }} size="small"><EditIcon /></IconButton>
-              <IconButton onClick={(e) => { e.stopPropagation(); handleSubDelete(sub.id); }} size="small" color="error"><DeleteIcon /></IconButton>
-            </ListItemButton>
-          ))}
-        </List>
-      </Paper>
-
-      {/* Services Column */}
-      <Paper sx={{ flex: '2 1 0', p: 2, height: 'calc(100vh - 32px)', overflowY: 'auto' }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-          <Typography variant="h6">Services</Typography>
-          <Button variant="contained" size="small" startIcon={<AddIcon />} onClick={handleServOpenAdd} disabled={!selectedSubCollectionId}>New</Button>
-        </Box>
-        <Divider />
-        <TableContainer>
-          <Table size="small">
-            <TableHead>
-              <TableRow>
-                <TableCell>Name</TableCell>
-                <TableCell>Description</TableCell>
-                <TableCell align="right">Duration</TableCell>
-                <TableCell align="right">Price</TableCell>
-                <TableCell>Status</TableCell>
-                <TableCell>Membership</TableCell>
-                <TableCell align="right">Actions</TableCell>
+      {viewMode === 'table' ? (
+        <Card sx={{ borderRadius: 2, boxShadow: '0 4px 12px rgba(0,0,0,0.05)', overflow: 'hidden' }}>
+          <TableContainer>
+            <Table sx={{ minWidth: 650 }}>
+              <TableHead sx={{ bgcolor: 'rgba(107, 142, 35, 0.1)' }}>
+                <TableRow>
+                  <TableCell sx={{ fontWeight: '600', color: 'text.secondary' }}>Service Name</TableCell>
+                  <TableCell sx={{ fontWeight: '600', color: 'text.secondary' }}>Description</TableCell>
+                  <TableCell sx={{ fontWeight: '600', color: 'text.secondary' }} align="center">Duration</TableCell>
+                  <TableCell sx={{ fontWeight: '600', color: 'text.secondary' }} align="right">Price</TableCell>
+                  <TableCell sx={{ fontWeight: '600', color: 'text.secondary' }} align="center">Status</TableCell>
+                  <TableCell sx={{ fontWeight: '600', color: 'text.secondary' }} align="center">Membership</TableCell>
+                  <TableCell sx={{ fontWeight: '600', color: 'text.secondary' }} align="center">Actions</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
-              {services.map(serv => (
-                <TableRow key={serv.id} sx={{ opacity: serv.active ? 1 : 0.5 }}>
-                  <TableCell>{serv.name}</TableCell>
-                  <TableCell>{serv.description}</TableCell>
-                  <TableCell align="right">{serv.duration} min</TableCell>
-                  <TableCell align="right">{formatCurrency(serv.price)}</TableCell>
-                  <TableCell>
-                    <Chip 
-                      label={serv.active ? 'Active' : 'Inactive'} 
-                      color={serv.active ? 'success' : 'default'} 
-                      size="small" 
-                    />
+                {loadingServices ? (
+                   <TableRow><TableCell colSpan={7} align="center" sx={{ py: 5 }}><CircularProgress /></TableCell></TableRow>
+                ) : !selectedCollectionId || selectedCollectionId === '' ? (
+                  <TableRow><TableCell colSpan={7} align="center" sx={{ py: 5 }}>Please select a collection to see the services.</TableCell></TableRow>
+                ) : filteredServices.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={7} align="center" sx={{ py: 5 }}>
+                      <Typography variant="h6" gutterBottom>No Services Found</Typography>
+                      <Typography color="text.secondary">
+                        {searchTerm ? `No services match your search for "${searchTerm}".` : 'This category is empty. Try adding a new service.'}
+                      </Typography>
+                      {searchTerm && (
+                        <Button onClick={() => setSearchTerm('')} sx={{ mt: 2 }}>Clear Search</Button>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  filteredServices.map((serv: ServiceItem, index: number) => (
+                    <TableRow key={serv.id} hover sx={{ '&:last-child td, &:last-child th': { border: 0 }, bgcolor: index % 2 !== 0 ? theme.palette.action.hover : 'transparent' }}>
+                      <TableCell component="th" scope="row" sx={{ fontWeight: '500' }}>{serv.name}</TableCell>
+                      <TableCell sx={{ maxWidth: 250, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                         <MuiTooltip title={serv.description} arrow><Typography variant="body2" color="text.secondary">{serv.description}</Typography></MuiTooltip>
+                      </TableCell>
+                      <TableCell align="center">
+                        <Chip label={`${serv.duration} min`} variant="outlined" size="small" />
+                      </TableCell>
+                      <TableCell align="right" sx={{ fontWeight: '500' }}>{formatCurrency(serv.price)}</TableCell>
+                      <TableCell align="center">
+                    <Chip label={serv.active ? 'Active' : 'Inactive'} color={serv.active ? 'success' : 'default'} size="small" />
                   </TableCell>
-                  <TableCell>
-                    <Chip 
-                      label={serv.membership_eligible !== false ? 'Eligible' : 'Premium Only'} 
-                      color={serv.membership_eligible !== false ? 'primary' : 'warning'} 
-                      size="small" 
-                    />
+                      <TableCell align="center">
+                        <Chip label={serv.membership_eligible !== false ? 'Eligible' : 'Premium'} color={serv.membership_eligible !== false ? 'primary' : 'warning'} size="small" />
                   </TableCell>
-                  <TableCell align="right">
-                    <IconButton onClick={() => handleServEdit(serv)} size="small"><EditIcon /></IconButton>
-                    <IconButton onClick={() => handleServDelete(serv.id)} size="small" color="error"><DeleteIcon /></IconButton>
+                      <TableCell align="center">
+                    <MuiTooltip title="Edit Service">
+                          <IconButton onClick={() => handleServEdit(serv)} size="small"><EditIcon /></IconButton>
+                    </MuiTooltip>
+                    <MuiTooltip title="Delete Service">
+                          <IconButton onClick={() => handleServDelete(serv.id)} size="small" color="error"><DeleteIcon /></IconButton>
+                    </MuiTooltip>
                   </TableCell>
                 </TableRow>
-              ))}
+                  ))
+                )}
             </TableBody>
           </Table>
         </TableContainer>
-      </Paper>
-
-      {/* Collection Dialog */}
+        </Card>
+      ) : (
+        <Grid container spacing={3}>
+          {filteredServices.map((service: ServiceItem) => (
+            <Grid item key={service.id} xs={12} sm={6} md={4} lg={3}>
+               <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column', borderRadius: 2, boxShadow: theme.shadows[2] }}>
+                 <CardContent sx={{ flexGrow: 1 }}>
+                    <Typography variant="h6" component="div" gutterBottom>
+                      {service.name}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 2, height: 40, overflow: 'hidden' }}>
+                      {service.description}
+                    </Typography>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                      <Chip label={`${service.duration} min`} variant="outlined" size="small" />
+                      <Typography variant="h6" color="primary">{formatCurrency(service.price)}</Typography>
+                    </Box>
+                 </CardContent>
+                 <CardActions sx={{ justifyContent: 'space-between', p:2 }}>
+                    <FormControlLabel
+                      control={<Switch checked={service.active} onChange={(e) => updateService({ ...service, active: e.target.checked })} />}
+                      label={service.active ? 'Active' : 'Inactive'}
+                    />
+                    <Box>
+                      <IconButton onClick={() => handleServEdit(service)} size="small"><EditIcon /></IconButton>
+                      <IconButton onClick={() => handleServDelete(service.id)} size="small"><DeleteIcon color="error" /></IconButton>
+                    </Box>
+                 </CardActions>
+               </Card>
+            </Grid>
+          ))}
+        </Grid>
+      )}
+      
+      {/* Dialogs remain the same but will be triggered by new buttons */}
       <AccessibleDialog
         open={colDialogOpen}
         onClose={handleColClose}
         title={colEditingId ? 'Edit Collection' : 'New Collection'}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: 3,
+            boxShadow: theme.shadows[10],
+          }
+        }}
         actions={
-          <>
-            <Button onClick={handleColClose}>Cancel</Button>
-            <Button onClick={handleColSubmit} variant="contained">{colEditingId ? 'Update' : 'Create'}</Button>
-          </>
+          <Box sx={{ display: 'flex', gap: 2, p: 3, pt: 0 }}>
+            <Button 
+              onClick={handleColClose}
+              variant="outlined"
+              sx={{ borderRadius: 2, px: 3 }}
+            >
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleColSubmit} 
+              variant="contained"
+              sx={{ borderRadius: 2, px: 3 }}
+            >
+              {colEditingId ? 'Update' : 'Create'}
+            </Button>
+          </Box>
         }
       >
-        <Box component="form" onSubmit={handleColSubmit} sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <Box component="form" onSubmit={handleColSubmit} sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 3 }}>
           <TextField
-            label="Name"
+            label="Collection Name"
             value={colFormData.name}
             onChange={e => setColFormData({ ...colFormData, name: e.target.value })}
             required
             fullWidth
+            variant="outlined"
+            sx={{
+              '& .MuiOutlinedInput-root': {
+                borderRadius: 2,
+              }
+            }}
           />
           <TextField
             label="Description"
@@ -304,29 +527,61 @@ export default function ServiceOverview() {
             fullWidth
             multiline
             rows={3}
+            variant="outlined"
+            sx={{
+              '& .MuiOutlinedInput-root': {
+                borderRadius: 2,
+              }
+            }}
           />
         </Box>
       </AccessibleDialog>
 
-      {/* Subcollection Dialog */}
+      {/* Sub-Collection Dialog */}
       <AccessibleDialog
         open={subDialogOpen}
         onClose={handleSubClose}
         title={subEditingId ? 'Edit Sub-Collection' : 'New Sub-Collection'}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: 3,
+            boxShadow: theme.shadows[10],
+          }
+        }}
         actions={
-          <>
-            <Button onClick={handleSubClose}>Cancel</Button>
-            <Button onClick={handleSubSubmit} variant="contained">{subEditingId ? 'Update' : 'Create'}</Button>
-          </>
+          <Box sx={{ display: 'flex', gap: 2, p: 3, pt: 0 }}>
+            <Button 
+              onClick={handleSubClose}
+              variant="outlined"
+              sx={{ borderRadius: 2, px: 3 }}
+            >
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleSubSubmit} 
+              variant="contained"
+              sx={{ borderRadius: 2, px: 3 }}
+            >
+              {subEditingId ? 'Update' : 'Create'}
+            </Button>
+          </Box>
         }
       >
-        <Box component="form" onSubmit={handleSubSubmit} sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <Box component="form" onSubmit={handleSubSubmit} sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 3 }}>
           <TextField
-            label="Name"
+            label="Sub-Collection Name"
             value={subFormData.name}
             onChange={e => setSubFormData({ ...subFormData, name: e.target.value })}
             required
             fullWidth
+            variant="outlined"
+            sx={{
+              '& .MuiOutlinedInput-root': {
+                borderRadius: 2,
+              }
+            }}
           />
           <TextField
             label="Description"
@@ -335,6 +590,12 @@ export default function ServiceOverview() {
             fullWidth
             multiline
             rows={3}
+            variant="outlined"
+            sx={{
+              '& .MuiOutlinedInput-root': {
+                borderRadius: 2,
+              }
+            }}
           />
         </Box>
       </AccessibleDialog>
@@ -344,20 +605,46 @@ export default function ServiceOverview() {
         open={servDialogOpen}
         onClose={handleServClose}
         title={servEditingId ? 'Edit Service' : 'New Service'}
+        maxWidth="md"
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: 3,
+            boxShadow: theme.shadows[10],
+          }
+        }}
         actions={
-          <>
-            <Button onClick={handleServClose}>Cancel</Button>
-            <Button onClick={handleServSubmit} variant="contained">{servEditingId ? 'Update' : 'Create'}</Button>
-          </>
+          <Box sx={{ display: 'flex', gap: 2, p: 3, pt: 0 }}>
+            <Button 
+              onClick={handleServClose}
+              variant="outlined"
+              sx={{ borderRadius: 2, px: 3 }}
+            >
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleServSubmit} 
+              variant="contained"
+              sx={{ borderRadius: 2, px: 3 }}
+            >
+              {servEditingId ? 'Update' : 'Create'}
+            </Button>
+          </Box>
         }
       >
-        <Box component="form" onSubmit={handleServSubmit} sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <Box component="form" onSubmit={handleServSubmit} sx={{ p: 3 }}>
+          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 3 }}>
           <TextField
-            label="Name"
+              label="Service Name"
             value={servFormData.name}
             onChange={e => setServFormData({ ...servFormData, name: e.target.value })}
             required
             fullWidth
+              variant="outlined"
+              sx={{
+                gridColumn: { xs: '1', sm: '1 / -1' },
+                '& .MuiOutlinedInput-root': { borderRadius: 2 }
+              }}
           />
           <TextField
             label="Description"
@@ -366,15 +653,24 @@ export default function ServiceOverview() {
             fullWidth
             multiline
             rows={3}
+              variant="outlined"
+              sx={{
+                gridColumn: { xs: '1', sm: '1 / -1' },
+                '& .MuiOutlinedInput-root': { borderRadius: 2 }
+              }}
           />
           <TextField
-            label="Price"
+              label="Price (₹)"
             type="number"
             value={servFormData.price}
             onChange={e => setServFormData({ ...servFormData, price: parseFloat(e.target.value) })}
             required
             fullWidth
-            InputProps={{ inputProps: { min: 0 } }}
+              variant="outlined"
+              InputProps={{ inputProps: { min: 0, step: 0.01 } }}
+              sx={{
+                '& .MuiOutlinedInput-root': { borderRadius: 2 }
+              }}
           />
           <TextField
             label="Duration (minutes)"
@@ -383,37 +679,103 @@ export default function ServiceOverview() {
             onChange={e => setServFormData({ ...servFormData, duration: parseInt(e.target.value) })}
             required
             fullWidth
-            InputProps={{ inputProps: { min: 1 } }}
+              variant="outlined"
+              InputProps={{ inputProps: { min: 1, step: 1 } }}
+              sx={{
+                '& .MuiOutlinedInput-root': { borderRadius: 2 }
+              }}
           />
           <TextField
             select
-            label="Gender"
+              label="Gender Preference"
             value={servFormData.gender}
             onChange={e => setServFormData({ ...servFormData, gender: e.target.value })}
             fullWidth
+              variant="outlined"
+              sx={{
+                '& .MuiOutlinedInput-root': { borderRadius: 2 }
+              }}
           >
-            <MenuItem value="">All</MenuItem>
-            <MenuItem value="male">Male</MenuItem>
-            <MenuItem value="female">Female</MenuItem>
+              <MenuItem value="">All Genders</MenuItem>
+              <MenuItem value="male">Male Only</MenuItem>
+              <MenuItem value="female">Female Only</MenuItem>
           </TextField>
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
           <FormControlLabel
             control={
               <Switch
                 checked={servFormData.active}
                 onChange={e => setServFormData({ ...servFormData, active: e.target.checked })}
+                    color="primary"
               />
             }
-            label="Active"
+                label="Active Service"
+                sx={{ mb: 1 }}
           />
           <FormControlLabel
             control={
               <Switch
                 checked={servFormData.membership_eligible}
                 onChange={e => setServFormData({ ...servFormData, membership_eligible: e.target.checked })}
+                    color="primary"
               />
             }
             label="Membership Eligible"
           />
+            </Box>
+          </Box>
+        </Box>
+      </AccessibleDialog>
+      {/* Management Dialog for Collections and Sub-collections */}
+      <AccessibleDialog
+        open={managementDialog.open}
+        onClose={handleCloseManagementDialog}
+        title={`Manage ${managementDialog.type === 'collections' ? 'Collections' : 'Sub-Collections'}`}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{ sx: { borderRadius: 2 } }}
+      >
+        <List sx={{ p: 2 }}>
+          <Button
+            variant="contained"
+            fullWidth
+            startIcon={<AddIcon />}
+            onClick={() => {
+              if (managementDialog.type === 'collections') handleColOpenAdd();
+              else handleSubOpenAdd();
+              handleCloseManagementDialog();
+            }}
+            sx={{ mb: 2 }}
+          >
+            Add New {managementDialog.type === 'collections' ? 'Collection' : 'Sub-Collection'}
+          </Button>
+          {(managementDialog.type === 'collections' ? serviceCollections : subCollections)?.map((item: ServiceCollection | ServiceSubCollection) => (
+            <Paper
+              key={item.id}
+              variant="outlined"
+              sx={{ p: 1, display: 'flex', alignItems: 'center', mb: 1, borderRadius: 2 }}
+            >
+              <ListItemText primary={item.name} secondary={item.description} sx={{ flexGrow: 1, ml: 1 }}/>
+              <IconButton edge="end" aria-label="edit" onClick={() => {
+                if (managementDialog.type === 'collections') handleColEdit(item as ServiceCollection);
+                else handleSubEdit(item as ServiceSubCollection);
+                handleCloseManagementDialog();
+              }}>
+                <EditIcon fontSize="small" />
+              </IconButton>
+              <IconButton edge="end" aria-label="delete" onClick={() => {
+                if (managementDialog.type === 'collections') handleColDelete(item.id);
+                else handleSubDelete(item.id);
+              }} sx={{ ml: 1 }}>
+                <DeleteIcon color="error" fontSize="small" />
+              </IconButton>
+            </Paper>
+          ))}
+        </List>
+        <Box sx={{ display: 'flex', justifyContent: 'flex-end', p: 2, pt:0, borderTop: '1px solid ' + theme.palette.divider }}>
+           <Button onClick={handleCloseManagementDialog} variant="outlined">
+            Close
+          </Button>
         </Box>
       </AccessibleDialog>
     </Box>

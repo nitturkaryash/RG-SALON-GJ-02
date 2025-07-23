@@ -24,52 +24,75 @@ import {
   Alert,
   DialogContentText,
   Pagination,
-  Stack
+  Stack,
+  useTheme,
+  useMediaQuery,
+  Tooltip as MuiTooltip
 } from '@mui/material'
 import {
-  PersonAdd as PersonAddIcon,
-  Edit as EditIcon,
-  CreditCard as CreditCardIcon,
-  Search as SearchIcon,
   CalendarToday as CalendarTodayIcon,
-  Event as EventIcon,
-  Wc as WcIcon,
   ConfirmationNumber as ConfirmationNumberIcon,
+  CreditCard as CreditCardIcon,
   Delete as DeleteIcon,
-  FileDownload as FileDownloadIcon
-} from '@mui/icons-material'
+  Edit as EditIcon,
+  Event as EventIcon,
+  FileDownload as FileDownloadIcon,
+  History as HistoryIcon,
+  PersonAdd as PersonAddIcon,
+  Receipt as ReceiptIcon,
+  Search as SearchIcon,
+  Wc as WcIcon
+} from '@mui/icons-material';
 import * as XLSX from 'xlsx'
 import { useClients, Client } from '../hooks/useClients'
 import { useOrders } from '../hooks/useOrders'
+import { useClientPayments, ClientPayment } from '../hooks/useClientPayments'; // Import the new hook
 import { formatCurrency } from '../utils/format'
 import { toast } from 'react-hot-toast'
 import { isValidPhoneNumber, isValidEmail } from '../utils/validation'
 import ScrollIndicator from '../components/ScrollIndicator'
+import { useEffect } from 'react'
+
+// Custom debounce hook
+function useDebounce<T>(value: T, delay: number): T {
+  const [debouncedValue, setDebouncedValue] = useState(value)
+  useEffect(() => {
+    const handler = setTimeout(() => setDebouncedValue(value), delay)
+    return () => clearTimeout(handler)
+  }, [value, delay])
+  return debouncedValue
+}
 
 export default function Clients() {
   const [page, setPage] = useState(1)
   const [searchQuery, setSearchQuery] = useState('')
   const pageSize = 50
 
-  const { 
-    clients, 
-    totalClientsCount, 
-    allClients, 
-    isLoading, 
+  const theme = useTheme()
+  const isSmallScreen = useMediaQuery(theme.breakpoints.down('sm'))
+
+  // Debounced search
+  const debouncedSearchQuery = useDebounce(searchQuery, 350)
+  const {
+    clients,
+    totalClientsCount,
+    isLoading,
     refetchAllClients,
-    createClient, 
-    updateClient, 
-    processPendingPayment, 
-    deleteClient 
-  } = useClients(page, pageSize, searchQuery)
+    createClient,
+    updateClient,
+    processPendingPayment,
+    deleteClient
+  } = useClients(page, pageSize, debouncedSearchQuery)
   const { orders, isLoading: isLoadingOrders } = useOrders()
   
   const [openAddDialog, setOpenAddDialog] = useState(false)
   const [openEditDialog, setOpenEditDialog] = useState(false)
   const [openPaymentDialog, setOpenPaymentDialog] = useState(false)
   const [openDeleteDialog, setOpenDeleteDialog] = useState(false)
+  const [openHistoryDialog, setOpenHistoryDialog] = useState(false); // State for history dialog
   const [selectedClient, setSelectedClient] = useState<Client | null>(null)
   const [paymentAmount, setPaymentAmount] = useState<number>(0)
+  const [paymentMethod, setPaymentMethod] = useState<string>('cash')
   
   // Form state
   const [formData, setFormData] = useState({
@@ -159,7 +182,7 @@ export default function Clients() {
     try {
       // First fetch all clients for export
       const { data } = await refetchAllClients()
-      const clientsToExport = data?.clients || allClients
+      const clientsToExport = data?.clients || clients // Use 'clients' from the hook
 
       if (!clientsToExport || clientsToExport.length === 0) {
         toast.error('No client data to export')
@@ -323,7 +346,8 @@ export default function Clients() {
     
     await processPendingPayment({
       clientId: selectedClient.id,
-      amount: paymentAmount
+      amount: paymentAmount,
+      paymentMethod: paymentMethod as any
     })
     
     setSelectedClient(null)
@@ -337,6 +361,12 @@ export default function Clients() {
     setOpenDeleteDialog(true)
   }
   
+  // Open payment history dialog
+  const handleOpenHistoryDialog = (client: Client) => {
+    setSelectedClient(client);
+    setOpenHistoryDialog(true);
+  };
+
   // Handle delete client
   const handleDeleteClient = async () => {
     if (!selectedClient) {
@@ -381,37 +411,53 @@ export default function Clients() {
         showPercentage={true}
       />
       
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+      <Box sx={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: { xs: 'flex-start', sm: 'center' },
+        mb: 3,
+        flexDirection: { xs: 'column', sm: 'row' },
+        gap: 2,
+        p: 2,
+        borderRadius: 2,
+        boxShadow: 2,
+        background: theme => theme.palette.background.paper,
+      }}>
         <Box>
-          <Typography variant="h1">Clients</Typography>
+          <Typography variant="h1" sx={{ fontSize: 28, fontWeight: 700, mb: 0.5 }}>Clients</Typography>
           <Typography variant="body2" color="text.secondary">
             Showing {clients?.length || 0} of {totalClientsCount} total clients
             {searchQuery && ` (filtered by "${searchQuery}")`}
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            Page {page} of {totalPages} • {pageSize} clients per page
           </Typography>
           <Typography variant="caption" color="success.main" sx={{ display: 'block', mt: 0.5 }}>
             ✨ Serial numbers are based on current page (page {page}: {((page - 1) * pageSize) + 1}-{Math.min(page * pageSize, totalClientsCount)})
           </Typography>
         </Box>
-        <Box sx={{ display: 'flex', gap: 2 }}>
-          <Tooltip title={`Export all ${totalClientsCount} clients to Excel`}>
+        <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+          <MuiTooltip title={`Export all ${totalClientsCount} clients to Excel`}>
             <Button
               variant="outlined"
               startIcon={<FileDownloadIcon />}
               onClick={exportToExcel}
-              sx={{ height: 'fit-content' }}
+              sx={{ height: 'fit-content', borderRadius: 2, boxShadow: 1 }}
               disabled={totalClientsCount === 0}
             >
               Export All ({totalClientsCount})
             </Button>
-          </Tooltip>
+          </MuiTooltip>
           <Button
             variant="contained"
             startIcon={<PersonAddIcon />}
             onClick={handleOpenAddDialog}
-            sx={{ height: 'fit-content' }}
+            sx={{
+              height: 'fit-content',
+              borderRadius: 2,
+              boxShadow: 2,
+              fontWeight: 700,
+              background: theme => theme.palette.primary.main,
+              color: '#fff',
+              '&:hover': { background: theme => theme.palette.primary.dark }
+            }}
           >
             Add Client
           </Button>
@@ -431,12 +477,25 @@ export default function Clients() {
               <SearchIcon />
             </InputAdornment>
           ),
+          sx: {
+            background: theme => theme.palette.background.paper,
+            borderRadius: 2,
+            boxShadow: 1,
+            fontSize: 15,
+            py: 1,
+          }
         }}
         sx={{ mb: 3 }}
       />
       
       {/* Clients Table */}
-      <Paper sx={{ p: 3 }}>
+      <Paper sx={{
+        p: 1,
+        overflowX: 'auto',
+        borderRadius: 3,
+        boxShadow: 3,
+        background: theme => theme.palette.background.paper,
+      }}>
         {isLoading && (
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', p: 3 }}>
             <CircularProgress size={24} sx={{ mr: 2 }} />
@@ -444,108 +503,146 @@ export default function Clients() {
           </Box>
         )}
         {clients && clients.length > 0 ? (
-          <TableContainer>
-            <Table>
-              <TableHead>
-                <TableRow>
-                  <TableCell>S.No.</TableCell>
-                  <TableCell>Name</TableCell>
-                  <TableCell>Contact</TableCell>
-                  <TableCell>Last Visit</TableCell>
-                  <TableCell>Gender</TableCell>
-                  <TableCell>Birth Date</TableCell>
-                  <TableCell>Anniversary</TableCell>
-                  <TableCell>Lifetime Visits</TableCell>
-                  <TableCell>Total Spent</TableCell>
-                  <TableCell>Pending Payment</TableCell>
-                  <TableCell>Actions</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {clients.map((client, index) => {
-                  // Calculate lifetime visits dynamically
-                  const lifetimeVisits = orders?.filter(
-                    order => 
-                      ((order as any).client_name === client.full_name || (order as any).customer_name === client.full_name) && 
-                      (order as any).status !== 'cancelled' && 
-                      !(order as any).consumption_purpose && 
-                      (order as any).client_name !== 'Salon Consumption'
-                  ).length || 0
-
-                  // Calculate serial number based on current page
-                  const serialNumber = ((page - 1) * pageSize) + index + 1
-
-                  return (
-                    <TableRow key={client.id}>
+          <Table size="small" stickyHeader>
+            <TableHead>
+              <TableRow sx={{ background: theme => theme.palette.grey[100] }}>
+                <TableCell sx={{ fontWeight: 'bold', px: 1, background: theme => theme.palette.background.paper, top: 0, zIndex: 1 }}>S.No.</TableCell>
+                <TableCell sx={{ fontWeight: 'bold', px: 1, background: theme => theme.palette.background.paper, top: 0, zIndex: 1 }}>Name</TableCell>
+                <TableCell sx={{ fontWeight: 'bold', px: 1, background: theme => theme.palette.background.paper, top: 0, zIndex: 1 }}>Contact</TableCell>
+                {!isSmallScreen && <TableCell sx={{ fontWeight: 'bold', px: 1, background: theme => theme.palette.background.paper, top: 0, zIndex: 1 }}>Last Visit</TableCell>}
+                {!isSmallScreen && <TableCell sx={{ fontWeight: 'bold', px: 1, background: theme => theme.palette.background.paper, top: 0, zIndex: 1 }}>Gender</TableCell>}
+                {!isSmallScreen && <TableCell sx={{ fontWeight: 'bold', px: 1, background: theme => theme.palette.background.paper, top: 0, zIndex: 1 }}>Birth Date</TableCell>}
+                {!isSmallScreen && <TableCell sx={{ fontWeight: 'bold', px: 1, background: theme => theme.palette.background.paper, top: 0, zIndex: 1 }}>Anniversary</TableCell>}
+                <TableCell sx={{ fontWeight: 'bold', px: 1, background: theme => theme.palette.background.paper, top: 0, zIndex: 1 }}>Lifetime Visits</TableCell>
+                <TableCell sx={{ fontWeight: 'bold', px: 1, background: theme => theme.palette.background.paper, top: 0, zIndex: 1 }}>Total Spent</TableCell>
+                <TableCell sx={{ fontWeight: 'bold', px: 1, background: theme => theme.palette.background.paper, top: 0, zIndex: 1 }}>Pending Payment</TableCell>
+                <TableCell sx={{ fontWeight: 'bold', px: 1, background: theme => theme.palette.background.paper, top: 0, zIndex: 1 }}>Actions</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {clients.map((client, index) => {
+                const lifetimeVisits = orders?.filter(
+                  order =>
+                    ((order as any).client_name === client.full_name || (order as any).customer_name === client.full_name) &&
+                    (order as any).status !== 'cancelled' &&
+                    !(order as any).consumption_purpose &&
+                    (order as any).client_name !== 'Salon Consumption'
+                ).length || 0
+                const serialNumber = ((page - 1) * pageSize) + index + 1
+                return (
+                  <TableRow
+                    key={client.id}
+                    sx={{
+                      '&:nth-of-type(odd)': { background: theme => theme.palette.action.hover },
+                      '&:hover': { background: theme => theme.palette.action.selected },
+                      '& td': { px: 1, py: 0.5, fontSize: 13, maxWidth: 160, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
+                      cursor: 'pointer',
+                      transition: 'background 0.2s',
+                    }}
+                  >
+                    <TableCell>
+                      <MuiTooltip title={serialNumber} arrow>
+                        <span>{serialNumber}</span>
+                      </MuiTooltip>
+                    </TableCell>
+                    <TableCell>
+                      <MuiTooltip title={client.full_name} arrow>
+                        <span>{client.full_name}</span>
+                      </MuiTooltip>
+                    </TableCell>
+                    <TableCell>
+                      <MuiTooltip title={client.phone} arrow>
+                        <Typography variant="body2" sx={{ fontSize: 13 }}>{client.phone}</Typography>
+                      </MuiTooltip>
+                      {client.email && (
+                        <MuiTooltip title={client.email} arrow>
+                          <Typography variant="caption" color="text.secondary" sx={{ fontSize: 11, wordBreak: 'break-all' }}>
+                            {client.email}
+                          </Typography>
+                        </MuiTooltip>
+                      )}
+                    </TableCell>
+                    {!isSmallScreen && (
                       <TableCell>
-                        <Typography variant="body2" fontWeight="bold">
-                          {serialNumber}
-                        </Typography>
+                        <MuiTooltip title={client.last_visit ? new Date(client.last_visit).toLocaleDateString() : 'Never'} arrow>
+                          <span>{client.last_visit ? new Date(client.last_visit).toLocaleDateString() : 'Never'}</span>
+                        </MuiTooltip>
                       </TableCell>
-                      <TableCell>{client.full_name}</TableCell>
+                    )}
+                    {!isSmallScreen && (
                       <TableCell>
-                        <Typography variant="body2">{client.phone}</Typography>
-                        <Typography variant="body2" color="text.secondary">{client.email}</Typography>
+                        <MuiTooltip title={client.gender || '-'} arrow>
+                          <span>{client.gender || '-'}</span>
+                        </MuiTooltip>
                       </TableCell>
+                    )}
+                    {!isSmallScreen && (
                       <TableCell>
-                        {client.last_visit ? new Date(client.last_visit).toLocaleDateString() : 'Never'}
+                        <MuiTooltip title={client.birth_date ? new Date(client.birth_date).toLocaleDateString() : '-'} arrow>
+                          <span>{client.birth_date ? new Date(client.birth_date).toLocaleDateString() : '-'}</span>
+                        </MuiTooltip>
                       </TableCell>
-                      <TableCell>{client.gender || '-'}</TableCell>
+                    )}
+                    {!isSmallScreen && (
                       <TableCell>
-                        {client.birth_date ? new Date(client.birth_date).toLocaleDateString() : '-'}
+                        <MuiTooltip title={client.anniversary_date ? new Date(client.anniversary_date).toLocaleDateString() : '-'} arrow>
+                          <span>{client.anniversary_date ? new Date(client.anniversary_date).toLocaleDateString() : '-'}</span>
+                        </MuiTooltip>
                       </TableCell>
-                      <TableCell>
-                        {client.anniversary_date ? new Date(client.anniversary_date).toLocaleDateString() : '-'}
-                      </TableCell>
-                      <TableCell>{lifetimeVisits}</TableCell>
-                      <TableCell>
-                        <Typography color="success.main" fontWeight="bold">
-                          {formatCurrency(client.total_spent)}
-                        </Typography>
-                      </TableCell>
-                      <TableCell>
-                        {client.pending_payment > 0 ? (
-                          <Chip 
-                            label={formatCurrency(client.pending_payment)} 
-                            color="warning"
-                            onClick={() => handleOpenPaymentDialog(client)}
-                          />
-                        ) : (
-                          <Typography color="text.secondary">No pending amount</Typography>
+                    )}
+                    <TableCell>
+                      <MuiTooltip title={lifetimeVisits} arrow>
+                        <span>{lifetimeVisits}</span>
+                      </MuiTooltip>
+                    </TableCell>
+                    <TableCell>
+                      <Typography color="success.main" fontWeight="bold" sx={{ fontSize: 13 }}>
+                        {formatCurrency(client.total_spent)}
+                      </Typography>
+                    </TableCell>
+                    <TableCell>
+                      {client.pending_payment > 0 ? (
+                        <Chip
+                          label={formatCurrency(client.pending_payment)}
+                          color="warning"
+                          size="small"
+                          onClick={() => handleOpenPaymentDialog(client)}
+                        />
+                      ) : (
+                        <Typography color="text.secondary" sx={{ fontSize: 12 }}>No pending</Typography>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <Box>
+                        <MuiTooltip title="Edit Client">
+                          <IconButton size="small" onClick={() => handleOpenEditDialog(client)}>
+                            <EditIcon fontSize="small" />
+                          </IconButton>
+                        </MuiTooltip>
+                        {client.pending_payment > 0 && (
+                          <MuiTooltip title="Clear Pending">
+                            <IconButton size="small" color="primary" onClick={() => handleOpenPaymentDialog(client)}>
+                              <ReceiptIcon fontSize="small" />
+                            </IconButton>
+                          </MuiTooltip>
                         )}
-                      </TableCell>
-                      <TableCell>
-                        <Box>
-                          <Tooltip title="Edit Client">
-                            <IconButton onClick={() => handleOpenEditDialog(client)}>
-                              <EditIcon />
-                            </IconButton>
-                          </Tooltip>
-                          
-                          {client.pending_payment > 0 && (
-                            <Tooltip title="Process Payment">
-                              <IconButton 
-                                color="primary"
-                                onClick={() => handleOpenPaymentDialog(client)}
-                              >
-                                <CreditCardIcon />
-                              </IconButton>
-                            </Tooltip>
-                          )}
-                          
-                          <Tooltip title="Delete Client">
-                            <IconButton onClick={() => handleOpenDeleteDialog(client)}>
-                              <DeleteIcon />
-                            </IconButton>
-                          </Tooltip>
-                        </Box>
-                      </TableCell>
-                    </TableRow>
-                  )
-                })}
-              </TableBody>
-            </Table>
-          </TableContainer>
+                        <MuiTooltip title="Payment History">
+                          <IconButton size="small" color="info" onClick={() => handleOpenHistoryDialog(client)}>
+                            <HistoryIcon fontSize="small" />
+                          </IconButton>
+                        </MuiTooltip>
+                        <MuiTooltip title="Delete Client">
+                          <IconButton size="small" onClick={() => handleOpenDeleteDialog(client)}>
+                            <DeleteIcon fontSize="small" />
+                          </IconButton>
+                        </MuiTooltip>
+                      </Box>
+                    </TableCell>
+                  </TableRow>
+                )
+              })}
+            </TableBody>
+          </Table>
         ) : (
           <Typography variant="body1" color="text.secondary">
             {searchQuery ? `No clients found matching "${searchQuery}"` : 'No clients in the database. Add a client to get started.'}
@@ -862,6 +959,23 @@ export default function Clients() {
                   helperText={paymentAmount > (selectedClient.pending_payment || 0) ? "Amount exceeds pending payment" : ""}
                   sx={{ mt: 2 }}
                 />
+
+                <TextField
+                  select
+                  label="Payment Method"
+                  value={paymentMethod}
+                  onChange={(e) => setPaymentMethod(e.target.value)}
+                  fullWidth
+                  sx={{ mt: 2 }}
+                  SelectProps={{
+                    native: true,
+                  }}
+                >
+                  <option value="cash">Cash</option>
+                  <option value="upi">UPI</option>
+                  <option value="credit_card">Credit Card</option>
+                  <option value="debit_card">Debit Card</option>
+                </TextField>
               </Grid>
             </Grid>
           )}
@@ -905,7 +1019,72 @@ export default function Clients() {
         </DialogActions>
       </Dialog>
       
+      {/* Payment History Dialog */}
+      {selectedClient && (
+        <PaymentHistoryDialog
+          open={openHistoryDialog}
+          onClose={() => setOpenHistoryDialog(false)}
+          client={selectedClient}
+        />
+      )}
 
     </Box>
   )
+} 
+
+// New component for Payment History Dialog
+function PaymentHistoryDialog({ open, onClose, client }: { open: boolean, onClose: () => void, client: Client }) {
+  const { payments, isLoading, error } = useClientPayments(client.id);
+
+  return (
+    <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
+      <DialogTitle>Payment History for {client.full_name}</DialogTitle>
+      <DialogContent>
+        {isLoading && <CircularProgress />}
+        {error && <Alert severity="error">{error.message}</Alert>}
+        
+        {payments && payments.length > 0 ? (
+          <TableContainer component={Paper} sx={{ mt: 2 }}>
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell>Date</TableCell>
+                  <TableCell>Type</TableCell>
+                  <TableCell>Total</TableCell>
+                  <TableCell>Payment Method</TableCell>
+                  <TableCell>Items</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {payments.map((payment) => (
+                  <TableRow key={payment.id}>
+                    <TableCell>{new Date(payment.created_at).toLocaleString()}</TableCell>
+                    <TableCell>
+                      <Chip 
+                        label={payment.payment_method === 'pending_payment' ? 'Pending Clearance' : 'Sale'} 
+                        color={payment.payment_method === 'pending_payment' ? 'info' : 'success'} 
+                        size="small" 
+                      />
+                    </TableCell>
+                    <TableCell>{formatCurrency(payment.total)}</TableCell>
+                    <TableCell>
+                      {payment.payments.map(p => `${p.method}: ${formatCurrency(p.amount)}`).join(', ')}
+                    </TableCell>
+                    <TableCell>
+                      {Array.isArray(payment.services) ? payment.services.map(s => `${s.name || s.service_name} (x${s.quantity || 1})`).join(', ') : 'No item details'}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        ) : (
+          <Typography sx={{ mt: 2 }}>No payment history found for this client.</Typography>
+        )}
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose}>Close</Button>
+      </DialogActions>
+    </Dialog>
+  );
 } 

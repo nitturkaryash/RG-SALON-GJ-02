@@ -51,6 +51,7 @@ import {
   ViewModule as ViewModuleIcon,
   Clear as ClearIcon,
   Info as InfoIcon,
+  Download as DownloadIcon,
 } from '@mui/icons-material';
 import { styled } from '@mui/material/styles';
 import { supabase, handleSupabaseError } from '../utils/supabase/supabaseClient';
@@ -159,6 +160,8 @@ export default function ProductMaster() {
   const [priceHistory, setPriceHistory] = useState<PriceHistory[]>([]);
   const [historyDialogOpen, setHistoryDialogOpen] = useState(false);
   const [selectedProductForHistory, setSelectedProductForHistory] = useState<Product | null>(null);
+  // Add export loading state
+  const [isExporting, setIsExporting] = useState(false);
 
   // Excel import states
   const [isImporting, setIsImporting] = useState(false);
@@ -871,6 +874,36 @@ export default function ProductMaster() {
     setParsedExcelData([]);
   };
 
+  // Export handler
+  const handleExportProducts = async () => {
+    setIsExporting(true);
+    try {
+      // Prepare data for export (use filteredProducts for current view)
+      const exportData = filteredProducts.map(product => ({
+        'Name': product.name,
+        'Category': product.category || '-',
+        'HSN Code': product.hsn_code || '-',
+        'GST %': product.gst_percentage ?? '',
+        'Price (Excl. GST)': product.mrp_excl_gst ?? '',
+        'MRP (Incl. GST)': product.mrp_incl_gst ?? '',
+        'Stock Quantity': product.stock_quantity ?? '',
+        'Product Type': product.product_type || '-',
+        'Status': product.active ? 'Active' : 'Inactive',
+        'Created At': product.created_at ? new Date(product.created_at).toLocaleString() : '',
+        'Updated At': product.updated_at ? new Date(product.updated_at).toLocaleString() : '',
+      }));
+      const ws = XLSX.utils.json_to_sheet(exportData);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Products');
+      const fileName = `products_export_${new Date().toISOString().split('T')[0]}.xlsx`;
+      XLSX.writeFile(wb, fileName);
+    } catch (error) {
+      setSnackbar({ open: true, message: 'Failed to export products', severity: 'error' });
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   return (
     <Box sx={{ p: 2 }}>
       {/* Header */}
@@ -903,6 +936,15 @@ export default function ProductMaster() {
               style={{ display: 'none' }}
               aria-label="Upload Excel file"
             />
+          </Button>
+          <Button
+            variant="outlined"
+            startIcon={<DownloadIcon />}
+            onClick={handleExportProducts}
+            disabled={isLoading || isExporting || filteredProducts.length === 0}
+            size="small"
+          >
+            {isExporting ? 'Exporting...' : 'Export Products'}
           </Button>
           <Button
             variant="contained"
@@ -1056,32 +1098,6 @@ export default function ProductMaster() {
           {error}
         </Alert>
       )}
-
-      {/* Horizontal Scroll Help Info */}
-      <Paper 
-        elevation={1} 
-        sx={{ 
-          p: 1, 
-          mb: 1.5, 
-          background: 'linear-gradient(45deg, #f8fdf0 30%, #f0f8e6 90%)',
-          border: '1px solid #8baf3f',
-          borderRadius: '8px'
-        }}
-      >
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          <InfoIcon sx={{ color: '#7da237', fontSize: '20px' }} />
-          <Typography variant="body2" sx={{ color: '#7da237', fontWeight: 500 }}>
-            💡 <strong>Horizontal Scroll Tip:</strong> Hold <kbd style={{ 
-              background: '#f0f8e6', 
-              padding: '2px 6px', 
-              borderRadius: '4px', 
-              border: '1px solid #c8d9a5',
-              fontFamily: 'monospace',
-              fontSize: '11px'
-            }}>Shift</kbd> + Mouse Wheel to scroll horizontally, or use the scroll bar below the table
-          </Typography>
-        </Box>
-      </Paper>
 
       {/* Content Area */}
       {viewMode === 'table' ? (

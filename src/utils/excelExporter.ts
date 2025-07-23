@@ -35,7 +35,7 @@ export function generateStockDetailsExcel(
     C: 'Product Name',
     D: 'HSN Code',
     E: 'UNITS',
-    F: 'PURCHASE - STOCK IN',
+    F: '',
     G: '',
     H: '',
     I: '',
@@ -324,6 +324,28 @@ export function exportInventoryToExcel(
     consumption, 
     balanceStock
   );
+  
+  // Ensure filename has .xlsx extension
+  if (!filename.endsWith('.xlsx')) {
+    filename += '.xlsx';
+  }
+  
+  // Write file and trigger download
+  XLSX.writeFile(workbook, filename);
+} 
+
+/**
+ * A generic function to export an array of objects to an Excel file.
+ * @param {any[]} data - The array of objects to export.
+ * @param {string} filename - The desired name for the Excel file.
+ */
+export function exportToExcel(data: any[], filename: string): void {
+  // Create a new worksheet from the JSON data
+  const worksheet = XLSX.utils.json_to_sheet(data);
+  
+  // Create a new workbook and append the worksheet
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'Sheet1');
   
   // Ensure filename has .xlsx extension
   if (!filename.endsWith('.xlsx')) {

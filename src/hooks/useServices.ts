@@ -68,87 +68,8 @@ export function useServices() {
     },
   })
 
-  const createService = useMutation({
-    mutationFn: async (newService: Omit<Service, 'id'>) => {
-      const serviceId = uuidv4();
-      const service = {
-        id: serviceId,
-        name: newService.name,
-        description: newService.description || '',
-        duration: newService.duration,
-        price: newService.price,
-        type: newService.type,
-        collection_id: newService.collection_id,
-        subcollection_id: newService.subcollection_id,
-        gender: newService.gender,
-        active: newService.active ?? true,
-        membership_eligible: newService.membership_eligible ?? true,
-      };
-      
-      const { data, error } = await supabase
-        .from('services')
-        .insert(service)
-        .select();
-      
-      if (error) throw error;
-      return data[0] as Service;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['services'] });
-      toast.success('Service created successfully');
-    },
-    onError: (error) => {
-      toast.error('Failed to create service');
-      console.error('Error creating service:', error);
-    },
-  })
-
-  const updateService = useMutation({
-    mutationFn: async (updates: Partial<Service> & { id: string }) => {
-      const { data, error } = await supabase
-        .from('services')
-        .update(updates)
-        .eq('id', updates.id)
-        .select();
-      
-      if (error) throw error;
-      return data[0] as Service;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['services'] });
-      toast.success('Service updated successfully');
-    },
-    onError: (error) => {
-      toast.error('Failed to update service');
-      console.error('Error updating service:', error);
-    },
-  })
-
-  const deleteService = useMutation({
-    mutationFn: async (id: string) => {
-      const { error } = await supabase
-        .from('services')
-        .delete()
-        .eq('id', id);
-      
-      if (error) throw error;
-      return { success: true };
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['services'] });
-      toast.success('Service deleted successfully');
-    },
-    onError: (error) => {
-      toast.error('Failed to delete service');
-      console.error('Error deleting service:', error);
-    },
-  })
-
   return {
     services,
     isLoading,
-    createService: createService.mutate,
-    updateService: updateService.mutate,
-    deleteService: deleteService.mutate,
   }
 } 

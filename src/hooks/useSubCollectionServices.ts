@@ -4,147 +4,51 @@ import { v4 as uuidv4 } from 'uuid'
 import type { ServiceItem } from '../models/serviceTypes'
 import { supabase } from '../utils/supabase/supabaseClient.js'
 
+const fetchServices = async (collectionId?: string | null, subCollectionId?: string | null): Promise<ServiceItem[]> => {
+  // If no collection is selected yet, don't fetch anything.
+  if (!collectionId) {
+    return [];
+  }
+
+  let query = supabase.from('services').select('*');
+
+  // Case 1: Fetch ALL services if 'All Collections' is selected.
+  if (collectionId === 'all') {
+    // The initial query is already correct, no extra filter needed.
+  } 
+  // Case 2: A specific collection is selected.
+  else {
+    // Sub-case 2a: Fetch all services for the specific collection.
+    if (subCollectionId === 'all') {
+      query = query.eq('collection_id', collectionId);
+    } 
+    // Sub-case 2b: Fetch services for a specific sub-collection.
+    else if (subCollectionId) {
+      query = query.eq('subcollection_id', subCollectionId);
+    } 
+    // Sub-case 2c: A collection is selected, but no sub-collection yet. Return nothing.
+    else {
+      return [];
+    }
+  }
+
+  const { data, error } = await query.order('name', { ascending: true });
+
+  if (error) {
+    console.error('Error fetching services:', error);
+    throw new Error(error.message);
+  }
+
+  return data || [];
+};
+
 export function useSubCollectionServices(collectionId?: string, subCollectionId?: string) {
   const queryClient = useQueryClient()
 
-  // Get current user's profile ID
-  const getProfileId = async () => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) throw new Error('No authenticated user')
-
-    const { data: profile, error } = await supabase
-      .from('profiles')
-      .select('id')
-      .eq('auth_user_id', user.id)
-      .single()
-
-    if (error || !profile) throw new Error('Could not get profile ID')
-    return profile.id
-  }
-
-  const { data: services, isLoading, refetch } = useQuery({
-    queryKey: ['services', { collectionId, subCollectionId }],
-    queryFn: async () => {
-      let query = supabase
-        .from('services')
-        .select('*')
-        .order('name', { ascending: true })
-
-      if (subCollectionId) {
-        query = query.eq('subcollection_id', subCollectionId)
-      } else if (collectionId) {
-        query = query.eq('collection_id', collectionId)
-      }
-
-      const { data, error } = await query
-      if (error) throw error
-
-      return (data || []).map(service => ({
-        id: service.id,
-        collection_id: service.collection_id,
-        subcollection_id: service.subcollection_id,
-        name: service.name || 'Unnamed Service',
-        description: service.description || '',
-        price: typeof service.price === 'number' ? service.price : 0,
-        duration: typeof service.duration === 'number' ? service.duration : 30,
-        active: service.active === true,
-        gender: service.gender || null,
-        membership_eligible: service.membership_eligible ?? true,
-        created_at: service.created_at || new Date().toISOString(),
-      })) as ServiceItem[]
-    },
-    enabled: !!(collectionId && subCollectionId),
-  })
-
-  const createService = useMutation({
-    mutationFn: async (newService: Omit<ServiceItem, 'id' | 'created_at'>) => {
-      const profileId = await getProfileId()
-      const serviceId = uuidv4()
-      const timestamp = new Date().toISOString()
-      const serviceToInsert = {
-        id: serviceId,
-        collection_id: newService.collection_id,
-        subcollection_id: newService.subcollection_id,
-        name: newService.name || 'Unnamed Service',
-        description: newService.description || '',
-        price: typeof newService.price === 'number' ? newService.price : 0,
-        duration: typeof newService.duration === 'number' ? newService.duration : 30,
-        active: newService.active === true,
-        gender: newService.gender || null,
-        membership_eligible: newService.membership_eligible ?? true,
-        created_at: timestamp,
-        updated_at: timestamp,
-        user_id: profileId,
-      }
-      const { data, error } = await supabase
-        .from('services')
-        .insert(serviceToInsert)
-        .select()
-
-      if (error) throw error
-      return data?.[0] as ServiceItem
-    },
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ['services', { collectionId, subCollectionId }] })
-      toast.success('Service added successfully')
-    },
-    onError: (error) => {
-      console.error('Error adding service:', error)
-      toast.error('Failed to add service')
-    },
-  })
-
-  const updateService = useMutation({
-    mutationFn: async (updates: Partial<ServiceItem> & { id: string }) => {
-      const { id, ...serviceUpdates } = updates
-      serviceUpdates.updated_at = new Date().toISOString()
-      const { data, error } = await supabase
-        .from('services')
-        .update(serviceUpdates)
-        .eq('id', id)
-        .select()
-
-      if (error) throw error
-      return data?.[0] as ServiceItem
-    },
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ['services', { collectionId, subCollectionId }] })
-      toast.success('Service updated successfully')
-    },
-    onError: (error) => {
-      console.error('Error updating service:', error)
-      toast.error('Failed to update service')
-    },
-  })
-
-  const deleteService = useMutation({
-    mutationFn: async (id: string) => {
-      // Completely delete the service from the database
-      const { data, error } = await supabase
-        .from('services')
-        .delete()
-        .eq('id', id)
-        .select('name')
-      if (error) throw error
-      // Return deleted service name for toast
-      return data?.[0]?.name
-    },
-    onSuccess: (name) => {
-      queryClient.invalidateQueries({ queryKey: ['services', { collectionId, subCollectionId }] })
-      toast.success(`Service '${name}' deleted successfully`)
-    },
-    onError: (error) => {
-      console.error('Error deleting service:', error)
-      toast.error('Failed to delete service')
-    },
-  })
-
-  return {
-    services: services || [],
-    isLoading,
-    refetch,
-    createService: createService.mutate,
-    updateService: updateService.mutate,
-    deleteService: deleteService.mutate,
-  }
+  return useQuery<ServiceItem[]>({
+    queryKey: ['services', collectionId, subCollectionId],
+    queryFn: () => fetchServices(collectionId, subCollectionId),
+    enabled: !!collectionId, // Only run the query if a collectionId is present
+    keepPreviousData: true,
+  });
 } 

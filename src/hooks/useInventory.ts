@@ -225,7 +225,7 @@ export const useInventory = () => {
               status: order.status || 'Completed',
               total: itemTotal,
               type: 'Product', // Ensure type matches SalonConsumptionRecord if different
-              payment_method: order.payment_method || order.payment_type || 'Cash'
+              payment_method: order.payment_method || 'Cash'
             };
 
             consumptionRecords.push(consumptionRecord);

@@ -3,6 +3,8 @@ import { toast } from 'react-toastify'
 import { v4 as uuidv4 } from 'uuid'
 import { supabase } from '../utils/supabase/supabaseClient'
 import { useAuthContext } from '../contexts/AuthContext'
+import { createWalkInOrder, PaymentMethod } from './usePOS'
+
 
 export interface Client {
   id: string;
@@ -406,46 +408,62 @@ export function useClients(page: number = 1, pageSize: number = 50, searchQuery:
 
   // Process payment for pending BNPL amount
   const processPendingPayment = useMutation({
-    mutationFn: async ({ clientId, amount }: { clientId: string, amount: number }) => {
-      // First get the client to check pending amount
+    mutationFn: async ({ clientId, amount, paymentMethod = 'cash' }: { clientId: string, amount: number, paymentMethod?: PaymentMethod }) => {
+      // 1. Validate client and amount
       const { data: client, error: getError } = await supabase
         .from('clients')
         .select('*')
         .eq('id', clientId)
         .single();
-      
-      if (getError) {
-        console.error('Error getting client:', getError);
-        throw getError;
-      }
-      
-      if (!client) {
-        throw new Error('Client not found');
-      }
-      
-      if (amount > (client.pending_payment || 0)) {
-        throw new Error('Payment amount exceeds pending amount');
-      }
-      
-      const updatedClient = { 
+      if (getError) throw getError;
+      if (!client) throw new Error('Client not found');
+      if (amount > (client.pending_payment || 0)) throw new Error('Payment amount exceeds pending amount');
+
+      // 2. Insert the receipt/order for the payment
+      const receiptOrder = {
+        client_id: client.id,
+        client_name: client.full_name,
+        stylist_name: 'N/A',
+        services: [{
+          id: uuidv4(),
+          name: 'Pending Amount Clearance',
+          price: amount,
+          quantity: 1,
+          type: 'service',
+        }],
+        total: amount,
+        subtotal: amount,
+        tax: 0,
+        discount: 0,
+        payment_method: 'pending_payment',
+        payments: [{ method: paymentMethod, amount: amount }],
+        status: 'completed',
+        created_at: new Date().toISOString(),
+        user_id: (async () => {
+          const { data: { user } } = await supabase.auth.getUser();
+          return user?.id;
+        })(),
+      };
+      const { data: orderData, error: orderError } = await supabase
+        .from('pos_orders')
+        .insert([receiptOrder])
+        .select();
+      if (orderError) throw orderError;
+      if (!orderData || !orderData.length) throw new Error('Order insert failed');
+
+      // 3. Only update the client's balance if the order insert is successful
+      const updatedClient = {
         pending_payment: (client.pending_payment || 0) - amount,
         total_spent: (client.total_spent || 0) + amount,
-        updated_at: new Date().toISOString()
       };
-      
-      const { data, error } = await supabase
+      const { error: updateError } = await supabase
         .from('clients')
         .update(updatedClient)
-        .eq('id', clientId)
-        .select()
-        .single();
-      
-      if (error) {
-        console.error('Error processing payment:', error);
-        throw error;
-      }
-      
-      return data;
+        .eq('id', clientId);
+      if (updateError) throw updateError;
+
+      // 4. Return a clear result
+      return { success: true, order: orderData[0], updatedClient };
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['clients'] });

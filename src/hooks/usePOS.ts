@@ -8,6 +8,7 @@ import { generateInvoiceNumber } from '../lib/invoice'
 import { useState, useEffect, useCallback } from 'react'
 import { recordSaleTransaction, syncToSalesHistory } from '../utils/salesUtils'
 import { calculateTotal } from '../utils/orderHelpers'
+import { useAuthContext } from '../contexts/AuthContext';
 
 // Add window interface augmentation at the top of the file
 declare global {
@@ -548,31 +549,26 @@ export async function createWalkInOrder(
     const { data: { user }, error: userError } = await supabase.auth.getUser();
     let currentProfileId: string | null = null;
     if (user && user.id) {
-      // Look up the profile row that belongs to the authenticated user.
       try {
         const { data: profileData, error: profileErr } = await supabase
           .from('profiles')
           .select('id')
           .eq('auth_user_id', user.id)
           .single();
-
         if (profileErr) {
-          console.warn('⚠️ Could not find corresponding profile for auth user, falling back to raw auth UID:', profileErr.message);
-          // If the FK on pos_orders.user_id points to profiles.id (text), we must NOT use the UUID directly.
+          throw new Error('No profile found for current user. Please contact admin.');
         } else {
           currentProfileId = profileData?.id || null;
         }
       } catch (lookupErr) {
-        console.error('❌ Failed looking up profile for user:', lookupErr);
+        throw new Error('Failed to look up user profile. Please try again.');
       }
+    } else {
+      throw new Error('No authenticated user found. Please log in again.');
     }
-
-    // FINAL user_id that will be stored on the order record – must reference profiles.id to avoid FK violation
-    // If we could not resolve a profile row, leave it null and let the DB trigger set_user_id attempt to populate it.
-    const resolvedUserId = currentProfileId ?? null;
-    
+    const resolvedUserId = currentProfileId;
     if (!resolvedUserId) {
-      console.warn('⚠️ No profile-level user_id could be resolved – inserting order without user_id so DB trigger can populate it.');
+      throw new Error('User profile not found. Cannot create order.');
     }
     
     if (userError) {
@@ -1197,37 +1193,28 @@ export function usePOS() {
       const { data: { user }, error: userError } = await supabase.auth.getUser();
       let currentProfileId: string | null = null;
       if (user && user.id) {
-        // Look up the profile row that belongs to the authenticated user.
         try {
           const { data: profileData, error: profileErr } = await supabase
             .from('profiles')
             .select('id')
             .eq('auth_user_id', user.id)
             .single();
-
           if (profileErr) {
-            console.warn('⚠️ Could not find corresponding profile for auth user, falling back to raw auth UID:', profileErr.message);
-            // If the FK on pos_orders.user_id points to profiles.id (text), we must NOT use the UUID directly.
+            throw new Error('No profile found for current user. Please contact admin.');
           } else {
             currentProfileId = profileData?.id || null;
           }
         } catch (lookupErr) {
-          console.error('❌ Failed looking up profile for user:', lookupErr);
+          throw new Error('Failed to look up user profile. Please try again.');
         }
+      } else {
+        throw new Error('No authenticated user found. Please log in again.');
       }
-
-      // FINAL user_id that will be stored on the order record – must reference profiles.id to avoid FK violation
-      // If we could not resolve a profile row, leave it null and let the DB trigger set_user_id attempt to populate it.
-      const resolvedUserId = currentProfileId ?? null;
-      
+      const resolvedUserId = currentProfileId;
       if (!resolvedUserId) {
-        console.warn('⚠️ No profile-level user_id could be resolved – inserting order without user_id so DB trigger can populate it.');
+        throw new Error('User profile not found. Cannot create order.');
       }
       
-      if (userError) {
-        console.warn('⚠️ Could not get current authenticated user:', userError.message);
-      }
-
       const order: PosOrder = {
         id: uuidv4(),
         created_at: data.order_date || new Date().toISOString(),
