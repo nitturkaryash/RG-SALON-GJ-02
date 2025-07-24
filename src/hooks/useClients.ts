@@ -419,51 +419,31 @@ export function useClients(page: number = 1, pageSize: number = 50, searchQuery:
       if (!client) throw new Error('Client not found');
       if (amount > (client.pending_payment || 0)) throw new Error('Payment amount exceeds pending amount');
 
-      // 2. Insert the receipt/order for the payment
-      const receiptOrder = {
-        client_id: client.id,
-        client_name: client.full_name,
-        stylist_name: 'N/A',
-        services: [{
-          id: uuidv4(),
-          name: 'Pending Amount Clearance',
-          price: amount,
-          quantity: 1,
-          type: 'service',
-        }],
-        total: amount,
-        subtotal: amount,
-        tax: 0,
-        discount: 0,
-        payment_method: 'pending_payment',
-        payments: [{ method: paymentMethod, amount: amount }],
-        status: 'completed',
-        created_at: new Date().toISOString(),
-        user_id: (async () => {
-          const { data: { user } } = await supabase.auth.getUser();
-          return user?.id;
-        })(),
-      };
-      const { data: orderData, error: orderError } = await supabase
-        .from('pos_orders')
-        .insert([receiptOrder])
-        .select();
-      if (orderError) throw orderError;
-      if (!orderData || !orderData.length) throw new Error('Order insert failed');
-
-      // 3. Only update the client's balance if the order insert is successful
-      const updatedClient = {
+      // 2. Insert into pending_payment_history
+      const { error: historyError } = await supabase
+        .from('pending_payment_history')
+        .insert({
+          client_id: clientId,
+          amount_paid: amount,
+          payment_method: paymentMethod,
+        });
+      if (historyError) throw historyError;
+      
+      // 3. Update the client's balance
+      const updatedClientPayload = {
         pending_payment: (client.pending_payment || 0) - amount,
         total_spent: (client.total_spent || 0) + amount,
       };
-      const { error: updateError } = await supabase
+      const { data: updatedClient, error: updateError } = await supabase
         .from('clients')
-        .update(updatedClient)
-        .eq('id', clientId);
+        .update(updatedClientPayload)
+        .eq('id', clientId)
+        .select()
+        .single();
       if (updateError) throw updateError;
 
       // 4. Return a clear result
-      return { success: true, order: orderData[0], updatedClient };
+      return { success: true, updatedClient };
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['clients'] });
@@ -764,6 +744,7 @@ export function useClients(page: number = 1, pageSize: number = 50, searchQuery:
     updateClientFromOrder,
     updateClientFromAppointment,
     processPendingPayment: processPendingPayment.mutate,
+    processPendingPaymentAsync: processPendingPayment.mutateAsync,
     deleteClient: deleteClient.mutate,
     deleteAllClients: deleteAllClients.mutate,
     resequenceSerialNumbers: manualResequence.mutate,

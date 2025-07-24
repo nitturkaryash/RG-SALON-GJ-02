@@ -74,6 +74,59 @@ interface ExcelImportSummary {
   };
 }
 
+// Add these interfaces at the top
+interface ImportRow {
+  'Invoice No': string;
+  'Date': string;
+  'Guest Name': string;
+  'Guest Number': string;
+  'Staff': string;
+  'Service': string;
+  'Category': string;
+  'Qty': number;
+  'Unit Price': number;
+  'Discount': number;
+  'Complementary': string;
+  'Redemption Amount': number;
+  'Redemption Sources': string;
+  'Tax': number;
+  'Subtotal(without tax & redemption)': number;
+  'Total': number;
+  'Payment Mode': string;
+  'hsn code'?: string;
+  'Typre'?: string; // Note: typo in original data
+}
+
+interface ProcessedOrder {
+  invoiceNo: string;
+  date: string;
+  guestName: string;
+  guestNumber: string;
+  services: Array<{
+    staff: string;
+    service: string;
+    category: string;
+    qty: number;
+    unitPrice: number;
+    discount: number;
+    tax: number;
+    subtotal: number;
+    total: number;
+    isProduct: boolean;
+    hsnCode?: string;
+    productType?: string;
+  }>;
+  payments: Array<{
+    method: string;
+    amount: number;
+  }>;
+  totalAmount: number;
+  totalTax: number;
+  totalDiscount: number;
+  redemptionAmount: number;
+  redemptionSource: string;
+}
+
 // Utility function to extract serial number from Excel invoice
 const extractSerialNumber = (excelInvoice: string, fallbackIndex: number): string => {
   try {
@@ -121,6 +174,8 @@ export default function AggregatedExcelImporter() {
   const [showDetails, setShowDetails] = useState(false);
   const [expandedOrder, setExpandedOrder] = useState<number | null>(null);
   const [showAllOrders, setShowAllOrders] = useState(false);
+  const [importProgress, setImportProgress] = useState(0);
+  const [importStatus, setImportStatus] = useState('');
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = event.target.files?.[0];
@@ -704,24 +759,30 @@ export default function AggregatedExcelImporter() {
             
             console.log(`📦 Processing product for stock update: ${product.name} (HSN: ${product.hsnCode}, Qty: ${product.quantity})`);
             
-            // Using import_decrement_product_stock function that bypasses RLS/auth for import operations
-            const { data, error: rpcError } = await supabase.rpc('import_decrement_product_stock', {
-              p_hsn_code: product.hsnCode,
-              p_quantity_sold: product.quantity,
-              p_user_id: SURAT_USER_ID,
-            });
+            try {
+              // Using import_decrement_product_stock function that bypasses RLS/auth for import operations
+              const { data, error: rpcError } = await supabase.rpc('import_decrement_product_stock', {
+                p_hsn_code: product.hsnCode,
+                p_quantity_sold: product.quantity,
+                p_user_id: SURAT_USER_ID,
+              });
 
-            if (rpcError) {
-              console.error(`❌ RPC Error for ${product.name}:`, rpcError);
-              toast.error(`Failed to update stock for ${product.name}`);
-              failCount++;
-            } else {
-              console.log(`✅ RPC Result for ${product.name}: ${data}`);
-              if (data.startsWith('Warning:')) {
-                toast.warn(data);
+              if (rpcError) {
+                console.error(`❌ RPC Error for ${product.name} : ${JSON.stringify(rpcError)}`);
+                toast.error(`Failed to update stock for ${product.name}`);
+                failCount++;
               } else {
-                toast.success(data);
+                console.log(`✅ RPC Result for ${product.name}: ${data}`);
+                if (data && data.startsWith && data.startsWith('Warning:')) {
+                  toast.warn(data);
+                } else {
+                  toast.success(data || `Stock updated for ${product.name}`);
+                }
               }
+            } catch (stockError: any) {
+              console.error(`❌ Exception updating stock for ${product.name}:`, stockError);
+              toast.error(`Error updating stock for ${product.name}: ${stockError.message || 'Unknown error'}`);
+              failCount++;
             }
           }
 
@@ -812,7 +873,8 @@ export default function AggregatedExcelImporter() {
             payment_method: payment.method,
             amount: payment.amount,
             paid_amount: payment.amount,
-            timestamp: new Date().toISOString()
+            timestamp: new Date().toISOString(),
+            duplicate_protection_key: `${orderId}-${payment.method}-${payment.amount}-${Date.now()}-${Math.random().toString(36).substring(2, 10)}`
           }));
           
           console.log(`Creating order for invoice ${order.invoiceNo}:`, {
@@ -882,6 +944,9 @@ export default function AggregatedExcelImporter() {
             // Add user and tenant IDs
             user_id: SURAT_USER_ID,
             tenant_id: SURAT_TENANT_ID,
+
+            // Add a unique key for duplicate protection
+            duplicate_protection_key: `${orderId}-${order.invoiceNo}-${Date.now()}`,
 
             // Store all Excel and serial mapping data in stock_snapshot JSONB field
             stock_snapshot: {
@@ -971,6 +1036,346 @@ export default function AggregatedExcelImporter() {
     }
   };
 
+  // Enhanced data validation function
+  const validateImportData = (data: ImportRow[]): { valid: ImportRow[], invalid: any[] } => {
+    const valid: ImportRow[] = [];
+    const invalid: any[] = [];
+
+    data.forEach((row, index) => {
+      const errors: string[] = [];
+
+      // Required field validation
+      if (!row['Invoice No']) errors.push('Missing Invoice No');
+      if (!row['Date']) errors.push('Missing Date');
+      if (!row['Guest Name']) errors.push('Missing Guest Name');
+      if (!row['Service']) errors.push('Missing Service');
+      if (!row['Staff']) errors.push('Missing Staff');
+
+      // Data type validation
+      if (isNaN(Number(row['Qty'])) || Number(row['Qty']) <= 0) errors.push('Invalid Quantity');
+      if (isNaN(Number(row['Unit Price'])) || Number(row['Unit Price']) < 0) errors.push('Invalid Unit Price');
+      if (isNaN(Number(row['Total'])) || Number(row['Total']) < 0) errors.push('Invalid Total');
+
+      if (errors.length === 0) {
+        valid.push(row);
+      } else {
+        invalid.push({ row: index + 1, data: row, errors });
+      }
+    });
+
+    return { valid, invalid };
+  };
+
+  // Enhanced order processing function
+  const processOrderData = (data: ImportRow[]): ProcessedOrder[] => {
+    const orderMap = new Map<string, ProcessedOrder>();
+
+    data.forEach(row => {
+      const invoiceNo = row['Invoice No'].toString();
+      const isProduct = !!(row['hsn code'] && row['hsn code'].trim());
+
+      if (!orderMap.has(invoiceNo)) {
+        // Parse payment modes
+        const paymentModeStr = row['Payment Mode'] || '';
+        const payments = parsePaymentModes(paymentModeStr);
+
+        orderMap.set(invoiceNo, {
+          invoiceNo,
+          date: row['Date'],
+          guestName: row['Guest Name'],
+          guestNumber: row['Guest Number'],
+          services: [],
+          payments,
+          totalAmount: 0,
+          totalTax: 0,
+          totalDiscount: 0,
+          redemptionAmount: Number(row['Redemption Amount']) || 0,
+          redemptionSource: row['Redemption Sources'] || ''
+        });
+      }
+
+      const order = orderMap.get(invoiceNo)!;
+      
+      // Add service/product to order
+      order.services.push({
+        staff: row['Staff'],
+        service: row['Service'],
+        category: row['Category'],
+        qty: Number(row['Qty']) || 1,
+        unitPrice: Number(row['Unit Price']) || 0,
+        discount: Number(row['Discount']) || 0,
+        tax: Number(row['Tax']) || 0,
+        subtotal: Number(row['Subtotal(without tax & redemption)']) || 0,
+        total: Number(row['Total']) || 0,
+        isProduct,
+        hsnCode: row['hsn code'],
+        productType: row['Typre'] // Note: original typo preserved
+      });
+
+      // Update order totals
+      order.totalAmount += Number(row['Total']) || 0;
+      order.totalTax += Number(row['Tax']) || 0;
+      order.totalDiscount += Number(row['Discount']) || 0;
+    });
+
+    return Array.from(orderMap.values());
+  };
+
+  // Enhanced payment parsing function
+  const parsePaymentModes = (paymentStr: string): Array<{method: string, amount: number}> => {
+    if (!paymentStr || paymentStr === '-') return [];
+
+    const payments: Array<{method: string, amount: number}> = [];
+    
+    // Handle multiple payment methods like "Cash(4821),GPay(701)"
+    const paymentParts = paymentStr.split(',');
+    
+    paymentParts.forEach(part => {
+      const match = part.trim().match(/^([^(]+)\(([^)]+)\)$/);
+      if (match) {
+        const method = match[1].trim();
+        const amount = parseFloat(match[2]) || 0;
+        payments.push({ method, amount });
+      } else if (part.trim() && part.trim() !== '-') {
+        // Fallback for simple payment methods
+        payments.push({ method: part.trim(), amount: 0 });
+      }
+    });
+
+    return payments;
+  };
+
+  // Enhanced stock management function
+  const updateProductStock = async (service: any, orderId: string): Promise<boolean> => {
+    if (!service.isProduct || !service.hsnCode) return true;
+
+    try {
+      const { data: product, error: productError } = await supabase
+        .from('product_master')
+        .select('id, name, stock_quantity')
+        .eq('hsn_code', service.hsnCode)
+        .single();
+
+      if (productError || !product) {
+        console.warn(`Product not found for HSN code: ${service.hsnCode}`);
+        return false;
+      }
+
+      // Calculate new stock quantity
+      const newStock = Math.max(0, product.stock_quantity - service.qty);
+
+      // Update product stock
+      const { error: updateError } = await supabase
+        .from('product_master')
+        .update({ 
+          stock_quantity: newStock,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', product.id);
+
+      if (updateError) {
+        console.error('Stock update error:', updateError);
+        return false;
+      }
+
+      // Create stock transaction record
+      const { error: transactionError } = await supabase
+        .from('product_stock_transactions')
+        .insert({
+          id: uuidv4(),
+          product_id: product.id,
+          product_name: product.name,
+          transaction_type: 'sale',
+          quantity_changed: -service.qty,
+          stock_before: product.stock_quantity,
+          stock_after: newStock,
+          reference_type: 'order',
+          reference_id: orderId,
+          notes: `Sale from order ${service.invoiceNo}`,
+          duplicate_protection_key: `${orderId}-${product.id}-${Date.now()}`,
+          created_at: new Date().toISOString()
+        });
+
+      if (transactionError) {
+        console.error('Transaction record error:', transactionError);
+        return false;
+      }
+
+      return true;
+    } catch (error) {
+      console.error('Stock update error:', error);
+      return false;
+    }
+  };
+
+  // Main import function
+  const handleImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setIsImporting(true);
+    setImportProgress(0);
+    setImportStatus('Reading file...');
+
+    try {
+      // Read Excel file
+      const data = await file.arrayBuffer();
+      const workbook = XLSX.read(data);
+      const sheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[sheetName];
+      const jsonData: ImportRow[] = XLSX.utils.sheet_to_json(worksheet);
+
+      setImportStatus('Validating data...');
+      setImportProgress(10);
+
+      // Validate data
+      const { valid, invalid } = validateImportData(jsonData);
+      
+      if (invalid.length > 0) {
+        console.warn('Invalid rows found:', invalid);
+        toast.warn(`Found ${invalid.length} invalid rows. They will be skipped.`);
+      }
+
+      if (valid.length === 0) {
+        toast.error('No valid data found to import');
+        return;
+      }
+
+      setImportStatus('Processing orders...');
+      setImportProgress(20);
+
+      // Process orders
+      const processedOrders = processOrderData(valid);
+      
+      setImportStatus('Importing to database...');
+      let successCount = 0;
+      let errorCount = 0;
+
+      // Import orders one by one
+      for (let i = 0; i < processedOrders.length; i++) {
+        const order = processedOrders[i];
+        const progress = 20 + (i / processedOrders.length) * 70;
+        setImportProgress(progress);
+        setImportStatus(`Importing order ${i + 1} of ${processedOrders.length}...`);
+
+        try {
+          // Create order
+          const orderId = uuidv4();
+          const orderDate = new Date(order.date).toISOString();
+
+          // Prepare services JSON
+          const servicesJson = order.services.map(service => ({
+            id: uuidv4(),
+            name: service.service,
+            category: service.category,
+            price: service.unitPrice,
+            quantity: service.qty,
+            total: service.total,
+            discount: service.discount,
+            tax: service.tax,
+            expert: service.staff,
+            is_product: service.isProduct,
+            hsn_code: service.hsnCode || null,
+            product_type: service.productType || null
+          }));
+
+          // Prepare payments JSON
+          const paymentsJson = order.payments.map(payment => ({
+            id: uuidv4(),
+            method: payment.method,
+            amount: payment.amount,
+            timestamp: new Date().toISOString(),
+            duplicate_protection_key: `${orderId}-${payment.method}-${payment.amount}`
+          }));
+
+          // Calculate totals
+          const subtotal = order.totalAmount - order.totalTax;
+          const pendingAmount = Math.max(0, order.totalAmount - order.payments.reduce((sum, p) => sum + p.amount, 0));
+
+          // Create order payload
+          const orderPayload = {
+            id: orderId,
+            invoice_number: order.invoiceNo,
+            client_name: order.guestName,
+            client_phone: order.guestNumber,
+            order_date: orderDate,
+            services: servicesJson,
+            payments: paymentsJson,
+            subtotal: subtotal,
+            tax_amount: order.totalTax,
+            discount_amount: order.totalDiscount,
+            total_amount: order.totalAmount,
+            paid_amount: order.payments.reduce((sum, p) => sum + p.amount, 0),
+            pending_amount: pendingAmount,
+            status: pendingAmount > 0 ? 'partial' : 'completed',
+            is_split_payment: order.payments.length > 1,
+            redemption_amount: order.redemptionAmount,
+            redemption_source: order.redemptionSource,
+            user_id: SURAT_USER_ID,
+            tenant_id: SURAT_TENANT_ID,
+            duplicate_protection_key: `${orderId}-${order.invoiceNo}`,
+            created_at: orderDate,
+            updated_at: new Date().toISOString()
+          };
+
+          // Insert order
+          const { error: orderError } = await supabase
+            .from('pos_orders')
+            .insert(orderPayload);
+
+          if (orderError) {
+            console.error('Order insert error:', orderError);
+            errorCount++;
+            continue;
+          }
+
+          // Update stock for products
+          let stockUpdateSuccess = true;
+          for (const service of order.services) {
+            if (service.isProduct) {
+              const stockUpdated = await updateProductStock(service, orderId);
+              if (!stockUpdated) {
+                stockUpdateSuccess = false;
+                console.warn(`Failed to update stock for product: ${service.service}`);
+              }
+            }
+          }
+
+          if (stockUpdateSuccess) {
+            successCount++;
+          } else {
+            errorCount++;
+          }
+
+        } catch (error) {
+          console.error('Order processing error:', error);
+          errorCount++;
+        }
+      }
+
+      setImportProgress(100);
+      setImportStatus('Import completed!');
+
+      // Show results
+      if (successCount > 0) {
+        toast.success(`Successfully imported ${successCount} orders!`);
+      }
+      if (errorCount > 0) {
+        toast.error(`Failed to import ${errorCount} orders. Check console for details.`);
+      }
+
+    } catch (error) {
+      console.error('Import error:', error);
+      toast.error('Failed to import data. Please check the file format.');
+    } finally {
+      setIsImporting(false);
+      setImportProgress(0);
+      setImportStatus('');
+      // Reset file input
+      event.target.value = '';
+    }
+  };
+
   return (
     <>
       <Button
@@ -1019,7 +1424,7 @@ export default function AggregatedExcelImporter() {
               type="file"
               fullWidth
               inputProps={{ accept: '.xlsx,.xls' }}
-              onChange={handleFileChange}
+              onChange={handleImport}
               helperText="Select an Excel file (.xlsx or .xls)"
             />
           </Box>

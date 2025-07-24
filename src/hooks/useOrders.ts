@@ -299,32 +299,62 @@ export function useOrders() {
       setIsLoading(true)
       console.log(`Deleting orders from ${startDate?.toISOString() || 'beginning'} to ${endDate?.toISOString() || 'now'}`);
       
-      // Build the query
-      let query = supabase
+      // Step 1: Find all orders within the date range
+      let selectQuery = supabase
         .from('pos_orders')
-        .delete();
-      
-      // Add date filters if provided
+        .select('id');
+        
       if (startDate) {
         const startDateStr = new Date(startDate.setHours(0, 0, 0, 0)).toISOString();
-        query = query.gte('created_at', startDateStr);
+        selectQuery = selectQuery.gte('created_at', startDateStr);
       }
       
       if (endDate) {
         const endDateStr = new Date(endDate.setHours(23, 59, 59, 999)).toISOString();
-        query = query.lte('created_at', endDateStr);
+        selectQuery = selectQuery.lte('created_at', endDateStr);
       }
       
-      // Execute the delete query
-      const { error: deleteError, count } = await query;
-      
-      if (deleteError) {
-        console.error('Error deleting orders in date range:', deleteError);
-        toast.error(`Failed to delete orders: ${deleteError.message}`);
+      const { data: ordersToDelete, error: selectError } = await selectQuery;
+
+      if (selectError) {
+        console.error('Error fetching orders to delete:', selectError);
+        toast.error(`Failed to find orders to delete: ${selectError.message}`);
         return false;
       }
       
-      console.log(`Successfully deleted orders in date range, count: ${count}`);
+      if (!ordersToDelete || ordersToDelete.length === 0) {
+        toast.info('No orders found in the selected date range to delete.');
+        return true; // No error, just nothing to do
+      }
+      
+      const orderIds = ordersToDelete.map(order => order.id);
+      
+      // Step 2: Delete all items associated with those orders
+      const { error: deleteItemsError } = await supabase
+        .from('pos_order_items')
+        .delete()
+        .in('pos_order_id', orderIds);
+        
+      if (deleteItemsError) {
+        console.error('Error deleting order items in date range:', deleteItemsError);
+        toast.error(`Failed to delete order items: ${deleteItemsError.message}`);
+        return false;
+      }
+      
+      // Step 3: Delete the orders themselves
+      const { error: deleteOrdersError, count } = await supabase
+        .from('pos_orders')
+        .delete()
+        .in('id', orderIds);
+        
+      if (deleteOrdersError) {
+        console.error('Error deleting orders in date range:', deleteOrdersError);
+        toast.error(`Failed to delete orders: ${deleteOrdersError.message}`);
+        return false;
+      }
+      
+      console.log(`Successfully deleted ${count} orders and their items in the date range.`);
+      toast.success(`Successfully deleted ${count} orders.`);
       
       // Refresh the orders list
       loadOrders();

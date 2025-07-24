@@ -59,6 +59,7 @@ export interface Appointment {
   booker_email?: string;
   booking_id?: string | null;
   checked_in?: boolean;
+  tenant_id?: string;
 }
 
 export interface MergedAppointment extends Appointment {
@@ -561,7 +562,7 @@ export function useAppointments() {
         // Step 1: Fetch base appointments
         const { data: baseAppointments, error: baseError } = await supabase
           .from('appointments')
-          .select('*, booker_name, booker_phone, booker_email')
+          .select('*, booker_name, booker_phone, booker_email, tenant_id')
           .order('start_time', { ascending: true });
 
         if (baseError) throw new Error(`Failed to fetch base appointments: ${baseError.message}`);
@@ -713,6 +714,13 @@ export function useAppointments() {
       booker_email?: string;
     }) => {
       const { clientDetails, ...appointmentBaseData } = data;
+      // --- Step 0: Get tenant_id from the authenticated user ---
+      if (!user || !user.id) {
+        throw new Error("User is not authenticated. Cannot create appointment.");
+      }
+      const tenant_id = user.id;
+      console.log("Using tenant_id:", tenant_id);
+
 
        // Ensure times are correctly formatted (should already be ISO strings from handleBookingSubmit)
        const formattedStartTime = formatAppointmentTime(appointmentBaseData.start_time);
@@ -725,6 +733,7 @@ export function useAppointments() {
         .from('appointments')
         .insert({
           ...appointmentBaseData,
+          tenant_id: tenant_id,
           start_time: formattedStartTime,
           end_time: formattedEndTime,
           paid: false,

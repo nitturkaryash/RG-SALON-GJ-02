@@ -29,6 +29,10 @@ export type PurchaseFormData = Omit<PurchaseTransaction, 'purchase_id' | 'create
  */
 export const addPurchaseTransaction = async (purchaseData: PurchaseFormData) => {
   try {
+    // This function should only handle adding NEW purchases.
+    // Editing is handled by editPurchaseTransaction. The routing logic is handled
+    // in the component that calls this function.
+
     // --- Step 0: Validate input data ---
     const validation = validatePurchaseData(purchaseData);
     if (!validation.isValid) {
@@ -37,10 +41,8 @@ export const addPurchaseTransaction = async (purchaseData: PurchaseFormData) => 
 
     const timestamp = new Date().toISOString();
     let productId: string;
-    const isUpdate = !!purchaseData.id; // Check if we're updating an existing purchase
-    let originalPurchaseQty = 0; // To store the original quantity if updating
 
-    console.log(`${isUpdate ? 'Updating' : 'Adding'} purchase transaction for product: ${purchaseData.product_name}`);
+    console.log(`Adding new purchase transaction for product: ${purchaseData.product_name}`);
 
     // --- Step 1: Find or create the product ---
     const { data: existingProduct, error: fetchProductError } = await supabase
@@ -95,49 +97,10 @@ export const addPurchaseTransaction = async (purchaseData: PurchaseFormData) => 
       console.log(`Found existing product with ID: ${productId}, current stock: ${existingProduct.stock_quantity}`);
     }
 
-    // Note: Price change detection and product master updates are now handled by database trigger
-    // Note: Stock updates are now handled by database trigger
-
-    // currentProductStock is the stock of the product *before this operation* (add or edit)
     const currentProductStock = existingProduct?.stock_quantity || 0;
-    let quantityChange = 0;
-    let newOverallProductStock = currentProductStock;
-
-    if (isUpdate && purchaseData.id) {
-      // Fetch the original purchase record to get its original quantity and product info
-      const { data: originalPurchase, error: fetchOriginalError } = await supabase
-        .from('purchase_history_with_stock')
-        .select('purchase_qty, product_id, product_name, current_stock_at_purchase')
-        .eq('purchase_id', purchaseData.id)
-        .single();
-
-      if (fetchOriginalError || !originalPurchase) {
-        console.error("Error fetching original purchase for update:", fetchOriginalError);
-        throw new Error(`Failed to fetch original purchase for update: ${fetchOriginalError?.message || 'Original purchase record not found.'}`);
-      }
-      
-      originalPurchaseQty = originalPurchase.purchase_qty || 0;
-      
-      // Validate that we're editing the same product
-      if (originalPurchase.product_name !== purchaseData.product_name) {
-        console.warn(`Product name changed from '${originalPurchase.product_name}' to '${purchaseData.product_name}' during edit`);
-        // If product name changed, we need to handle this as a more complex operation
-        // For now, we'll allow it but log a warning
-      }
-      
-      console.log(`Editing purchase. Original Qty: ${originalPurchaseQty}, New Qty: ${purchaseData.purchase_qty || 0}`);
-      console.log(`Original product: ${originalPurchase.product_name}, New product: ${purchaseData.product_name}`);
-    }
-
-    // --- Step 2: Calculate quantityChange and newOverallProductStock ---
-    const newPurchaseQty = purchaseData.purchase_qty || 0;
-    if (isUpdate) {
-      quantityChange = newPurchaseQty - originalPurchaseQty;
-    } else {
-      quantityChange = newPurchaseQty; // For new purchases, change is the full quantity
-    }
-    newOverallProductStock = currentProductStock + quantityChange;
-    console.log(`Quantity change: ${quantityChange}, New overall product stock: ${newOverallProductStock}`);
+    const quantityChange = purchaseData.purchase_qty || 0;
+    const newOverallProductStock = currentProductStock + quantityChange;
+    console.log(`New purchase. Quantity change: ${quantityChange}, New overall stock: ${newOverallProductStock}`);
 
     // --- Step 3: Prepare data for purchase_history_with_stock table ---
     // Calculate derived values
@@ -149,7 +112,7 @@ export const addPurchaseTransaction = async (purchaseData: PurchaseFormData) => 
     const purchaseCostPerUnit = basePrice * (1 - (discountPercentage / 100));
     
     // Calculate taxable value
-    const calculatedTaxableValue = purchaseCostPerUnit * newPurchaseQty;
+    const calculatedTaxableValue = purchaseCostPerUnit * quantityChange;
     
     // Calculate GST amounts
     const gstAmount = (calculatedTaxableValue * gstPercentage) / 100;
@@ -161,15 +124,14 @@ export const addPurchaseTransaction = async (purchaseData: PurchaseFormData) => 
     const calculatedInvoiceValue = calculatedTaxableValue + gstAmount;
 
     const purchaseRecord: Record<string, any> = {
-      // purchase_id should be purchaseData.id if isUpdate, otherwise new uuid
-      purchase_id: isUpdate ? purchaseData.id : uuidv4(), 
+      purchase_id: uuidv4(), 
       date: purchaseData.date || timestamp,
       product_id: productId,
       product_name: purchaseData.product_name,
       hsn_code: purchaseData.hsn_code || null,
       units: purchaseData.unit_type || purchaseData.units || null,
       purchase_invoice_number: purchaseData.invoice_number || purchaseData.purchase_invoice_number || 'N/A',
-      purchase_qty: newPurchaseQty,
+      purchase_qty: quantityChange,
       mrp_incl_gst: purchaseData.mrp_incl_gst || 0,
       mrp_excl_gst: basePrice,
       discount_on_purchase_percentage: discountPercentage,
@@ -182,51 +144,30 @@ export const addPurchaseTransaction = async (purchaseData: PurchaseFormData) => 
       supplier: purchaseData.vendor || null,
       current_stock_at_purchase: newOverallProductStock,
       computed_stock_taxable_value: newOverallProductStock * purchaseCostPerUnit,
-      computed_stock_igst: newOverallProductStock * (purchaseData.is_interstate ? igstAmount / newPurchaseQty : 0),
-      computed_stock_cgst: newOverallProductStock * (purchaseData.is_interstate ? 0 : cgstAmount / newPurchaseQty),
-      computed_stock_sgst: newOverallProductStock * (purchaseData.is_interstate ? 0 : sgstAmount / newPurchaseQty),
-      computed_stock_total_value: newOverallProductStock * (purchaseCostPerUnit + (gstAmount / newPurchaseQty)),
+      computed_stock_igst: newOverallProductStock * (purchaseData.is_interstate ? igstAmount / quantityChange : 0),
+      computed_stock_cgst: newOverallProductStock * (purchaseData.is_interstate ? 0 : cgstAmount / quantityChange),
+      computed_stock_sgst: newOverallProductStock * (purchaseData.is_interstate ? 0 : sgstAmount / quantityChange),
+      computed_stock_total_value: newOverallProductStock * (purchaseCostPerUnit + (gstAmount / quantityChange)),
       "Purchase_Cost/Unit(Ex.GST)": purchaseCostPerUnit,
       price_inlcuding_disc: purchaseCostPerUnit,
       transaction_type: 'purchase',
       created_at: timestamp,
       updated_at: timestamp
     };
-
-    if (isUpdate) {
-      // Remove created_at for updates
-      delete purchaseRecord.created_at;
-    }
     
     // --- Step 4: Persist the purchase record ---
-    if (isUpdate && purchaseData.id) {
-      const { error: purchaseUpdateError } = await supabase
-        .from('purchase_history_with_stock')
-        .update(purchaseRecord)
-        .eq('purchase_id', purchaseData.id);
-      if (purchaseUpdateError) {
-        console.error("Error updating purchase record:", purchaseUpdateError);
-        throw new Error(`Failed to update purchase: ${purchaseUpdateError.message || purchaseUpdateError.details || JSON.stringify(purchaseUpdateError)}`);
-      }
-      console.log("Purchase record updated successfully for ID:", purchaseData.id);
-    } else {
-      const { error: purchaseInsertError } = await supabase
+    const { error: purchaseInsertError } = await supabase
         .from('purchase_history_with_stock')
         .insert(purchaseRecord);
-      if (purchaseInsertError) {
+    if (purchaseInsertError) {
         console.error("Error inserting purchase record:", purchaseInsertError);
         throw new Error(`Failed to record purchase: ${purchaseInsertError.message || purchaseInsertError.details || JSON.stringify(purchaseInsertError)}`);
-      }
-      console.log("New purchase record inserted successfully with ID:", purchaseRecord.purchase_id);
     }
+    console.log("New purchase record inserted successfully with ID:", purchaseRecord.purchase_id);
+
 
     // --- Step 5: Update product's total stock quantity ---
-    // This update should happen regardless of isUpdate, if quantityChange leads to a different newOverallProductStock
-    // compared to currentProductStock before this specific transaction's effect was calculated.
-    // However, the main logic for stock_quantity update should be based on newOverallProductStock directly.
-    
-    // Check if the stock actually needs updating to avoid unnecessary writes
-    if (newOverallProductStock !== currentProductStock || !existingProduct?.stock_quantity) { // also update if initial stock was 0
+    if (newOverallProductStock !== currentProductStock || !existingProduct?.stock_quantity) {
         console.log(`Updating product stock for ID ${productId} from ${currentProductStock} to ${newOverallProductStock}`);
         const { error: stockUpdateError } = await supabase
           .from('product_master')
@@ -247,48 +188,43 @@ export const addPurchaseTransaction = async (purchaseData: PurchaseFormData) => 
 
 
     // --- Step 6: Record the transaction in stock_history ---
-    // Record history if there was a meaningful change in quantity or it's a new purchase.
-    if (quantityChange !== 0 || !isUpdate) {
-      const stockHistoryRecord = {
-        product_id: productId,
-        product_name: purchaseData.product_name,
-        hsn_code: purchaseData.hsn_code || '',
-        units: purchaseData.unit_type || purchaseData.units || 'pcs',
-        date: purchaseData.date || timestamp,
-        // previous_qty for stock_history is the product's stock before this transaction's effect.
-        previous_qty: currentProductStock, 
-        current_qty: currentProductStock, // Added to satisfy NOT NULL constraint, assuming it means stock before change
-        change_qty: quantityChange,
-        stock_after: newOverallProductStock, // This is the new total stock of the product
-        change_type: isUpdate ? 'purchase_edit' : 'purchase', // More specific type for edits
-        reference_id: purchaseRecord.purchase_id,
-        source: `Purchase Invoice: ${purchaseData.invoice_number || purchaseData.purchase_invoice_number || 'N/A'}`,
-        created_at: timestamp,
-      };
+    const stockHistoryRecord = {
+      product_id: productId,
+      product_name: purchaseData.product_name,
+      hsn_code: purchaseData.hsn_code || '',
+      units: purchaseData.unit_type || purchaseData.units || 'pcs',
+      date: purchaseData.date || timestamp,
+      // previous_qty for stock_history is the product's stock before this transaction's effect.
+      previous_qty: currentProductStock, 
+      current_qty: currentProductStock,
+      change_qty: quantityChange, // For new purchase, this is always positive
+      stock_after: newOverallProductStock,
+      change_type: 'addition',
+      reference_id: purchaseRecord.purchase_id,
+      source: `Purchase Invoice: ${purchaseData.invoice_number || purchaseData.purchase_invoice_number || 'N/A'}`,
+      created_at: timestamp,
+    };
 
-      console.log('Attempting to insert stock history record:', stockHistoryRecord);
-      const { error: historyInsertError } = await supabase
-        .from('stock_history')
-        .insert(stockHistoryRecord);
+    console.log('Attempting to insert stock history record:', stockHistoryRecord);
+    const { error: historyInsertError } = await supabase
+      .from('stock_history')
+      .insert(stockHistoryRecord);
 
-      if (historyInsertError) {
-        console.error("Error inserting into stock_history:", historyInsertError);
-        throw new Error(`Failed to record stock history: ${historyInsertError.message}`);
-      }
-      console.log(`Successfully recorded stock history for product ID: ${productId}, change: ${quantityChange}`);
-    } else {
-      console.log("No quantity change for edited purchase, so no new stock history record created.");
+    if (historyInsertError) {
+      console.error("Error inserting into stock_history:", historyInsertError);
+      throw new Error(`Failed to record stock history: ${historyInsertError.message}`);
     }
+    console.log(`Successfully recorded stock history for product ID: ${productId}, change: ${quantityChange}`);
     
-    // Return the updated/created purchase record, including the stock_after_purchase
+    // Return the created purchase record
     const resultData = { ...purchaseData, purchase_id: purchaseRecord.purchase_id, stock_after_purchase: newOverallProductStock };
 
     return { 
       success: true,
-      message: isUpdate 
-        ? 'Purchase updated successfully.' 
-        : (existingProduct ? 'Purchase added successfully.' : 'New product created and purchase added successfully.'),
-      data: resultData // Return the processed data
+      message: existingProduct 
+        ? 'Purchase added successfully.' 
+        : 'New product created and purchase added successfully.',
+      data: resultData
     };
 
   } catch (error) {
@@ -453,11 +389,17 @@ export const editPurchaseTransaction = async (purchaseId: string, updatedData: P
       .from('purchase_history_with_stock')
       .select('*')
       .eq('purchase_id', purchaseId)
-      .single();
+      .maybeSingle();
 
-    if (fetchError || !originalPurchase) {
+    if (fetchError) {
+      // Log the specific error but throw a more user-friendly message
       console.error('Error fetching original purchase:', fetchError);
-      throw new Error(`Original purchase with ID ${purchaseId} not found.`);
+      throw new Error(`A database error occurred while fetching purchase ID ${purchaseId}. Details: ${fetchError.message}`);
+    }
+
+    if (!originalPurchase) {
+      console.error(`Attempted to edit a purchase with ID ${purchaseId}, but it was not found.`);
+      throw new Error(`Could not find the original purchase with ID ${purchaseId}. It may have been deleted.`);
     }
 
     const productId = originalPurchase.product_id;
@@ -467,11 +409,16 @@ export const editPurchaseTransaction = async (purchaseId: string, updatedData: P
       .from('product_master')
       .select('id, stock_quantity, mrp_incl_gst, mrp_excl_gst, gst_percentage')
       .eq('id', productId)
-      .single();
+      .maybeSingle();
 
-    if (productError || !product) {
+    if (productError) {
       console.error('Error fetching product master data:', productError);
-      throw new Error(`Product with ID ${productId} not found in product master.`);
+      throw new Error(`Product with ID ${productId} could not be fetched. Details: ${productError.message}`);
+    }
+    
+    if (!product) {
+      console.error(`Product with ID ${productId} not found in product master for purchase ID ${purchaseId}.`);
+      throw new Error(`The associated product (ID: ${productId}) for this purchase could not be found.`);
     }
 
     // Note: Price change detection and updates are now handled by database trigger

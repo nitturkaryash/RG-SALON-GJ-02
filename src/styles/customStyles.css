@@ -37,3 +37,7 @@
   width: fit-content !important;
   margin-top: 4px !important;
 } 
+
+.hide-component {
+  display: none !important;
+} 

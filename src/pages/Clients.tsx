@@ -46,7 +46,7 @@ import {
 import * as XLSX from 'xlsx'
 import { useClients, Client } from '../hooks/useClients'
 import { useOrders } from '../hooks/useOrders'
-import { useClientPayments, ClientPayment } from '../hooks/useClientPayments'; // Import the new hook
+import { useClientPaymentHistory } from '../hooks/useClientPaymentHistory'; // Import the new hook
 import { formatCurrency } from '../utils/format'
 import { toast } from 'react-hot-toast'
 import { isValidPhoneNumber, isValidEmail } from '../utils/validation'
@@ -81,6 +81,7 @@ export default function Clients() {
     createClient,
     updateClient,
     processPendingPayment,
+    processPendingPaymentAsync,
     deleteClient
   } = useClients(page, pageSize, debouncedSearchQuery)
   const { orders, isLoading: isLoadingOrders } = useOrders()
@@ -90,6 +91,8 @@ export default function Clients() {
   const [openPaymentDialog, setOpenPaymentDialog] = useState(false)
   const [openDeleteDialog, setOpenDeleteDialog] = useState(false)
   const [openHistoryDialog, setOpenHistoryDialog] = useState(false); // State for history dialog
+  const [openReceiptDialog, setOpenReceiptDialog] = useState(false);
+  const [lastTransaction, setLastTransaction] = useState<{ amount: number, clientName: string, remainingBalance: number } | null>(null);
   const [selectedClient, setSelectedClient] = useState<Client | null>(null)
   const [paymentAmount, setPaymentAmount] = useState<number>(0)
   const [paymentMethod, setPaymentMethod] = useState<string>('cash')
@@ -344,11 +347,24 @@ export default function Clients() {
   const handleProcessPayment = async () => {
     if (!selectedClient) return
     
-    await processPendingPayment({
-      clientId: selectedClient.id,
-      amount: paymentAmount,
-      paymentMethod: paymentMethod as any
-    })
+    try {
+      const result = await processPendingPaymentAsync({
+        clientId: selectedClient.id,
+        amount: paymentAmount,
+        paymentMethod: paymentMethod as any
+      });
+
+      if (result.success) {
+        setLastTransaction({
+          amount: paymentAmount,
+          clientName: selectedClient.full_name,
+          remainingBalance: result.updatedClient.pending_payment,
+        });
+        setOpenReceiptDialog(true);
+      }
+    } catch (error) {
+      // Error is already handled by the hook's onError, but you could add more here
+    }
     
     setSelectedClient(null)
     setPaymentAmount(0)
@@ -1028,13 +1044,42 @@ export default function Clients() {
         />
       )}
 
+      {lastTransaction && (
+        <PaymentReceiptDialog
+          open={openReceiptDialog}
+          onClose={() => setOpenReceiptDialog(false)}
+          transaction={lastTransaction}
+        />
+      )}
+
     </Box>
   )
 } 
 
+// New component for Payment Receipt Dialog
+function PaymentReceiptDialog({ open, onClose, transaction }: { open: boolean, onClose: () => void, transaction: { amount: number, clientName: string, remainingBalance: number } }) {
+  if (!transaction) return null;
+
+  return (
+    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
+      <DialogTitle>Payment Receipt</DialogTitle>
+      <DialogContent>
+        <Typography variant="h6" gutterBottom>Receipt for {transaction.clientName}</Typography>
+        <Typography>Amount Paid: {formatCurrency(transaction.amount)}</Typography>
+        <Typography>Remaining Balance: {formatCurrency(transaction.remainingBalance)}</Typography>
+        <Typography variant="caption">Date: {new Date().toLocaleString()}</Typography>
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose} variant="contained">Close</Button>
+      </DialogActions>
+    </Dialog>
+  );
+}
+
+
 // New component for Payment History Dialog
 function PaymentHistoryDialog({ open, onClose, client }: { open: boolean, onClose: () => void, client: Client }) {
-  const { payments, isLoading, error } = useClientPayments(client.id);
+  const { history, isLoading, error } = useClientPaymentHistory(client ? client.id : null);
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
@@ -1043,36 +1088,32 @@ function PaymentHistoryDialog({ open, onClose, client }: { open: boolean, onClos
         {isLoading && <CircularProgress />}
         {error && <Alert severity="error">{error.message}</Alert>}
         
-        {payments && payments.length > 0 ? (
+        {history && history.length > 0 ? (
           <TableContainer component={Paper} sx={{ mt: 2 }}>
             <Table size="small">
               <TableHead>
                 <TableRow>
                   <TableCell>Date</TableCell>
                   <TableCell>Type</TableCell>
-                  <TableCell>Total</TableCell>
+                  <TableCell>Amount</TableCell>
                   <TableCell>Payment Method</TableCell>
-                  <TableCell>Items</TableCell>
+                  <TableCell>Details</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
-                {payments.map((payment) => (
-                  <TableRow key={payment.id}>
-                    <TableCell>{new Date(payment.created_at).toLocaleString()}</TableCell>
+                {history.map((entry) => (
+                  <TableRow key={entry.id}>
+                    <TableCell>{new Date(entry.created_at).toLocaleString()}</TableCell>
                     <TableCell>
                       <Chip 
-                        label={payment.payment_method === 'pending_payment' ? 'Pending Clearance' : 'Sale'} 
-                        color={payment.payment_method === 'pending_payment' ? 'info' : 'success'} 
+                        label={entry.type}
+                        color={entry.type === 'Pending Payment' ? 'info' : 'success'} 
                         size="small" 
                       />
                     </TableCell>
-                    <TableCell>{formatCurrency(payment.total)}</TableCell>
-                    <TableCell>
-                      {payment.payments.map(p => `${p.method}: ${formatCurrency(p.amount)}`).join(', ')}
-                    </TableCell>
-                    <TableCell>
-                      {Array.isArray(payment.services) ? payment.services.map(s => `${s.name || s.service_name} (x${s.quantity || 1})`).join(', ') : 'No item details'}
-                    </TableCell>
+                    <TableCell>{formatCurrency(entry.amount)}</TableCell>
+                    <TableCell>{entry.payment_method}</TableCell>
+                    <TableCell>{entry.details}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>

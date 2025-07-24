@@ -964,17 +964,21 @@ export function usePOS() {
         if (user && user.id) {
           // Look up the profile row that belongs to the authenticated user.
           try {
+            // Changed to handle multiple profiles for the same auth_user_id to prevent 406 error
             const { data: profileData, error: profileErr } = await supabase
               .from('profiles')
               .select('id')
-              .eq('auth_user_id', user.id)
-              .single();
+              .eq('auth_user_id', user.id);
 
             if (profileErr) {
-              console.warn('⚠️ Could not find corresponding profile for auth user, falling back to raw auth UID:', profileErr.message);
-              // If the FK on pos_orders.user_id points to profiles.id (text), we must NOT use the UUID directly.
+              console.warn('⚠️ Could not find corresponding profile for auth user, falling back. Error:', profileErr.message);
+            } else if (!profileData || profileData.length === 0) {
+              console.warn('⚠️ No profile found for auth user, falling back.');
             } else {
-              currentProfileId = profileData?.id || null;
+              if (profileData.length > 1) {
+                console.warn(`⚠️ Found multiple (${profileData.length}) profiles for auth_user_id ${user.id}. Using the first one.`);
+              }
+              currentProfileId = profileData[0]?.id || null;
             }
           } catch (lookupErr) {
             console.error('❌ Failed looking up profile for user:', lookupErr);
@@ -1106,18 +1110,18 @@ export function usePOS() {
       // Helper function to detect if this is a membership item
       const isMembershipItem = async (service: any): Promise<boolean> => {
         try {
+          // Changed to fetch multiple and check length to avoid 406 error if multiple tiers have the same name.
           const { data, error } = await supabase
             .from('membership_tiers')
             .select('id')
-            .eq('name', service.service_name || service.name)
-            .single();
+            .eq('name', service.service_name || service.name);
           
-          if (error && error.code !== 'PGRST116') { // PGRST116 is "not found" error
+          if (error) {
             console.error('Error checking membership tiers:', error);
             return false;
           }
           
-          return !!data; // Returns true if membership found, false otherwise
+          return data && data.length > 0; // Returns true if any membership found
         } catch (err) {
           console.error('Failed to check membership tiers:', err);
           return false;
@@ -1194,16 +1198,26 @@ export function usePOS() {
       let currentProfileId: string | null = null;
       if (user && user.id) {
         try {
+          // Changed to handle multiple profiles for the same auth_user_id to prevent 406 error
           const { data: profileData, error: profileErr } = await supabase
             .from('profiles')
             .select('id')
-            .eq('auth_user_id', user.id)
-            .single();
+            .eq('auth_user_id', user.id);
+
           if (profileErr) {
-            throw new Error('No profile found for current user. Please contact admin.');
-          } else {
-            currentProfileId = profileData?.id || null;
+            throw new Error(`Failed to look up user profile: ${profileErr.message}`);
           }
+
+          if (!profileData || profileData.length === 0) {
+            throw new Error('No profile found for current user. Please contact admin.');
+          }
+
+          if (profileData.length > 1) {
+            console.warn(`⚠️ Found multiple (${profileData.length}) profiles for auth_user_id ${user.id}. Using the first one.`);
+          }
+
+          currentProfileId = profileData[0]?.id || null;
+          
         } catch (lookupErr) {
           throw new Error('Failed to look up user profile. Please try again.');
         }

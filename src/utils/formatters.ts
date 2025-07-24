@@ -142,26 +142,34 @@ export function getCurrentAsiaKolkataTime(): Date {
  */
 export function formatAsiaKolkataTime(timestamp: string | Date): string {
   try {
-    // More robust date parsing to handle various timestamp formats
     let date: Date;
-    
-    if (typeof timestamp === 'string') {
-      // Handle different timestamp formats
-      if (timestamp.includes('T') || timestamp.includes('+')) {
-        // ISO format timestamp
+
+    if (timestamp instanceof Date) {
+      date = timestamp;
+    } else if (typeof timestamp === 'string') {
+      // Handle various string formats
+      if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(timestamp)) {
         date = new Date(timestamp);
       } else {
-        // Simple date string - treat as UTC to avoid local timezone interference
-        date = new Date(timestamp + 'Z');
+        // Fallback for other formats, assuming they might need parsing
+        const parsedDate = Date.parse(timestamp);
+        if (!isNaN(parsedDate)) {
+          date = new Date(parsedDate);
+        } else {
+          // If parsing fails, return original string
+          console.warn('Could not parse date string:', timestamp);
+          return timestamp;
+        }
       }
     } else {
-      date = timestamp;
+      // For any other type, return a string representation
+      return String(timestamp);
     }
-    
+
     // Check if date is valid
     if (isNaN(date.getTime())) {
-      console.error('Invalid date:', timestamp);
-      return typeof timestamp === 'string' ? timestamp : timestamp.toString();
+      console.error('Invalid date after processing:', timestamp);
+      return String(timestamp);
     }
     
     return new Intl.DateTimeFormat('en-IN', {

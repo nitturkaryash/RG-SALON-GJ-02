@@ -481,18 +481,38 @@ interface StylistDayViewProps {
 const filterClients = createFilterOptions<{ id: string; full_name: string; phone?: string; inputValue?: string }>();
 
 // Move getClientName function to component scope
-const getClientName = (appointment: any): string => {
-  if (!appointment) return '';
+const getClientName = (appointment: any, allClients: Client[] = []): string => {
+  if (!appointment) return 'Unknown Client';
+
+  // For appointments created from the new drawer, clientDetails will be present
+  if (Array.isArray(appointment.clientDetails) && appointment.clientDetails.length > 0) {
+    const clientDetail = appointment.clientDetails[0];
+    if (clientDetail.full_name) {
+      return clientDetail.full_name;
+    }
+    // Fallback if full_name isn't on the detail but clientId is
+    if (clientDetail.clientId) {
+      const client = allClients.find(c => c.id === clientDetail.clientId);
+      if (client?.full_name) return client.full_name;
+    }
+  }
+
+  // Legacy fields
+  if (appointment.client_name) return appointment.client_name;
+  if (appointment.client?.full_name) return appointment.client.full_name;
+
+  // Lookup by ID
+  if (appointment.client_id) {
+    const client = allClients.find(c => c.id === appointment.client_id);
+    if (client?.full_name) return client.full_name;
+  }
   
-  if (appointment.client_name) {
-    return appointment.client_name;
+  // For 'Book for someone else'
+  if (appointment.is_for_someone_else && appointment.booker_name) {
+    return `${appointment.booker_name} (Booker)`;
   }
 
-  if (appointment.client) {
-    return appointment.client.name || '';
-  }
-
-  return '';
+  return 'Unknown Client';
 };
 
 const StylistDayView: React.FC<StylistDayViewProps> = ({
@@ -1996,124 +2016,123 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
         <Tooltip
           key={appointment.id}
           title={
-            <Box>
-              <Typography variant="subtitle2">{clientName}</Typography>
-              <Typography variant="body2" sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                <PhoneIcon fontSize="small" />
-                {clientPhone}
+            <Box sx={{ p: 1, maxWidth: 300 }}>
+              <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: 'common.white', mb: 1 }}>
+                {clientName}
               </Typography>
+              <Divider sx={{ my: 1, bgcolor: 'rgba(255,255,255,0.2)' }} />
               
-              {/* Enhanced multi-expert/multi-service display */}
-              {isMultiExpert ? (
-                <>
-                  <Divider sx={{ my: 1, bgcolor: 'rgba(255,255,255,0.3)' }} />
-                  <Typography variant="body2" sx={{ color: '#FF9800', fontWeight: 'bold', mb: 1 }}>
-                    👥 Multi-Expert Booking
+              <Grid container spacing={1}>
+                <Grid item xs={12}>
+                  <Typography variant="body2" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <PhoneIcon fontSize="small" />
+                    {clientPhone || 'No phone'}
                   </Typography>
-                  
-                  {/* Show all services and their experts */}
-                  {(() => {
-                    // Find all related appointments with the same booking_id
-                    const relatedAppointments = todayAppointments.filter(app => 
-                      app.booking_id === appointment.booking_id && app.booking_id
-                    );
-                    
-                    // Create a comprehensive service-expert map using clientDetails
-                    const serviceExpertMap = new Map<string, {
-                      serviceName: string;
-                      experts: Set<string>;
-                      startTime: string;
-                      endTime: string;
-                    }>();
-                    
-                    // Process each related appointment to extract service and expert information
-                    relatedAppointments.forEach(relApp => {
-                      // First, try to get comprehensive data from clientDetails
-                      if (relApp.clientDetails && relApp.clientDetails.length > 0) {
-                        relApp.clientDetails.forEach((clientDetail: any) => {
-                          // Process each service in clientDetails
-                          if (clientDetail.services && clientDetail.services.length > 0) {
-                            clientDetail.services.forEach((service: any) => {
-                              const serviceId = service.id;
-                              const serviceName = service.name || 'Unknown Service';
-                              
-                              if (!serviceExpertMap.has(serviceId)) {
-                                serviceExpertMap.set(serviceId, {
-                                  serviceName,
-                                  experts: new Set(),
-                                  startTime: relApp.start_time,
-                                  endTime: relApp.end_time
-                                });
-                              }
-                              
-                              const serviceData = serviceExpertMap.get(serviceId)!;
-                              
-                              // Add all experts from clientDetails.stylists for this service
-                              if (clientDetail.stylists && clientDetail.stylists.length > 0) {
-                                clientDetail.stylists.forEach((stylist: any) => {
-                                  if (stylist && stylist.name) {
-                                    serviceData.experts.add(stylist.name);
-                                  }
-                                });
-                              }
-                            });
-                          }
-                        });
-                      }
-                      
-                      // Fallback: if no clientDetails or incomplete data, use appointment level data
-                      if (!relApp.clientDetails || relApp.clientDetails.length === 0) {
+                </Grid>
+
+                {isMultiExpert ? (
+                  <>
+                    <Grid item xs={12}>
+                      <Typography variant="caption" sx={{ color: '#FFD700', fontWeight: 'bold' }}>
+                        👥 Multi-Expert Booking
+                      </Typography>
+                    </Grid>
+                    {(() => {
+                      const relatedAppointments = todayAppointments.filter(app => 
+                        app.booking_id === appointment.booking_id && app.booking_id
+                      );
+
+                      const serviceExpertMap = new Map<string, {
+                        serviceName: string;
+                        experts: Set<string>;
+                        startTime: string;
+                        endTime: string;
+                      }>();
+
+                      relatedAppointments.forEach(relApp => {
                         const serviceId = relApp.service_id;
-                        const serviceName = relApp.service_name || services.find(s => s.id === serviceId)?.name || 'Unknown Service';
-                        const expertName = relApp.stylist_name || stylists.find(s => s.id === relApp.stylist_id)?.name || 'Unknown Expert';
-                        
+                        const serviceNameDetail = relApp.serviceDetails?.name || services.find(s => s.id === serviceId)?.name || 'Unknown Service';
+                        const expertName = stylists.find(s => s.id === relApp.stylist_id)?.name || 'Unknown';
+
                         if (!serviceExpertMap.has(serviceId)) {
                           serviceExpertMap.set(serviceId, {
-                            serviceName,
+                            serviceName: serviceNameDetail,
                             experts: new Set(),
                             startTime: relApp.start_time,
-                            endTime: relApp.end_time
+                            endTime: relApp.end_time,
                           });
                         }
-                        
-                        const serviceData = serviceExpertMap.get(serviceId)!;
-                        serviceData.experts.add(expertName);
-                      }
-                    });
-                    
-                    return Array.from(serviceExpertMap.values()).map((serviceData, index) => (
-                      <Box key={index} sx={{ mb: 1 }}>
-                        <Typography variant="body2" sx={{ display: 'flex', alignItems: 'center', gap: 0.5, fontWeight: 'bold' }}>
-                          📋 {serviceData.serviceName}
-                        </Typography>
-                        <Typography variant="body2" sx={{ display: 'flex', alignItems: 'center', gap: 0.5, ml: 2 }}>
-                          ⏰ {format(new Date(serviceData.startTime), 'hh:mm a')} - {format(new Date(serviceData.endTime), 'hh:mm a')}
-                        </Typography>
-                        <Typography variant="body2" sx={{ display: 'flex', alignItems: 'center', gap: 0.5, ml: 2 }}>
-                          👤 {Array.from(serviceData.experts).join(', ')}
-                        </Typography>
-                      </Box>
-                    ));
-                  })()}
-                </>
-              ) : (
-                <Typography variant="body2">{appointment.service_name}</Typography>
-              )}
-              
-              {isCheckedIn && <Typography variant="body2">✓ Checked In</Typography>}
-              {status === 'completed' && <Typography variant="body2">✓ Completed (Click to view bill)</Typography>}
-              {appointment.is_for_someone_else && appointment.booker_name && (
-                <>
-                  <Divider sx={{ my: 0.5 }} />
-                  <Typography variant="caption" sx={{ color: '#FFFFFF', fontWeight: 'bold' }}>
-                    Booked by: {appointment.booker_name}
-                    {appointment.booker_phone && ` (${appointment.booker_phone})`}
-                  </Typography>
-                </>
-              )}
+                        serviceExpertMap.get(serviceId)!.experts.add(expertName);
+                      });
+
+                      return Array.from(serviceExpertMap.values()).map((serviceData, index) => (
+                        <Grid item xs={12} key={index}>
+                          <Box sx={{ pl: 2, borderLeft: '2px solid rgba(255,255,255,0.3)', mb: 1 }}>
+                            <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
+                              {serviceData.serviceName}
+                            </Typography>
+                            <Typography variant="caption">
+                              ⏰ {format(new Date(serviceData.startTime), 'p')} - {format(new Date(serviceData.endTime), 'p')}
+                            </Typography>
+                            <br />
+                            <Typography variant="caption">
+                              👤 {Array.from(serviceData.experts).join(', ')}
+                            </Typography>
+                          </Box>
+                        </Grid>
+                      ));
+                    })()}
+                  </>
+                ) : (
+                  <Grid item xs={12}>
+                    <Typography variant="body2">{serviceName}</Typography>
+                    <Typography variant="caption">
+                      ⏰ {startTime} - {endTime}
+                    </Typography>
+                  </Grid>
+                )}
+
+                <Grid item xs={12}>
+                  <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+                    {isCheckedIn && <Chip size="small" label="Checked In" color="info" />}
+                    {isPaid && <Chip size="small" label="Paid" color="success" />}
+                    {status === 'completed' && <Chip size="small" label="Completed" sx={{ bgcolor: 'grey.700', color: 'white' }} />}
+                  </Stack>
+                </Grid>
+
+                {appointment.notes && (
+                  <Grid item xs={12}>
+                    <Divider sx={{ my: 1, bgcolor: 'rgba(255,255,255,0.2)' }} />
+                    <Typography variant="caption" sx={{ fontStyle: 'italic' }}>
+                      Notes: {appointment.notes}
+                    </Typography>
+                  </Grid>
+                )}
+
+                {appointment.is_for_someone_else && appointment.booker_name && (
+                  <Grid item xs={12}>
+                    <Divider sx={{ my: 1, bgcolor: 'rgba(255,255,255,0.2)' }} />
+                    <Typography variant="caption" sx={{ fontWeight: 'bold' }}>
+                      Booked by: {appointment.booker_name}
+                      {appointment.booker_phone && ` (${appointment.booker_phone})`}
+                    </Typography>
+                  </Grid>
+                )}
+              </Grid>
             </Box>
           }
           arrow
+          placement="top-start"
+          PopperProps={{
+            modifiers: [
+              {
+                name: 'offset',
+                options: {
+                  offset: [0, 10],
+                },
+              },
+            ],
+          }}
         >
           <AppointmentCard
             draggable
@@ -2138,15 +2157,15 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
             status={status as 'scheduled' | 'completed' | 'cancelled'}
             isCheckedIn={isCheckedIn}
           >
-            <Typography variant="subtitle2" className="appointment-client-name">
+            <Typography variant="subtitle2" noWrap sx={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {clientName}
               {appointment.is_for_someone_else && ' 👤'}
               {isMultiExpert && ' 👥'}
             </Typography>
-            <Typography variant="body2" className="appointment-service">
-              {serviceName}
+            <Typography variant="body2" noWrap sx={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {isMultiExpert ? 'Multi-Service' : serviceName}
             </Typography>
-            <Typography variant="body2" className="appointment-time">
+            <Typography variant="caption" className="appointment-time">
               {`${startTime} - ${endTime}`}
             </Typography>
           </AppointmentCard>

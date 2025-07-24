@@ -376,59 +376,8 @@ export default function InventoryManager() {
       if (data) {
         console.log(`[InventoryManager] Fetched ${data.length} sales history records`);
         
-        // Fetch product master data to get product types
-        console.log('[InventoryManager] Fetching product master data for product types...');
-        const { data: productMasterData, error: productError } = await supabase
-          .from('products')
-          .select('*'); // Get all fields to help with debugging
-
-        if (productError) {
-          console.error('[InventoryManager] Error fetching product master data:', productError);
-          // Continue without product types rather than failing completely
-        }
-
-        // Log sample of product master data
-        if (productMasterData && productMasterData.length > 0) {
-          console.log(`[InventoryManager] Fetched ${productMasterData.length} products from product master`);
-          console.log('[InventoryManager] Sample product:', productMasterData[0]);
-          
-          // Check field names and values availability
-          const productTypeCount = productMasterData.filter(p => p.product_type).length;
-          console.log(`[InventoryManager] Products with product_type: ${productTypeCount}/${productMasterData.length}`);
-          if (productTypeCount === 0) {
-            console.warn('[InventoryManager] No products have product_type set in product master!');
-          }
-        } else {
-          console.warn('[InventoryManager] No products found in product master!');
-        }
-
-        // Create lookup maps for product types
-        const productTypeByName: Record<string, string> = {};
-        const productTypeByHsn: Record<string, string> = {};
-        
-        if (productMasterData) {
-          productMasterData.forEach((product: any) => {
-            if (product.name && product.product_type) {
-              // Normalize the name to improve matching
-              const normalizedName = product.name.toLowerCase().trim();
-              productTypeByName[normalizedName] = product.product_type;
-            }
-            if (product.hsn_code && product.product_type) {
-              productTypeByHsn[product.hsn_code] = product.product_type;
-            }
-          });
-        }
-
-        console.log(`[InventoryManager] Created product type lookup maps with ${Object.keys(productTypeByName).length} names and ${Object.keys(productTypeByHsn).length} HSN codes`);
-        
-        // Log a few examples from the maps for debugging
-        if (Object.keys(productTypeByName).length > 0) {
-          const sampleKeys = Object.keys(productTypeByName).slice(0, 3);
-          console.log('[InventoryManager] Sample product type mappings:');
-          sampleKeys.forEach(key => {
-            console.log(`  "${key}" => "${productTypeByName[key]}"`);
-          });
-        }
+        // The sales_history_final view already includes product_type from product_master
+        console.log('[InventoryManager] Using product_type directly from sales_history_final view');
         // Sort data by date, oldest first (for assigning serial numbers)
         const sortedData = [...data].sort((a, b) => {
           const dateA = new Date(a.date).getTime();
@@ -460,40 +409,11 @@ export default function InventoryManager() {
           const sgstCurrentStock = taxableValueCurrentStock * (item.gst_percentage / 200);
           const totalValueCurrentStock = taxableValueCurrentStock + cgstCurrentStock + sgstCurrentStock;
           
-          // Get product type by matching with product master data
+          // Get product type directly from the view (already includes product_type from product_master)
           const productName = item.product_name || 'Unknown Product';
-          const productNameLower = productName.toLowerCase().trim();
-          const hsnCode = item.hsn_code;
+          const productType = item.product_type || 'Unknown';
           
-          console.log(`[InventoryManager] Matching product type for "${productName}" (${item.order_id})`);
-          
-          // Try to get product type by product name first, then by HSN code
-          let productType = 'Unknown';
-          
-          // First try exact match by name
-          if (productTypeByName[productNameLower]) {
-            productType = productTypeByName[productNameLower];
-            console.log(`[InventoryManager] Found product type by exact name match: ${productType}`);
-          } 
-          // Then try fuzzy match by name
-          else {
-            const productMasterKeys = Object.keys(productTypeByName);
-            const matchingKey = productMasterKeys.find(key => 
-              productNameLower.includes(key) || key.includes(productNameLower)
-            );
-            
-            if (matchingKey) {
-              productType = productTypeByName[matchingKey];
-              console.log(`[InventoryManager] Found product type by fuzzy name match: ${productType} (${matchingKey})`);
-            }
-            // Finally try by HSN code
-            else if (hsnCode && productTypeByHsn[hsnCode]) {
-              productType = productTypeByHsn[hsnCode];
-              console.log(`[InventoryManager] Found product type by HSN code: ${productType}`);
-            } else {
-              console.log(`[InventoryManager] Could not find product type for "${productName}"`);
-            }
-          }
+          console.log(`[InventoryManager] Processing product "${productName}" with type: ${productType}`);
           
           const processedItem = {
             ...item,

@@ -61,7 +61,7 @@ export async function getAppointmentsNeedingReminders(hoursBeforeAppointment: nu
       .lte('start_time', windowEnd.toISOString());
 
     if (error) {
-      console.error('❌ Error fetching appointments for reminders:', error);
+      console.error('❌ Error fetching appointments for reminders:', error.message, error);
       return [];
     }
 
@@ -86,8 +86,8 @@ export async function getAppointmentsNeedingReminders(hoursBeforeAppointment: nu
     }));
 
     return reminderData.filter(data => data.clientPhone); // Only return appointments with phone numbers
-  } catch (error) {
-    console.error('❌ Error in getAppointmentsNeedingReminders:', error);
+  } catch (error: any) {
+    console.error('❌ Error in getAppointmentsNeedingReminders:', error.message, error);
     return [];
   }
 }
@@ -185,12 +185,12 @@ Thank you for choosing RG Salon! 💖`;
         console.warn(`⚠️ ${reminderType} reminder failed for ${appointmentData.clientName}:`, whatsappResult.error);
         return false;
       }
-    } catch (whatsappError) {
-      console.error(`❌ Error sending ${reminderType} reminder via WhatsApp:`, whatsappError);
+    } catch (whatsappError: any) {
+      console.error(`❌ Error sending ${reminderType} reminder via WhatsApp:`, whatsappError.message, whatsappError);
       return false;
     }
-  } catch (error) {
-    console.error(`❌ Error sending ${reminderType} reminder:`, error);
+  } catch (error: any) {
+    console.error(`❌ Error sending ${reminderType} reminder:`, error.message, error);
     return false;
   }
 }
@@ -212,10 +212,10 @@ async function logReminderSent(appointmentId: string, reminderType: string): Pro
       });
 
     if (error) {
-      console.warn('⚠️ Could not log reminder in database:', error);
+      console.warn('⚠️ Could not log reminder in database:', error.message, error);
     }
-  } catch (error) {
-    console.warn('⚠️ Error logging reminder:', error);
+  } catch (error: any) {
+    console.warn('⚠️ Error logging reminder:', error.message, error);
   }
 }
 
@@ -236,13 +236,13 @@ export async function wasReminderAlreadySent(appointmentId: string, reminderType
       .limit(1);
 
     if (error) {
-      console.warn('⚠️ Error checking reminder history:', error);
+      console.warn('⚠️ Error checking reminder history:', error.message, error);
       return false; // If we can't check, assume not sent to avoid missing reminders
     }
 
     return data && data.length > 0;
-  } catch (error) {
-    console.warn('⚠️ Error in wasReminderAlreadySent:', error);
+  } catch (error: any) {
+    console.warn('⚠️ Error in wasReminderAlreadySent:', error.message, error);
     return false;
   }
 }
@@ -288,8 +288,8 @@ export async function processAppointmentReminders(): Promise<void> {
     }
 
     console.log('✅ Appointment reminder processing completed');
-  } catch (error) {
-    console.error('❌ Error in processAppointmentReminders:', error);
+  } catch (error: any) {
+    console.error('❌ Error in processAppointmentReminders:', error.message, error);
   }
 }
 
@@ -324,22 +324,22 @@ export function startAutomaticReminders(): void {
       
       // User is authenticated, run reminders
       await processAppointmentReminders();
-    } catch (error) {
-      console.error('❌ Error checking auth for reminders:', error);
+    } catch (error: any) {
+      console.error('❌ Error checking auth for reminders:', error.message, error);
     }
   };
 
   // Initial run after a short delay to allow auth to initialize
   setTimeout(() => {
     runRemindersIfAuthenticated().catch(error => {
-      console.error('❌ Error in initial reminder processing:', error);
+      console.error('❌ Error in initial reminder processing:', error.message, error);
     });
   }, 5000); // Wait 5 seconds for auth to initialize
 
   // Set up interval to process reminders every hour
   setInterval(() => {
     runRemindersIfAuthenticated().catch(error => {
-      console.error('❌ Error in scheduled reminder processing:', error);
+      console.error('❌ Error in scheduled reminder processing:', error.message, error);
     });
   }, 60 * 60 * 1000); // 1 hour
 
@@ -384,7 +384,7 @@ export async function sendManualReminder(appointmentId: string, reminderType: '2
       .single();
 
     if (error || !appointment) {
-      console.error('❌ Error fetching appointment for manual reminder:', error);
+      console.error('❌ Error fetching appointment for manual reminder:', error.message, error);
       return false;
     }
 
@@ -406,8 +406,8 @@ export async function sendManualReminder(appointmentId: string, reminderType: '2
     }
 
     return await sendAppointmentReminder(reminderData, reminderType);
-  } catch (error) {
-    console.error('❌ Error sending manual reminder:', error);
+  } catch (error: any) {
+    console.error('❌ Error sending manual reminder:', error.message, error);
     return false;
   }
 } 

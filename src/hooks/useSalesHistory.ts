@@ -24,11 +24,11 @@ interface SalesHistoryItem {
   product_type: string;
 }
 
-// Define the type for the sales_product_new view
-interface SalesProductNew {
+// Define the type for the sales_history_final view
+interface SalesHistoryFinal {
   serial_no: string;
   order_id: string;
-  date: string;
+  date: string;  // Changed back to date as that's the actual column name
   product_name: string;
   quantity: number;
   unit_price_ex_gst: number;
@@ -37,12 +37,16 @@ interface SalesProductNew {
   cgst_amount: number | null;
   sgst_amount: number | null;
   total_purchase_cost: number | null;
-  discount: number | null;
   discount_percentage: number | null;
   tax: number | null;
-  payment_amount: number | null;
-  payment_method: string | null;
-  payment_date: string | null;
+  hsn_code: string | null;
+  product_type: string | null;
+  mrp_incl_gst: number | null;
+  discounted_sales_rate_ex_gst: number | null;
+  invoice_value: number | null;
+  igst_amount: number | null;
+  stock: number | null;
+  stock_taxable_value: number | null;
 }
 
 // Define the type for the simplified view
@@ -73,19 +77,19 @@ export const useSalesHistory = () => {
     setError(null);
 
     try {
-      // Only fetch from the sales_product_new view - no fallbacks
-      console.log('[useSalesHistory] Fetching from sales_product_new view...');
+      // Fetch from the sales_history_final view which includes product_type from product_master
+      console.log('[useSalesHistory] Fetching from sales_history_final view...');
       const { data: salesProductData, error: salesProductError } = await supabase
-        .from('sales_product_new')
+        .from('sales_history_final')
         .select('*')
-        .order('date', { ascending: false });
+        .order('date', { ascending: false }); // Changed to use correct column name
 
       if (salesProductError) {
-        console.error('[useSalesHistory] Error fetching from sales_product_new view:', salesProductError);
+        console.error('[useSalesHistory] Error fetching from sales_history_final view:', salesProductError);
         setError('Failed to fetch sales history. Please check if the view exists.');
         showNotification({
           title: 'Error',
-          message: 'Failed to load sales history from the new view.',
+          message: 'Failed to load sales history from the final view.',
           color: 'red',
         });
         setSalesHistory([]);
@@ -94,78 +98,16 @@ export const useSalesHistory = () => {
       }
 
       if (!salesProductData || salesProductData.length === 0) {
-        console.log('[useSalesHistory] No data found in sales_product_new view.');
+        console.log('[useSalesHistory] No data found in sales_history_final view.');
         setSalesHistory([]);
         setIsLoading(false);
         return;
       }
 
-      console.log('[useSalesHistory] Fetched from sales_product_new view:', salesProductData.length);
+              console.log('[useSalesHistory] Fetched from sales_history_final view:', salesProductData.length);
 
-      // Fetch product master data to get product types and HSN codes
-      console.log('[useSalesHistory] Fetching product master data for product types...');
-      const { data: productMasterData, error: productError } = await supabase
-        .from('products')
-        .select('*'); // Get all fields to help with debugging
-
-      if (productError) {
-        console.error('[useSalesHistory] Error fetching product master data:', productError);
-        // Continue without product types rather than failing completely
-      }
-
-      // Log sample of product master data
-      if (productMasterData && productMasterData.length > 0) {
-        console.log(`[useSalesHistory] Fetched ${productMasterData.length} products from product master`);
-        console.log('[useSalesHistory] Sample product:', productMasterData[0]);
-        
-        // Check field names and values availability
-        const productTypeCount = productMasterData.filter(p => p.product_type).length;
-        const hsnCodeCount = productMasterData.filter(p => p.hsn_code).length;
-        console.log(`[useSalesHistory] Products with product_type: ${productTypeCount}/${productMasterData.length}`);
-        console.log(`[useSalesHistory] Products with hsn_code: ${hsnCodeCount}/${productMasterData.length}`);
-      } else {
-        console.warn('[useSalesHistory] No products found in product master!');
-      }
-
-      // Create lookup maps for product types and HSN codes
-      const productTypeByName: Record<string, string> = {};
-      const hsnCodeByName: Record<string, string> = {};
-      const productTypeByHsn: Record<string, string> = {};
-      
-      if (productMasterData) {
-        productMasterData.forEach((product: any) => {
-          if (product.name && product.product_type) {
-            const normalizedName = product.name.toLowerCase().trim();
-            productTypeByName[normalizedName] = product.product_type;
-          }
-          if (product.name && product.hsn_code) {
-            const normalizedName = product.name.toLowerCase().trim();
-            hsnCodeByName[normalizedName] = product.hsn_code;
-          }
-          if (product.hsn_code && product.product_type) {
-            productTypeByHsn[product.hsn_code] = product.product_type;
-          }
-        });
-      }
-
-      console.log(`[useSalesHistory] Created lookup maps with ${Object.keys(productTypeByName).length} names and ${Object.keys(productTypeByHsn).length} HSN codes`);
-      
-      // Log a few examples from each map for debugging
-      if (Object.keys(productTypeByName).length > 0) {
-        const sampleKeys = Object.keys(productTypeByName).slice(0, 3);
-        console.log('[useSalesHistory] Sample product_type mappings:');
-        sampleKeys.forEach(key => {
-          console.log(`  "${key}" => "${productTypeByName[key]}"`);
-        });
-      }
-      
-      if (Object.keys(hsnCodeByName).length > 0) {
-        const sampleKeys = Object.keys(hsnCodeByName).slice(0, 3);
-        console.log('[useSalesHistory] Sample hsn_code mappings:');
-        sampleKeys.forEach(key => {
-          console.log(`  "${key}" => "${hsnCodeByName[key]}"`);
-        });
-      }
+      // The sales_history_final view already includes product_type and hsn_code from product_master
+      console.log('[useSalesHistory] Using product_type and hsn_code from sales_history_final view');
 
       // Sort data by date (newest first) before processing to ensure proper serial number assignment
       const sortedData = salesProductData.sort((a, b) => {
@@ -173,7 +115,7 @@ export const useSalesHistory = () => {
       });
       
       // Process data and assign sequential serial numbers starting from 1
-      const processedData: SalesHistoryItem[] = sortedData.map((item: SalesProductNew, index: number) => {
+      const processedData: SalesHistoryItem[] = sortedData.map((item: SalesHistoryFinal, index: number) => {
         // Calculate tax amount from cgst and sgst, falling back to tax field if needed
         const taxAmount = 
           (item.cgst_amount !== null && item.sgst_amount !== null) 
@@ -184,82 +126,34 @@ export const useSalesHistory = () => {
         const totalAmount = 
           item.total_purchase_cost !== null 
             ? item.total_purchase_cost 
-            : item.taxable_value + taxAmount - (item.discount || 0);
+            : item.taxable_value + taxAmount;
         
-        // Get product type and HSN code by matching with product master data
+        // Get product information directly from the view
         const productName = item.product_name || 'Unknown Product';
-        const productNameLower = productName.toLowerCase().trim();
+        const productType = item.product_type || 'Unknown'; // Default to Unknown if not set
+        const hsnCode = item.hsn_code || '-';
         
-        // Debug log for product matching
-        console.log(`[useSalesHistory] Matching product: "${productName}" (${item.order_id})`);
-        
-        // Try to get HSN code from product master
-        // First check exact match, then try normalized match
-        let hsnCode = '-';
-        if (hsnCodeByName[productNameLower]) {
-          hsnCode = hsnCodeByName[productNameLower];
-          console.log(`[useSalesHistory] Found HSN code by exact name match: ${hsnCode}`);
-        } else {
-          // Try matching with various normalizations of the product name
-          const productMasterKeys = Object.keys(hsnCodeByName);
-          const matchingKey = productMasterKeys.find(key => 
-            // Try removing spaces, special chars, etc.
-            productNameLower.includes(key) || key.includes(productNameLower)
-          );
-          
-          if (matchingKey) {
-            hsnCode = hsnCodeByName[matchingKey];
-            console.log(`[useSalesHistory] Found HSN code by fuzzy name match: ${hsnCode} (${matchingKey})`);
-          }
-        }
-        
-        // Try to get product type by product name first, then by HSN code
-        let productType = 'Unknown';
-        
-        // First try exact match by name
-        if (productTypeByName[productNameLower]) {
-          productType = productTypeByName[productNameLower];
-          console.log(`[useSalesHistory] Found product type by exact name match: ${productType}`);
-        } 
-        // Then try fuzzy match by name
-        else {
-          const productMasterKeys = Object.keys(productTypeByName);
-          const matchingKey = productMasterKeys.find(key => 
-            productNameLower.includes(key) || key.includes(productNameLower)
-          );
-          
-          if (matchingKey) {
-            productType = productTypeByName[matchingKey];
-            console.log(`[useSalesHistory] Found product type by fuzzy name match: ${productType} (${matchingKey})`);
-          }
-          // Finally try by HSN code
-          else if (hsnCode !== '-' && productTypeByHsn[hsnCode]) {
-            productType = productTypeByHsn[hsnCode];
-            console.log(`[useSalesHistory] Found product type by HSN code: ${productType}`);
-          } else {
-            console.log(`[useSalesHistory] Could not find product type for "${productName}"`);
-          }
-        }
+        console.log(`[useSalesHistory] Processing product: "${productName}" with type: ${productType}`);
 
         const salesItem = {
           id: item.order_id,
           created_at: item.date,
           product_name: productName,
           hsn_code: hsnCode,
-          unit: '-', // Not available in the new view
+          unit: productType || '-', // Use product_type as unit
           quantity: item.quantity,
           price_excl_gst: item.unit_price_ex_gst,
           gst_percentage: item.gst_percentage || 0,
-          discount_percentage: item.discount_percentage || item.discount || 0,
+          discount_percentage: item.discount_percentage || 0,
           taxable_value: item.taxable_value,
           tax_amount: taxAmount,
           total_amount: totalAmount,
-          customer_name: 'Customer', // Not available directly in the view
-          stylist_name: '-', // Not available directly in the view
-          payment_method: item.payment_method || 'N/A',
-          invoice_number: item.serial_no, // Use the original serial_no as the invoice number
-          serial_no: index + 1, // Assign new sequential serial number starting from 1
-          product_type: productType,
+          customer_name: 'Customer',
+          stylist_name: '-',
+          payment_method: 'N/A',
+          invoice_number: item.serial_no,
+          serial_no: index + 1,
+          product_type: productType, // Use the product_type directly from the view
         };
         
         // Log every few items to verify product type assignment

@@ -76,6 +76,7 @@ SELECT
     p.hsn_code AS "HSN Code",
     'pcs'::text AS "Units",
     CASE
+        WHEN lower(COALESCE(t.source, ''::character varying))::text = 'purchase' THEN 'addition'::character varying
         WHEN ((t.display_type)::text = 'reduction'::text) THEN 'reduction'::character varying
         WHEN ((t.display_type)::text = 'addition'::text) THEN 'addition'::character varying
         WHEN (t.display_type IS NOT NULL) THEN t.display_type

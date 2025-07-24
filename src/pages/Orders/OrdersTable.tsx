@@ -134,9 +134,8 @@ const OrdersTable: React.FC<OrdersTableProps> = ({
   };
 
   const renderPurchaseTypeChip = (type: string) => {
-    if (!type) return <Chip size="small" label="Unknown" variant="outlined" />;
-    
-    const normalizedType = type.toLowerCase();
+    // Defensive check to prevent crash if type is undefined
+    const normalizedType = typeof type === 'string' ? type.toLowerCase() : 'unknown';
     
     const typeMap: Record<string, JSX.Element> = {
       'service': <Chip size="small" icon={<SpaIcon fontSize="small" />} label="Service" color="primary" variant="outlined" />,
