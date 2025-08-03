@@ -1627,6 +1627,55 @@ export default function InventoryManager() {
     setEditingSummaryIndex(null);
   };
 
+  // Commit staged purchases/opening balances to the database, then close the dialog
+  const commitAndClose = async () => {
+    if (addedProductsSummary.length === 0) {
+      handleClose();
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      for (const item of addedProductsSummary) {
+        if (item.mode === 'inventory') {
+          // Build OpeningBalanceData from the cached item
+          const openingBalanceData: OpeningBalanceData = {
+            product_id: item.product_id,
+            date: item.date,
+            product_name: item.product_name,
+            hsn_code: item.hsn_code,
+            units: item.unit_type,
+            opening_qty: item.purchase_qty,
+            mrp_incl_gst: item.mrp_incl_gst,
+            mrp_excl_gst: item.mrp_excl_gst,
+            discount_on_purchase_percentage: item.discount_on_purchase_percentage,
+            gst_percentage: item.gst_percentage,
+            purchase_cost_per_unit_ex_gst: item.purchase_excl_gst,
+            purchase_taxable_value: item.purchase_cost_taxable_value,
+            purchase_igst: item.purchase_igst,
+            purchase_cgst: item.purchase_cgst,
+            purchase_sgst: item.purchase_sgst,
+            purchase_invoice_value_rs: item.purchase_invoice_value,
+            is_interstate: item.is_interstate
+          };
+          await addOpeningBalance(openingBalanceData);
+        } else {
+          await addPurchaseTransaction(item);
+        }
+      }
+      toast.success(`${addedProductsSummary.length} records saved to database!`);
+      await fetchPurchasesData();
+      await fetchProducts();
+    } catch (err) {
+      console.error('Error committing purchases:', err);
+      toast.error('Failed to save some purchases. Please retry.');
+      return;
+    } finally {
+      setIsSubmitting(false);
+      handleClose();
+    }
+  };
+
   const handleOpen = () => {
     setOpen(true);
   };
@@ -1782,11 +1831,11 @@ export default function InventoryManager() {
             is_interstate: purchaseFormData.is_interstate
           };
 
-          const result = await addOpeningBalance(openingBalanceData);
+          const result = { success: true }; // Database save deferred until session completion
 
           if (result.success) {
             // Add to summary instead of closing dialog
-            const currentProduct = { ...purchaseFormData };
+            const currentProduct = { ...purchaseFormData, mode: dialogMode };
             setAddedProductsSummary(prev => [...prev, currentProduct]);
             
             // Update session totals
@@ -1818,11 +1867,11 @@ export default function InventoryManager() {
           }
         } else {
           // Handle purchase
-          const result = await addPurchaseTransaction(purchaseFormData);
+          const result = { success: true }; // Database save deferred until session completion
 
           if (result.success) {
             // Add to summary instead of closing dialog
-            const currentProduct = { ...purchaseFormData };
+            const currentProduct = { ...purchaseFormData, mode: dialogMode };
             setAddedProductsSummary(prev => [...prev, currentProduct]);
             
             // Update session totals
@@ -4316,10 +4365,20 @@ export default function InventoryManager() {
                 label="Date *"
                 type="date"
                 value={purchaseFormData.date?.split('T')[0] || ''}
-                onChange={(e) => handleInputChange('date', e.target.value)}
+                onChange={(e) => {
+                  const selectedDate = new Date(e.target.value);
+                  const today = new Date();
+                  today.setHours(0, 0, 0, 0); // Reset time to compare dates only
+                  if (selectedDate > today) {
+                    toast.error("Purchase date cannot be in the future.");
+                    return;
+                  }
+                  handleInputChange('date', e.target.value);
+                }}
                 fullWidth
                 required
                 InputLabelProps={{ shrink: true }}
+                inputProps={{ max: new Date().toISOString().split("T")[0] }}
               />
             </Grid>
             
@@ -4875,7 +4934,7 @@ export default function InventoryManager() {
                       <Button 
                         variant="outlined" 
                         color="success" 
-                        onClick={handleClose}
+                        onClick={commitAndClose}
                         startIcon={<CheckIcon />}
                       >
                         Finish & Close ({addedProductsSummary.length} products added)
