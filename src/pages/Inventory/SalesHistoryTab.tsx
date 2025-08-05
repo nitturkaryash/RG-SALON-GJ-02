@@ -292,7 +292,7 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
             igst_amount: 0,
             initial_stock: 0, // Requires join/RPC
             remaining_stock: 0, // Requires join/RPC
-            current_stock: 0, // Requires join/RPC
+            current_stock: Number(service.current_stock) || 0, // Use current_stock from imported data
             purchase_cost_per_unit_ex_gst: 0, // Requires join
           };
         });

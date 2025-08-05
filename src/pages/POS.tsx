@@ -1704,6 +1704,7 @@ export default function POS() {
 						price: mrpExGSTForWalkIn, // Use MRP Ex. GST as the primary price for POSService objects
 						description: `MRP Ex. GST: ₹${mrpExGSTForWalkIn.toFixed(2)} | Stock: ${product.stock_quantity || 0}`, // Updated description
 						type: "product" as "product" | "service",
+						category: "product", // Add category field to ensure proper categorization
 						hsn_code: product.hsn_code,
 						units: product.units,
 						gst_percentage: product.gst_percentage,
@@ -2692,6 +2693,7 @@ export default function POS() {
 				price: purchaseCost, // Use purchase cost from product_master
 				total: purchaseCost * quantity,
 				type: 'product', // Always set as product for salon use
+				category: 'product', // Add category field to ensure proper categorization
 				gst_percentage: service.gst_percentage,
 				hsn_code: service.hsn_code,
 				for_salon_use: true,

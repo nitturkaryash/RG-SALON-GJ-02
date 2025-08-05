@@ -10,13 +10,15 @@ type AuthContextType = {
 	loading: boolean
 	user: User | null
 	logout: () => Promise<void>
+	authenticateWithToken: (token: string) => Promise<void>
 }
 
 const AuthContext = React.createContext<AuthContextType>({
 	session: null,
 	loading: true,
 	user: null,
-	logout: async () => {}
+	logout: async () => {},
+	authenticateWithToken: async () => {}
 })
 
 export const AuthContextProvider = ({ children }: { children: ReactNode }) => {
@@ -40,6 +42,34 @@ export const AuthContextProvider = ({ children }: { children: ReactNode }) => {
 		} catch (error) {
 			console.error('Error logging out:', error);
 			throw error; // Re-throw to allow the component to handle it
+		}
+	}
+
+	// Add function to authenticate with custom token
+	const authenticateWithToken = async (token: string) => {
+		try {
+			// Store the token in localStorage
+			localStorage.setItem('auth_token', token);
+			
+			// Create a mock user object for the token
+			const mockUser = {
+				id: token,
+				username: 'authenticated_user',
+				email: 'user@example.com',
+				name: 'Authenticated User',
+				role: 'user',
+				provider: 'token'
+			};
+			
+			localStorage.setItem('auth_user', JSON.stringify(mockUser));
+			
+			// Update the context state
+			setUser(mockUser as any);
+			setSession(null); // No session for token auth
+			setLoading(false);
+		} catch (error) {
+			console.error('Error authenticating with token:', error);
+			throw error;
 		}
 	}
 
@@ -110,10 +140,21 @@ export const AuthContextProvider = ({ children }: { children: ReactNode }) => {
 			}
 		)
 
+		// Listen for custom auth state changes (for token authentication)
+		const handleCustomAuthChange = (event: CustomEvent) => {
+			const { user: newUser, session: newSession } = event.detail;
+			setUser(newUser);
+			setSession(newSession);
+			setLoading(false);
+		};
+
+		window.addEventListener('authStateChanged', handleCustomAuthChange as EventListener);
+
 		// Cleanup function to unsubscribe when the component unmounts
 		return () => {
 			// Correctly access the subscription object and call unsubscribe
 			authListener?.subscription?.unsubscribe() // Use optional chaining for safety
+			window.removeEventListener('authStateChanged', handleCustomAuthChange as EventListener);
 		}
 	}, []) // Empty dependency array ensures this runs only once on mount
 
@@ -121,7 +162,8 @@ export const AuthContextProvider = ({ children }: { children: ReactNode }) => {
 		user,
 		session,
 		loading,
-		logout // Add logout function to the context value
+		logout, // Add logout function to the context value
+		authenticateWithToken // Add authenticateWithToken function to the context value
 	}
 
 	return (

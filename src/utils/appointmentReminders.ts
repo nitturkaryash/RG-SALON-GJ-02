@@ -40,7 +40,8 @@ export async function getAppointmentsNeedingReminders(hoursBeforeAppointment: nu
         end_time,
         notes,
         status,
-        clients (
+        client_id,
+        clients!appointments_client_id_fkey (
           full_name,
           phone
         ),

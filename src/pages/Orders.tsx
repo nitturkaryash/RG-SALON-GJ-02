@@ -2837,9 +2837,14 @@ export default function Orders() {
                       ) : null;
                     })()}
                   </Typography>
-                  <Typography variant="body2">
-                    <strong>Purchase Type:</strong> <Box component="span" sx={{ ml: 1 }}>{renderPurchaseTypeChip(getPurchaseType(selectedOrder), selectedOrder)}</Box>
-                  </Typography>
+                  <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                    <Typography variant="body2" component="span">
+                      <strong>Purchase Type:</strong>
+                    </Typography>
+                    <Box component="span" sx={{ ml: 1 }}>
+                      {renderPurchaseTypeChip(getPurchaseType(selectedOrder), selectedOrder)}
+                    </Box>
+                  </Box>
                   <Typography variant="body2">
                     <strong>Status:</strong> {selectedOrder.status}
                   </Typography>

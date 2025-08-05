@@ -10,12 +10,14 @@ import {
   Fade,
   useTheme,
   Divider,
+  Tabs,
+  Tab,
 } from '@mui/material';
 import { styled } from '@mui/material/styles';
 import { useNavigate, useLocation, useSearchParams, Link } from 'react-router-dom';
 import { useAuthContext } from '../contexts/AuthContext';
 import { supabase } from '../utils/supabase/supabaseClient.js';
-import { ContentCut, LockPerson } from '@mui/icons-material';
+import { ContentCut, LockPerson, Key } from '@mui/icons-material';
 import GoogleSignIn from '../components/GoogleSignIn';
 
 const LoginContainer = styled(Paper)(({ theme }) => ({
@@ -109,10 +111,12 @@ export default function Login() {
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
-  const { session, user, loading: authLoading } = useAuthContext();
+  const { session, user, loading: authLoading, authenticateWithToken } = useAuthContext();
   const [credentials, setCredentials] = useState({ username: '', password: '' });
+  const [token, setToken] = useState('3f4b718f-70cb-4873-a62c-b8806a92e25b'); // Pre-filled with provided token
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState(0);
 
   // Handle OAuth errors from URL params
   useEffect(() => {
@@ -169,6 +173,24 @@ export default function Login() {
     }
   };
 
+  const handleTokenSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+
+    try {
+      await authenticateWithToken(token);
+      
+      // Navigate to dashboard
+      const from = location.state?.from?.pathname || '/dashboard';
+      navigate(from, { replace: true });
+    } catch (err: any) {
+      setError(err.message || 'Token authentication failed. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleGoogleSuccess = () => {
     // Success will be handled by the auth callback route
     // User will be redirected automatically
@@ -177,6 +199,11 @@ export default function Login() {
   const handleGoogleError = (error: any) => {
     console.error('Google Sign-In error:', error);
     setError('Google Sign-In failed. Please try again or use your username/password.');
+  };
+
+  const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
+    setActiveTab(newValue);
+    setError(''); // Clear any existing errors when switching tabs
   };
 
   // Show loading state while checking authentication
@@ -217,152 +244,208 @@ export default function Login() {
             </LogoBox>
             
             <LoginContainer>
-              <Box
-                component="form"
-                onSubmit={handleSubmit}
-                sx={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 3,
-                }}
-              >
-                <Box sx={{ textAlign: 'center', mb: 3 }}>
-                  <Typography 
-                    variant="h4" 
-                    sx={{ 
-                      color: '#FFD700', 
-                      fontWeight: 'bold', 
-                      mb: 1,
-                      textShadow: '0 0 20px rgba(255, 215, 0, 0.3)',
-                    }}
-                  >
-                    Welcome to R&G Salon
-                  </Typography>
-                  <Typography 
-                    variant="h6" 
-                    sx={{ 
-                      color: 'rgba(255, 255, 255, 0.9)',
-                      mb: 2,
-                      fontWeight: 500,
-                    }}
-                  >
-                    Admin Portal
-                  </Typography>
-                  <Typography 
-                    variant="body1" 
-                    sx={{ 
-                      color: 'rgba(255, 255, 255, 0.7)',
-                      maxWidth: '400px',
-                      margin: '0 auto',
-                    }}
-                  >
-                    Enter your credentials to access the salon management system
-                  </Typography>
-                </Box>
-
-                {error && (
-                  <Fade in>
-                    <Alert 
-                      severity="error" 
-                      sx={{ 
-                        bgcolor: 'rgba(211, 47, 47, 0.1)',
-                        color: '#ff8a80',
-                        '& .MuiAlert-icon': {
-                          color: '#ff8a80',
-                        },
-                      }}
-                    >
-                      {error}
-                    </Alert>
-                  </Fade>
-                )}
-
-                {/* Google Sign-In Section */}
-                <Box sx={{ mb: 3 }}>
-                  <GoogleSignIn 
-                    onSuccess={handleGoogleSuccess}
-                    onError={handleGoogleError}
-                    redirectTo={`${window.location.origin}/dashboard`}
-                  />
-                  
-                  <Box sx={{ display: 'flex', alignItems: 'center', my: 2 }}>
-                    <Divider sx={{ flex: 1, borderColor: 'rgba(255, 255, 255, 0.2)' }} />
-                    <Typography 
-                      sx={{ 
-                        px: 2, 
-                        color: 'rgba(255, 255, 255, 0.5)',
-                        fontSize: '0.875rem'
-                      }}
-                    >
-                      OR
-                    </Typography>
-                    <Divider sx={{ flex: 1, borderColor: 'rgba(255, 255, 255, 0.2)' }} />
-                  </Box>
-                </Box>
-
-                <GoldTextField
-                  required
-                  fullWidth
-                  label="Email"
-                  type="email"
-                  value={credentials.username}
-                  onChange={(e) => setCredentials({ ...credentials, username: e.target.value })}
-                  sx={{ mt: 2 }}
-                />
-
-                <GoldTextField
-                  required
-                  fullWidth
-                  label="Password"
-                  type="password"
-                  value={credentials.password}
-                  onChange={(e) => setCredentials({ ...credentials, password: e.target.value })}
-                />
-
-                <LoginButton
-                  type="submit"
-                  fullWidth
-                  size="large"
-                  disabled={loading || !credentials.username || !credentials.password}
-                  startIcon={<LockPerson />}
-                >
-                  {loading ? 'Signing In...' : 'Sign In to Dashboard'}
-                </LoginButton>
-
-                <Box sx={{ textAlign: 'center', mt: 2 }}>
-                  <Typography 
-                    variant="body2" 
-                    sx={{ 
-                      color: 'rgba(255, 255, 255, 0.7)',
-                      mb: 1,
-                    }}
-                  >
-                    Don't have an account?{' '}
-                    <Link 
-                      to="/register" 
-                      style={{ 
-                        color: '#FFD700',
-                        textDecoration: 'none',
-                        fontWeight: 'bold'
-                      }}
-                    >
-                      Sign Up
-                    </Link>
-                  </Typography>
-                </Box>
-
+              <Box sx={{ textAlign: 'center', mb: 3 }}>
                 <Typography 
-                  variant="body2" 
-                  align="center" 
+                  variant="h4" 
                   sx={{ 
-                    mt: 2,
-                    color: 'rgba(255, 255, 255, 0.5)',
-                    fontSize: '0.875rem',
+                    color: '#FFD700', 
+                    fontWeight: 'bold', 
+                    mb: 1,
+                    textShadow: '0 0 20px rgba(255, 215, 0, 0.3)',
                   }}
                 >
-                  © 2024 R&G Salon. All rights reserved.
+                  Welcome to R&G Salon
+                </Typography>
+                <Typography 
+                  variant="h6" 
+                  sx={{ 
+                    color: 'rgba(255, 255, 255, 0.9)',
+                    mb: 2,
+                    fontWeight: 500,
+                  }}
+                >
+                  Admin Portal
+                </Typography>
+                <Typography 
+                  variant="body1" 
+                  sx={{ 
+                    color: 'rgba(255, 255, 255, 0.7)',
+                    maxWidth: '400px',
+                    margin: '0 auto',
+                  }}
+                >
+                  Enter your credentials to access the salon management system
                 </Typography>
               </Box>
+
+              {error && (
+                <Fade in>
+                  <Alert 
+                    severity="error" 
+                    sx={{ 
+                      bgcolor: 'rgba(211, 47, 47, 0.1)',
+                      color: '#ff8a80',
+                      '& .MuiAlert-icon': {
+                        color: '#ff8a80',
+                      },
+                    }}
+                  >
+                    {error}
+                  </Alert>
+                </Fade>
+              )}
+
+              {/* Google Sign-In Section */}
+              <Box sx={{ mb: 3 }}>
+                <GoogleSignIn 
+                  onSuccess={handleGoogleSuccess}
+                  onError={handleGoogleError}
+                  redirectTo={`${window.location.origin}/dashboard`}
+                />
+                
+                <Box sx={{ display: 'flex', alignItems: 'center', my: 2 }}>
+                  <Divider sx={{ flex: 1, borderColor: 'rgba(255, 255, 255, 0.2)' }} />
+                  <Typography 
+                    sx={{ 
+                      px: 2, 
+                      color: 'rgba(255, 255, 255, 0.5)',
+                      fontSize: '0.875rem'
+                    }}
+                  >
+                    OR
+                  </Typography>
+                  <Divider sx={{ flex: 1, borderColor: 'rgba(255, 255, 255, 0.2)' }} />
+                </Box>
+              </Box>
+
+              {/* Authentication Tabs */}
+              <Box sx={{ borderBottom: 1, borderColor: 'rgba(255, 255, 255, 0.2)', mb: 3 }}>
+                <Tabs 
+                  value={activeTab} 
+                  onChange={handleTabChange}
+                  sx={{
+                    '& .MuiTab-root': {
+                      color: 'rgba(255, 255, 255, 0.7)',
+                      '&.Mui-selected': {
+                        color: '#FFD700',
+                      },
+                    },
+                    '& .MuiTabs-indicator': {
+                      backgroundColor: '#FFD700',
+                    },
+                  }}
+                >
+                  <Tab label="Email & Password" />
+                  <Tab label="Token Authentication" />
+                </Tabs>
+              </Box>
+
+              {/* Email & Password Tab */}
+              {activeTab === 0 && (
+                <Box
+                  component="form"
+                  onSubmit={handleSubmit}
+                  sx={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 3,
+                  }}
+                >
+                  <GoldTextField
+                    required
+                    fullWidth
+                    label="Email"
+                    type="email"
+                    value={credentials.username}
+                    onChange={(e) => setCredentials({ ...credentials, username: e.target.value })}
+                  />
+
+                  <GoldTextField
+                    required
+                    fullWidth
+                    label="Password"
+                    type="password"
+                    value={credentials.password}
+                    onChange={(e) => setCredentials({ ...credentials, password: e.target.value })}
+                  />
+
+                  <LoginButton
+                    type="submit"
+                    fullWidth
+                    size="large"
+                    disabled={loading || !credentials.username || !credentials.password}
+                    startIcon={<LockPerson />}
+                  >
+                    {loading ? 'Signing In...' : 'Sign In to Dashboard'}
+                  </LoginButton>
+                </Box>
+              )}
+
+              {/* Token Authentication Tab */}
+              {activeTab === 1 && (
+                <Box
+                  component="form"
+                  onSubmit={handleTokenSubmit}
+                  sx={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 3,
+                  }}
+                >
+                  <GoldTextField
+                    required
+                    fullWidth
+                    label="Authentication Token"
+                    value={token}
+                    onChange={(e) => setToken(e.target.value)}
+                    helperText="Enter your authentication token"
+                  />
+
+                  <LoginButton
+                    type="submit"
+                    fullWidth
+                    size="large"
+                    disabled={loading || !token}
+                    startIcon={<Key />}
+                  >
+                    {loading ? 'Authenticating...' : 'Authenticate with Token'}
+                  </LoginButton>
+                </Box>
+              )}
+
+              <Box sx={{ textAlign: 'center', mt: 2 }}>
+                <Typography 
+                  variant="body2" 
+                  sx={{ 
+                    color: 'rgba(255, 255, 255, 0.7)',
+                    mb: 1,
+                  }}
+                >
+                  Don't have an account?{' '}
+                  <Link 
+                    to="/register" 
+                    style={{ 
+                      color: '#FFD700',
+                      textDecoration: 'none',
+                      fontWeight: 'bold'
+                    }}
+                  >
+                    Sign Up
+                  </Link>
+                </Typography>
+              </Box>
+
+              <Typography 
+                variant="body2" 
+                align="center" 
+                sx={{ 
+                  mt: 2,
+                  color: 'rgba(255, 255, 255, 0.5)',
+                  fontSize: '0.875rem',
+                }}
+              >
+                © 2024 R&G Salon. All rights reserved.
+              </Typography>
             </LoginContainer>
           </Box>
         </Fade>

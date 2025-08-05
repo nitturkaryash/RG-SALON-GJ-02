@@ -477,94 +477,59 @@ export const editPurchaseTransaction = async (purchaseId: string, updatedData: P
  */
 export const deletePurchaseTransaction = async (purchaseId: string) => {
   try {
-    const timestamp = new Date().toISOString();
+    // Use the comprehensive database function for deletion with automatic stock recalculation
+    const { data: result, error } = await supabase
+      .rpc('delete_purchase_with_stock_recalculation_comprehensive', {
+        purchase_id_param: purchaseId
+      });
 
-    // First, get the purchase record to understand what we're deleting
-    const { data: purchaseToDelete, error: fetchError } = await supabase
-      .from('purchase_history_with_stock')
-      .select('*')
-      .eq('purchase_id', purchaseId)
-      .single();
+    console.log("Function call result:", { result, error });
 
-    if (fetchError || !purchaseToDelete) {
-      console.error("Error fetching purchase to delete:", fetchError);
-      throw new Error(`Failed to find purchase record: ${fetchError?.message || 'Purchase not found'}`);
+    if (error) {
+      console.error("Error deleting purchase with stock recalculation:", error);
+      throw new Error(`Failed to delete purchase: ${error.message}`);
     }
 
-    // Get the product to update its stock
-    const { data: product, error: productError } = await supabase
-      .from('product_master')
-      .select('id, stock_quantity, name')
-      .eq('id', purchaseToDelete.product_id)
-      .single();
-
-    if (productError) {
-      console.error("Error fetching product for deletion:", productError);
-      throw new Error(`Failed to find product: ${productError.message}`);
+    if (!result || !result.success) {
+      const errorMessage = result?.message || result?.error || 'Unknown error occurred during deletion';
+      console.error("Function returned error:", result);
+      throw new Error(errorMessage);
     }
 
-    // Calculate new stock (subtract the deleted purchase quantity)
-    const currentStock = product.stock_quantity || 0;
-    const deletedQty = purchaseToDelete.purchase_qty || 0;
-    const newStock = Math.max(0, currentStock - deletedQty);
+    console.log(`Purchase ${purchaseId} deleted successfully.`, result.data);
 
-    // Delete the purchase record
-    const { error: deleteError } = await supabase
-      .from('purchase_history_with_stock')
-      .delete()
-      .eq('purchase_id', purchaseId);
+    // If the function indicates that product stock needs manual update, do it
+    if (result.data?.requiresProductUpdate) {
+      console.log("Updating product stock manually...");
+      
+      // Update product stock using standard Supabase client
+      const { error: stockError } = await supabase
+        .from('product_master')
+        .update({ 
+          stock_quantity: result.data.newStock,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', result.data.productId);
 
-    if (deleteError) {
-      console.error("Error deleting purchase record:", deleteError);
-      throw new Error(`Failed to delete purchase: ${deleteError.message}`);
+      if (stockError) {
+        console.error("Error updating product stock:", stockError);
+        // Don't throw error here, just log it
+        console.warn("Product stock update failed, but purchase was deleted successfully");
+      } else {
+        console.log("Product stock updated successfully:", {
+          productId: result.data.productId,
+          oldStock: result.data.oldStock,
+          newStock: result.data.newStock,
+          deletedQuantity: result.data.deletedQuantity,
+          updatedEntriesCount: result.data.updatedEntriesCount
+        });
+      }
     }
-
-    // Update product stock
-    const { error: stockUpdateError } = await supabase
-      .from('product_master')
-      .update({ 
-        stock_quantity: newStock,
-        updated_at: timestamp
-      })
-      .eq('id', purchaseToDelete.product_id);
-
-    if (stockUpdateError) {
-      console.error("Error updating product stock after deletion:", stockUpdateError);
-      throw new Error(`Failed to update product stock: ${stockUpdateError.message}`);
-    }
-
-    // Record the deletion in stock history
-    const stockHistoryRecord = {
-      product_id: purchaseToDelete.product_id,
-      product_name: purchaseToDelete.product_name,
-      hsn_code: purchaseToDelete.hsn_code || '',
-      units: purchaseToDelete.units || 'pcs',
-      date: timestamp,
-      previous_qty: currentStock,
-      current_qty: currentStock,
-      change_qty: -deletedQty, // Negative because we're removing stock
-      stock_after: newStock,
-      change_type: 'purchase_delete',
-      reference_id: purchaseId,
-      source: `Deleted Purchase Invoice: ${purchaseToDelete.purchase_invoice_number || 'N/A'}`,
-      created_at: timestamp,
-    };
-
-    const { error: historyError } = await supabase
-      .from('stock_history')
-      .insert(stockHistoryRecord);
-
-    if (historyError) {
-      console.error("Error recording deletion in stock history:", historyError);
-      // Don't throw here as the main operation succeeded
-    }
-
-    console.log(`Purchase ${purchaseId} deleted successfully. Stock updated from ${currentStock} to ${newStock}`);
 
     return {
       success: true,
-      message: 'Purchase deleted successfully',
-      data: { deletedQty, newStock, productName: product.name }
+      message: result.message || 'Purchase deleted successfully and stock updated',
+      data: result.data
     };
 
   } catch (error) {

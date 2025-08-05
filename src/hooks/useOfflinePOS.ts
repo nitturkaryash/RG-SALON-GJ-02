@@ -103,10 +103,12 @@ export function useOfflinePOS() {
             .insert({
               id: order.id,
               client_name: order.client_name,
+              customer_name: order.client_name,
               stylist_id: order.stylist_id,
               stylist_name: order.stylist_name,
               services: order.services,
               total: order.total,
+              total_amount: order.total,
               subtotal: order.subtotal,
               tax: order.tax,
               discount: order.discount,
@@ -119,6 +121,28 @@ export function useOfflinePOS() {
               invoice_number: order.invoice_number,
               is_salon_consumption: order.is_salon_consumption,
               created_at: order.created_at,
+              // Additional fields to match actual data structure
+              consumption_purpose: null,
+              consumption_notes: null,
+              appointment_id: order.appointment_id || null,
+              is_salon_purchase: false,
+              date: order.created_at,
+              appointment_time: null,
+              discount_percentage: 0,
+              requisition_voucher_no: null,
+              stock_snapshot: '{}',
+              current_stock: null,
+              multi_expert_group_id: null,
+              multi_expert: false,
+              total_experts: 1,
+              expert_index: 1,
+              tenant_id: '',
+              source: 'pos',
+              invoice_no: null,
+              serial_number: null,
+              client_id: null,
+              notes: null,
+              user_id: null
             })
             .select()
             .single();

@@ -6441,8 +6441,8 @@ CREATE VIEW public.sales_history_final AS
             cumulative_sales.discounted_sales_rate_ex_gst,
             round((((cumulative_sales.quantity)::numeric * cumulative_sales.unit_price_ex_gst) * ((1)::numeric + (cumulative_sales.gst_percentage / (100)::numeric))), 2) AS invoice_value,
             0 AS igst_amount,
-            (cumulative_sales.stock_before_sale - cumulative_sales.quantity) AS stock,
-            round((((cumulative_sales.stock_before_sale - cumulative_sales.quantity))::numeric * cumulative_sales.purchase_cost_per_unit_ex_gst), 2) AS stock_taxable_value
+            cumulative_sales.stock_before_sale AS stock,
+            round(((cumulative_sales.stock_before_sale)::numeric * cumulative_sales.purchase_cost_per_unit_ex_gst), 2) AS stock_taxable_value
            FROM cumulative_sales
         )
  SELECT final_sales.serial_no,
@@ -6654,8 +6654,8 @@ CREATE VIEW public.sales_history_final_new_final AS
             cumulative_sales.discounted_sales_rate_ex_gst,
             round((((cumulative_sales.quantity)::numeric * cumulative_sales.unit_price_ex_gst) * ((1)::numeric + (cumulative_sales.gst_percentage / (100)::numeric))), 2) AS invoice_value,
             0 AS igst_amount,
-            (cumulative_sales.stock_before_sale - cumulative_sales.quantity) AS stock,
-            round((((cumulative_sales.stock_before_sale - cumulative_sales.quantity))::numeric * cumulative_sales.purchase_cost_per_unit_ex_gst), 2) AS stock_taxable_value
+            cumulative_sales.stock_before_sale AS stock,
+            round(((cumulative_sales.stock_before_sale)::numeric * cumulative_sales.purchase_cost_per_unit_ex_gst), 2) AS stock_taxable_value
            FROM cumulative_sales
         )
  SELECT final_sales.serial_no,
@@ -9239,7 +9239,6 @@ CREATE INDEX idx_appointment_clients_client_id ON public.appointment_clients USI
 
 --
 -- Name: idx_appointment_stylists_appointment_id; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_appointment_stylists_appointment_id ON public.appointment_stylists USING btree (appointment_id);
 

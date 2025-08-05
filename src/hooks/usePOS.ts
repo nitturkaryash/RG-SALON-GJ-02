@@ -142,7 +142,7 @@ interface PosOrder {
     price: number;
     quantity?: number;
     gst_percentage?: number;
-    type?: 'service' | 'product';
+    type?: 'service' | 'product' | 'membership';
     hsn_code?: string;
     units?: string;
     batch?: string;
@@ -151,6 +151,10 @@ interface PosOrder {
     for_salon_use?: boolean;
     category?: string;
     purpose?: string | null;
+    product_id?: string;
+    product_name?: string;
+    experts?: Array<{id: string; name: string}>;
+    duration_months?: number;
   }>;
   total: number;
   subtotal: number;
@@ -173,6 +177,7 @@ interface PosOrder {
   invoice_number?: string;
   is_salon_consumption?: boolean;
   consumption_purpose?: string | null;
+  consumption_notes?: string | null;
   purchase_type?: string;
   order_type?: string;
   category?: string;
@@ -180,6 +185,19 @@ interface PosOrder {
   stock_snapshot?: string;  // Store stock quantities before order as JSON string
   current_stock?: string;   // Same data but with different field name as JSON string
   user_id?: string;         // User ID for foreign key constraint
+  // Additional fields to match actual data structure
+  date?: string;
+  requisition_voucher_no?: string | null;
+  multi_expert_group_id?: string | null;
+  multi_expert?: boolean;
+  total_experts?: number;
+  expert_index?: number;
+  tenant_id?: string;
+  source?: string;
+  invoice_no?: string | null;
+  serial_number?: string | null;
+  client_id?: string | null;
+  notes?: string | null;
 }
 
 export const GST_RATE = 0.18 // 18% GST for salon services in India
@@ -490,11 +508,12 @@ export async function createWalkInOrder(
       ...products.map(product => ({
         service_id: product.id,
         service_name: product.name,
-        product_id: product.id, // Add product_id for reference
-        product_name: product.name, // Add product_name for display
+        product_id: product.id,
+        product_name: product.name,
         price: product.price,
         quantity: product.quantity,
         type: 'product' as const,
+        category: 'product',
         gst_percentage: product.gst_percentage,
         hsn_code: product.hsn_code
       })),
@@ -504,6 +523,7 @@ export async function createWalkInOrder(
         price: service.price,
         quantity: service.quantity,
         type: 'service' as const,
+        category: 'service',
         gst_percentage: service.gst_percentage
       }))
     ];
@@ -579,12 +599,12 @@ export async function createWalkInOrder(
     const orderInsertData: any = {
       id: orderData.order_id,
       client_name: orderData.client_name,
-      customer_name: orderData.client_name, // Ensure both fields are set
+      customer_name: orderData.client_name,
       stylist_id: orderData.stylist_id,
       stylist_name: orderData.stylist_name,
-      services: orderServices, // Use the fully populated services array
+      services: orderServices,
       total: orderData.total,
-      total_amount: orderData.total, // Ensure both fields are set
+      total_amount: orderData.total,
       subtotal: orderData.subtotal,
       tax: orderData.tax,
       discount: 0,
@@ -598,7 +618,28 @@ export async function createWalkInOrder(
       is_salon_consumption: orderData.is_salon_consumption,
       consumption_purpose: orderData.consumption_purpose,
       type: isSalonConsumption ? 'salon_consumption' : 'sale',
-      user_id: resolvedUserId // Add user_id to satisfy foreign key constraint
+      user_id: resolvedUserId,
+      // Additional fields to match actual data structure
+      consumption_notes: null,
+      appointment_id: null,
+      is_salon_purchase: false,
+      date: orderDate || new Date().toISOString(),
+      appointment_time: null,
+      discount_percentage: 0,
+      requisition_voucher_no: null,
+      stock_snapshot: '{}',
+      current_stock: null,
+      multi_expert_group_id: null,
+      multi_expert: false,
+      total_experts: 1,
+      expert_index: 1,
+      tenant_id: '',
+      source: 'pos',
+      invoice_no: null,
+      invoice_number: null,
+      serial_number: null,
+      client_id: '',
+      notes: null
     };
 
     // Add invoice_number if provided
@@ -635,10 +676,10 @@ export async function createWalkInOrder(
           }
         }
         
-        // Add stock snapshot to order insert data - JSON string
-        orderInsertData.stock_snapshot = JSON.stringify(stockSnapshot);
-        // Add current_stock as direct integer value
-        orderInsertData.current_stock = String(currentStock);
+                    // Add stock snapshot to order insert data - JSON string
+            orderInsertData.stock_snapshot = JSON.stringify(stockSnapshot);
+            // Add current_stock as null (matching actual data format)
+            orderInsertData.current_stock = null;
         
         const stockUpdates = products.map(product => ({
           productId: product.id,
@@ -1233,16 +1274,16 @@ export function usePOS() {
         id: uuidv4(),
         created_at: data.order_date || new Date().toISOString(),
         client_name: data.client_name,
-        customer_name: data.client_name, // Add customer_name for consistency
+        customer_name: data.client_name,
         stylist_id: data.stylist_id,
         stylist_name: stylistName,
-        services: enhancedServices, // Use the enhanced services array
+        services: enhancedServices,
         total: total,
-        total_amount: total, // Add total_amount for consistency
+        total_amount: total,
         subtotal: subtotal,
         tax: tax,
         discount: discount,
-        discount_percentage: data.discount_percentage, // Add discount percentage field
+        discount_percentage: data.discount_percentage,
         payment_method: data.payment_method,
         status: orderStatus,
         appointment_time: data.appointment_time,
@@ -1250,7 +1291,28 @@ export function usePOS() {
         payments: payments,
         pending_amount: pendingAmount,
         is_split_payment: isSplitPayment,
-        user_id: resolvedUserId // Add user_id to satisfy foreign key constraint
+        user_id: resolvedUserId,
+        // Additional fields to match actual data structure
+        consumption_purpose: data.consumption_purpose || null,
+        consumption_notes: data.consumption_notes || null,
+        is_salon_consumption: data.is_salon_consumption || false,
+        appointment_id: data.appointment_id || null,
+        is_salon_purchase: false,
+        date: data.order_date || new Date().toISOString(),
+        requisition_voucher_no: null,
+        stock_snapshot: '{}',
+        current_stock: null,
+        multi_expert_group_id: null,
+        multi_expert: false,
+        total_experts: 1,
+        expert_index: 1,
+        tenant_id: '',
+        source: 'pos',
+        invoice_no: null,
+        invoice_number: null,
+        serial_number: null,
+        client_id: data.client_id || null,
+        notes: data.notes || null
       };
       
       // Enhanced debug logging for walk-in orders
@@ -1329,8 +1391,8 @@ export function usePOS() {
             // Add stock snapshot as JSON
             if (Object.keys(stockSnapshot).length > 0) {
               order.stock_snapshot = JSON.stringify(stockSnapshot);
-              // Use just the quantity as integer for current_stock
-              order.current_stock = String(currentStock); // Cast to string but will be stored as integer
+              // Set current_stock to null (matching actual data format)
+              order.current_stock = null;
             }
           }
           
