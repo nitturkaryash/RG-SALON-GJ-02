@@ -1566,7 +1566,7 @@ export default function InventoryManager() {
     console.log('Editing purchase:', purchase);
     // Set both editingPurchaseId (legacy) and editingId (used by handleSubmit) to ensure correct edit behavior
     setEditingPurchaseId(purchase.purchase_id);
-    setEditingId(purchase.purchase_id || purchase.id || null);
+    setEditingId(purchase.purchase_id || null);
     setIsEditing(true);
     
     // Ensure the date has proper time component in India timezone
@@ -1967,7 +1967,7 @@ export default function InventoryManager() {
         
         if (name === 'purchase_cost_per_unit_ex_gst') {
           // If purchase cost per unit was changed directly
-          purchase_excl_gst = parseNumericInput(value);
+          purchase_excl_gst = typeof value === 'boolean' ? (value ? 1 : 0) : parseNumericInput(value);
           updated.purchase_excl_gst = purchase_excl_gst;
           
           // Update MRP and discount based on the new purchase cost
@@ -2402,10 +2402,10 @@ export default function InventoryManager() {
       const quantityChange = Number(item.quantity_change || 0);
       
       // Only count additions for additions total
-      const additions = item.change_type === 'addition' ? quantityChange : 0;
+      const additions = item.change_type.toLowerCase() === 'addition' ? quantityChange : 0;
       
       // Only count reductions for reductions total (as positive number)
-      const reductions = item.change_type === 'reduction' ? Math.abs(quantityChange) : 0;
+      const reductions = item.change_type.toLowerCase() === 'reduction' ? Math.abs(quantityChange) : 0;
       
       return {
         additions: totals.additions + additions,
