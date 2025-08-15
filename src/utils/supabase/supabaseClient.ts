@@ -21,9 +21,13 @@ export const connectionState = {
   error: null as Error | null
 };
 
-// Initialize supabase client with fallback values
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://mlwlhrewrhcjfyqicjvn.supabase.co';
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1sd2xocmV3cmhjamZ5cWljanZuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTAxODU1NzEsImV4cCI6MjA2NTc2MTU3MX0.z10Ix_HdYBGvHDqHQK9SR1kO7tp8YZ7-nmrk_7xelmQ';
+// Initialize supabase client strictly from env
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+if (!supabaseUrl || !supabaseAnonKey) {
+  throw new Error('Missing Supabase env variables (VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY)');
+}
 
 // Create the Supabase client
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {

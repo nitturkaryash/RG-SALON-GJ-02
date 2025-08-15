@@ -8,8 +8,17 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const supabase = createClient(supabaseUrl, supabaseKey);
 
+function isAuthorized(req: Request): boolean {
+  const expected = process.env.CRON_SECRET || process.env.INTERNAL_API_KEY;
+  const auth = req.headers.get('authorization') || '';
+  return Boolean(expected) && auth === `Bearer ${expected}`;
+}
+
 export async function GET(req: Request) {
   try {
+    if (!isAuthorized(req)) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
     const results: Array<{
       appointmentId: string;
       clientName: string;

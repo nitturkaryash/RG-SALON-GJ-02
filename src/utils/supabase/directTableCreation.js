@@ -1,16 +1,11 @@
 const { createClient } = require('@supabase/supabase-js');
 
-// NEW Supabase configuration - Updated credentials
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://mtyudylsozncvilibxda.supabase.co';
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im10eXVkeWxzb3puY3ZpbGlieGRhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDk4OTE0MTIsImV4cCI6MjA2NTQ2NzQxMn0.KJP6Pu3jaheEj8wTPioZsRUNRnkKH88hcRgvS97FOZA';
+// Supabase configuration strictly from env
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-console.log('🔧 Direct Table Creation using NEW Supabase credentials');
-console.log('📡 URL:', supabaseUrl);
-
-if (supabaseUrl.includes('mtyudylsozncvilibxda')) {
-  console.log('✅ Using NEW Supabase database');
-} else {
-  console.warn('⚠️ WARNING: Still using old database!');
+if (!supabaseUrl || !supabaseAnonKey) {
+  throw new Error('Missing Supabase env variables');
 }
 
 // Initialize Supabase client

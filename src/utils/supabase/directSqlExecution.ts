@@ -17,7 +17,11 @@ export async function executeSql(sql: string): Promise<SqlResult> {
     
     // Get environment variables instead of accessing protected properties
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    // Use service role key only in secure server-side context; in browser block entirely
+    if (typeof window !== 'undefined') {
+      return { success: false, error: 'Direct SQL execution is not allowed from the browser' };
+    }
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
     
     if (!supabaseUrl || !supabaseKey) {
       console.error('Missing Supabase URL or Key');

@@ -7,12 +7,17 @@ require('dotenv').config();
 
 console.log('🔍 Checking Supabase Connection with NEW credentials...');
 
-// NEW Supabase configuration
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://mtyudylsozncvilibxda.supabase.co';
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im10eXVkeWxzb3puY3ZpbGlieGRhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDk4OTE0MTIsImV4cCI6MjA2NTQ2NzQxMn0.KJP6Pu3jaheEj8wTPioZsRUNRnkKH88hcRgvS97FOZA';
+// Supabase configuration strictly from env
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-console.log('📡 URL:', supabaseUrl);
-console.log('🔑 Key preview:', supabaseAnonKey.substring(0, 50) + '...');
+if (!supabaseUrl || !supabaseAnonKey) {
+  console.error('Missing Supabase env variables');
+  process.exit(1);
+}
+
+console.log('📡 URL set');
+console.log('🔑 Key present');
 
 if (supabaseUrl.includes('mtyudylsozncvilibxda')) {
   console.log('✅ Using NEW Supabase database');

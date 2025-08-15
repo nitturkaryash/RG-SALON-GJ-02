@@ -1,9 +1,13 @@
 import { Purchase, Sale, Consumption, BalanceStock, InventoryExportData } from '../models/inventoryTypes';
 import { createClient } from '@supabase/supabase-js';
 
-// NEW Supabase configuration
-const supabaseUrl = import.meta.env.NEXT_PUBLIC_SUPABASE_URL || 'https://mtyudylsozncvilibxda.supabase.co';
-const supabaseAnonKey = import.meta.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im10eXVkeWxzb3puY3ZpbGlieGRhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDk4OTE0MTIsImV4cCI6MjA2NTQ2NzQxMn0.KJP6Pu3jaheEj8wTPioZsRUNRnkKH88hcRgvS97FOZA';
+// Supabase configuration strictly from env
+const supabaseUrl = import.meta.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseAnonKey = import.meta.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+if (!supabaseUrl || !supabaseAnonKey) {
+  throw new Error('Missing Supabase env variables (NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY)');
+}
 
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 

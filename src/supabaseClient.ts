@@ -11,23 +11,17 @@ function initSupabase() {
   // Use NEXT_PUBLIC_ credentials as primary, with fallbacks
   supabaseUrl = 
     import.meta.env.NEXT_PUBLIC_SUPABASE_URL || 
-    process.env.NEXT_PUBLIC_SUPABASE_URL || 
-    'https://mymrrfriupjbsmickekd.supabase.co';
+    process.env.NEXT_PUBLIC_SUPABASE_URL;
 
   supabaseAnonKey = 
     import.meta.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 
-    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im15bXJyZnJpdXBqYnNtaWNrZWtkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQxMzI3MTYsImV4cCI6MjA2OTcwODcxNn0.EQfteRnGfyUzn9VpEyoqdLBu0AbUCqLY7m7NPLfDS28';
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-  console.log('🔧 Supabase Client Configuration:');
-  console.log('📡 URL:', supabaseUrl);
-  console.log('🔑 Key length:', supabaseAnonKey.length);
+  console.log('🔧 Supabase Client Configuration loaded from env');
 
   // Verify we're using the correct credentials
-  if (supabaseUrl.includes('mymrrfriupjbsmickekd')) {
-    console.log('✅ Using CORRECT Supabase credentials for SPALON_BACKUP project');
-  } else {
-    console.warn('⚠️ WARNING: Still using wrong Supabase project!');
+  if (!supabaseUrl || !supabaseAnonKey) {
+    throw new Error('Missing Supabase env variables');
   }
 
   // Create the Supabase client

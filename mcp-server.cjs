@@ -1,1 +1,0 @@
-require('@modelcontextprotocol/server-postgres'); 

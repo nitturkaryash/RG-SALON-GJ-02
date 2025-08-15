@@ -3,14 +3,20 @@ import { createClient } from '@supabase/supabase-js';
 import { WhatsAppAutomation } from '@/whatsapp/business-api/utils/whatsappAutomation';
 import { v4 as uuidv4 } from 'uuid';
 
-// NEW Supabase configuration  
+// Supabase configuration (service role required on server)
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
 console.log('🔧 Clients API using NEW Supabase credentials');
 console.log('📡 URL:', supabaseUrl);
 
 const supabase = createClient(supabaseUrl, supabaseKey);
+
+function isAuthorized(req: Request): boolean {
+  const expected = process.env.INTERNAL_API_KEY;
+  const auth = req.headers.get('authorization') || '';
+  return Boolean(expected) && auth === `Bearer ${expected}`;
+}
 
 // GET - Fetch clients
 export async function GET(req: Request) {
@@ -47,6 +53,9 @@ export async function GET(req: Request) {
 // POST - Create new client with auto WhatsApp welcome message
 export async function POST(req: Request) {
   try {
+    if (!isAuthorized(req)) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
     const body = await req.json();
     const {
       full_name,
@@ -137,6 +146,9 @@ export async function POST(req: Request) {
 // PUT - Update client
 export async function PUT(req: Request) {
   try {
+    if (!isAuthorized(req)) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
     const body = await req.json();
     const { id, ...updateData } = body;
 
@@ -178,6 +190,9 @@ export async function PUT(req: Request) {
 // DELETE - Delete client
 export async function DELETE(req: Request) {
   try {
+    if (!isAuthorized(req)) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
     const { searchParams } = new URL(req.url);
     const id = searchParams.get('id');
 

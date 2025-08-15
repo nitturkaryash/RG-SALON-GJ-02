@@ -9,6 +9,12 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const supabase = createClient(supabaseUrl, supabaseKey);
 
+function isAuthorized(req: Request): boolean {
+  const expected = process.env.INTERNAL_API_KEY;
+  const auth = req.headers.get('authorization') || '';
+  return Boolean(expected) && auth === `Bearer ${expected}`;
+}
+
 // Helper function to format date for display
 function formatDateTime(dateTime: string | Date) {
   return new Date(dateTime).toLocaleString('en-US', {
@@ -90,6 +96,9 @@ export async function GET(req: Request) {
 // POST - Create or update appointment with auto WhatsApp message
 export async function POST(req: Request) {
   try {
+    if (!isAuthorized(req)) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
     const body = await req.json();
     const { 
       id, 
@@ -296,6 +305,9 @@ export async function POST(req: Request) {
 // PUT - Update appointment status or details
 export async function PUT(req: Request) {
   try {
+    if (!isAuthorized(req)) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
     const body = await req.json();
     const { id, ...updateData } = body;
 
@@ -397,6 +409,9 @@ export async function PUT(req: Request) {
 // DELETE - Cancel/delete appointment with auto WhatsApp message
 export async function DELETE(req: Request) {
   try {
+    if (!isAuthorized(req)) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
     const { searchParams } = new URL(req.url);
     const id = searchParams.get('id');
     const reason = searchParams.get('reason') || 'Appointment cancelled';

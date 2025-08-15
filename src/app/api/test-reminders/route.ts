@@ -2,18 +2,27 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { sendAppointmentReminder } from '@/utils/whatsapp';
 
-// NEW Supabase configuration
+// Supabase configuration (service role required on server)
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
 console.log('🔧 Test Reminders API using NEW Supabase credentials');
 console.log('📡 URL:', supabaseUrl);
 
 const supabase = createClient(supabaseUrl, supabaseKey);
 
+function isAuthorized(req: Request): boolean {
+  const expected = process.env.INTERNAL_API_KEY;
+  const auth = req.headers.get('authorization') || '';
+  return Boolean(expected) && auth === `Bearer ${expected}`;
+}
+
 // Test API route for manually triggering reminders
 export async function POST(req: Request) {
   try {
+    if (!isAuthorized(req)) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
     const { appointmentId, reminderType = '24h' } = await req.json();
 
     if (!appointmentId) {

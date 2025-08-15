@@ -1,7 +1,11 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = import.meta.env.NEXT_PUBLIC_SUPABASE_URL || 'https://mymrrfriupjbsmickekd.supabase.co';
-const supabaseAnonKey = import.meta.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im15bXJyZnJpdXBqYnNtaWNrZWtkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQxMzI3MTYsImV4cCI6MjA2OTcwODcxNn0.EQfteRnGfyUzn9VpEyoqdLBu0AbUCqLY7m7NPLfDS28';
+const supabaseUrl = import.meta.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseAnonKey = import.meta.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+if (!supabaseUrl || !supabaseAnonKey) {
+  throw new Error('Missing Supabase env variables (NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY)');
+}
 
 // Create Supabase client with additional options
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {

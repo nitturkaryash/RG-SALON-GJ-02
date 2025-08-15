@@ -18,7 +18,7 @@ async function showTableSchema() {
       return false;
     }
     
-    console.log(`Supabase URL: ${supabaseUrl}`);
+    console.log('Supabase URL present');
     
     // Create Supabase client
     console.log('\nConnecting to Supabase...');

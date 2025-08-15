@@ -25,7 +25,7 @@ export async function checkSupabaseConnection() {
         connected: false,
         credentials: {
           url: supabaseUrl ? 'Set' : 'Missing',
-          key: supabaseKey ? 'Set (length: ' + (supabaseKey?.length || 0) + ')' : 'Missing'
+          key: supabaseKey ? 'Set' : 'Missing'
         },
         tables: {}
       };
