@@ -102,6 +102,7 @@ export const usePurchaseHistory = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Fetches purchase history from the database and transforms it to match the local interface
   const fetchPurchases = useCallback(async () => {
     setIsLoading(true);
     setError(null);
