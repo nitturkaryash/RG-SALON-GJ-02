@@ -1,0 +1,9 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Import existing styles */
+@import '../styles/globals.css';
+@import '../styles/customStyles.css';
+@import '../components/calendar-styles.css';
+@import '../components/membership/MembershipTierCard.css';
