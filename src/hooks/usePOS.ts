@@ -633,7 +633,7 @@ export async function createWalkInOrder(
       multi_expert: false,
       total_experts: 1,
       expert_index: 1,
-      tenant_id: '',
+      tenant_id: 'default',
       source: 'pos',
       invoice_no: null,
       invoice_number: null,
@@ -678,15 +678,19 @@ export async function createWalkInOrder(
         
                     // Add stock snapshot to order insert data - JSON string
             orderInsertData.stock_snapshot = JSON.stringify(stockSnapshot);
-            // Add current_stock as null (matching actual data format)
-            orderInsertData.current_stock = null;
+            // Add current_stock from the first product's stock value
+            orderInsertData.current_stock = currentStock > 0 ? String(currentStock) : undefined;
+        
+        // Note: Stock reduction is handled automatically by database trigger 'trg_reduce_stock_on_insert'
+        // when the order is inserted. No need to manually reduce stock here.
         
         const stockUpdates = products.map(product => ({
           productId: product.id,
           quantity: product.quantity
         }));
         
-        await updateProductStockQuantities(stockUpdates);
+        // REMOVED: await updateProductStockQuantities(stockUpdates);
+        // Database trigger will handle stock reduction automatically
       } catch (stockError) {
         console.warn('Warning: Failed to update some product stock quantities:', stockError);
         // Continue anyway since the order was created
@@ -1028,7 +1032,7 @@ export function usePOS() {
 
         // FINAL user_id that will be stored on the order record – must reference profiles.id to avoid FK violation
         // If we could not resolve a profile row, leave it null and let the DB trigger set_user_id attempt to populate it.
-        const resolvedUserId = currentProfileId ?? null;
+        const resolvedUserId = currentProfileId ?? undefined;
         
         if (!resolvedUserId) {
           console.warn('⚠️ No profile-level user_id could be resolved – inserting order without user_id so DB trigger can populate it.');
@@ -1293,23 +1297,23 @@ export function usePOS() {
         is_split_payment: isSplitPayment,
         user_id: resolvedUserId,
         // Additional fields to match actual data structure
-        consumption_purpose: data.consumption_purpose || null,
-        consumption_notes: data.consumption_notes || null,
+        consumption_purpose: data.consumption_purpose || undefined,
+        consumption_notes: data.consumption_notes || undefined,
         is_salon_consumption: data.is_salon_consumption || false,
-        appointment_id: data.appointment_id || null,
+        appointment_id: data.appointment_id || undefined,
         is_salon_purchase: false,
         date: data.order_date || new Date().toISOString(),
         requisition_voucher_no: null,
         stock_snapshot: '{}',
-        current_stock: null,
+        current_stock: undefined,
         multi_expert_group_id: null,
         multi_expert: false,
         total_experts: 1,
         expert_index: 1,
-        tenant_id: '',
+        tenant_id: 'default',
         source: 'pos',
         invoice_no: null,
-        invoice_number: null,
+        invoice_number: undefined,
         serial_number: null,
         client_id: data.client_id || null,
         notes: data.notes || null
@@ -1357,7 +1361,7 @@ export function usePOS() {
               for (const item of productItems) {
                 try {
                   const { data: productData } = await supabase
-                    .from('products')
+                    .from('product_master')
                     .select('stock_quantity')
                     .eq('id', item.service_id)
                     .single();
@@ -1375,24 +1379,25 @@ export function usePOS() {
                 }
               }
             
+            // Note: Stock reduction is handled automatically by database trigger 'trg_reduce_stock_on_insert'
+            // when the order is inserted. No need to manually reduce stock here.
+            
             const stockUpdates = productItems.map(item => ({
               productId: item.service_id,
               quantity: item.quantity || 1
             }));
             
-            const updateResult = await updateProductStockQuantities(stockUpdates);
-            console.log('🔍 usePOS - Stock update result:', updateResult);
-            
-            if (!updateResult.success) {
-              console.warn('⚠️ usePOS - Some product stock updates failed');
-            }
+            // REMOVED: Manual stock update to prevent double reduction
+            // const updateResult = await updateProductStockQuantities(stockUpdates);
+            // Database trigger will handle stock reduction automatically
+            console.log('🔍 usePOS - Stock reduction will be handled by database trigger');
           }
         
             // Add stock snapshot as JSON
             if (Object.keys(stockSnapshot).length > 0) {
               order.stock_snapshot = JSON.stringify(stockSnapshot);
-              // Set current_stock to null (matching actual data format)
-              order.current_stock = null;
+              // Set current_stock from the first product's stock value
+              order.current_stock = currentStock > 0 ? String(currentStock) : undefined;
             }
           }
           
@@ -1628,13 +1633,17 @@ export function usePOS() {
                 quantity: item.quantity || item.service?.quantity || 1,
               }));
             if (productsForStockUpdate.length > 0) {
+              // Note: Stock reduction is handled automatically by database trigger 'trg_reduce_stock_on_insert'
+              // when the order is inserted. No need to manually reduce stock here.
               const validUpdates = productsForStockUpdate
                 .filter((update: { productId: string | undefined; quantity: number }) => typeof update.productId === 'string' && update.productId.length > 0)
                 .map((update: { productId: string | undefined; quantity: number }) => ({ 
                   productId: update.productId as string, 
                   quantity: update.quantity 
                 }));
-              await updateProductStockQuantities(validUpdates);
+              // REMOVED: await updateProductStockQuantities(validUpdates);
+              // Database trigger will handle stock reduction automatically
+              console.log('🔍 usePOS - Stock reduction for appointment order will be handled by database trigger');
             }
           } catch (error) {
             console.error('Error updating product stock quantities:', error);

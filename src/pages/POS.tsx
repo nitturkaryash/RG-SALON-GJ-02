@@ -302,7 +302,7 @@ const debugStockQuantity = async (productId: string) => {
   try {
     console.log(`🔍 DEBUG: Checking stock for product ID ${productId}`);
     const { data, error } = await supabase
-      .from('products')
+      .from('product_master')
       .select('id, name, stock_quantity')
       .eq('id', productId)
       .single();
@@ -396,14 +396,14 @@ export default function POS() {
 		queryKey: ['balance-stock'],
 		queryFn: async () => {
 			try {
-				// Get stock data directly from the products table
+				// Get stock data directly from the product_master table
 				const { data, error } = await supabase
-					.from('products')
+					.from('product_master')
 					.select('id, name, stock_quantity, hsn_code, units')
 					.filter('stock_quantity', 'gte', 0);
 
 				if (error) {
-					console.error('Error fetching from products table:', error);
+					console.error('Error fetching from product_master table:', error);
 					return [];
 				}
 
@@ -1514,11 +1514,11 @@ export default function POS() {
 }, [location, services, loadingServices, clients, stylists, setTabValue, setCustomerName, setSelectedClient, setSelectedStylist, setCurrentAppointmentId, setOrderItems, setSalonProducts, setWalkInPaymentMethod, setWalkInDiscount, setConsumptionPurpose]);
 
 	const fetchBalanceStockData = useCallback(async () => {
-		console.log("Fetching latest stock data from products table...");
+		console.log("Fetching latest stock data from product_master table...");
 		try {
-			// Get stock data directly from the products table
+			// Get stock data directly from the product_master table
 			const { data, error } = await supabase
-				.from('products')
+				.from('product_master')
 				.select('id, name, stock_quantity, hsn_code, units, active');
 
 			if (error) {
@@ -2734,7 +2734,7 @@ export default function POS() {
 				try {
 					// 1. Get the CURRENT stock value for consumption record only
 					const { data: currentProductData, error: fetchError } = await supabase
-						.from('products')
+						.from('product_master')
 						.select('id, name, stock_quantity')
 						.eq('id', product.item_id)
 						.single();
@@ -2787,29 +2787,24 @@ export default function POS() {
 						consumed: product.quantity
 					});
 					
-					// Add consumption record with tax details
+					// Add consumption record with tax details - matching salon_consumption_products_table structure
 					const salonConsumptionEntry = {
-						id: uuidv4(),
-						date: consumptionDateToUse, // Use selected date
-						created_at: consumptionDateToUse, // Use selected date for consistency
-						product_name: product.item_name,
-						hsn_code: product.hsn_code || '',
-						units: product.units || '',              // Added units (Product Type)
-						quantity: product.quantity,
-						purpose: consumptionPurpose,
-						price_per_unit: price,                   // Use numeric value
-						gst_percentage: gstPercentage,           // Use numeric percentage
-						// Map to the new column names in inventory_salon_consumption
-						current_stock: currentStock,
-						current_stock_taxable_value: parseFloat((currentStock * price).toFixed(2)), // Renamed
-						current_stock_igst: 0, // Added (always 0 for local consumption)
-						current_stock_sgst: parseFloat(sgst.toFixed(2)), // Renamed
-						current_stock_cgst: parseFloat(cgst.toFixed(2)), // Renamed
-						current_stock_total_value: parseFloat(totalTax.toFixed(2)) // Renamed
+						"Requisition Voucher No.": requisitionVoucherNo || `RV-${Date.now()}`, // Required field
+						order_id: null, // Will be filled when order is created
+						"Date": consumptionDateToUse, // Use selected date
+						"Product Name": product.item_name,
+						"Consumption Qty.": product.quantity,
+						"Purchase Cost per Unit (Ex. GST) (Rs.)": price, // Use numeric value
+						"Purchase GST Percentage": gstPercentage, // Use numeric percentage
+						"Purchase Taxable Value (Rs.)": parseFloat((product.quantity * price).toFixed(2)),
+						"Purchase IGST (Rs.)": 0, // Always 0 for local consumption
+						"Purchase CGST (Rs.)": parseFloat(cgst.toFixed(2)),
+						"Purchase SGST (Rs.)": parseFloat(sgst.toFixed(2)),
+						"Total Purchase Cost (Rs.)": parseFloat(totalTax.toFixed(2))
 					};
 					
 					const { error: consumptionError } = await supabase
-						.from('inventory_salon_consumption')
+						.from('salon_consumption_products_table')
 						.insert(salonConsumptionEntry);
 					
 					if (consumptionError) {
@@ -2873,6 +2868,7 @@ export default function POS() {
 					is_salon_consumption: true,
 					status: 'completed',
 					payment_method: 'internal',
+					tenant_id: 'default', // Add tenant_id to satisfy not-null constraint
 					user_id: currentUserId, // Add user_id to satisfy foreign key constraint
 					services: salonProducts.map(product => ({
 						service_id: product.item_id, // Add service_id for reference
@@ -2896,11 +2892,11 @@ export default function POS() {
 				const stockSnapshot: Record<string, number> = {};
 				let firstProductStock = 0;
 				
-				// FIXED: Query the correct table - products instead of product_master
+				// FIXED: Query the correct table - product_master instead of products
 				for (const product of salonProducts) {
 					try {
 						const { data: productData } = await supabase
-							.from('products')
+							.from('product_master')
 							.select('stock_quantity')
 							.eq('id', product.item_id)
 							.single();
