@@ -3,20 +3,14 @@ import { createClient } from '@supabase/supabase-js';
 import { WhatsAppAutomation, OrderData } from '@/whatsapp/business-api/utils/whatsappAutomation';
 import { v4 as uuidv4 } from 'uuid';
 
-// Supabase configuration (service role required on server)
+// NEW Supabase configuration
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
 console.log('🔧 Orders API using NEW Supabase credentials');
 console.log('📡 URL:', supabaseUrl);
 
 const supabase = createClient(supabaseUrl, supabaseKey);
-
-function isAuthorized(req: Request): boolean {
-  const expected = process.env.INTERNAL_API_KEY;
-  const auth = req.headers.get('authorization') || '';
-  return Boolean(expected) && auth === `Bearer ${expected}`;
-}
 
 // GET - Fetch orders
 export async function GET(req: Request) {
@@ -52,9 +46,6 @@ export async function GET(req: Request) {
 // POST - Create new order with auto WhatsApp message
 export async function POST(req: Request) {
   try {
-    if (!isAuthorized(req)) {
-      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
-    }
     const body = await req.json();
     const {
       client_name,
@@ -85,47 +76,14 @@ export async function POST(req: Request) {
       .insert({
         id: orderId,
         client_name,
-        customer_name: client_name,
         consumption_purpose,
         consumption_notes,
         total: total || 0,
-        total_amount: total || 0,
         type,
         is_salon_consumption,
         status: 'completed',
         payment_method,
-        created_at: now,
-        // Additional fields to match actual data structure
-        stylist_id: null,
-        services: items,
-        subtotal: total || 0,
-        tax: 0,
-        discount: 0,
-        is_walk_in: true,
-        payments: [],
-        pending_amount: 0,
-        is_split_payment: false,
-        appointment_id: null,
-        is_salon_purchase: false,
-        stylist_name: stylist || null,
-        date: now,
-        appointment_time: null,
-        discount_percentage: 0,
-        requisition_voucher_no: null,
-        stock_snapshot: '{}',
-        current_stock: null,
-        multi_expert_group_id: null,
-        multi_expert: false,
-        total_experts: 1,
-        expert_index: 1,
-        tenant_id: '',
-        user_id: null,
-        source: 'pos',
-        invoice_no: null,
-        invoice_number: null,
-        serial_number: null,
-        client_id: null,
-        notes: null
+        created_at: now
       })
       .select()
       .single();
@@ -203,9 +161,6 @@ export async function POST(req: Request) {
 // PUT - Update order with auto WhatsApp message
 export async function PUT(req: Request) {
   try {
-    if (!isAuthorized(req)) {
-      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
-    }
     const body = await req.json();
     const { id, ...updateData } = body;
 
@@ -293,9 +248,6 @@ export async function PUT(req: Request) {
 // DELETE - Cancel/delete order with auto WhatsApp message
 export async function DELETE(req: Request) {
   try {
-    if (!isAuthorized(req)) {
-      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
-    }
     const { searchParams } = new URL(req.url);
     const id = searchParams.get('id');
     const reason = searchParams.get('reason') || 'Order cancelled';

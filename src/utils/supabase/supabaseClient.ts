@@ -5,13 +5,13 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 export const TABLES = {
   PURCHASES: 'purchase_history_with_stock',
   PURCHASE_HISTORY_WITH_STOCK: 'purchase_history_with_stock',
-  SALES: 'inventory_sales_new',
-  CONSUMPTION: 'inventory_consumption',
-  BALANCE_STOCK: 'balance_stock_view',
+  SALES: 'sales_history_final', // This is correct
+  CONSUMPTION: 'salon_consumption_new', // Changed from 'inventory_consumption' to 'salon_consumption_new'
+  BALANCE_STOCK: 'balance_stock',
   POS_ORDERS: 'pos_orders',
   POS_ORDER_ITEMS: 'pos_order_items',
   SALES_CONSUMER: 'inventory_sales_consumer',
-  SALON_CONSUMPTION: 'inventory_salon_consumption',
+  SALON_CONSUMPTION: 'salon_consumption_new', // Changed from 'salon_consumption_view' to 'salon_consumption_new'
   SALON_CONSUMPTION_PRODUCTS: 'salon_consumption_products'
 };
 

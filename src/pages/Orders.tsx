@@ -82,8 +82,6 @@ import { supabase, TABLES } from '../utils/supabase/supabaseClient'
 import { useQueryClient } from '@tanstack/react-query'
 import * as XLSX from 'xlsx'
 import { v4 as uuidv4 } from 'uuid'
-import AggregatedExcelImporter from '../components/orders/AggregatedExcelImporter';
-// import AprilDataImporter from '../components/orders/AprilDataImporter';
 
 // Extended Order interface that encapsulates all the properties we need
 type ExtendedOrder = {
@@ -99,7 +97,6 @@ type ExtendedOrder = {
   total_amount?: number;
   pending_amount?: number;
   payment_method?: string;
-  invoice_number?: string; // Add this
   payments?: any[];
   services?: any[];
   consumption_purpose?: string;
@@ -123,7 +120,7 @@ enum OrderTab {
 export default function Orders() {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
-  const { orders, isLoading, refreshOrders, deleteOrderById, deleteAllOrders, deleteOrdersInDateRange } = useOrders()
+  const { orders, isLoading, refreshOrders, deleteOrderById, deleteAllOrders } = useOrders()
   const { updateOrderPayment } = usePOS()
   const [selectedOrder, setSelectedOrder] = useState<any | null>(null)
   const [detailsOpen, setDetailsOpen] = useState(false)
@@ -149,7 +146,7 @@ export default function Orders() {
   
   // Pagination
   const [page, setPage] = useState(0)
-  const [rowsPerPage, setRowsPerPage] = useState(50)
+  const [rowsPerPage, setRowsPerPage] = useState(10)
   
   // Order stats
   const [orderStats, setOrderStats] = useState({
@@ -163,7 +160,9 @@ export default function Orders() {
     totalRevenue: 0,
   })
 
-
+  // New state for import dialog
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
 
   // Convert any order to our ExtendedOrder type
   const normalizeOrder = (order: any): ExtendedOrder => {
@@ -207,7 +206,232 @@ export default function Orders() {
     } as ExtendedOrder;
   };
 
+  const handleImportOrders = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      toast.error('No file selected');
+      return;
+    }
 
+    setIsImporting(true);
+    setImportDialogOpen(false);
+    const loadingToast = toast.info('Importing orders...', { autoClose: false });
+
+    try {
+      const data = await file.arrayBuffer();
+      const workbook = XLSX.read(data);
+      const sheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[sheetName];
+      const json: any[] = XLSX.utils.sheet_to_json(worksheet, {
+        raw: false, // Ensure dates are parsed as strings
+      });
+
+      if (json.length === 0) {
+        toast.warn('The selected file is empty or has no data.');
+        setIsImporting(false);
+        toast.dismiss(loadingToast);
+        return;
+      }
+
+      const user = supabase.auth.getUser ? (await supabase.auth.getUser()).data.user : null;
+      const tenantId = '';
+
+      let successCount = 0;
+      let failCount = 0;
+      let isProductImport = false;
+      
+      // Check if this is a product or service import based on columns
+      if (json[0] && json[0]['PRODUCT NAME']) {
+        isProductImport = true;
+      }
+
+      for (const row of json) {
+        try {
+          const orderId = uuidv4();
+          
+          let orderPayload: any = {};
+
+          if (isProductImport) {
+            // Product import logic
+            orderPayload = {
+              id: orderId,
+              created_at: new Date(row['Date']).toISOString(),
+              client_name: row['Guest Name'] || '-',
+              stylist_name: row['Staff'] || '-',
+              total: row['Total'] || 0,
+              total_amount: row['Total'] || 0,
+              payment_method: 'cash', // Default to cash
+              status: 'completed',
+              services: [{
+                service_name: row['PRODUCT NAME'],
+                quantity: row['Qty'] || 1,
+                price: row['Unit Price'] || 0,
+                category: row['Category'] || 'product',
+                type: 'product',
+                hsn_code: row['HSN CODE'] || null
+              }],
+              subtotal: (row['Unit Price'] || 0) * (row['Qty'] || 1),
+              tax: (row['Cgst'] || 0) + (row['Sgst'] || 0),
+              discount: row['Discount'] || 0,
+              payments: [{
+                payment_method: 'cash',
+                amount: row['Total'] || 0,
+              }],
+              is_walk_in: true,
+              tenant_id: tenantId,
+              user_id: user?.id,
+            };
+
+          } else {
+            // Service import logic
+            const rawPayment: string = row['Payment Mode'] || 'Cash';
+            const methodMatch = rawPayment.match(/^[A-Za-z ]+/);
+            const method = (methodMatch ? methodMatch[0].trim().toLowerCase() : 'cash').replace(' ', '_');
+
+            orderPayload = {
+              id: orderId,
+              created_at: new Date(row['Date']).toISOString(),
+              client_name: row['Guest Name'] || '-',
+              stylist_name: row['Staff'] || '-',
+              total: row['Total'] || 0,
+              total_amount: row['Total'] || 0,
+              payment_method: method,
+              status: 'completed',
+              services: [{
+                service_name: row['Service'],
+                quantity: row['Qty'] || 1,
+                price: row['Unit Price'] || 0,
+                category: row['Category'] || 'service',
+                type: 'service'
+              }],
+              subtotal: row['Subtotal(without tax & redemption)'] || 0,
+              tax: row['Tax'] || 0,
+              discount: row['Discount'] || 0,
+              payments: [{
+                payment_method: method,
+                amount: row['Total'] || 0,
+              }],
+              is_walk_in: true,
+              tenant_id: tenantId,
+              user_id: user?.id,
+            };
+          }
+
+          console.log('Inserting order payload:', orderPayload);
+
+          const { error: insertError } = await supabase.from('pos_orders').insert(orderPayload);
+          if (insertError) {
+            console.error('Error inserting order:', insertError);
+            failCount++;
+          } else {
+            successCount++;
+          }
+        } catch (rowError) {
+          console.error('Error processing row:', rowError);
+          failCount++;
+        }
+      }
+
+      toast.dismiss(loadingToast);
+      toast.success(`Import complete! ${successCount} orders imported successfully.`);
+      if (failCount > 0) {
+        toast.error(`${failCount} orders failed to import. Check console for details.`);
+      }
+      refreshOrders(); // Refresh the orders list
+    } catch (error) {
+      console.error('Error importing orders:', error);
+      toast.dismiss(loadingToast);
+      toast.error('Failed to import orders. Check console for details.');
+    } finally {
+      setIsImporting(false);
+      // Reset file input
+      const fileInput = document.getElementById('import-orders-input') as HTMLInputElement;
+      if (fileInput) {
+        fileInput.value = '';
+      }
+    }
+  };
+
+  const handleProductImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      toast.error('No file selected');
+      return;
+    }
+
+    const loadingToast = toast.info('Importing product orders...', { autoClose: false });
+
+    try {
+      const data = await file.arrayBuffer();
+      const workbook = XLSX.read(data);
+      const sheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[sheetName];
+      const json: any[] = XLSX.utils.sheet_to_json(worksheet);
+
+      let successCount = 0;
+      let failCount = 0;
+
+      for (const row of json) {
+        try {
+          const orderId = uuidv4();
+          const totalAmount = parseFloat(row['Total']) || 0;
+          const tax = (parseFloat(row['Cgst']) || 0) + (parseFloat(row['Sgst']) || 0);
+
+          const orderPayload = {
+            id: orderId,
+            created_at: new Date(row['Date']),
+            client_name: row['Guest Name'] || 'Walk-in',
+            stylist_name: row['Staff'] || 'Admin',
+            total: totalAmount,
+            total_amount: totalAmount,
+            payment_method: 'cash', // Defaulting as not present in product sheet
+            status: 'completed',
+            subtotal: parseFloat(row['Taxable Value']) || 0,
+            tax: tax,
+            discount: parseFloat(row['Discount']) || 0,
+            is_walk_in: true,
+            payments: [{ method: 'cash', amount: totalAmount }],
+            services: [
+              {
+                id: uuidv4(),
+                name: row['PRODUCT NAME'],
+                product_name: row['PRODUCT NAME'],
+                category: row['Category'],
+                quantity: parseInt(row['Qty'], 10) || 1,
+                price: parseFloat(row['Unit Price']) || 0,
+                unitPrice: parseFloat(row['Unit Price']) || 0,
+                hsn_code: row['HSN CODE'],
+                type: 'product',
+              },
+            ],
+          };
+
+          const { error } = await supabase.from('pos_orders').insert(orderPayload);
+
+          if (error) {
+            console.error('Error inserting order:', error);
+            failCount++;
+          } else {
+            successCount++;
+          }
+        } catch (rowError) {
+          console.error('Error processing row:', row, rowError);
+          failCount++;
+        }
+      }
+
+      toast.dismiss(loadingToast);
+      if (failCount > 0) {
+        toast.error(`${failCount} product orders failed to import. ${successCount} succeeded.`);
+      } else {
+        toast.success(`${successCount} product orders imported successfully!`);
+      }
+    } catch (error) {
+      toast.dismiss(loadingToast);
+      toast.error('An unexpected error occurred during product import.');
+      console.error('Product import error:', error);
+    }
+  };
 
   // Aggregate multi-expert orders with same appointment_id
   const aggregatedOrders = useMemo(() => {
@@ -630,7 +854,6 @@ export default function Orders() {
       const matchesSearch = 
         !searchQuery ||
         (order.id && order.id.toLowerCase().includes(searchLower)) ||
-        (order.invoice_number && order.invoice_number.toLowerCase().includes(searchLower)) || // Search by invoice number
         ((order.client_name || order.customer_name) && 
          (order.client_name || order.customer_name || '').toLowerCase().includes(searchLower)) ||
         (order.stylist && order.stylist.name && order.stylist.name.toLowerCase().includes(searchLower)) ||
@@ -841,14 +1064,41 @@ export default function Orders() {
         closeButton: false
       });
       
-      // Use the bulk delete function instead of deleting one by one
-      const success = await deleteOrdersInDateRange(startDate || undefined, endDate || undefined);
+      // Get orders within the selected date range
+      const ordersToDelete = filteredOrders.filter(order => {
+        const orderDate = new Date(order.created_at || '');
+        
+        // Handle null dates safely
+        const startCheck = !startDate || orderDate >= new Date(new Date(startDate).setHours(0, 0, 0, 0));
+        const endCheck = !endDate || orderDate <= new Date(new Date(endDate).setHours(23, 59, 59, 999));
+        
+        return startCheck && endCheck;
+      });
+
+      if (ordersToDelete.length === 0) {
+        toast.dismiss(loadingToast);
+        toast.info('No orders found in the selected date range');
+        setDeleteAllConfirmOpen(false);
+        return;
+      }
+
+      // Delete orders one by one
+      let successCount = 0;
+      for (const order of ordersToDelete) {
+        const orderId = order.order_id || order.id;
+        if (orderId) {
+          const success = await deleteOrderById(orderId);
+          if (success) {
+            successCount++;
+          }
+        }
+      }
       
       // Close the loading toast
       toast.dismiss(loadingToast);
       
-      if (success) {
-        toast.success(`Successfully deleted orders from ${startDate ? startDate.toLocaleDateString() : 'the beginning'} to ${endDate ? endDate.toLocaleDateString() : 'today'}`);
+      if (successCount > 0) {
+        toast.success(`Successfully deleted ${successCount} orders from ${startDate ? startDate.toLocaleDateString() : 'the beginning'} to ${endDate ? endDate.toLocaleDateString() : 'today'}`);
         // Close the dialog
         setDeleteAllConfirmOpen(false);
         // Reset to first page
@@ -868,7 +1118,6 @@ export default function Orders() {
     // Use exactly what's displayed on frontend
     const formattedOrders = filteredOrders.map((order) => ({
       'Order ID': formatOrderId(order),
-      'Invoice #': order.invoice_number || 'N/A',
       'Date': order.created_at ? new Date(order.created_at).toLocaleString() : 'Unknown date',
       'Customer': order.client_name || 'Unknown client',
       'Stylist': order.stylist_name || 'No stylist',
@@ -1146,7 +1395,6 @@ export default function Orders() {
     // Create headers mapping for CSV export
     const headers = {
       'Order ID': 'Order ID',
-      'Invoice #': 'Invoice #',
       'Date': 'Date & Time',
       'Customer': 'Customer',
       'Stylist': 'Stylist',
@@ -1171,7 +1419,6 @@ export default function Orders() {
     // Use exactly the same format as CSV export
     const formattedOrdersPDF = filteredOrders.map((order) => ({
       'Order ID': formatOrderId(order),
-      'Invoice #': order.invoice_number || 'N/A',
       'Date': order.created_at ? new Date(order.created_at).toLocaleString() : 'Unknown date',
       'Customer': order.client_name || 'Unknown client',
       'Stylist': order.stylist_name || 'No stylist',
@@ -1432,7 +1679,6 @@ export default function Orders() {
     // Create headers mapping for PDF export - same as CSV
     const headers = {
       'Order ID': 'Order ID',
-      'Invoice #': 'Invoice #',
       'Date': 'Date & Time',
       'Customer': 'Customer',
       'Stylist': 'Stylist',
@@ -1884,11 +2130,11 @@ export default function Orders() {
   }
 
   return (
-    <Box sx={{ p: 2 }}>
-      <Box sx={{ mb: 2 }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+    <Container maxWidth="lg">
+      <Box sx={{ mb: 4 }}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
           <Box>
-            <Typography variant="h4" sx={{ fontWeight: 'bold', color: 'primary.main' }}>Orders</Typography>
+            <Typography variant="h1">Orders</Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
               {(() => {
                 if (!startDate) {
@@ -1934,14 +2180,40 @@ export default function Orders() {
                 </Button>
               </>
             )}
+            <input
+              type="file"
+              id="import-orders-input"
+              style={{ display: 'none' }}
+              onChange={handleImportOrders}
+              accept=".xlsx, .xls"
+            />
+            <label htmlFor="import-orders-input">
+              <Button
+                variant="outlined"
+                component="span"
+                startIcon={<UploadFileIcon />}
+                sx={{ mr: 1 }}
+              >
+                Import Services
+              </Button>
+            </label>
 
-            
-            {/* New Aggregated Excel Importer */}
-            <AggregatedExcelImporter />
-            
-            {/* April 2025 Data Importer */}
-            {/* <AprilDataImporter /> */}
-            
+            <input
+              type="file"
+              id="import-products-input"
+              style={{ display: 'none' }}
+              onChange={handleProductImport}
+              accept=".xlsx, .xls"
+            />
+            <label htmlFor="import-products-input">
+              <Button
+                variant="outlined"
+                component="span"
+                startIcon={<UploadFileIcon />}
+              >
+                Import Products
+              </Button>
+            </label>
             <Button 
               variant="contained" 
               color="error"
@@ -1955,8 +2227,8 @@ export default function Orders() {
         </Box>
         
         {/* Order Analytics */}
-        <Box sx={{ mb: 1.5 }}>
-          <Typography variant="body1" sx={{ fontWeight: 600, fontSize: '1.1rem', color: 'primary.main' }}>
+        <Box sx={{ mb: 2 }}>
+          <Typography variant="h6" gutterBottom>
             {(() => {
               if (!startDate) {
                 return "Analytics - All Time";
@@ -1976,15 +2248,15 @@ export default function Orders() {
             })()}
           </Typography>
         </Box>
-        <Grid container spacing={2} sx={{ mb: 2 }}>
+        <Grid container spacing={2} sx={{ mb: 3 }}>
           {/* Total Orders */}
           <Grid item xs={12} sm={6} md={3}>
-            <Card raised={false} variant="outlined" sx={{ p: 1.5 }}>
+            <Card raised={false} variant="outlined" sx={{ p: 2 }}>
               <CardContent sx={{ p: 0 }}>
-                <Typography color="text.secondary" variant="caption" sx={{ fontWeight: 600 }}>
+                <Typography color="text.secondary" variant="subtitle2" gutterBottom>
                   Total Orders
                 </Typography>
-                <Typography variant="h5" sx={{ mt: 0.5, mb: 1.5, fontWeight: 'bold' }}>
+                <Typography variant="h4" sx={{ mt: 1, mb: 2 }}>
                   {orderStats.total}
                 </Typography>
                 <LinearProgress 
@@ -2002,17 +2274,17 @@ export default function Orders() {
               raised={false}
               variant="outlined"
               sx={{
-                p: 1.5,
+                p: 2,
               }}
             >
               <CardContent sx={{ p: 0 }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', mb: 0.5 }}>
-                  <InventoryIcon sx={{ mr: 1, fontSize: '1.2rem' }} />
-                  <Typography color="text.secondary" variant="caption" sx={{ fontWeight: 600 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                  <InventoryIcon sx={{ mr: 1 }} />
+                  <Typography color="text.secondary" variant="subtitle2">
                     Salon Consumption
                   </Typography>
                 </Box>
-                <Typography variant="h5" sx={{ mt: 0.5, mb: 1.5, fontWeight: 'bold' }}>
+                <Typography variant="h4" sx={{ mt: 1, mb: 2 }}>
                   {orderStats.salonPurchases}
                 </Typography>
                 <Box sx={{ display: 'flex', alignItems: 'center' }}>
@@ -2036,12 +2308,12 @@ export default function Orders() {
 
           {/* Completed Orders */}
           <Grid item xs={12} sm={6} md={3}>
-            <Card raised={false} variant="outlined" sx={{ p: 1.5 }}>
+            <Card raised={false} variant="outlined" sx={{ p: 2 }}>
               <CardContent sx={{ p: 0 }}>
-                <Typography color="text.secondary" variant="caption" sx={{ fontWeight: 600 }}>
+                <Typography color="text.secondary" variant="subtitle2" gutterBottom>
                   Completed
                 </Typography>
-                <Typography variant="h5" sx={{ mt: 0.5, mb: 1.5, fontWeight: 'bold' }}>
+                <Typography variant="h4" sx={{ mt: 1, mb: 2 }}>
                   {orderStats.completed}
                 </Typography>
                 <Box sx={{ display: 'flex', alignItems: 'center' }}>
@@ -2061,12 +2333,12 @@ export default function Orders() {
           
           {/* Revenue */}
           <Grid item xs={12} sm={6} md={3}>
-            <Card raised={false} variant="outlined" sx={{ p: 1.5 }}>
+            <Card raised={false} variant="outlined" sx={{ p: 2 }}>
               <CardContent sx={{ p: 0 }}>
-                <Typography color="text.secondary" variant="caption" sx={{ fontWeight: 600 }}>
+                <Typography color="text.secondary" variant="subtitle2" gutterBottom>
                   Total Revenue
                 </Typography>
-                <Typography variant="h5" sx={{ mt: 0.5, mb: 1.5, fontWeight: 'bold' }}>
+                <Typography variant="h4" sx={{ mt: 1, mb: 2 }}>
                   {formatCurrency(orderStats.totalRevenue)}
                 </Typography>
                 <LinearProgress 
@@ -2081,24 +2353,14 @@ export default function Orders() {
         </Grid>
         
         {/* Order Tabs */}
-        <Paper sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}>
+        <Paper sx={{ borderBottom: 1, borderColor: 'divider', mb: 3 }}>
           <Tabs
             value={activeTab}
             onChange={handleTabChange}
             indicatorColor="primary"
+            textColor="primary"
             variant="scrollable"
             scrollButtons="auto"
-            sx={{
-              '& .MuiTab-root': {
-                minHeight: '40px',
-                textTransform: 'none',
-                fontSize: '0.875rem',
-                fontWeight: 600,
-                px: 2,
-                py: 1
-              }
-            }}
-            textColor="primary"
             aria-label="order filter tabs"
           >
             <Tab 
@@ -2152,7 +2414,7 @@ export default function Orders() {
         
         {/* Search and filter controls */}
         {orders && orders.length > 0 && (
-          <Box mb={2}>
+          <Box mb={3}>
             <Grid container spacing={2}>
               <Grid item xs={12} md={4}>
                 <TextField
@@ -2295,84 +2557,13 @@ export default function Orders() {
         {/* Render active filters */}
         {renderActiveFilters()}
         
-        {/* Horizontal Scroll Help Info */}
-        {filteredOrders.length > 0 && (
-          <Paper 
-            elevation={1} 
-            sx={{ 
-              p: 1, 
-              mb: 1.5, 
-              background: 'linear-gradient(45deg, #f8fdf0 30%, #f0f8e6 90%)',
-              border: '1px solid #8baf3f',
-              borderRadius: '8px'
-            }}
-          >
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <InfoIcon sx={{ color: '#7da237', fontSize: '20px' }} />
-              <Typography variant="body2" sx={{ color: '#7da237', fontWeight: 500 }}>
-                💡 <strong>Horizontal Scroll Tip:</strong> Hold <kbd style={{ 
-                  background: '#f0f8e6', 
-                  padding: '2px 6px', 
-                  borderRadius: '4px', 
-                  border: '1px solid #c8d9a5',
-                  fontFamily: 'monospace',
-                  fontSize: '11px'
-                }}>Shift</kbd> + Mouse Wheel to scroll horizontally, or use the scroll bar below the table
-              </Typography>
-            </Box>
-          </Paper>
-        )}
-        
         {filteredOrders.length > 0 ? (
           <>
-            <TableContainer 
-              component={Paper}
-              sx={{ 
-                overflow: 'auto',
-                overflowX: 'scroll', // Force horizontal scrollbar to always show
-                cursor: 'grab',
-                '&:active': {
-                  cursor: 'grabbing'
-                },
-                // Enhanced scrollbar styling for better visibility
-                '&::-webkit-scrollbar': {
-                  height: '12px',
-                  width: '12px'
-                },
-                '&::-webkit-scrollbar-track': {
-                  background: '#f1f1f1',
-                  borderRadius: '6px',
-                  border: '1px solid #e0e0e0'
-                },
-                '&::-webkit-scrollbar-thumb': {
-                  background: 'linear-gradient(45deg, #8baf3f 30%, #7da237 90%)',
-                  borderRadius: '6px',
-                  border: '1px solid #6d8c30',
-                  '&:hover': {
-                    background: 'linear-gradient(45deg, #7da237 30%, #6d8c30 90%)',
-                    transform: 'scale(1.1)'
-                  }
-                },
-                '&::-webkit-scrollbar-corner': {
-                  background: '#f1f1f1'
-                },
-                // For Firefox
-                scrollbarWidth: 'thin',
-                scrollbarColor: '#8baf3f #f1f1f1'
-              }}
-              onWheel={(e) => {
-                // Enable horizontal scrolling with mouse wheel when shift is held
-                if (e.shiftKey) {
-                  e.preventDefault();
-                  e.currentTarget.scrollLeft += e.deltaY;
-                }
-              }}
-            >
-              <Table sx={{ minWidth: 1400 }} size="small">
+            <TableContainer component={Paper}>
+              <Table>
                 <TableHead>
                   <TableRow>
                     <TableCell>Order ID</TableCell>
-                    <TableCell>Invoice #</TableCell>
                     <TableCell>Date & Time</TableCell>
                     <TableCell>Customer</TableCell>
                     <TableCell>Stylist</TableCell>
@@ -2415,11 +2606,6 @@ export default function Orders() {
                               sx={{ ml: 1, fontSize: '0.7rem' }} 
                             />
                           )}
-                        </Typography>
-                      </TableCell>
-                      <TableCell>
-                        <Typography variant="body2" fontFamily="monospace">
-                          {order.invoice_number || 'N/A'}
                         </Typography>
                       </TableCell>
                       <TableCell>
@@ -2701,7 +2887,7 @@ export default function Orders() {
                 onPageChange={handleChangePage}
                 rowsPerPage={rowsPerPage}
                 onRowsPerPageChange={handleChangeRowsPerPage}
-                rowsPerPageOptions={[25, 50, 100, 200, 500, 1000, { label: 'All', value: -1 }]}
+                rowsPerPageOptions={[5, 10, 25, 50, 100, 250, 500, 1000, { label: 'All', value: -1 }]}
               />
             </Box>
           </>
@@ -2763,9 +2949,6 @@ export default function Orders() {
                         sx={{ ml: 1 }} 
                       />
                     )}
-                  </Typography>
-                  <Typography variant="body2">
-                    <strong>Invoice #:</strong> {selectedOrder.invoice_number || 'N/A'}
                   </Typography>
                   <Typography variant="body2">
                     <strong>Date:</strong> {new Date(selectedOrder.created_at).toLocaleString()}
@@ -2837,14 +3020,9 @@ export default function Orders() {
                       ) : null;
                     })()}
                   </Typography>
-                  <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                    <Typography variant="body2" component="span">
-                      <strong>Purchase Type:</strong>
-                    </Typography>
-                    <Box component="span" sx={{ ml: 1 }}>
-                      {renderPurchaseTypeChip(getPurchaseType(selectedOrder), selectedOrder)}
-                    </Box>
-                  </Box>
+                  <Typography variant="body2">
+                    <strong>Purchase Type:</strong> <Box component="span" sx={{ ml: 1 }}>{renderPurchaseTypeChip(getPurchaseType(selectedOrder), selectedOrder)}</Box>
+                  </Typography>
                   <Typography variant="body2">
                     <strong>Status:</strong> {selectedOrder.status}
                   </Typography>
@@ -3424,8 +3602,32 @@ export default function Orders() {
           </DialogActions>
         </Dialog>
 
-
+        {/* Import Orders Dialog */}
+        <Dialog open={importDialogOpen} onClose={() => setImportDialogOpen(false)}>
+          <DialogTitle>Import Orders from Excel</DialogTitle>
+          <DialogContent>
+            <DialogContentText>
+              Select an Excel file (.xlsx) to import orders. Please ensure the columns match the required format.
+            </DialogContentText>
+            <Button
+              variant="contained"
+              component="label"
+              sx={{ mt: 2 }}
+            >
+              Upload File
+              <input
+                type="file"
+                hidden
+                accept=".xlsx"
+                onChange={handleImportOrders}
+              />
+            </Button>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setImportDialogOpen(false)}>Cancel</Button>
+          </DialogActions>
+        </Dialog>
       </Box>
-    </Box>
+    </Container>
   );
 } 
