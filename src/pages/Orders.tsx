@@ -59,6 +59,7 @@ import {
   Refresh as RefreshIcon,
   ContentCut as ContentCutIcon,
   Delete as DeleteIcon,
+  DeleteOutline as DeleteOutlineIcon,
   CardMembership as CardMembershipIcon,
   Info as InfoIcon,
   Edit as EditIcon,
@@ -120,7 +121,7 @@ enum OrderTab {
 export default function Orders() {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
-  const { orders, isLoading, refreshOrders, deleteOrderById, deleteAllOrders } = useOrders()
+  const { orders, isLoading, refreshOrders, deleteOrderById, deleteAllOrders, deleteOrdersInDateRange } = useOrders()
   const { updateOrderPayment } = usePOS()
   const [selectedOrder, setSelectedOrder] = useState<any | null>(null)
   const [detailsOpen, setDetailsOpen] = useState(false)
@@ -163,6 +164,11 @@ export default function Orders() {
   // New state for import dialog
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
+
+  // Bulk selection state
+  const [selectedOrders, setSelectedOrders] = useState<string[]>([]);
+  const [isBulkDeleteMode, setIsBulkDeleteMode] = useState(false);
+  const [bulkDeleteConfirmOpen, setBulkDeleteConfirmOpen] = useState(false);
 
   // Convert any order to our ExtendedOrder type
   const normalizeOrder = (order: any): ExtendedOrder => {
@@ -988,6 +994,13 @@ export default function Orders() {
     }
   }, [filteredOrders]);
 
+  // Clear bulk selection when filters or page changes
+  useEffect(() => {
+    if (isBulkDeleteMode) {
+      setSelectedOrders([]);
+    }
+  }, [searchQuery, paymentFilter, statusFilter, purchaseTypeFilter, isSalonPurchaseFilter, startDate, endDate, page]);
+
   // When orders are loaded from the API, normalize them (commented out to prevent recursion)
   /*
   useEffect(() => {
@@ -1064,45 +1077,19 @@ export default function Orders() {
         closeButton: false
       });
       
-      // Get orders within the selected date range
-      const ordersToDelete = filteredOrders.filter(order => {
-        const orderDate = new Date(order.created_at || '');
-        
-        // Handle null dates safely
-        const startCheck = !startDate || orderDate >= new Date(new Date(startDate).setHours(0, 0, 0, 0));
-        const endCheck = !endDate || orderDate <= new Date(new Date(endDate).setHours(23, 59, 59, 999));
-        
-        return startCheck && endCheck;
-      });
-
-      if (ordersToDelete.length === 0) {
-        toast.dismiss(loadingToast);
-        toast.info('No orders found in the selected date range');
-        setDeleteAllConfirmOpen(false);
-        return;
-      }
-
-      // Delete orders one by one
-      let successCount = 0;
-      for (const order of ordersToDelete) {
-        const orderId = order.order_id || order.id;
-        if (orderId) {
-          const success = await deleteOrderById(orderId);
-          if (success) {
-            successCount++;
-          }
-        }
-      }
+      // Use the bulk deletion function instead of deleting one by one
+      const success = await deleteOrdersInDateRange(startDate || undefined, endDate || undefined);
       
       // Close the loading toast
       toast.dismiss(loadingToast);
       
-      if (successCount > 0) {
-        toast.success(`Successfully deleted ${successCount} orders from ${startDate ? startDate.toLocaleDateString() : 'the beginning'} to ${endDate ? endDate.toLocaleDateString() : 'today'}`);
+      if (success) {
         // Close the dialog
         setDeleteAllConfirmOpen(false);
         // Reset to first page
         setPage(0);
+        // Refresh orders to show updated list
+        refreshOrders();
       } else {
         toast.error('Failed to delete orders. Please try again.');
       }
@@ -1111,6 +1098,72 @@ export default function Orders() {
       toast.error('An error occurred: ' + (error instanceof Error ? error.message : 'Unknown error'));
     }
   }
+
+  // Bulk deletion functions
+  const handleBulkDelete = () => {
+    if (selectedOrders.length === 0) {
+      toast.info('Please select orders to delete');
+      return;
+    }
+    setBulkDeleteConfirmOpen(true);
+  };
+
+  const confirmBulkDelete = async () => {
+    try {
+      const loadingToast = toast.info(`Deleting ${selectedOrders.length} selected orders...`, {
+        autoClose: false,
+        closeButton: false
+      });
+
+      // Delete orders one by one since we have specific IDs
+      let successCount = 0;
+      for (const orderId of selectedOrders) {
+        const success = await deleteOrderById(orderId);
+        if (success) {
+          successCount++;
+        }
+      }
+
+      // Close the loading toast
+      toast.dismiss(loadingToast);
+
+      if (successCount > 0) {
+        toast.success(`Successfully deleted ${successCount} orders`);
+        // Clear selection and close dialog
+        setSelectedOrders([]);
+        setBulkDeleteConfirmOpen(false);
+        setIsBulkDeleteMode(false);
+        // Reset to first page
+        setPage(0);
+        // Refresh orders to show updated list
+        refreshOrders();
+      } else {
+        toast.error('Failed to delete orders. Please try again.');
+      }
+    } catch (error) {
+      console.error('Error in confirmBulkDelete:', error);
+      toast.error('An error occurred: ' + (error instanceof Error ? error.message : 'Unknown error'));
+    }
+  };
+
+  const handleSelectOrder = (orderId: string, checked: boolean) => {
+    if (checked) {
+      setSelectedOrders(prev => [...prev, orderId]);
+    } else {
+      setSelectedOrders(prev => prev.filter(id => id !== orderId));
+    }
+  };
+
+  const handleSelectAllOrders = (checked: boolean) => {
+    if (checked) {
+      const currentPageOrderIds = filteredOrders
+        .slice(page * rowsPerPage, (page + 1) * rowsPerPage)
+        .map(order => order.order_id || order.id);
+      setSelectedOrders(currentPageOrderIds);
+    } else {
+      setSelectedOrders([]);
+    }
+  };
 
   const handleExportCSV = () => {
     if (!aggregatedOrders || aggregatedOrders.length === 0) return;
@@ -2559,10 +2612,61 @@ export default function Orders() {
         
         {filteredOrders.length > 0 ? (
           <>
+            {/* Bulk Actions Bar */}
+            <Box sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 2 }}>
+              <Button
+                variant="outlined"
+                color="primary"
+                onClick={() => {
+                  if (isBulkDeleteMode) {
+                    setIsBulkDeleteMode(false);
+                    setSelectedOrders([]);
+                  } else {
+                    setIsBulkDeleteMode(true);
+                  }
+                }}
+                startIcon={<DeleteOutlineIcon />}
+              >
+                {isBulkDeleteMode ? 'Cancel Bulk Mode' : 'Enable Bulk Selection'}
+              </Button>
+              
+              {isBulkDeleteMode && (
+                <>
+                  <Typography variant="body2" color="text.secondary">
+                    {selectedOrders.length} of {paginatedOrders.length} order(s) selected
+                  </Typography>
+                  {selectedOrders.length > 0 && (
+                    <Button
+                      variant="contained"
+                      color="error"
+                      onClick={handleBulkDelete}
+                      startIcon={<DeleteIcon />}
+                    >
+                      Delete Selected ({selectedOrders.length})
+                    </Button>
+                  )}
+                </>
+              )}
+            </Box>
+
             <TableContainer component={Paper}>
               <Table>
                 <TableHead>
                   <TableRow>
+                    {isBulkDeleteMode && (
+                      <TableCell padding="checkbox">
+                        <input
+                          ref={(input) => {
+                            if (input) {
+                              input.indeterminate = selectedOrders.length > 0 && selectedOrders.length < paginatedOrders.length;
+                            }
+                          }}
+                          type="checkbox"
+                          checked={selectedOrders.length === paginatedOrders.length && paginatedOrders.length > 0}
+                          onChange={(e) => handleSelectAllOrders(e.target.checked)}
+                        />
+                      </TableCell>
+                    )}
                     <TableCell>Order ID</TableCell>
                     <TableCell>Date & Time</TableCell>
                     <TableCell>Customer</TableCell>
@@ -2595,6 +2699,15 @@ export default function Orders() {
                         borderLeft: isAggregatedOrder ? '3px solid #9c27b0' : 'none'
                       }}
                     >
+                      {isBulkDeleteMode && (
+                        <TableCell padding="checkbox">
+                          <input
+                            type="checkbox"
+                            checked={selectedOrders.includes(order.order_id || order.id)}
+                            onChange={(e) => handleSelectOrder(order.order_id || order.id, e.target.checked)}
+                          />
+                        </TableCell>
+                      )}
                       <TableCell>
                         <Typography variant="body2" fontFamily="monospace">
                           {formatOrderId(order)}
@@ -3598,6 +3711,35 @@ export default function Orders() {
               autoFocus
             >
               Yes, Delete Date Range Orders
+            </Button>
+          </DialogActions>
+        </Dialog>
+
+        {/* Bulk Delete Confirmation Dialog */}
+        <Dialog
+          open={bulkDeleteConfirmOpen}
+          onClose={() => setBulkDeleteConfirmOpen(false)}
+          aria-labelledby="alert-dialog-title-bulk"
+          aria-describedby="alert-dialog-description-bulk"
+        >
+          <DialogTitle id="alert-dialog-title-bulk">{"Delete Selected Orders"}</DialogTitle>
+          <DialogContent>
+            <DialogContentText id="alert-dialog-description-bulk">
+              Warning: This will permanently delete {selectedOrders.length} selected order{selectedOrders.length !== 1 ? 's' : ''}. 
+              This action cannot be undone. Are you absolutely sure you want to proceed?
+            </DialogContentText>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setBulkDeleteConfirmOpen(false)} color="primary">
+              Cancel
+            </Button>
+            <Button 
+              onClick={confirmBulkDelete} 
+              color="error" 
+              variant="contained"
+              autoFocus
+            >
+              Yes, Delete Selected Orders
             </Button>
           </DialogActions>
         </Dialog>

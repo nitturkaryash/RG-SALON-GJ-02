@@ -1611,12 +1611,12 @@ export default function POS() {
 	// Function to fetch purchase costs from product_master table for salon consumption
 	const fetchProductMasterCosts = useCallback(async () => {
 		try {
-			console.log("Fetching purchase costs from product_master table...");
+			console.log("Fetching calculated purchase costs from product_master_with_calculated_costs view...");
 			
-			// Get purchase costs from product_master table - using the correct column name
+			// Get calculated purchase costs from our new view that uses purchase_taxable_value/purchase_qty
 			const { data, error } = await supabase
-				.from('product_master')
-				.select('id, name, "Purchase_Cost/Unit(Ex.GST)"');
+				.from('product_master_with_calculated_costs')
+				.select('id, name, final_purchase_cost_ex_gst');
 
 			if (error) {
 				console.error("Error fetching product master costs:", error);
@@ -1629,14 +1629,14 @@ export default function POS() {
 			
 			if (data && data.length > 0) {
 				for (const item of data) {
-					if (item.id && item["Purchase_Cost/Unit(Ex.GST)"] !== null) {
-						const cost = parseFloat(item["Purchase_Cost/Unit(Ex.GST)"]) || 0;
+					if (item.id && item.final_purchase_cost_ex_gst !== null) {
+						const cost = parseFloat(item.final_purchase_cost_ex_gst) || 0;
 						productMasterCosts[item.id] = cost;
 						// Also store by name for fallback matching
 						if (item.name) {
 							productMasterCostsByName[item.name.toLowerCase().trim()] = cost;
 						}
-						console.log(`Found purchase cost for ${item.name} (${item.id}): ₹${item["Purchase_Cost/Unit(Ex.GST)"]}`);
+												console.log(`Found calculated purchase cost for ${item.name} (${item.id}): ₹${item.final_purchase_cost_ex_gst}`);
 					}
 				}
 			}
