@@ -64,20 +64,20 @@ export function formatDateKolkata(dateString: string | null, includeTime: boolea
       return new Intl.DateTimeFormat('en-IN', {
         timeZone: 'Asia/Kolkata',
         year: 'numeric',
-        month: 'short',
-        day: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
         hour: '2-digit',
         minute: '2-digit',
         second: '2-digit',
         hour12: true
-      }).format(date) + ' IST';
+      }).format(date);
     } else {
       // Date only in Asia/Kolkata timezone
       return new Intl.DateTimeFormat('en-IN', {
         timeZone: 'Asia/Kolkata',
         year: 'numeric',
-        month: 'short',
-        day: 'numeric'
+        month: '2-digit',
+        day: '2-digit'
       }).format(date);
     }
   } catch (e) {
@@ -92,13 +92,8 @@ export function formatDateKolkata(dateString: string | null, includeTime: boolea
 export function formatDate(dateString: string | null): string {
   if (!dateString) return '-';
   try {
-    // For date only
-    if (!dateString.includes(':')) {
-      return formatDateKolkata(dateString, false);
-    }
-    
-    // For datetime - convert UTC to Asia/Kolkata timezone
-    return formatDateKolkata(dateString, true);
+    // Always format without time for general use
+    return formatDateKolkata(dateString, false);
   } catch (e) {
     return dateString;
   }

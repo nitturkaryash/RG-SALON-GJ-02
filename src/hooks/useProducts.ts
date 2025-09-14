@@ -217,6 +217,23 @@ export const useProducts = () => {
       const timestamp = new Date().toISOString();
       const productId = uuidv4();
       
+      // Duplicate check: name (case-insensitive) and HSN
+      const { data: existing, error: checkError } = await supabase
+        .from('product_master')
+        .select('id, name, hsn_code')
+        .or(`name.ilike.${product.product_name},hsn_code.eq.${product.hsn_code || ''}`);
+      if (checkError) throw handleSupabaseError(checkError);
+      if (existing && existing.length > 0) {
+        const nameClash = existing.find(p => (p.name || '').toLowerCase() === (product.product_name || '').toLowerCase());
+        if (nameClash) {
+          throw new Error(`A product named "${product.product_name}" already exists`);
+        }
+        const hsnClash = existing.find(p => (p.hsn_code || '') === (product.hsn_code || ''));
+        if (hsnClash && product.hsn_code) {
+          throw new Error(`HSN "${product.hsn_code}" already exists for ${hsnClash.name}`);
+        }
+      }
+
       // Stock quantity now comes directly from the form/state
       const stockQuantity = product.stock_quantity || 0;
       
@@ -273,42 +290,44 @@ export const useProducts = () => {
 
   const updateProduct = async (id: string, updates: Partial<Product>) => {
     try {
-      const timestamp = new Date().toISOString();
-      
-      // Stock quantity is updated directly from the form
-      const stockQuantity = updates.stock_quantity;
-      
-      // Prepare updates object for Supabase - Simplified
-      const supabaseUpdates: any = {
-        name: updates.product_name,
-        price: updates.mrp_incl_gst,
+      // Prepare updates object for API
+      const apiUpdates: any = {
+        id,
+        name: updates.product_name || updates.name,
+        price: updates.mrp_incl_gst || updates.price,
         hsn_code: updates.hsn_code,
-        units: updates.unit_type,
+        units: updates.unit_type || updates.units,
         mrp_incl_gst: updates.mrp_incl_gst,
         mrp_excl_gst: updates.mrp_per_unit_excl_gst,
         gst_percentage: updates.gst_percentage,
-        stock_quantity: stockQuantity, // Use direct stock quantity update
-        updated_at: timestamp
+        stock_quantity: updates.stock_quantity,
+        active: updates.active
       };
       
       // Remove undefined values
-      Object.keys(supabaseUpdates).forEach(key => {
-        if (supabaseUpdates[key] === undefined) {
-          delete supabaseUpdates[key];
+      Object.keys(apiUpdates).forEach(key => {
+        if (apiUpdates[key] === undefined) {
+          delete apiUpdates[key];
         }
       });
       
-      // Update in Supabase
-      const { error: updateError } = await supabase
-        .from('product_master')
-        .update(supabaseUpdates)
-        .eq('id', id);
+      // Update via API
+      const response = await fetch('/api/products', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(apiUpdates)
+      });
+
+      const result = await response.json();
       
-      if (updateError) {
-        throw handleSupabaseError(updateError);
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to update product');
       }
       
       // Update local state
+      const timestamp = new Date().toISOString();
       setProducts(prev =>
         prev.map(product =>
           product.id === id

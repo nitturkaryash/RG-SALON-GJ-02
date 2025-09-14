@@ -75,26 +75,34 @@ export async function POST(req: Request) {
     const clientId = uuidv4();
     const now = new Date().toISOString();
 
-    // Check if client already exists with same phone or email
-    if (phone || email) {
-      const { data: existingClients, error: checkError } = await supabase
-        .from('clients')
-        .select('id, full_name, phone, email')
-        .or(`phone.eq.${phone || 'null'},email.eq.${email || 'null'}`);
+    // Check if client already exists with same name, phone or email
+    const { data: existingClients, error: checkError } = await supabase
+      .from('clients')
+      .select('id, full_name, phone, email')
+      .or(`full_name.ilike.${full_name},phone.eq.${phone || 'null'},email.eq.${email || 'null'}`);
 
-      if (checkError) throw checkError;
+    if (checkError) throw checkError;
 
-      if (existingClients && existingClients.length > 0) {
-        const existing = existingClients[0];
-        return NextResponse.json(
-          { 
-            success: false, 
-            error: `Client already exists: ${existing.full_name}`,
-            existing_client: existing
-          },
-          { status: 409 }
-        );
+    if (existingClients && existingClients.length > 0) {
+      const existing = existingClients[0];
+      let errorMessage = '';
+      
+      if (existing.full_name.toLowerCase() === full_name.toLowerCase()) {
+        errorMessage = `Client with name "${existing.full_name}" already exists`;
+      } else if (existing.phone === phone) {
+        errorMessage = `Client with phone number "${existing.phone}" already exists (${existing.full_name})`;
+      } else if (existing.email === email) {
+        errorMessage = `Client with email "${existing.email}" already exists (${existing.full_name})`;
       }
+      
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: errorMessage,
+          existing_client: existing
+        },
+        { status: 409 }
+      );
     }
 
     // Create the client

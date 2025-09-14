@@ -45,6 +45,7 @@ import {
   QrCode,
   Error,
 } from '@mui/icons-material';
+import { formatAmount, roundForDisplay } from '../utils/formatAmount';
 
 export type PaymentMethod = 'cash' | 'credit_card' | 'debit_card' | 'upi' | 'bnpl' | 'membership';
 
@@ -582,19 +583,19 @@ export const EnhancedPaymentSection: React.FC<PaymentSectionProps> = ({
               <Grid item xs={12} md={4}>
                 <Box sx={{ textAlign: 'right' }}>
                   <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.8rem' }}>
-                    Total Bill: ₹{totalAmount.toLocaleString()}
+                    Total Bill: {formatAmount(totalAmount)}
                   </Typography>
                   {membershipUsage > 0 && (
                     <Typography variant="body2" color="success.main" sx={{ fontSize: '0.8rem' }}>
-                      Less: Membership Payment: -₹{membershipUsage.toLocaleString()}
+                      Less: Membership Payment: -{formatAmount(membershipUsage)}
                     </Typography>
                   )}
                   <Divider sx={{ my: 0.5 }} />
                   <Typography variant="body1" fontWeight="bold" color="primary.main" sx={{ fontSize: '0.9rem' }}>
-                    Client to Pay: ₹{clientToPayAmount.toLocaleString()}
+                    Client to Pay: {formatAmount(clientToPayAmount)}
                   </Typography>
                   <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, fontSize: '0.8rem' }}>
-                    Amount Paid: ₹{nonMembershipTotal.toLocaleString()}
+                    Amount Paid: {formatAmount(nonMembershipTotal)}
                   </Typography>
                   <Divider sx={{ my: 0.5 }} />
                   <Typography 
@@ -608,8 +609,8 @@ export const EnhancedPaymentSection: React.FC<PaymentSectionProps> = ({
                     }
                   >
                     {Math.abs(nonMembershipTotal - clientToPayAmount) < 0.01 ? 'Balanced' : 
-                     nonMembershipTotal > clientToPayAmount ? `Overpaid: ₹${(nonMembershipTotal - clientToPayAmount).toLocaleString()}` :
-                     `Remaining: ₹${(clientToPayAmount - nonMembershipTotal).toLocaleString()}`}
+                     nonMembershipTotal > clientToPayAmount ? `Overpaid: ${formatAmount(nonMembershipTotal - clientToPayAmount)}` :
+                     `Remaining: ${formatAmount(clientToPayAmount - nonMembershipTotal)}`}
                   </Typography>
                 </Box>
               </Grid>

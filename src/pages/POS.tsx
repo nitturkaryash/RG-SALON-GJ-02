@@ -75,6 +75,7 @@ import { MembershipTier } from '../types/membershipTier';
 import { useLocalStorage } from '../utils/useLocalStorage';
 import { updateProductStock } from '../utils/inventoryUtils';
 import PaymentSection, { ActiveMembershipDetails } from '../components/PaymentSection';
+import { formatAmount, roundForDisplay } from '../utils/formatAmount';
 
 // Define a key for localStorage
 const POS_STATE_STORAGE_KEY = 'posState';
@@ -383,7 +384,7 @@ export default function POS() {
 	// Custom Hooks
 	const { clients, isLoading: loadingClients, updateClientFromOrder, createClientAsync } = useClients();
 	const { stylists, isLoading: loadingStylists } = useStylists();
-	const { createWalkInOrder: createWalkInOrderMutation, createOrder, orders: posOrders, loadingOrders: loadingPOSOrders } = usePOS(); // Renamed orders from usePOS to posOrders
+	const { createWalkInOrder: createWalkInOrderMutation, createOrder, updateOrder: updateOrderMutation, orders: posOrders, loadingOrders: loadingPOSOrders } = usePOS(); // Renamed orders from usePOS to posOrders
 	const { orders, isLoading: isLoadingOrders } = useOrders(); // Orders for lifetime visits calculation
 	const { products: inventoryProducts, isLoading: loadingInventoryProducts } = useProducts();
 	const { services, isLoading: loadingServices } = useServices();
@@ -476,6 +477,9 @@ export default function POS() {
 	const [isHistoryLoading, setIsHistoryLoading] = useState(false);
 	// Add new state for filtering memberships
 	const [membershipSearchTerm, setMembershipSearchTerm] = useState("");
+	// Edit mode state
+	const [isEditMode, setIsEditMode] = useState(false);
+	const [editingOrderId, setEditingOrderId] = useState<string | null>(null);
 	// Add state for new client details
 	const [newClientPhone, setNewClientPhone] = useState("");
 	const [newClientEmail, setNewClientEmail] = useState("");
@@ -1273,6 +1277,10 @@ export default function POS() {
     // Handle order editing
     console.log('[POS useEffect] Processing edit order data');
     
+    // Set edit mode
+    setIsEditMode(true);
+    setEditingOrderId(editOrderData.orderId);
+    
     // Determine which tab to use based on order type
     if (editOrderData.isSalonConsumption) {
       setTabValue(1); // Salon Purchase tab
@@ -1951,9 +1959,9 @@ export default function POS() {
 				}
 			} else if (!paymentValidation.isValid) {
 				if (paymentValidation.isUnderpaid) {
-					errorMessage = `Payment incomplete. Remaining amount: ₹${paymentValidation.remaining.toFixed(2)}`;
+					errorMessage = `Payment incomplete. Remaining amount: ${formatAmount(paymentValidation.remaining)}`;
 				} else if (paymentValidation.isOverpaid) {
-					errorMessage = `Payment exceeds bill amount by ₹${Math.abs(paymentValidation.remaining).toFixed(2)}. Please adjust the payment amounts.`;
+					errorMessage = `Payment exceeds bill amount by ${formatAmount(Math.abs(paymentValidation.remaining))}. Please adjust the payment amounts.`;
 				}
 			}
 			
@@ -1970,9 +1978,9 @@ export default function POS() {
 		const paymentValidation = getPaymentValidation();
 		if (!paymentValidation.isValid) {
 			if (paymentValidation.isOverpaid) {
-				setSnackbarMessage(`Payment exceeds bill amount by ₹${Math.abs(paymentValidation.remaining).toFixed(2)}. Please adjust the payment amounts.`);
+				setSnackbarMessage(`Payment exceeds bill amount by ${formatAmount(Math.abs(paymentValidation.remaining))}. Please adjust the payment amounts.`);
 			} else if (paymentValidation.isUnderpaid) {
-				setSnackbarMessage(`Payment incomplete. Remaining amount: ₹${paymentValidation.remaining.toFixed(2)}`);
+				setSnackbarMessage(`Payment incomplete. Remaining amount: ${formatAmount(paymentValidation.remaining)}`);
 			}
 			setSnackbarOpen(true);
 			return;
@@ -1987,7 +1995,7 @@ export default function POS() {
 		
 		// If membership balance is insufficient, show error
 		if (membershipPayableAmount > 0 && activeClientMembership && activeClientMembership.currentBalance < membershipPayableAmount) {
-			setSnackbarMessage(`Insufficient membership balance. Required: ₹${membershipPayableAmount.toLocaleString()}, Available: ₹${activeClientMembership.currentBalance.toLocaleString()}`);
+			setSnackbarMessage(`Insufficient membership balance. Required: ${formatAmount(membershipPayableAmount)}, Available: ${formatAmount(activeClientMembership.currentBalance)}`);
 			setSnackbarOpen(true);
 			return;
 		}
@@ -2294,9 +2302,9 @@ export default function POS() {
 				primaryPaymentMethod = walkInPaymentMethod;
 			}
 
-			// Create single multi-expert order
-			const orderResult = await createWalkInOrderMutation.mutateAsync({
-				order_id: uuidv4(),
+			// Create or update order based on edit mode
+			const orderData: CreateOrderData = {
+				order_id: isEditMode ? editingOrderId! : uuidv4(),
 				client_id: clientIdToUse || '',
 				client_name: clientNameToUse,
 				stylist_id: expertsToProcess[0]?.id || '', // Primary expert
@@ -2312,13 +2320,17 @@ export default function POS() {
 				tax: tax, // Customer-facing tax
 				total: totalAmount, // Customer-facing total
 				total_amount: totalAmount,
-				status: 'completed',
+				status: 'completed' as 'completed',
 				order_date: orderDate ? orderDate.toISOString() : new Date().toISOString(),
 				is_walk_in: true,
 				is_salon_consumption: false,
 				pending_amount: 0,
 				payments: paymentsArray
-			});
+			};
+
+			const orderResult = isEditMode 
+				? await updateOrderMutation.mutateAsync({ orderId: editingOrderId!, orderData })
+				: await createWalkInOrderMutation.mutateAsync(orderData);
 
 			orderResults.push(orderResult);
 			
@@ -2407,8 +2419,9 @@ export default function POS() {
 				primaryPaymentMethod = walkInPaymentMethod;
 			}
 
-			const orderResult = await createWalkInOrderMutation.mutateAsync({
-				order_id: uuidv4(),
+			// Create or update order based on edit mode
+			const orderData: CreateOrderData = {
+				order_id: isEditMode ? editingOrderId! : uuidv4(),
 				client_id: clientIdToUse || '',
 				client_name: clientNameToUse,
 				stylist_id: expert?.id || '',
@@ -2424,13 +2437,17 @@ export default function POS() {
 				tax: tax,
 				total: totalAmount,
 				total_amount: totalAmount,
-				status: 'completed',
+				status: 'completed' as 'completed',
 				order_date: orderDate ? orderDate.toISOString() : new Date().toISOString(),
 				is_walk_in: true,
 				is_salon_consumption: false,
 				pending_amount: 0,
 				payments: paymentsArray
-			});
+			};
+
+			const orderResult = isEditMode 
+				? await updateOrderMutation.mutateAsync({ orderId: editingOrderId!, orderData })
+				: await createWalkInOrderMutation.mutateAsync(orderData);
 
 			orderResults.push(orderResult);
 		}
@@ -2467,7 +2484,7 @@ export default function POS() {
 				// Update the appointment status
 				await updateAppointment({ 
 					id: currentAppointmentId, 
-					status: 'completed', 
+					status: 'completed' as 'completed', 
 					paid: true, 
 					checked_in: false // Auto check-out when completing order
 					// IMPORTANT: Don't pass clientDetails here to preserve stylist associations
@@ -2479,9 +2496,9 @@ export default function POS() {
 			}
 		}
 
-					const successMessage = isMultiExpert ? 
-			`Multi-expert order created successfully for ${numberOfExperts} experts!` : 
-			"Order created successfully!";
+					const successMessage = isEditMode 
+						? (isMultiExpert ? `Multi-expert order updated successfully for ${numberOfExperts} experts!` : "Order updated successfully!")
+						: (isMultiExpert ? `Multi-expert order created successfully for ${numberOfExperts} experts!` : "Order created successfully!");
 		setSnackbarMessage(successMessage);
 		setSnackbarOpen(true);
 		
@@ -2547,7 +2564,7 @@ export default function POS() {
 					console.error('Membership balance update error:', error);
 				} else {
 					setActiveClientMembership({ ...activeClientMembership, currentBalance: newBalance });
-					toast.success(`Membership balance updated. Deducted: ₹${membershipPayableAmount.toLocaleString()}`);
+					toast.success(`Membership balance updated. Deducted: ${formatAmount(membershipPayableAmount)}`);
 				}
 			}
 
@@ -2653,6 +2670,10 @@ export default function POS() {
 		setOrderDate(new Date());
 		// Reset service-specific membership payment tracking
 		setServicesMembershipPayment({});
+		
+		// Reset edit mode
+		setIsEditMode(false);
+		setEditingOrderId(null);
 
 		// Clear persisted state from localStorage
 		try {
@@ -2866,7 +2887,7 @@ export default function POS() {
 					total_amount: orderTotal, // Add for consistency
 					type: 'salon_consumption',
 					is_salon_consumption: true,
-					status: 'completed',
+					status: 'completed' as 'completed',
 					payment_method: 'internal',
 					tenant_id: 'default', // Add tenant_id to satisfy not-null constraint
 					user_id: currentUserId, // Add user_id to satisfy foreign key constraint
@@ -3112,7 +3133,7 @@ export default function POS() {
 				notes: appointment.notes || "",
 				gst_amount: gstAmount, 
 				total_amount: totalAmount,
-				status: 'completed', 
+				status: 'completed' as 'completed', 
 				order_date: orderDate ? orderDate.toISOString() : new Date().toISOString(),
 				is_walk_in: false,
 				appointment_id: appointmentId,  // Include appointment_id
@@ -3296,7 +3317,7 @@ export default function POS() {
 										<Box>
 											<Typography variant="body2">{option.name}</Typography>
 											<Typography variant="caption" color="text.secondary">
-												₹{priceToDisplay.toFixed(2)} ({priceSource}) • {option.stock_quantity !== undefined ? 
+												{formatAmount(priceToDisplay)} ({priceSource}) • {option.stock_quantity !== undefined ? 
 													`${option.stock_quantity} in stock` : 'Stock not available'}
 											</Typography>
 										</Box>
@@ -3313,7 +3334,7 @@ export default function POS() {
 										const purchaseCostForToast = getPurchaseCostForProduct(newProduct.id, newProduct.name, newProduct.price);
 										const actualPurchaseCostFromMasterForToast = productMasterCosts[newProduct.id] || productMasterCostsByName[newProduct.name.toLowerCase().trim()];
                 						const priceSourceForToast = actualPurchaseCostFromMasterForToast !== undefined ? 'Purchase Cost (Ex.GST)' : `MRP Ex.GST (Fallback)`;
-										toast.success(`Added ${newProduct.name} for salon use at ₹${purchaseCostForToast.toFixed(2)} (${priceSourceForToast})`);
+										toast.success(`Added ${newProduct.name} for salon use at ${formatAmount(purchaseCostForToast)} (${priceSourceForToast})`);
 									}
 								}
 							}}
@@ -3755,7 +3776,7 @@ export default function POS() {
 														const gstPercentage = item.gst_percentage || serviceGstRate || 18;
 														const itemTotal = item.price * item.quantity;
 														const gstAmount = (itemTotal * gstPercentage) / (100 + gstPercentage);
-														toast.success(`Membership payment applied! GST discount of ₹${gstAmount.toFixed(2)} automatically applied.`);
+														toast.success(`Membership payment applied! GST discount of ${formatAmount(gstAmount)} automatically applied.`);
 													} else {
 														toast.info('Membership payment removed. Regular pricing with GST will apply.');
 													}
@@ -3804,7 +3825,7 @@ export default function POS() {
 										return !isPremiumService && (
 											<Chip
 												icon={<CheckIcon fontSize="small" />}
-												label={`Balance: ₹${activeClientMembership.currentBalance.toLocaleString()}`}
+												label={`Balance: ${formatAmount(activeClientMembership.currentBalance)}`}
 												size="small"
 												color="primary"
 												variant="outlined"
@@ -3861,25 +3882,7 @@ export default function POS() {
 					</Box>
 				)}
 				
-				{/* Manual date selection */}
-				<Box sx={{ mb: 2, mt: 2 }}>
-					<Typography variant="body2" fontWeight="500" gutterBottom>Order Date:</Typography>
-					<LocalizationProvider dateAdapter={AdapterDateFns}>
-						<DatePicker
-							value={orderDate}
-							onChange={(newDate) => setOrderDate(newDate)}
-							slotProps={{
-								textField: {
-									fullWidth: true,
-									variant: "outlined",
-									size: "small",
-									helperText: "Manually set order date",
-									sx: { mb: 1, '& .MuiOutlinedInput-root': { borderRadius: '8px' } }
-								}
-							}}
-						/>
-					</LocalizationProvider>
-				</Box>
+				{/* Manual date selection moved to top header - removed here */}
 
 				{/* GST Section */}
 				<Box sx={{ mb: 1, display: 'flex', justifyContent: 'space-between' }}>
@@ -4197,8 +4200,33 @@ export default function POS() {
 	// ====================================================
 	return (
 		<Box sx={{ flexGrow: 1, width: '100%', maxWidth: 1400, mx: 'auto', py: 2 }}>
+			{/* Date Selection at the top */}
+			<Box sx={{ mb: 3, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+				<Typography variant="h5" component="h1" sx={{ fontWeight: 'bold' }}>
+					Point of Sale
+				</Typography>
+				<Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+					<LocalizationProvider dateAdapter={AdapterDateFns}>
+						<DatePicker
+							label="Order Date"
+							value={orderDate}
+							onChange={(newDate) => setOrderDate(newDate)}
+							slotProps={{ textField: { size: 'small' } }}
+						/>
+					</LocalizationProvider>
+					<IconButton
+						color="primary"
+						onClick={() => setHistoryDrawerOpen(true)}
+						size="small"
+						title="View Client History"
+					>
+						<HistoryIcon />
+					</IconButton>
+				</Box>
+			</Box>
+			
 			{/* Tabs for Walk-in Order and Salon Purchase */}
-			<Box sx={{ mb: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+			<Box sx={{ mb: 2 }}>
 				<Tabs
 					value={tabValue}
 					onChange={(_, newValue) => setTabValue(newValue)}
@@ -4223,15 +4251,6 @@ export default function POS() {
 						} 
 					/>
 				</Tabs>
-				<IconButton
-					color="primary"
-					onClick={() => setHistoryDrawerOpen(true)}
-					size="small"
-					sx={{ ml: 1 }}
-					title="View Client History"
-				>
-					<HistoryIcon />
-				</IconButton>
 			</Box>
 
 			{/* Tab Panels */}
@@ -4346,6 +4365,7 @@ export default function POS() {
 										}}
 										required
 										error={customerName.trim() === ""}
+										helperText={customerName.trim() === "" ? "Customer name is required" : (!selectedClient && customerName.trim() !== "" ? "New client will be created" : "")}
 										size="small"
 									/>
 								</Grid>
@@ -4729,7 +4749,7 @@ export default function POS() {
 								disabled={processing || !isOrderValid()}
 								startIcon={processing ? <CircularProgress size={20} /> : <CheckIcon />}
 							>
-								{processing ? 'Processing...' : 'Complete Order'}
+								{processing ? 'Processing...' : (isEditMode ? 'Update Order' : 'Complete Order')}
 							</Button>
 						</Paper>
 					</Grid>

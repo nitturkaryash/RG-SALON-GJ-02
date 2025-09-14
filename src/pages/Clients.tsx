@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import {
   Box,
   Typography,
@@ -52,6 +52,7 @@ import { toast } from 'react-hot-toast'
 import { isValidPhoneNumber, isValidEmail } from '../utils/validation'
 import ScrollIndicator from '../components/ScrollIndicator'
 import { useEffect } from 'react'
+import { supabase } from '../utils/supabase/supabaseClient'
 
 // Custom debounce hook
 function useDebounce<T>(value: T, delay: number): T {
@@ -114,6 +115,150 @@ export default function Clients() {
     phone: '',
     email: ''
   })
+
+  // Real-time duplicate checking state
+  const [duplicateChecking, setDuplicateChecking] = useState({
+    name: false,
+    phone: false,
+    email: false
+  })
+  const [duplicateErrors, setDuplicateErrors] = useState({
+    name: '',
+    phone: '',
+    email: ''
+  })
+
+  // Check for duplicate name
+  const checkDuplicateName = useCallback(async (name: string) => {
+    if (!name.trim()) return
+    
+    setDuplicateChecking(prev => ({ ...prev, name: true }))
+    try {
+      const normalizedName = name.trim().toLowerCase()
+      const { data } = await supabase
+        .from('clients')
+        .select('id, full_name')
+        .ilike('full_name', normalizedName)
+        .limit(1)
+
+      if (data && data.length > 0) {
+        // If editing, exclude current client from duplicate check
+        if (!selectedClient || data[0].id !== selectedClient.id) {
+          setDuplicateErrors(prev => ({ 
+            ...prev, 
+            name: `Client with name "${data[0].full_name}" already exists` 
+          }))
+        } else {
+          setDuplicateErrors(prev => ({ ...prev, name: '' }))
+        }
+      } else {
+        setDuplicateErrors(prev => ({ ...prev, name: '' }))
+      }
+    } catch (error) {
+      console.error('Error checking duplicate name:', error)
+    } finally {
+      setDuplicateChecking(prev => ({ ...prev, name: false }))
+    }
+  }, [selectedClient])
+
+  // Check for duplicate phone
+  const checkDuplicatePhone = useCallback(async (phone: string) => {
+    if (!phone.trim()) return
+    
+    setDuplicateChecking(prev => ({ ...prev, phone: true }))
+    try {
+      const { data } = await supabase
+        .from('clients')
+        .select('id, full_name, phone')
+        .eq('phone', phone.trim())
+        .limit(1)
+
+      if (data && data.length > 0) {
+        // If editing, exclude current client from duplicate check
+        if (!selectedClient || data[0].id !== selectedClient.id) {
+          setDuplicateErrors(prev => ({ 
+            ...prev, 
+            phone: `Phone number is already registered to "${data[0].full_name}"` 
+          }))
+        } else {
+          setDuplicateErrors(prev => ({ ...prev, phone: '' }))
+        }
+      } else {
+        setDuplicateErrors(prev => ({ ...prev, phone: '' }))
+      }
+    } catch (error) {
+      console.error('Error checking duplicate phone:', error)
+    } finally {
+      setDuplicateChecking(prev => ({ ...prev, phone: false }))
+    }
+  }, [selectedClient])
+
+  // Check for duplicate email
+  const checkDuplicateEmail = useCallback(async (email: string) => {
+    if (!email.trim()) return
+    
+    setDuplicateChecking(prev => ({ ...prev, email: true }))
+    try {
+      const normalizedEmail = email.trim().toLowerCase()
+      const { data } = await supabase
+        .from('clients')
+        .select('id, full_name, email')
+        .ilike('email', normalizedEmail)
+        .limit(1)
+
+      if (data && data.length > 0) {
+        // If editing, exclude current client from duplicate check
+        if (!selectedClient || data[0].id !== selectedClient.id) {
+          setDuplicateErrors(prev => ({ 
+            ...prev, 
+            email: `Email is already registered to "${data[0].full_name}"` 
+          }))
+        } else {
+          setDuplicateErrors(prev => ({ ...prev, email: '' }))
+        }
+      } else {
+        setDuplicateErrors(prev => ({ ...prev, email: '' }))
+      }
+    } catch (error) {
+      console.error('Error checking duplicate email:', error)
+    } finally {
+      setDuplicateChecking(prev => ({ ...prev, email: false }))
+    }
+  }, [selectedClient])
+
+  // Debounced duplicate checking
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (formData.full_name) {
+        checkDuplicateName(formData.full_name)
+      } else {
+        setDuplicateErrors(prev => ({ ...prev, name: '' }))
+      }
+    }, 500)
+    return () => clearTimeout(timer)
+  }, [formData.full_name, checkDuplicateName])
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (formData.phone) {
+        checkDuplicatePhone(formData.phone)
+      } else {
+        setDuplicateErrors(prev => ({ ...prev, phone: '' }))
+      }
+    }, 500)
+    return () => clearTimeout(timer)
+  }, [formData.phone, checkDuplicatePhone])
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (formData.email) {
+        checkDuplicateEmail(formData.email)
+      } else {
+        setDuplicateErrors(prev => ({ ...prev, email: '' }))
+      }
+    }, 500)
+    return () => clearTimeout(timer)
+  }, [formData.email, checkDuplicateEmail])
   
   // Handle form input changes
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -145,6 +290,9 @@ export default function Clients() {
     if (!formData.full_name.trim()) {
       errors.full_name = 'Full name is required'
       isValid = false
+    } else if (duplicateErrors.name) {
+      errors.full_name = duplicateErrors.name
+      isValid = false
     }
 
     // Validate phone
@@ -154,11 +302,17 @@ export default function Clients() {
     } else if (!isValidPhoneNumber(formData.phone)) {
       errors.phone = 'Please enter a valid phone number'
       isValid = false
+    } else if (duplicateErrors.phone) {
+      errors.phone = duplicateErrors.phone
+      isValid = false
     }
 
     // Validate email if provided
     if (formData.email && !isValidEmail(formData.email)) {
       errors.email = 'Please enter a valid email address'
+      isValid = false
+    } else if (duplicateErrors.email) {
+      errors.email = duplicateErrors.email
       isValid = false
     }
 
@@ -700,8 +854,15 @@ export default function Clients() {
                 onChange={handleInputChange}
                 fullWidth
                 required
-                error={!!formErrors.full_name}
-                helperText={formErrors.full_name}
+                error={!!formErrors.full_name || !!duplicateErrors.name}
+                helperText={formErrors.full_name || duplicateErrors.name || (duplicateChecking.name ? 'Checking for duplicates...' : '')}
+                InputProps={{
+                  endAdornment: duplicateChecking.name ? (
+                    <InputAdornment position="end">
+                      <CircularProgress size={20} />
+                    </InputAdornment>
+                  ) : null,
+                }}
               />
             </Grid>
             <Grid item xs={12} sm={6}>
@@ -712,8 +873,15 @@ export default function Clients() {
                 onChange={handleInputChange}
                 fullWidth
                 required
-                error={!!formErrors.phone}
-                helperText={formErrors.phone}
+                error={!!formErrors.phone || !!duplicateErrors.phone}
+                helperText={formErrors.phone || duplicateErrors.phone || (duplicateChecking.phone ? 'Checking for duplicates...' : '')}
+                InputProps={{
+                  endAdornment: duplicateChecking.phone ? (
+                    <InputAdornment position="end">
+                      <CircularProgress size={20} />
+                    </InputAdornment>
+                  ) : null,
+                }}
               />
             </Grid>
             <Grid item xs={12} sm={6}>
@@ -724,8 +892,15 @@ export default function Clients() {
                 value={formData.email}
                 onChange={handleInputChange}
                 fullWidth
-                error={!!formErrors.email}
-                helperText={formErrors.email}
+                error={!!formErrors.email || !!duplicateErrors.email}
+                helperText={formErrors.email || duplicateErrors.email || (duplicateChecking.email ? 'Checking for duplicates...' : '')}
+                InputProps={{
+                  endAdornment: duplicateChecking.email ? (
+                    <InputAdornment position="end">
+                      <CircularProgress size={20} />
+                    </InputAdornment>
+                  ) : null,
+                }}
               />
             </Grid>
             <Grid item xs={12} sm={6}>
@@ -795,8 +970,15 @@ export default function Clients() {
                 onChange={handleInputChange}
                 fullWidth
                 required
-                error={!!formErrors.full_name}
-                helperText={formErrors.full_name}
+                error={!!formErrors.full_name || !!duplicateErrors.name}
+                helperText={formErrors.full_name || duplicateErrors.name || (duplicateChecking.name ? 'Checking for duplicates...' : '')}
+                InputProps={{
+                  endAdornment: duplicateChecking.name ? (
+                    <InputAdornment position="end">
+                      <CircularProgress size={20} />
+                    </InputAdornment>
+                  ) : null,
+                }}
               />
             </Grid>
             <Grid item xs={12} sm={6}>
@@ -807,8 +989,15 @@ export default function Clients() {
                 onChange={handleInputChange}
                 fullWidth
                 required
-                error={!!formErrors.phone}
-                helperText={formErrors.phone}
+                error={!!formErrors.phone || !!duplicateErrors.phone}
+                helperText={formErrors.phone || duplicateErrors.phone || (duplicateChecking.phone ? 'Checking for duplicates...' : '')}
+                InputProps={{
+                  endAdornment: duplicateChecking.phone ? (
+                    <InputAdornment position="end">
+                      <CircularProgress size={20} />
+                    </InputAdornment>
+                  ) : null,
+                }}
               />
             </Grid>
             <Grid item xs={12} sm={6}>
@@ -819,8 +1008,15 @@ export default function Clients() {
                 value={formData.email}
                 onChange={handleInputChange}
                 fullWidth
-                error={!!formErrors.email}
-                helperText={formErrors.email}
+                error={!!formErrors.email || !!duplicateErrors.email}
+                helperText={formErrors.email || duplicateErrors.email || (duplicateChecking.email ? 'Checking for duplicates...' : '')}
+                InputProps={{
+                  endAdornment: duplicateChecking.email ? (
+                    <InputAdornment position="end">
+                      <CircularProgress size={20} />
+                    </InputAdornment>
+                  ) : null,
+                }}
               />
             </Grid>
             <Grid item xs={12} sm={6}>

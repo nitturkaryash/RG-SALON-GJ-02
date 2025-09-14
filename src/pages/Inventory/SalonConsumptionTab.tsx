@@ -20,82 +20,100 @@ const SalonConsumptionTab: React.FC<SalonConsumptionTabProps> = ({ dateFilter, a
     setIsLoading(true);
     setError(null);
     try {
-      const { data: orders, error: ordersError } = await supabase
+      // Fetch directly from pos_orders to get salon consumption data
+      const { data: rawOrdersData, error: ordersError } = await supabase
         .from('pos_orders')
-        .select('id, created_at, services, stylist_name, consumption_purpose')
-        .eq('type', 'salon_consumption')
+        .select('id, created_at, services, current_stock')
+        .eq('client_name', 'Salon Consumption')
         .order('created_at', { ascending: false });
 
-      if (ordersError) throw ordersError;
-      if (!orders) {
+      if (!rawOrdersData) {
         setData([]);
         return;
       }
 
-      const consumptionRows: any[] = [];
-      orders.forEach(order => {
+      console.log('[SalonConsumptionTab] Fetched raw orders data:', rawOrdersData);
+
+      // Fetch all products from product_master to get HSN codes
+      const { data: productsData, error: productsError } = await supabase
+        .from('product_master')
+        .select('id, name, hsn_code, units, "Purchase_Cost/Unit(Ex.GST)"');
+
+      if (productsError) {
+        console.error('Error fetching products:', productsError);
+      }
+
+      // Create a map of product ID to product details for quick lookup
+      const productMap: Record<string, any> = {};
+      if (productsData) {
+        productsData.forEach((product: any) => {
+          productMap[product.id] = product;
+        });
+      }
+
+      console.log('[SalonConsumptionTab] Product map created with', Object.keys(productMap).length, 'products');
+
+      // Process raw orders data to extract salon consumption items
+      const processedRows: any[] = [];
+      let serialNo = 1;
+
+      rawOrdersData.forEach((order: any) => {
         if (order.services && Array.isArray(order.services)) {
-          order.services.forEach((item: any) => {
-            console.log('[SalonConsumptionTab] Processing item from order.services:', JSON.stringify(item));
-            if (item.type === 'product') {
-              const resolvedProductName = item.product_name || item.service_name;
-              console.log(`[SalonConsumptionTab] Extracted product name: "${resolvedProductName}" from item fields: product_name=${item.product_name}, service_name=${item.service_name}`);
-              consumptionRows.push({
-                ...item,
-                id: `${order.id}-${item.product_id || item.service_id}`,
+          order.services.forEach((service: any) => {
+            if (service.type === 'product') {
+              const quantity = service.quantity || 1;
+              const unitPrice = service.price || 0;
+              const gstPercentage = service.gst_percentage || 18;
+              
+              // Look up product details from product_master using service_id or product_id
+              const productId = service.service_id || service.product_id;
+              const productDetails = productId ? productMap[productId] : null;
+              
+              // Get HSN code from product_master, fallback to service JSON
+              const hsnCode = productDetails?.hsn_code || service.hsn_code || '-';
+              const productType = productDetails?.units || 'TUB-TUBES';
+              const purchaseCost = productDetails?.["Purchase_Cost/Unit(Ex.GST)"] || unitPrice;
+              
+              processedRows.push({
+                id: order.id,
                 created_at: order.created_at,
-                Date: order.created_at,
-                'S.No': `SALON-${order.id.slice(0, 4)}`,
-                "Product Name": resolvedProductName,
-                HSN_Code: item.hsn_code,
-                "Product Type": item.units || '',
-                "Consumption Qty.": item.quantity,
-                purpose: order.consumption_purpose || '',
-                stylist_name: order.stylist_name,
-                Purchase_Cost_per_Unit_Ex_GST_Rs: item.price,
-                Purchase_GST_Percentage: item.gst_percentage
+                Date: new Date(order.created_at).toISOString().split('T')[0],
+                'S.No': `SALON-${serialNo.toString().padStart(2, '0')}`,
+                "Product Name": service.name || service.product_name || service.service_name,
+                HSN_Code: hsnCode,
+                'Product Type': productType,
+                "Consumption Qty.": quantity,
+                purpose: '',
+                stylist_name: '',
+                Purchase_Cost_per_Unit_Ex_GST_Rs: purchaseCost,
+                Purchase_GST_Percentage: gstPercentage,
+                transaction_taxable_value: quantity * purchaseCost,
+                transaction_cgst: (quantity * purchaseCost * gstPercentage) / 200,
+                transaction_sgst: (quantity * purchaseCost * gstPercentage) / 200,
+                transaction_igst: 0,
+                transaction_total_value: quantity * purchaseCost * (1 + gstPercentage / 100),
+                notes: '',
+                current_stock: order.current_stock || 0,
+                current_stock_taxable_value: 0,
+                current_stock_cgst: 0,
+                current_stock_sgst: 0,
+                current_stock_igst: 0,
+                current_stock_total_value: 0
               });
+              serialNo++;
             }
           });
         }
       });
 
-      // Sort by date descending (latest first)
-      consumptionRows.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-      
-      const processedRows = consumptionRows;
+      console.log('[SalonConsumptionTab] Processed rows sample:', processedRows[0] ? {
+        'HSN_Code': processedRows[0]['HSN_Code'],
+        'Product Name': processedRows[0]['Product Name'],
+        'S.No': processedRows[0]['S.No'],
+        'Product Type': processedRows[0]['Product Type']
+      } : 'No processed data');
 
-      // Fetch current stock from balance stock view's balance_qty column
-      const { data: stockData, error: stockError } = await supabase
-        .from(TABLES.BALANCE_STOCK)
-        .select('product_name, balance_qty');
-      if (stockError) throw stockError;
-      
-      // Build map of latest stock per product
-      const stockMap: Record<string, any> = {};
-      stockData?.forEach((stock: any) => {
-        const name = stock.product_name;
-        if (!stockMap[name]) {
-          stockMap[name] = stock;
-        }
-      });
-      console.log('SalonConsumptionTab: stockMap created:', stockMap);
-
-      // Merge stock info into rows
-      const processedRowsWithStock = processedRows.map(row => {
-        const productName = row['Product Name'];
-        const stock = stockMap[productName];
-        return {
-          ...row,
-          Remaining_Stock: stock?.balance_qty ?? 0,
-          Total_Remaining_Stock_Value_Rs: 0,
-          Remaining_Stock_CGST_Rs: 0,
-          Remaining_Stock_SGST_Rs: 0,
-          Remaining_Stock_IGST_Rs: 0
-        };
-      });
-
-      setData(processedRowsWithStock);
+      setData(processedRows);
     } catch (err: any) {
       console.error('Error loading salon consumption data:', err);
       setError(err.message || 'Failed to load salon consumption data.');

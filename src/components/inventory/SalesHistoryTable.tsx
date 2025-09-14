@@ -36,6 +36,7 @@ import {
   getStockLevelColor
 } from '../../utils/formatters';
 import DeleteButton from '../DeleteButton';
+import { formatOrderIdSimple } from '../../utils/orderIdFormatter';
 
 // Define SalesItem interface with all required fields
 interface SalesItem {
@@ -399,7 +400,7 @@ export default function SalesHistoryTable({
                           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                             <EventNoteIcon fontSize="small" color="action" />
                             <Typography variant="body2">
-                              {new Date(row.date).toLocaleDateString()}
+                              {formatDate(row.date)}
                             </Typography>
                           </Box>
                         </Tooltip>
@@ -555,7 +556,7 @@ export default function SalesHistoryTable({
                             textOverflow: 'ellipsis',
                             whiteSpace: 'nowrap'
                           }}>
-                            {row.order_id.substring(0, 8)}...
+                            {formatOrderIdSimple(row.order_id)}
                           </Typography>
                         </Tooltip>
                       </TableCell>

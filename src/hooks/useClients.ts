@@ -125,9 +125,72 @@ export function useClients(page: number = 1, pageSize: number = 50, searchQuery:
         anniversary_date: data.anniversary_date || null
       };
       
+      // Normalize the client name for duplicate checking
+      const normalizedName = newClient.full_name.trim().toLowerCase();
+      const normalizedPhone = newClient.phone?.trim() || '';
+      const normalizedEmail = newClient.email?.trim().toLowerCase() || '';
+
+      // Check for duplicate client name (case-insensitive)
+      const { data: nameCheck, error: nameError } = await supabase
+        .from('clients')
+        .select('id, full_name')
+        .ilike('full_name', normalizedName);
+
+      if (nameError) {
+        console.error('Error checking for existing client name:', nameError);
+        throw nameError;
+      }
+
+      if (nameCheck && nameCheck.length > 0) {
+        throw new Error(`Client with name "${nameCheck[0].full_name}" already exists. Please use a different name.`);
+      }
+
+      // Check for duplicate phone number (if provided)
+      if (normalizedPhone) {
+        const { data: phoneCheck, error: phoneError } = await supabase
+          .from('clients')
+          .select('id, full_name, phone')
+          .eq('phone', normalizedPhone);
+
+        if (phoneError) {
+          console.error('Error checking for existing phone number:', phoneError);
+          throw phoneError;
+        }
+
+        if (phoneCheck && phoneCheck.length > 0) {
+          throw new Error(`Phone number "${normalizedPhone}" is already registered to client "${phoneCheck[0].full_name}". Please use a different phone number.`);
+        }
+      }
+
+      // Check for duplicate email (if provided)
+      if (normalizedEmail) {
+        const { data: emailCheck, error: emailError } = await supabase
+          .from('clients')
+          .select('id, full_name, email')
+          .ilike('email', normalizedEmail);
+
+        if (emailError) {
+          console.error('Error checking for existing email:', emailError);
+          throw emailError;
+        }
+
+        if (emailCheck && emailCheck.length > 0) {
+          throw new Error(`Email "${normalizedEmail}" is already registered to client "${emailCheck[0].full_name}". Please use a different email address.`);
+        }
+      }
+      
+      // Create client with normalized data
+      const clientToInsert = {
+        ...newClient,
+        full_name: newClient.full_name.trim(), // Store with proper casing but trimmed
+        phone: normalizedPhone || null,
+        email: normalizedEmail || null,
+        notes: newClient.notes?.trim() || ''
+      };
+
       const { data: insertedClient, error } = await supabase
         .from('clients')
-        .insert([newClient])
+        .insert([clientToInsert])
         .select()
         .single();
       
@@ -382,6 +445,32 @@ export function useClients(page: number = 1, pageSize: number = 50, searchQuery:
           last_visit: appointmentDate
           // We'll omit appointment_count if the column doesn't exist yet
         };
+        
+        // Check for duplicate client name, phone, or email
+        const { data: existingClients, error: checkError } = await supabase
+          .from('clients')
+          .select('id, full_name, phone, email')
+          .or(`full_name.ilike.${newClient.full_name},phone.eq.${newClient.phone || 'null'},email.eq.${newClient.email || 'null'}`);
+
+        if (checkError) {
+          console.error('Error checking for existing clients:', checkError);
+          throw checkError;
+        }
+
+        if (existingClients && existingClients.length > 0) {
+          const existing = existingClients[0];
+          let errorMessage = '';
+          
+          if (existing.full_name.toLowerCase() === newClient.full_name.toLowerCase()) {
+            errorMessage = `Client with name "${existing.full_name}" already exists`;
+          } else if (existing.phone === newClient.phone && newClient.phone) {
+            errorMessage = `Client with phone number "${existing.phone}" already exists (${existing.full_name})`;
+          } else if (existing.email === newClient.email && newClient.email) {
+            errorMessage = `Client with email "${existing.email}" already exists (${existing.full_name})`;
+          }
+          
+          throw new Error(errorMessage);
+        }
         
         console.log('Attempting to insert new client object:', JSON.stringify(newClient)); // Log before insert
 

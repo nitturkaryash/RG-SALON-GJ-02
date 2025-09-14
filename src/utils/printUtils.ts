@@ -25,9 +25,10 @@ const formatOrderId = (order: any) => {
   
   // Create a simple numeric ID for customers
   const timestamp = new Date(order.created_at || Date.now());
-  const year = timestamp.getFullYear().toString().slice(-2);
-  const month = (timestamp.getMonth() + 1).toString().padStart(2, '0');
-  const day = timestamp.getDate().toString().padStart(2, '0');
+  const year = timestamp.getFullYear();
+  
+  // Format year as 2526 for 2025-2026 period
+  const yearFormat = year >= 2025 ? '2526' : `${year.toString().slice(-2)}${Math.floor(year / 100)}`;
   
   // Create a sequential number from the order ID
   const sequentialId = Math.abs(order.id.split('').reduce((a: number, b: string) => {
@@ -38,8 +39,8 @@ const formatOrderId = (order: any) => {
   const paddedId = sequentialId.toString().padStart(4, '0');
   
   return isSalonConsumption ? 
-    `SALON-${year}${month}${day}-${paddedId}` : 
-    `${paddedId}`;
+    `SC${paddedId}/${yearFormat}` : 
+    `RNG${paddedId}/${yearFormat}`;
 };
 
 // Helper to format payment method labels
@@ -392,6 +393,7 @@ export const printBill = (bill: any) => {
           <thead>
             <tr>
               <th>Service/Product</th>
+              <th>HSN</th>
               <th>Quantity</th>
               <th>Rate</th>
               <th>Amount</th>
@@ -435,9 +437,11 @@ export const printBill = (bill: any) => {
                 });
 
                 return Object.values(serviceAggregation).map((aggregatedService) => {
+                  const hsn = '999721';
                   return `
                     <tr>
                       <td>${aggregatedService.service_name}</td>
+                      <td>${hsn}</td>
                       <td>${aggregatedService.total_quantity}</td>
                       <td>₹${aggregatedService.unit_price.toFixed(2)}</td>
                       <td>₹${aggregatedService.total_price.toFixed(2)}</td>
@@ -451,10 +455,12 @@ export const printBill = (bill: any) => {
                   const quantity = item.quantity || 1;
                   const price = item.price || 0;
                   const itemTotal = price * quantity;
+                  const hsn = (item.type === 'product' ? (item.hsn_code || item.product_hsn || item.hsn || '') : '999721');
                   
                   return `
                     <tr>
                       <td>${itemName}</td>
+                      <td>${hsn}</td>
                       <td>${quantity}</td>
                       <td>₹${price.toFixed(2)}</td>
                       <td>₹${itemTotal.toFixed(2)}</td>

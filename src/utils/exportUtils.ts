@@ -409,8 +409,15 @@ const generateDisplayOrderId = (
   const formattedNumber = String(orderNumber).padStart(4, '0');
   console.log('📋 Formatted number for', normalizedOrderToFormat.id?.substring(0,8), ':', formattedNumber);
   
+  // Get the year from the order date
+  const orderDate = new Date(normalizedOrderToFormat.created_at || '');
+  const year = orderDate.getFullYear();
+  
+  // Format year as 2526 for 2025-2026 period
+  const yearFormat = year >= 2025 ? '2526' : `${year.toString().slice(-2)}${Math.floor(year / 100)}`;
+  
   // Return the formatted ID based on order type
-  const finalId = isSalonOrder ? `salon-${formattedNumber}` : `sales-${formattedNumber}`;
+  const finalId = isSalonOrder ? `SC${formattedNumber}/${yearFormat}` : `RNG${formattedNumber}/${yearFormat}`;
   console.log('🎯 Final generated ID for', normalizedOrderToFormat.id?.substring(0,8), ':', finalId);
   return finalId;
 };

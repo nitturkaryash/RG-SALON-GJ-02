@@ -68,6 +68,7 @@ import {
 } from '@mui/icons-material'
 import { useOrders } from '../hooks/useOrders'
 import { formatCurrency } from '../utils/format'
+import { formatAmount, roundForDisplay } from '../utils/formatAmount'
 import { AccessibleDialog } from '../components/AccessibleDialog'
 import { exportToCSV, exportToPDF, formatOrdersForExport, orderExportHeaders } from '../utils/exportUtils'
 import { printBill } from '../utils/printUtils'
@@ -2082,8 +2083,15 @@ export default function Orders() {
     // Format with leading zeros to ensure 4 digits
     const formattedNumber = String(orderNumber).padStart(4, '0');
     
+    // Get the year from the order date
+    const orderDate = new Date(order.created_at || '');
+    const year = orderDate.getFullYear();
+    
+    // Format year as 2526 for 2025-2026 period
+    const yearFormat = year >= 2025 ? '2526' : `${year.toString().slice(-2)}${Math.floor(year / 100)}`;
+    
     // Return the formatted ID based on order type
-    return isSalonOrder ? `salon-${formattedNumber}` : `sales-${formattedNumber}`;
+    return isSalonOrder ? `SC${formattedNumber}/${yearFormat}` : `RNG${formattedNumber}/${yearFormat}`;
   };
 
   // Add this function before the return statement
@@ -2102,7 +2110,7 @@ export default function Orders() {
               <Box key={index} sx={{ mb: 0.5 }}>
                 <Chip
                   size="small"
-                  label={`${PAYMENT_METHOD_LABELS[paymentMethod as PaymentMethod] || paymentMethod || 'Unknown'}: ${formatCurrency(amount)}`}
+                  label={`${PAYMENT_METHOD_LABELS[paymentMethod as PaymentMethod] || paymentMethod || 'Unknown'}: ${formatAmount(amount)}`}
                   sx={{ mr: 0.5 }}
                 />
               </Box>
@@ -2112,7 +2120,7 @@ export default function Orders() {
             <Box sx={{ mt: 0.5 }}>
               <Chip
                 size="small"
-                label={`Pending: ${formatCurrency(order.pending_amount || 0)}`}
+                label={`Pending: ${formatAmount(order.pending_amount || 0)}`}
                 color="warning"
                 variant="outlined"
               />
@@ -2130,7 +2138,7 @@ export default function Orders() {
       <Box>
         <Chip
           size="small"
-          label={`${paymentMethod}: ${formatCurrency(totalAmount)}`}
+          label={`${paymentMethod}: ${formatAmount(totalAmount)}`}
           color="primary"
           variant="outlined"
         />
@@ -2138,7 +2146,7 @@ export default function Orders() {
            <Box sx={{ mt: 0.5 }}>
              <Chip
                size="small"
-               label={`Pending: ${formatCurrency(order.pending_amount || 0)}`}
+               label={`Pending: ${formatAmount(order.pending_amount || 0)}`}
                color="warning"
                variant="outlined"
              />
@@ -2392,7 +2400,7 @@ export default function Orders() {
                   Total Revenue
                 </Typography>
                 <Typography variant="h4" sx={{ mt: 1, mb: 2 }}>
-                  {formatCurrency(orderStats.totalRevenue)}
+                  {formatAmount(orderStats.totalRevenue)}
                 </Typography>
                 <LinearProgress 
                   variant="determinate" 
@@ -2723,18 +2731,9 @@ export default function Orders() {
                       </TableCell>
                       <TableCell>
                         {order.created_at ? (
-                          <Box>
-                            <Typography variant="body2" fontWeight="medium">
-                              {new Date(order.created_at).toLocaleDateString()}
-                            </Typography>
-                            <Typography variant="caption" color="text.secondary">
-                              {new Date(order.created_at).toLocaleTimeString('en-US', {
-                                hour: '2-digit',
-                                minute: '2-digit',
-                                hour12: true
-                              })}
-                            </Typography>
-                          </Box>
+                          <Typography variant="body2" fontWeight="medium">
+                            {new Date(order.created_at).toLocaleDateString()}
+                          </Typography>
                         ) : (
                           'Unknown date'
                         )}
@@ -2940,7 +2939,7 @@ export default function Orders() {
                               fontWeight="medium" 
                               color={isSalonOrder ? '#FF6B00' : 'text.primary'}
                             >
-                              ₹{Math.round(displayTotal)}
+                              {formatAmount(displayTotal)}
                             </Typography>
                           );
                         })()}
@@ -3205,16 +3204,16 @@ export default function Orders() {
                       <>
                   <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
                     <Typography variant="body2">Subtotal:</Typography>
-                          <Typography variant="body2">{formatCurrency(displaySubtotal)}</Typography>
+                          <Typography variant="body2">{formatAmount(displaySubtotal)}</Typography>
                   </Box>
                   <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
                     <Typography variant="body2">GST (18%):</Typography>
-                          <Typography variant="body2">{formatCurrency(displayTax)}</Typography>
+                          <Typography variant="body2">{formatAmount(displayTax)}</Typography>
                   </Box>
                   {selectedOrder.discount > 0 && (
                     <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
                       <Typography variant="body2">Discount:</Typography>
-                      <Typography variant="body2" color="error">-{formatCurrency(selectedOrder.discount)}</Typography>
+                      <Typography variant="body2" color="error">-{formatAmount(selectedOrder.discount)}</Typography>
                     </Box>
                   )}
                         
@@ -3229,7 +3228,7 @@ export default function Orders() {
                         
                         <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
                           <Typography variant="body2" fontWeight="bold">Total:</Typography>
-                          <Typography variant="body2" fontWeight="bold">{formatCurrency(displayTotal)}</Typography>
+                          <Typography variant="body2" fontWeight="bold">{formatAmount(displayTotal)}</Typography>
                         </Box>
                       </>
                     );
@@ -3281,13 +3280,13 @@ export default function Orders() {
                           <Box sx={{ mb: 1, display: 'flex', justifyContent: 'space-between', ml: 2 }}>
                             <Typography variant="body2" color="primary.main">Services via Membership (Ex. GST):</Typography>
                             <Typography variant="body2" fontWeight="500" color="primary.main">
-                              {formatCurrency(membershipAmount)}
+                              {formatAmount(membershipAmount)}
                             </Typography>
                           </Box>
                           <Box sx={{ mb: 1, display: 'flex', justifyContent: 'space-between', ml: 2 }}>
                             <Typography variant="body2">Products & Regular Services (Incl. GST):</Typography>
                             <Typography variant="body2" fontWeight="500">
-                              {formatCurrency(regularAmount)}
+                              {formatAmount(regularAmount)}
                             </Typography>
                           </Box>
                           <Box sx={{ mb: 2, ml: 2, p: 1, bgcolor: 'info.lighter', borderRadius: 1 }}>
@@ -3301,7 +3300,7 @@ export default function Orders() {
                           <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
                             <Typography variant="h6" fontWeight="bold">Total Amount (All Items):</Typography>
                             <Typography variant="h6" fontWeight="bold">
-                              {formatCurrency(totalOrderAmount + membershipAmount)}
+                              {formatAmount(totalOrderAmount + membershipAmount)}
                             </Typography>
                           </Box>
                           
@@ -3310,7 +3309,7 @@ export default function Orders() {
                             <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1, ml: 2 }}>
                               <Typography variant="body2" color="success.main">Less: Membership GST Discount:</Typography>
                               <Typography variant="body2" color="success.main" fontWeight="medium">
-                                -{formatCurrency(estimatedMembershipGSTDiscount)}
+                                -{formatAmount(estimatedMembershipGSTDiscount)}
                               </Typography>
                             </Box>
                           )}

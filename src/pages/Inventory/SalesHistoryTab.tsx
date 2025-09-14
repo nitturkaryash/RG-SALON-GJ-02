@@ -35,6 +35,7 @@ import { styled } from '@mui/material/styles';
 import * as XLSX from 'xlsx';
 import { toast } from 'react-hot-toast';
 import { useInventory } from '../../hooks/useInventory';
+import { formatOrderIdSimple } from '../../utils/orderIdFormatter';
 
 // Use the actual base table for mutations, view for reading
 const SALES_VIEW = 'sales_product_new';
@@ -138,7 +139,69 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
     endDate: new Date().toISOString().split('T')[0] // Today
   });
   const [isExporting, setIsExporting] = useState(false);
+  const [allOrdersForContext, setAllOrdersForContext] = useState<any[]>([]);
   const { deleteSale } = useInventory();
+  
+  // Function to check if an order is a salon consumption order
+  const isSalonConsumptionOrder = (order: any) => {
+    return order.is_salon_consumption === true || 
+           order.type === 'salon_consumption' ||
+           order.type === 'salon-consumption' ||
+           order.consumption_purpose ||
+           order.client_name === 'Salon Consumption';
+  };
+
+  // Function to format order ID consistently with Orders page
+  const formatOrderId = (order: any) => {
+    if (!order.id) return 'Unknown';
+    
+    // If order already has a formatted order_id, use it
+    if (order.order_id && (order.order_id.startsWith('RNG') || order.order_id.startsWith('SC'))) {
+      return order.order_id;
+    }
+    
+    // Check if this is a salon consumption order
+    const isSalonOrder = isSalonConsumptionOrder(order);
+    
+    if (!allOrdersForContext || allOrdersForContext.length === 0) {
+      return order.id.substring(0, 8); // Return shortened ID if no context
+    }
+    
+    // Sort orders by creation date to maintain consistent numbering
+    const sortedOrders = [...allOrdersForContext].sort((a, b) => {
+      const dateA = new Date(a.created_at || '').getTime();
+      const dateB = new Date(b.created_at || '').getTime();
+      return dateA - dateB;
+    });
+
+    // Find the index of the current order in the sorted list
+    const orderIndex = sortedOrders.findIndex(o => o.id === order.id);
+    
+    if (orderIndex === -1) {
+      return order.id.substring(0, 8);
+    }
+    
+    // Get all orders of the same type (salon or sales) that come before this one
+    const sameTypeOrders = sortedOrders
+      .slice(0, orderIndex + 1)
+      .filter(o => isSalonConsumptionOrder(o) === isSalonOrder);
+    
+    // Get the position of this order among orders of the same type
+    const orderNumber = sameTypeOrders.length;
+    
+    // Format with leading zeros to ensure 4 digits
+    const formattedNumber = String(orderNumber).padStart(4, '0');
+    
+    // Get the year from the order date
+    const orderDate = new Date(order.created_at || '');
+    const year = orderDate.getFullYear();
+    
+    // Format year as 2526 for 2025-2026 period
+    const yearFormat = year >= 2025 ? '2526' : `${year.toString().slice(-2)}${Math.floor(year / 100)}`;
+    
+    // Return the formatted ID based on order type
+    return isSalonOrder ? `SC${formattedNumber}/${yearFormat}` : `RNG${formattedNumber}/${yearFormat}`;
+  };
   
   // Compute remaining-stock tax breakdown on the client and apply sorting
   const tableData = useMemo(() => {
@@ -213,6 +276,18 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
       
       console.log('Fetching data from pos_orders and expanding services...');
       
+      // First, fetch all orders for context to generate consistent order IDs
+      const { data: allOrders, error: allOrdersError } = await supabase
+        .from('pos_orders')
+        .select('id, created_at, is_salon_consumption, consumption_purpose, type, client_name, order_id')
+        .order('created_at', { ascending: false });
+
+      if (allOrdersError) {
+        console.error('Error fetching all orders for context:', allOrdersError);
+      } else {
+        setAllOrdersForContext(allOrders || []);
+      }
+      
       const { data: ordersData, error } = await supabase
         .from('pos_orders')
         .select(`
@@ -229,11 +304,15 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
           total,
           payment_method,
           status,
-          serial_number
+          serial_number,
+          order_id,
+          is_salon_consumption,
+          consumption_purpose,
+          type
         `)
         .eq('type', 'sale')
-        .gte('created_at', dateRange.startDate)
-        .lte('created_at', dateRange.endDate)
+        .gte('created_at', `${dateRange.startDate}T00:00:00`)
+        .lte('created_at', `${dateRange.endDate}T23:59:59`)
         .order('created_at', { ascending: false });
 
       if (error) {
@@ -264,12 +343,47 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
         return order.services.map((service: any, index: number) => {
           const taxableValue = Number(service.subtotal) || (Number(service.price) * Number(service.quantity));
           
+          // Improved product type detection logic
+          let itemType: string = 'unknown';
+          
+          // First check if type is explicitly set
+          if (service.type) {
+            itemType = service.type;
+          } 
+          // Check if category is set 
+          else if (service.category) {
+            itemType = service.category;
+          }
+          // Check if it has product-like attributes
+          else if (service.product_id || service.product_name || (service.hsn_code && service.hsn_code.trim() !== '')) {
+            itemType = 'product';
+          }
+          // Check if it's a membership (service name contains "membership")
+          else if (service.service_name && service.service_name.toLowerCase().includes('membership')) {
+            itemType = 'membership';
+          }
+          // Default to service if none of the above
+          else {
+            itemType = 'service';
+          }
+          
+          // Debug logging for type detection
+          console.log(`🔍 SalesHistoryTab - Type detection for "${service.service_name || service.name}":`, {
+            original_type: service.type,
+            category: service.category,
+            has_product_id: !!service.product_id,
+            has_product_name: !!service.product_name,
+            has_hsn_code: !!(service.hsn_code && service.hsn_code.trim() !== ''),
+            hsn_code: service.hsn_code,
+            detected_type: itemType
+          });
+          
           return {
             id: order.id,
             order_item_pk: service.id || `${order.id}-${index}`,
             serial_no: order.serial_number || order.id,
             original_serial_no: order.serial_number,
-            order_id: order.id,
+            order_id: formatOrderId(order),
             order_item_id: service.service_id || service.id,
             date: order.date || order.created_at,
             product_name: service.service_name || service.name,
@@ -285,7 +399,7 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
             discount_percentage: Number(service.discount_percentage) || 0,
             tax: Number(service.tax_amount) || 0,
             hsn_code: service.hsn_code || '',
-            product_type: service.type || 'unknown',
+            product_type: itemType,
             mrp_incl_gst: Number(service.mrp_incl_gst) || 0,
             discounted_sales_rate_ex_gst: Number(service.unit_price) || 0,
             invoice_value: Number(service.total_amount) || Number(service.total) || 0,
@@ -345,6 +459,13 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
         group.combined_hsn_codes = [...new Set(hsnCodes)].join(', ');
         group.combined_product_types = [...new Set(productTypes)].join(', ');
         
+        // Debug logging for combined types
+        console.log(`🔍 SalesHistoryTab - Order ${group.order_id} combined types:`, {
+          individual_types: productTypes,
+          unique_types: [...new Set(productTypes)],
+          combined: group.combined_product_types
+        });
+        
         // Find most common GST percentage
         if (group.products.length > 0) {
           const gstRates = group.products.map(p => p.gst_percentage);
@@ -373,10 +494,10 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
     }
   };
 
-  // Load data on component mount
+  // Load data on component mount and when date range changes
   useEffect(() => {
     fetchSalesData();
-  }, []);
+  }, [dateRange.startDate, dateRange.endDate]);
 
   // Format date for display
   const formatDate = (dateString: string) => {
@@ -696,7 +817,7 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
                       <TableCell align="center">
                         <Tooltip title={row.order_id}>
                           <Typography variant="body2" sx={{ color: 'text.secondary', fontSize: '0.75rem', maxWidth: 80, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {row.order_id.substring(0, 8)}...
+                            {formatOrderIdSimple(row.order_id)}
                           </Typography>
                         </Tooltip>
                       </TableCell>

@@ -29,6 +29,7 @@ import {
   Tooltip,
   IconButton
 } from '@mui/material';
+import { formatAmount, roundForDisplay } from '../../utils/formatAmount';
 import { 
   DateRange as DateRangeIcon, 
   ShoppingCart as ShoppingCartIcon, 
@@ -360,15 +361,15 @@ const SalesTab: React.FC<SalesTabProps> = ({ sales, isLoading, error }) => {
             <Grid item xs={12} sm={4}>
               <Typography variant="h6">Total Sales Summary</Typography>
               <Typography>Total Quantity: {totals.totalQty.toFixed(2)}</Typography>
-              <Typography>Total Value: {formatCurrency(totals.totalValue)}</Typography>
+              <Typography>Total Value: {formatAmount(totals.totalValue)}</Typography>
             </Grid>
             <Grid item xs={12} sm={8}>
-              <Typography>Total Taxable Value: {formatCurrency(totals.totalTaxable)}</Typography>
-              <Typography>Total GST: {formatCurrency(totals.totalCGST + totals.totalSGST + totals.totalIGST)}</Typography>
+              <Typography>Total Taxable Value: {formatAmount(totals.totalTaxable)}</Typography>
+              <Typography>Total GST: {formatAmount(totals.totalCGST + totals.totalSGST + totals.totalIGST)}</Typography>
               <Typography variant="caption">
-                (CGST: {formatCurrency(totals.totalCGST)}, 
-                SGST: {formatCurrency(totals.totalSGST)}, 
-                IGST: {formatCurrency(totals.totalIGST)})
+                (CGST: {formatAmount(totals.totalCGST)}, 
+                SGST: {formatAmount(totals.totalSGST)}, 
+                IGST: {formatAmount(totals.totalIGST)})
               </Typography>
             </Grid>
           </Grid>
@@ -400,13 +401,13 @@ const SalesTab: React.FC<SalesTabProps> = ({ sales, isLoading, error }) => {
                   >
                     <TableCell>{invoiceId}</TableCell>
                     <TableCell align="right">{item.quantity || item.sales_qty || 0}</TableCell>
-                    <TableCell align="right">{formatCurrency(item.purchase_cost_per_unit_ex_gst || 0)}</TableCell>
+                    <TableCell align="right">{formatAmount(item.purchase_cost_per_unit_ex_gst || 0)}</TableCell>
                     <TableCell align="right">{(item.purchase_gst_percentage || 0).toFixed(2)}%</TableCell>
-                    <TableCell align="right">{formatCurrency(item.purchase_taxable_value || 0)}</TableCell>
-                    <TableCell align="right">{formatCurrency(item.purchase_igst || 0)}</TableCell>
-                    <TableCell align="right">{formatCurrency(item.purchase_cgst || 0)}</TableCell>
-                    <TableCell align="right">{formatCurrency(item.purchase_sgst || 0)}</TableCell>
-                    <TableCell align="right">{formatCurrency(item.total_purchase_cost || 0)}</TableCell>
+                    <TableCell align="right">{formatAmount(item.purchase_taxable_value || 0)}</TableCell>
+                    <TableCell align="right">{formatAmount(item.purchase_igst || 0)}</TableCell>
+                    <TableCell align="right">{formatAmount(item.purchase_cgst || 0)}</TableCell>
+                    <TableCell align="right">{formatAmount(item.purchase_sgst || 0)}</TableCell>
+                    <TableCell align="right">{formatAmount(item.total_purchase_cost || 0)}</TableCell>
                   </TableRow>
                 ));
               })}

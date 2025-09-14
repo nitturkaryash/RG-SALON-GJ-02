@@ -57,6 +57,7 @@ import { styled } from '@mui/material/styles';
 import { supabase, handleSupabaseError } from '../utils/supabase/supabaseClient';
 import { usePurchaseHistory } from '../hooks/usePurchaseHistory';
 import * as XLSX from 'xlsx';
+import { formatAmount, roundForDisplay } from '../utils/formatAmount';
 
 const StyledTableCell = styled(TableCell)(({ theme }) => ({
   fontWeight: 'bold',
@@ -252,6 +253,26 @@ export default function ProductMaster() {
     setError(null);
 
     try {
+      // Prevent duplicate product name / HSN
+      const { data: existing, error: checkError } = await supabase
+        .from('product_master')
+        .select('id, name, hsn_code')
+        .or(`name.ilike.${formData.name},hsn_code.eq.${formData.hsn_code || ''}`);
+      if (checkError) throw handleSupabaseError(checkError);
+      if (!isEditing && existing && existing.length > 0) {
+        const nameClash = existing.find(p => (p.name || '').toLowerCase() === (formData.name || '').toLowerCase());
+        if (nameClash) {
+          setSnackbar({ open: true, message: `A product named "${formData.name}" already exists`, severity: 'error' });
+          setIsLoading(false);
+          return;
+        }
+        const hsnClash = existing.find(p => (p.hsn_code || '') === (formData.hsn_code || ''));
+        if (hsnClash && formData.hsn_code) {
+          setSnackbar({ open: true, message: `HSN "${formData.hsn_code}" already exists for ${hsnClash.name}`, severity: 'error' });
+          setIsLoading(false);
+          return;
+        }
+      }
       // Get current authenticated user
       const { data: { user }, error: authError } = await supabase.auth.getUser();
       
@@ -579,26 +600,43 @@ export default function ProductMaster() {
       let result;
       
       if (isEditing && formData.id) {
-        // Update existing product
-        result = await supabase
-          .from('product_master')
-          .update(productData)
-          .eq('id', formData.id);
-          
-        if (result.error) throw handleSupabaseError(result.error);
+        // Update existing product via API
+        const response = await fetch('/api/products', {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            id: formData.id,
+            ...productData
+          })
+        });
+
+        const result = await response.json();
+        
+        if (!result.success) {
+          throw new Error(result.error || 'Failed to update product');
+        }
         
         setSnackbar({ open: true, message: 'Product updated successfully', severity: 'success' });
       } else {
-        // Add new product
-        result = await supabase
-          .from('product_master')
-          .insert({
+        // Add new product via API
+        const response = await fetch('/api/products', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
             ...productData,
-            created_at: new Date().toISOString(),
             stock_quantity: 0, // Initialize stock to 0 for new products
-          });
-          
-        if (result.error) throw handleSupabaseError(result.error);
+          })
+        });
+
+        const result = await response.json();
+        
+        if (!result.success) {
+          throw new Error(result.error || 'Failed to create product');
+        }
         
         setSnackbar({ open: true, message: 'Product added successfully', severity: 'success' });
       }
@@ -1187,8 +1225,8 @@ export default function ProductMaster() {
                       <TableCell>{product.category || '-'}</TableCell>
                       <TableCell>{product.hsn_code || '-'}</TableCell>
                       <TableCell align="right">{product.gst_percentage || 0}%</TableCell>
-                      <TableCell align="right">₹{product.mrp_excl_gst?.toFixed(2) || '0.00'}</TableCell>
-                      <TableCell align="right">₹{product.mrp_incl_gst?.toFixed(2) || '0.00'}</TableCell>
+                      <TableCell align="right">{formatAmount(product.mrp_excl_gst || 0)}</TableCell>
+                      <TableCell align="right">{formatAmount(product.mrp_incl_gst || 0)}</TableCell>
                       <TableCell align="right">{product.stock_quantity || 0}</TableCell>
                       <TableCell>{product.product_type || '-'}</TableCell>
                       <TableCell>
@@ -1380,7 +1418,7 @@ export default function ProductMaster() {
                                 Price (Ex GST)
                               </Typography>
                               <Typography variant="body2" sx={{ fontWeight: 'bold', color: 'primary.main' }}>
-                                ₹{product.mrp_excl_gst?.toFixed(2) || '0.00'}
+                                {formatAmount(product.mrp_excl_gst || 0)}
                               </Typography>
                             </Grid>
                             <Grid item xs={6}>
@@ -1388,7 +1426,7 @@ export default function ProductMaster() {
                                 MRP (Inc GST)
                               </Typography>
                               <Typography variant="body2" sx={{ fontWeight: 'bold', color: 'success.main' }}>
-                                ₹{product.mrp_incl_gst?.toFixed(2) || '0.00'}
+                                {formatAmount(product.mrp_incl_gst || 0)}
                               </Typography>
                             </Grid>
                             <Grid item xs={6}>
@@ -1704,7 +1742,7 @@ export default function ProductMaster() {
             <Table size="small">
               <TableHead>
                 <TableRow>
-                  <TableCell><strong>Date & Time</strong></TableCell>
+                  <TableCell><strong>Date</strong></TableCell>
                   <TableCell align="center"><strong>MRP (Incl. GST)</strong></TableCell>
                   <TableCell align="center"><strong>MRP (Excl. GST)</strong></TableCell>
                   <TableCell align="center"><strong>GST %</strong></TableCell>
@@ -1733,16 +1771,16 @@ export default function ProductMaster() {
                         <TableCell align="center">
                           <Box>
                             <Typography variant="body2" color="text.secondary">
-                              ₹{entry.old_mrp_incl_gst.toFixed(2)}
+                              {formatAmount(entry.old_mrp_incl_gst)}
                             </Typography>
                             <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
-                              ₹{entry.new_mrp_incl_gst.toFixed(2)}
+                              {formatAmount(entry.new_mrp_incl_gst)}
                             </Typography>
                             <Typography 
                               variant="caption" 
                               color={inclGstChange > 0 ? 'success.main' : inclGstChange < 0 ? 'error.main' : 'text.secondary'}
                             >
-                              {inclGstChange > 0 ? '+' : ''}₹{inclGstChange.toFixed(2)}
+                              {inclGstChange > 0 ? '+' : ''}{formatAmount(Math.abs(inclGstChange))}
                               {inclGstChange > 0 ? ' 📈' : inclGstChange < 0 ? ' 📉' : ' ➖'}
                             </Typography>
                           </Box>

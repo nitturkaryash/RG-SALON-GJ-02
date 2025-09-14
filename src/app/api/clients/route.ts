@@ -75,37 +75,81 @@ export async function POST(req: Request) {
     const clientId = uuidv4();
     const now = new Date().toISOString();
 
-    // Check if client already exists with same phone or email
-    if (phone || email) {
-      const { data: existingClients, error: checkError } = await supabase
+    // Normalize input data for duplicate checking
+    const normalizedName = full_name.trim().toLowerCase();
+    const normalizedPhone = phone?.trim() || '';
+    const normalizedEmail = email?.trim().toLowerCase() || '';
+
+    // Check for duplicate client name (case-insensitive)
+    const { data: nameCheck, error: nameError } = await supabase
+      .from('clients')
+      .select('id, full_name')
+      .ilike('full_name', normalizedName);
+
+    if (nameError) throw nameError;
+
+    if (nameCheck && nameCheck.length > 0) {
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: `Client with name "${nameCheck[0].full_name}" already exists. Please use a different name.`,
+          existing_client: nameCheck[0]
+        },
+        { status: 409 }
+      );
+    }
+
+    // Check for duplicate phone number (if provided)
+    if (normalizedPhone) {
+      const { data: phoneCheck, error: phoneError } = await supabase
         .from('clients')
-        .select('id, full_name, phone, email')
-        .or(`phone.eq.${phone || 'null'},email.eq.${email || 'null'}`);
+        .select('id, full_name, phone')
+        .eq('phone', normalizedPhone);
 
-      if (checkError) throw checkError;
+      if (phoneError) throw phoneError;
 
-      if (existingClients && existingClients.length > 0) {
-        const existing = existingClients[0];
+      if (phoneCheck && phoneCheck.length > 0) {
         return NextResponse.json(
           { 
             success: false, 
-            error: `Client already exists: ${existing.full_name}`,
-            existing_client: existing
+            error: `Phone number "${normalizedPhone}" is already registered to client "${phoneCheck[0].full_name}". Please use a different phone number.`,
+            existing_client: phoneCheck[0]
           },
           { status: 409 }
         );
       }
     }
 
-    // Create the client
+    // Check for duplicate email (if provided)
+    if (normalizedEmail) {
+      const { data: emailCheck, error: emailError } = await supabase
+        .from('clients')
+        .select('id, full_name, email')
+        .ilike('email', normalizedEmail);
+
+      if (emailError) throw emailError;
+
+      if (emailCheck && emailCheck.length > 0) {
+        return NextResponse.json(
+          { 
+            success: false, 
+            error: `Email "${normalizedEmail}" is already registered to client "${emailCheck[0].full_name}". Please use a different email address.`,
+            existing_client: emailCheck[0]
+          },
+          { status: 409 }
+        );
+      }
+    }
+
+    // Create the client with normalized data
     const { data: client, error: clientError } = await supabase
       .from('clients')
       .insert({
         id: clientId,
-        full_name,
-        phone,
-        email,
-        notes,
+        full_name: full_name.trim(), // Store with proper casing but trimmed
+        phone: normalizedPhone || null,
+        email: normalizedEmail || null,
+        notes: notes?.trim() || '',
         total_spent: 0,
         pending_payment: 0,
         created_at: now,

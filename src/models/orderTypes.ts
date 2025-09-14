@@ -30,15 +30,16 @@ export interface Service {
 export interface Order {
   id: string;
   order_id?: string;
+  invoice_number?: string;
+  date?: string;
+  created_at?: string;
   customer_name?: string;
   client_name?: string;
-  date?: string;
   order_date?: string;
   total_amount?: number;
   total?: number;
   payment_method?: PaymentMethod;
   staff_id?: string | null;
-  invoice_number?: string;
   status?: 'pending' | 'completed' | 'cancelled';
   // For salon consumption tracking
   is_salon_consumption?: boolean;
@@ -54,7 +55,6 @@ export interface Order {
     amount: number;
   };
   // Metadata
-  created_at?: string;
   updated_at?: string;
 }
 

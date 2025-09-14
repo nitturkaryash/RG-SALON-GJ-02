@@ -279,6 +279,54 @@ export async function DELETE(req: Request) {
 
     if (fetchError) throw fetchError;
 
+    // Update client's total spend and other financial records
+    if (existingOrder && existingOrder.client_name && !existingOrder.is_salon_consumption) {
+      try {
+        // 1. Get the client by name
+        const { data: clientData, error: clientError } = await supabase
+          .from('clients')
+          .select('id, total_spent, pending_payment, appointment_count')
+          .eq('full_name', existingOrder.client_name)
+          .single();
+
+        if (clientError) {
+          console.error('Error fetching client for financial update:', clientError.message);
+        }
+
+        if (clientData) {
+          const orderTotal = existingOrder.total || 0;
+          const paymentMethod = existingOrder.payment_method || 'cash';
+          
+          const clientUpdateData: any = {
+            updated_at: new Date().toISOString()
+          };
+          
+          if (paymentMethod === 'bnpl') {
+            clientUpdateData.pending_payment = Math.max(0, (clientData.pending_payment || 0) - orderTotal);
+          } else {
+            clientUpdateData.total_spent = Math.max(0, (clientData.total_spent || 0) - orderTotal);
+          }
+          
+          if (typeof clientData.appointment_count === 'number') {
+            clientUpdateData.appointment_count = Math.max(0, clientData.appointment_count - 1);
+          }
+          
+          const { error: updateClientError } = await supabase
+            .from('clients')
+            .update(clientUpdateData)
+            .eq('id', clientData.id);
+
+          if (updateClientError) {
+            console.error('Error updating client financial records:', updateClientError.message);
+          } else {
+            console.log(`Updated financial records for client ${existingOrder.client_name}`);
+          }
+        }
+      } catch (e) {
+        console.error('An unexpected error occurred while updating client financials:', e);
+      }
+    }
+
     // Delete order items first
     const { error: itemsDeleteError } = await supabase
       .from('pos_order_items')

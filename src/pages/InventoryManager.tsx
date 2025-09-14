@@ -114,6 +114,7 @@ interface SalonConsumptionItem {
   order_id: string;
   date: string;
   product_name: string;
+  product_type: string;
   consumption_qty: number;
   hsn_code: string | null;
   purchase_cost_per_unit_ex_gst: number;
@@ -232,7 +233,7 @@ export default function InventoryManager() {
   const [dialogMode, setDialogMode] = useState<'purchase' | 'inventory'>('purchase');
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(50);
-  const [activeTab, setActiveTab] = useState<'purchaseHistory' | 'salesHistory' | 'salonConsumption' | 'balanceStock'>('purchaseHistory');
+  const [activeTab, setActiveTab] = useState<'purchaseHistory' | 'salesHistory' | 'salonConsumption'>('purchaseHistory');
 
   // Add state for product types for the dialog's unit dropdown
   const [productTypesForDialog, setProductTypesForDialog] = useState<string[]>([]);
@@ -518,6 +519,10 @@ export default function InventoryManager() {
           
           // Normalize the column names to match our interface
           console.log('Raw data from salon_consumption_new:', data);
+          console.log('Sample raw item:', data[0]);
+          console.log('Available keys in raw data:', data[0] ? Object.keys(data[0]) : 'No data');
+          console.log('Product HSN Map:', productHsnMap);
+          
           const normalizedData = data.map((item, index) => {
             // Try to get HSN code from multiple sources with fallbacks
             const productName = item['Product Name'] || '';
@@ -527,12 +532,15 @@ export default function InventoryManager() {
             // Use HSN from record first, then from product master, then fallback to '-'
             const finalHsnCode = hsnFromRecord || hsnFromProductMaster || '-';
             
+            console.log(`Item ${index}: Product="${productName}", HSN from record="${hsnFromRecord}", HSN from master="${hsnFromProductMaster}", Final HSN="${finalHsnCode}"`);
+            
             return {
               id: item.order_id,
               requisition_voucher_no: item['Requisition Voucher No.'],
               order_id: item.order_id,
               date: item.Date, // Changed from Date to match interface
               product_name: productName,
+              product_type: item.product_type || '', // Add product_type field
               consumption_qty: Number(item['Consumption Qty.']),
               hsn_code: finalHsnCode, // Use the HSN code with fallbacks
               purchase_cost_per_unit_ex_gst: Number(item.Purchase_Cost_per_Unit_Ex_GST_Rs),
@@ -559,6 +567,7 @@ export default function InventoryManager() {
             order_id: item.order_id,
             date: item.Date, 
             product_name: item['Product Name'] || '',
+            product_type: item.product_type || '', // Add product_type field
             consumption_qty: Number(item['Consumption Qty.']),
             hsn_code: item.HSN_Code || item.hsn_code || '-', // Fallback without product lookup
             purchase_cost_per_unit_ex_gst: Number(item.Purchase_Cost_per_Unit_Ex_GST_Rs),
@@ -645,7 +654,7 @@ export default function InventoryManager() {
     fetchPurchasesData();
     fetchSalesHistory();
     fetchSalonConsumption();
-    fetchBalanceStock();
+    // fetchBalanceStock();
 
     const fetchDialogProductTypes = async () => {
       setIsLoadingProductTypesDialog(true);
@@ -673,7 +682,7 @@ export default function InventoryManager() {
       }
     };
     fetchDialogProductTypes();
-  }, [initializeDatabaseTables, fetchPurchasesData, fetchSalesHistory, fetchSalonConsumption, fetchBalanceStock, supabase, handleSupabaseError]);
+  }, [initializeDatabaseTables, fetchPurchasesData, fetchSalesHistory, fetchSalonConsumption, supabase, handleSupabaseError]);
 
   // Function to apply date filter to data
   const applyDateFilter = (data: any[]): any[] => {
@@ -787,7 +796,7 @@ export default function InventoryManager() {
           const sortedRegularPurchases = [...regularPurchases].sort((a, b) => {
             const dateA = new Date(a.date).getTime();
             const dateB = new Date(b.date).getTime();
-            return dateB - dateA; // Descending order (newest first)
+            return dateA - dateB; // Ascending order (oldest first)
           });
           
           const purchaseIndex = sortedRegularPurchases.findIndex(p => p.purchase_id === item.purchase_id);
@@ -842,7 +851,7 @@ export default function InventoryManager() {
         const sortedRegularPurchases = [...regularPurchases].sort((a, b) => {
           const dateA = new Date(a.date).getTime();
           const dateB = new Date(b.date).getTime();
-          return dateB - dateA; // Descending order (newest first)
+          return dateA - dateB; // Ascending order (oldest first)
         });
         
         const purchaseIndex = sortedRegularPurchases.findIndex(p => p.purchase_id === item.purchase_id);
@@ -1202,7 +1211,7 @@ export default function InventoryManager() {
       const safeDate = (value: any): string => {
         if (!value) return '-';
         try {
-          return formatDateKolkata(value, true); // Use Kolkata timezone with time
+          return formatDateKolkata(value, false); // Use Kolkata timezone without time
         } catch (e) {
           return value.toString();
         }
@@ -1252,7 +1261,7 @@ export default function InventoryManager() {
           const sortedRegularPurchases = [...regularPurchases].sort((a, b) => {
             const dateA = new Date(a.date).getTime();
             const dateB = new Date(b.date).getTime();
-            return dateB - dateA; // Descending order (newest first)
+            return dateA - dateB; // Ascending order (oldest first)
           });
           
           // Find position in regular purchases
@@ -1421,6 +1430,7 @@ export default function InventoryManager() {
           'Order ID': safeString(item.order_id),
           'Product Name': safeString(item.product_name),
           'HSN Code': safeString(item.hsn_code),
+          'Product Type': safeString(item.product_type),
           'Quantity': safeNumber(item.consumption_qty, 0),
           'Unit Price (Ex. GST)': safeNumber(item.purchase_cost_per_unit_ex_gst),
           'GST %': safeNumber(item.purchase_gst_percentage),
@@ -1516,7 +1526,7 @@ export default function InventoryManager() {
   };
 
   const handleTabChange = (event: ChangeEvent<{}>, newValue: string) => {
-    setActiveTab(newValue as 'purchaseHistory' | 'salesHistory' | 'salonConsumption' | 'balanceStock');
+    setActiveTab(newValue as 'purchaseHistory' | 'salesHistory' | 'salonConsumption');
     setPage(0); // Reset pagination when changing tabs
     
     // Fetch data based on new tab
@@ -1526,8 +1536,6 @@ export default function InventoryManager() {
       fetchSalesHistory();
     } else if (newValue === 'salonConsumption') {
       fetchSalonConsumption();
-    } else if (newValue === 'balanceStock') {
-      fetchBalanceStock();
     }
   };
 
@@ -1834,7 +1842,7 @@ export default function InventoryManager() {
     await fetchPurchasesData();
     await fetchSalesHistory();
     await fetchSalonConsumption();
-    await fetchBalanceStock();
+    // await fetchBalanceStock();
   };
 
   const calculatePrices = (price: number, gstPercentage: number) => {
@@ -2438,7 +2446,7 @@ export default function InventoryManager() {
     const sortedRegularPurchases = [...regularPurchases].sort((a, b) => {
       const dateA = new Date(a.date).getTime();
       const dateB = new Date(b.date).getTime();
-      return dateB - dateA; // Descending order (newest first)
+      return dateA - dateB; // Ascending order (oldest first)
     });
     
     // Find the position of this item in regular purchases
@@ -2559,7 +2567,7 @@ export default function InventoryManager() {
     if (!dateTimeString) return 'Unknown';
     
     try {
-      return formatAsiaKolkataTime(dateTimeString); // Use Asia/Kolkata timezone with full format
+      return formatDateKolkata(dateTimeString); // Use Asia/Kolkata timezone without time
     } catch (error) {
       console.error('Error formatting date for display:', error);
       return dateTimeString;
@@ -2776,7 +2784,7 @@ export default function InventoryManager() {
         <Tab label="Purchase History" value="purchaseHistory" />
         <Tab label="Sales History" value="salesHistory" />
         <Tab label="Salon Consumption" value="salonConsumption" />
-        <Tab label="Balance Stock" value="balanceStock" />
+        {/* <Tab label="Balance Stock" value="balanceStock" /> */}
       </Tabs>
 
       {activeTab === 'purchaseHistory' && errorPurchases && (
@@ -2789,10 +2797,6 @@ export default function InventoryManager() {
 
       {activeTab === 'salonConsumption' && salonConsumptionError && (
         <Alert severity="error" sx={{ mb: 1.5 }}>{salonConsumptionError}</Alert>
-      )}
-
-      {activeTab === 'balanceStock' && balanceStockError && (
-        <Alert severity="error" sx={{ mb: 1.5 }}>{balanceStockError}</Alert>
       )}
 
       {/* Purchase History Tab */}
@@ -2950,7 +2954,7 @@ export default function InventoryManager() {
                   <StyledTableCell>
                     Serial No
                   </StyledTableCell>
-                  <SortablePurchaseTableCell label="Date & Time" property="date" />
+                  <SortablePurchaseTableCell label="Date" property="date" />
                   <SortablePurchaseTableCell label="Product Name" property="product_name" />
                   <SortablePurchaseTableCell label="HSN Code" property="hsn_code" />
                   <SortablePurchaseTableCell label="UNITS" property="units" />
@@ -3628,6 +3632,7 @@ export default function InventoryManager() {
                   <SortableSalonTableCell label="Order ID" property="order_id" />
                   <SortableSalonTableCell label="Product Name" property="product_name" />
                   <SortableSalonTableCell label="HSN Code" property="hsn_code" />
+                  <SortableSalonTableCell label="Product Type" property="product_type" />
                   <SortableSalonTableCell label="Quantity" property="consumption_qty" align="right" />
                   <SortableSalonTableCell label="Unit Price (Ex. GST)" property="purchase_cost_per_unit_ex_gst" align="right" />
                   <SortableSalonTableCell label="GST %" property="purchase_gst_percentage" align="right" />
@@ -3648,7 +3653,7 @@ export default function InventoryManager() {
               <TableBody>
                 {isLoadingSalonConsumption ? (
                   <TableRow>
-                    <TableCell colSpan={22} align="center" sx={{ py: 3 }}>
+                    <TableCell colSpan={24} align="center" sx={{ py: 3 }}>
                       <CircularProgress size={40} />
                     </TableCell>
                   </TableRow>
@@ -3684,6 +3689,7 @@ export default function InventoryManager() {
                           <TableCell>{item.order_id}</TableCell>
                           <TableCell>{item.product_name}</TableCell>
                           <TableCell>{item.hsn_code || '-'}</TableCell>
+                          <TableCell>{item.product_type || '-'}</TableCell>
                           <TableCell align="right">{Number(item.consumption_qty).toLocaleString()}</TableCell>
                           <TableCell align="right">₹{Number(item.purchase_cost_per_unit_ex_gst).toFixed(2)}</TableCell>
                           <TableCell align="right">{Number(item.purchase_gst_percentage).toFixed(2)}%</TableCell>
@@ -3705,7 +3711,7 @@ export default function InventoryManager() {
                 ) : null}
                 {!isLoadingSalonConsumption && sortedSalonConsumption.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={22} align="center" sx={{ py: 3 }}>
+                    <TableCell colSpan={24} align="center" sx={{ py: 3 }}>
                       No salon consumption data found {dateFilter.isActive ? 'for the selected dates' : ''}.
                     </TableCell>
                   </TableRow>
@@ -3713,7 +3719,7 @@ export default function InventoryManager() {
               </TableBody>
               <TableFooter>
                 <TableRow>
-                  <TableCell colSpan={6} align="right" sx={{ fontWeight: 'bold' }}>Totals:</TableCell>
+                  <TableCell colSpan={8} align="right" sx={{ fontWeight: 'bold' }}>Totals:</TableCell>
                   <TableCell align="right" sx={{ fontWeight: 'bold' }}>{salonConsumptionTotals.quantity.toLocaleString()}</TableCell>
                   <TableCell align="right"></TableCell>
                   <TableCell align="right"></TableCell>
@@ -3753,461 +3759,192 @@ export default function InventoryManager() {
       )}
 
       {/* Balance Stock Tab */}
-      {activeTab === 'balanceStock' && (
-        <Paper sx={{ width: '100%', overflow: 'hidden' }}>
-          {balanceStockError && (
-            <Alert severity="error" sx={{ mb: 2 }}>{balanceStockError}</Alert>
-          )}
+      {/* <div role="tabpanel" hidden={activeTab !== 'balanceStock'}>
+        {isLoadingBalanceStock ? (
+          <CircularProgress />
+        ) : balanceStockError ? (
+          <Alert severity="error">{balanceStockError}</Alert>
+        ) : (
+          <Paper sx={{ p: 2, mt: 2 }}>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2, flexWrap: 'wrap', gap: 2 }}>
+              <Typography variant="h6" gutterBottom>Balance Stock</Typography>
+              <Button 
+                variant="contained" 
+                startIcon={<RefreshIcon />} 
+                onClick={() => {
+                  console.log("Force refreshing balance stock data");
+                  fetchBalanceStock();
+                }}
+              >
+                Refresh Balance Stock Data
+              </Button>
+            </Box>
 
-          {/* Add special refresh button */}
-          <Box sx={{ p: 2, display: 'flex', justifyContent: 'flex-end' }}>
-            <Button
-              variant="contained"
-              color="warning"
-              onClick={() => {
-                console.log("Force refreshing balance stock data");
-                setBalanceStock([]); // Clear data first
-                setTimeout(() => {
-                  fetchBalanceStock(); // Then fetch new data
-                }, 100);
-              }}
-              startIcon={<RefreshIcon />}
-              sx={{ mb: 2 }}
-            >
-              Refresh Balance Stock Data
-            </Button>
-          </Box>
-
-          {/* Balance Stock Summary Cards */}
-          <Box sx={{ p: 1.5, borderBottom: '1px solid #e0e0e0' }}>
-            <Grid container spacing={2}>
-              <Grid item xs={12} md={4}>
-                <Paper 
-                  elevation={2} 
-                  sx={{ 
-                    p: 1.5, 
-                    display: 'flex', 
-                    flexDirection: 'column', 
-                    height: '100%',
-                    backgroundColor: 'rgba(0, 255, 0, 0.05)',
-                    border: '1px solid rgba(0, 200, 0, 0.2)',
-                    borderRadius: 2
-                  }}
-                >
-                  <Typography variant="caption" color="text.secondary" gutterBottom sx={{ fontWeight: 600 }}>
-                    Total Stock Additions
-                  </Typography>
-                  <Box sx={{ display: 'flex', alignItems: 'center', mb: 0.5 }}>
-                    <Typography variant="h5" component="div" sx={{ color: 'success.main', fontWeight: 'bold', mr: 1 }}>
-                      +{balanceStockTotals.additions.toLocaleString()}
-                    </Typography>
-                    <Box sx={{ 
-                      backgroundColor: 'success.light', 
-                      borderRadius: '50%', 
-                      width: 28, 
-                      height: 28, 
-                      display: 'flex', 
-                      alignItems: 'center', 
-                      justifyContent: 'center', 
-                      color: 'white'
-                    }}>
-                      <Box sx={{ fontSize: '18px' }}>↑</Box>
-                    </Box>
-                  </Box>
-                  <Typography variant="body2" color="text.secondary">
-                    Total units added to inventory
-                  </Typography>
+            {/* Balance Stock Summary Cards * /}
+            <Grid container spacing={2} sx={{ mb: 2 }}>
+              <Grid item xs={12} sm={4}>
+                <Paper sx={{ p: 2, textAlign: 'center' }}>
+                  <Typography variant="h6">{formatNumber(balanceStockTotals.additions)}</Typography>
+                  <Typography variant="body2">Total Additions</Typography>
                 </Paper>
               </Grid>
-              
-              <Grid item xs={12} md={4}>
-                <Paper 
-                  elevation={2} 
-                  sx={{ 
-                    p: 1.5, 
-                    display: 'flex', 
-                    flexDirection: 'column', 
-                    height: '100%',
-                    backgroundColor: 'rgba(255, 0, 0, 0.05)',
-                    border: '1px solid rgba(200, 0, 0, 0.2)',
-                    borderRadius: 2
-                  }}
-                >
-                  <Typography variant="caption" color="text.secondary" gutterBottom sx={{ fontWeight: 600 }}>
-                    Total Stock Reductions
-                  </Typography>
-                  <Box sx={{ display: 'flex', alignItems: 'center', mb: 0.5 }}>
-                    <Typography variant="h5" component="div" sx={{ color: 'error.main', fontWeight: 'bold', mr: 1 }}>
-                      -{balanceStockTotals.reductions.toLocaleString()}
-                    </Typography>
-                    <Box sx={{ 
-                      backgroundColor: 'error.light', 
-                      borderRadius: '50%', 
-                      width: 28, 
-                      height: 28, 
-                      display: 'flex', 
-                      alignItems: 'center', 
-                      justifyContent: 'center', 
-                      color: 'white'
-                    }}>
-                      <Box sx={{ fontSize: '18px' }}>↓</Box>
-                    </Box>
-                  </Box>
-                  <Typography variant="body2" color="text.secondary">
-                    Total units removed from inventory
-                  </Typography>
+              <Grid item xs={12} sm={4}>
+                <Paper sx={{ p: 2, textAlign: 'center' }}>
+                  <Typography variant="h6">{formatNumber(balanceStockTotals.reductions)}</Typography>
+                  <Typography variant="body2">Total Reductions</Typography>
                 </Paper>
               </Grid>
-              
-              <Grid item xs={12} md={4}>
-                <Paper 
-                  elevation={2} 
-                  sx={{ 
-                    p: 1.5, 
-                    display: 'flex', 
-                    flexDirection: 'column', 
-                    height: '100%',
-                    backgroundColor: 'rgba(50, 50, 255, 0.05)',
-                    border: '1px solid rgba(50, 50, 200, 0.2)',
-                    borderRadius: 2
-                  }}
-                >
-                  <Typography variant="caption" color="text.secondary" gutterBottom sx={{ fontWeight: 600 }}>
-                    Net Stock Change
-                  </Typography>
-                  <Box sx={{ display: 'flex', alignItems: 'center', mb: 0.5 }}>
-                    <Typography 
-                      variant="h5" 
-                      component="div" 
-                      sx={{ 
-                        color: (balanceStockTotals.additions - balanceStockTotals.reductions) >= 0 ? 'success.main' : 'error.main', 
-                        fontWeight: 'bold',
-                        mr: 1
-                      }}
-                    >
-                      {(balanceStockTotals.additions - balanceStockTotals.reductions) >= 0 ? '+' : ''}
-                      {(balanceStockTotals.additions - balanceStockTotals.reductions).toLocaleString()}
-                    </Typography>
-                    <Box sx={{ 
-                      backgroundColor: (balanceStockTotals.additions - balanceStockTotals.reductions) >= 0 ? 'success.light' : 'error.light', 
-                      borderRadius: '50%', 
-                      width: 28, 
-                      height: 28, 
-                      display: 'flex', 
-                      alignItems: 'center', 
-                      justifyContent: 'center', 
-                      color: 'white'
-                    }}>
-                      <Box sx={{ fontSize: '18px' }}>
-                        {(balanceStockTotals.additions - balanceStockTotals.reductions) >= 0 ? '↑' : '↓'}
-                      </Box>
-                    </Box>
-                  </Box>
-                  <Typography variant="body2" color="text.secondary">
-                    Overall inventory change (additions - reductions)
-                  </Typography>
+              <Grid item xs={12} sm={4}>
+                <Paper sx={{ p: 2, textAlign: 'center' }}>
+                  <Typography variant="h6">{formatNumber(balanceStockTotals.additions - balanceStockTotals.reductions)}</Typography>
+                  <Typography variant="body2">Net Change</Typography>
                 </Paper>
               </Grid>
             </Grid>
-          </Box>
+            
+            <Divider sx={{ my: 2 }} />
 
-          {/* Existing Balance Stock Filters */}
-          <Box sx={{ p: 1.5, borderBottom: '1px solid #e0e0e0' }}>
-            <Grid container spacing={2} alignItems="center">
-              <Grid item xs={12}>
-                <Typography variant="body1" fontWeight="600" sx={{ fontSize: '0.95rem', color: 'primary.main' }}>
-                  Filter Balance Stock Data
-                </Typography>
-              </Grid>
-              
-              <Grid item xs={12} sm={6} md={2}>
-                <TextField
-                  label="Product Name"
-                  size="small"
-                  fullWidth
-                  value={balanceStockFilter.productName}
-                  onChange={(e) => handleBalanceStockFilterChange('productName', e.target.value)}
-                  placeholder="Filter by product name"
-                />
-              </Grid>
-              
-              <Grid item xs={12} sm={6} md={2}>
-                <TextField
-                  label="HSN Code"
-                  size="small"
-                  fullWidth
-                  value={balanceStockFilter.hsn}
-                  onChange={(e) => handleBalanceStockFilterChange('hsn', e.target.value)}
-                  placeholder="Filter by HSN code"
-                />
-              </Grid>
-              
-              <Grid item xs={12} sm={6} md={2}>
-                <FormControl fullWidth size="small">
-                  <InputLabel>Change Type</InputLabel>
-                  <Select
-                    value={balanceStockFilter.changeType}
-                    onChange={(e) => handleBalanceStockFilterChange('changeType', e.target.value)}
-                    label="Change Type"
+            {/* Existing Balance Stock Filters * /}
+            <Box sx={{ mb: 2 }}>
+              <Typography variant="subtitle1">Filter Balance Stock Data</Typography>
+              <Grid container spacing={2} alignItems="center">
+                <Grid item xs={12} sm={3}>
+                  <TextField
+                    label="Product Name"
+                    value={balanceStockFilter.productName}
+                    onChange={(e) => handleBalanceStockFilterChange('productName', e.target.value)}
+                    fullWidth
+                    variant="outlined"
+                    size="small"
+                  />
+                </Grid>
+                <Grid item xs={12} sm={2}>
+                  <FormControl fullWidth size="small">
+                    <InputLabel>Change Type</InputLabel>
+                    <Select
+                      value={balanceStockFilter.changeType}
+                      onChange={(e) => handleBalanceStockFilterChange('changeType', e.target.value)}
+                      label="Change Type"
+                    >
+                      <MenuItem value="">All</MenuItem>
+                      <MenuItem value="addition">Addition</MenuItem>
+                      <MenuItem value="reduction">Reduction</MenuItem>
+                    </Select>
+                  </FormControl>
+                </Grid>
+                <Grid item xs={12} sm={2}>
+                  <TextField
+                    label="Source"
+                    value={balanceStockFilter.source}
+                    onChange={(e) => handleBalanceStockFilterChange('source', e.target.value)}
+                    fullWidth
+                    variant="outlined"
+                    size="small"
+                  />
+                </Grid>
+                <Grid item xs={12} sm={2}>
+                  <TextField
+                    label="HSN Code"
+                    value={balanceStockFilter.hsn}
+                    onChange={(e) => handleBalanceStockFilterChange('hsn', e.target.value)}
+                    fullWidth
+                    variant="outlined"
+                    size="small"
+                  />
+                </Grid>
+                <Grid item xs={12} sm={3} sx={{ display: 'flex', gap: 1 }}>
+                  <Button
+                    startIcon={<FilterIcon />}
+                    variant="outlined"
+                    onClick={() => {
+                      // Trigger re-render to apply filters from state
+                    }}
                   >
-                    <MenuItem value="">All</MenuItem>
-                    <MenuItem value="addition">Addition</MenuItem>
-                    <MenuItem value="reduction">Reduction</MenuItem>
-                  </Select>
-                </FormControl>
+                    Apply
+                  </Button>
+                  <Button
+                    startIcon={<FilterOffIcon />}
+                    variant="outlined"
+                    onClick={clearBalanceStockFilters}
+                  >
+                    Clear
+                  </Button>
+                </Grid>
               </Grid>
-              
-              <Grid item xs={12} sm={6} md={2}>
-                <TextField
-                  label="Source"
-                  size="small"
-                  fullWidth
-                  value={balanceStockFilter.source}
-                  onChange={(e) => handleBalanceStockFilterChange('source', e.target.value)}
-                  placeholder="Filter by source"
-                />
-              </Grid>
-              
-              <Grid item xs={12} sm={6} md={2}>
-                <TextField
-                  label="Min Quantity"
-                  size="small"
-                  fullWidth
-                  type="number"
-                  value={balanceStockFilter.minQuantity}
-                  onChange={(e) => handleBalanceStockFilterChange('minQuantity', e.target.value)}
-                  placeholder="Min quantity"
-                  InputProps={{
-                    inputProps: { min: 0 }
-                  }}
-                />
-              </Grid>
-              
-              <Grid item xs={12} sm={6} md={2}>
-                <TextField
-                  label="Max Quantity"
-                  size="small"
-                  fullWidth
-                  type="number"
-                  value={balanceStockFilter.maxQuantity}
-                  onChange={(e) => handleBalanceStockFilterChange('maxQuantity', e.target.value)}
-                  placeholder="Max quantity"
-                  InputProps={{
-                    inputProps: { min: 0 }
-                  }}
-                />
-              </Grid>
-              
-              <Grid item xs={12} sm={6} md={2}>
-                <Button
-                  variant="outlined"
-                  color="secondary"
-                  onClick={clearBalanceStockFilters}
-                  fullWidth
-                  sx={{ height: '40px' }}
-                >
-                  Clear Filters
-                </Button>
-              </Grid>
-              
-              <Grid item xs={12}>
-                <Typography variant="caption" color="textSecondary" sx={{ fontWeight: 500 }}>
-                  Showing {filteredBalanceStock.length} of {balanceStock.length} records
-                </Typography>
-              </Grid>
-          </Grid>
-        </Box>
-        
-        <TableContainer 
-          sx={{ 
-            maxHeight: 'calc(100vh - 320px)', 
-              overflow: 'auto',
-              overflowX: 'scroll', // Force horizontal scrollbar to always show
-              cursor: 'grab',
-              '&:active': {
-                cursor: 'grabbing'
-              },
-              // Enhanced scrollbar styling for better visibility
-              '&::-webkit-scrollbar': {
-                height: '12px',
-                width: '12px'
-              },
-              '&::-webkit-scrollbar-track': {
-                background: '#f1f1f1',
-                borderRadius: '6px',
-                border: '1px solid #e0e0e0'
-              },
-              '&::-webkit-scrollbar-thumb': {
-                background: 'linear-gradient(45deg, #8baf3f 30%, #7da237 90%)',
-                borderRadius: '6px',
-                border: '1px solid #6d8c30',
-                '&:hover': {
-                  background: 'linear-gradient(45deg, #7da237 30%, #6d8c30 90%)',
-                  transform: 'scale(1.1)'
-                }
-              },
-              '&::-webkit-scrollbar-corner': {
-                background: '#f1f1f1'
-              },
-              // For Firefox
-              scrollbarWidth: 'thin',
-              scrollbarColor: '#8baf3f #f1f1f1'
-            }}
-            onWheel={(e) => {
-              // Enable horizontal scrolling with mouse wheel when shift is held
-              if (e.shiftKey) {
-                e.preventDefault();
-                e.currentTarget.scrollLeft += e.deltaY;
-              }
-            }}
-          >
-            <Table stickyHeader aria-label="balance stock table" sx={{ minWidth: 1200 }} size="small">
-              <TableHead>
-                <TableRow>
-                  <StyledTableCell>
-                    Serial No
-                  </StyledTableCell>
-                  <StyledTableCell>
-                    Date
-                  </StyledTableCell>
-                  <StyledTableCell>
-                    Product Name
-                  </StyledTableCell>
-                  <StyledTableCell>
-                    HSN Code
-                  </StyledTableCell>
-                  <StyledTableCell>
-                    Units
-                  </StyledTableCell>
-                  <StyledTableCell>
-                    Change Type
-                  </StyledTableCell>
-                  <StyledTableCell>
-                    Source
-                  </StyledTableCell>
-                  <StyledTableCell>
-                    Reference ID
-                  </StyledTableCell>
-                  <StyledTableCell align="right">
-                    Quantity Change
-                  </StyledTableCell>
-                  <StyledTableCell align="right">
-                    Quantity After
-                  </StyledTableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {isLoadingBalanceStock ? (
+            </Box>
+            
+            <TableContainer>
+              <Table stickyHeader aria-label="balance stock table" sx={{ minWidth: 1200 }} size="small">
+                <TableHead>
                   <TableRow>
-                    <TableCell colSpan={10} align="center" sx={{ py: 3 }}>
-                      <CircularProgress size={40} />
-                    </TableCell>
+                    <SortableBalanceStockTableCell label="Serial No" property="serial_no" />
+                    <SortableBalanceStockTableCell label="Date" property="date" />
+                    <SortableBalanceStockTableCell label="Product Name" property="product_name" />
+                    <SortableBalanceStockTableCell label="HSN Code" property="hsn_code" />
+                    <SortableBalanceStockTableCell label="Units" property="units" />
+                    <SortableBalanceStockTableCell label="Change Type" property="change_type" />
+                    <SortableBalanceStockTableCell label="Source" property="source" />
+                    <SortableBalanceStockTableCell label="Reference ID" property="reference_id" />
+                    <SortableBalanceStockTableCell label="Quantity Change" property="quantity_change" align="right" />
+                    <SortableBalanceStockTableCell label="Quantity After" property="quantity_after_change" align="right" />
                   </TableRow>
-                ) : null}
-                {!isLoadingBalanceStock && sortedBalanceStock.length > 0 ? (
-                  sortedBalanceStock
+                </TableHead>
+                <TableBody>
+                  {sortedBalanceStock
                     .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
-                    .map((item, index) => {
-                      const serialNo = getBalanceStockSerialNo(item, page * rowsPerPage + index);
-                      return (
-                      <TableRow 
-                        key={item.id || index} 
-                        hover
-                        sx={{
-                          backgroundColor: item.change_type === 'reduction' 
-                              ? '#f9f5f5' 
-                              : '#f5f9f5'
-                          }}
-                        >
-                          <TableCell 
-                            sx={{ 
-                              fontWeight: 'bold',
-                              backgroundColor: item.change_type === 'reduction' ? '#f9f5f5' : '#f5f9f5',
-                              border: '1px solid #e0e0e0',
-                              padding: '8px 16px'
-                            }}
-                          >
-                            <div style={{ 
-                              padding: '4px 8px', 
-                              borderRadius: '4px', 
-                              backgroundColor: '#8baf3f', // Direct color instead of theme reference
-                              color: 'white', 
-                              display: 'inline-block',
-                              fontWeight: 'bold'
-                            }}>
-                              STOCK-{balanceStock.length - (page * rowsPerPage + index)}
-                            </div>
-                          </TableCell>
+                    .map((item, index) => (
+                      <TableRow key={item.id} hover>
+                        <TableCell>{item.serial_no || getBalanceStockSerialNo(item, index)}</TableCell>
                         <TableCell>{formatDateTimeForDisplay(item.date)}</TableCell>
                         <TableCell>{item.product_name}</TableCell>
-                        <TableCell>{item.hsn_code || '-'}</TableCell>
+                        <TableCell>{item.hsn_code}</TableCell>
                         <TableCell>{item.units}</TableCell>
                         <TableCell>
                           <Chip 
-                            label={item.change_type === 'addition' ? 'Addition' : 'Reduction'} 
+                            label={item.change_type} 
                             color={item.change_type === 'addition' ? 'success' : 'error'}
                             size="small"
-                              sx={{
-                                backgroundColor: item.change_type === 'addition' ? '#8baf3f' : '#dc3545',
-                                color: 'white'
-                              }}
                           />
                         </TableCell>
                         <TableCell>{item.source}</TableCell>
                         <TableCell>{item.reference_id}</TableCell>
-                        <TableCell align="right">
-                          {item.change_type === 'addition' ? '+' : '-'}
-                          {Math.abs(Number(item.quantity_change))}
-                        </TableCell>
-                        <TableCell align="right">{Number(item.quantity_after_change)}</TableCell>
+                        <TableCell align="right">{item.quantity_change}</TableCell>
+                        <TableCell align="right">{item.quantity_after_change}</TableCell>
                       </TableRow>
-                      );
-                    })
-                ) : null}
-                {!isLoadingBalanceStock && sortedBalanceStock.length === 0 ? (
+                    ))}
+                </TableBody>
+                <TableFooter>
                   <TableRow>
-                    <TableCell colSpan={10} align="center" sx={{ py: 3 }}>
-                      No balance stock data found {dateFilter.isActive ? 'for the selected dates' : ''}.
+                    <TableCell colSpan={8} align="right"><strong>Totals:</strong></TableCell>
+                    <TableCell align="right">
+                      <Typography variant="body2"><strong>Additions:</strong> {formatNumber(balanceStockTotals.additions)}</Typography>
+                      <Typography variant="body2"><strong>Reductions:</strong> {formatNumber(balanceStockTotals.reductions)}</Typography>
+                    </TableCell>
+                    <TableCell align="right">
+                      <Typography variant="body2"><strong>Net:</strong> {formatNumber(balanceStockTotals.additions - balanceStockTotals.reductions)}</Typography>
                     </TableCell>
                   </TableRow>
-                ) : null}
-              </TableBody>
-              {/* Add a TableFooter for balance stock to show totals */}
-              <TableFooter>
-                <TableRow>
-                  <TableCell colSpan={7} align="right" sx={{ fontWeight: 'bold' }}>Totals:</TableCell>
-                  <TableCell align="right"></TableCell>
-                  <TableCell align="right" sx={{ fontWeight: 'bold' }}>
-                    +{balanceStockTotals.additions.toLocaleString()} / -{balanceStockTotals.reductions.toLocaleString()}
-                  </TableCell>
-                  <TableCell align="right"></TableCell>
-                </TableRow>
-              </TableFooter>
-            </Table>
-          </TableContainer>
-          <TablePagination
-            rowsPerPageOptions={[25, 50, 100, 200]}
-            component="div"
-            count={filteredBalanceStock.length}
-            rowsPerPage={rowsPerPage}
-            page={page}
-            onPageChange={handleChangePage}
-            onRowsPerPageChange={handleChangeRowsPerPage}
-            labelDisplayedRows={({ from, to, count }) => (
-              <>
-                {`${from}–${to} of ${count !== -1 ? count : `more than ${to}`} | Additions: `}
-                <Box component="span" sx={{ fontWeight: 'bold', color: 'success.main', ml: 0.5, mr: 1 }}>
-                  +{balanceStockTotals.additions.toLocaleString()}
-                </Box>
-                {` | Reductions: `}
-                <Box component="span" sx={{ fontWeight: 'bold', color: 'error.main', ml: 0.5 }}>
-                  -{balanceStockTotals.reductions.toLocaleString()}
-                </Box>
-              </>
+                </TableFooter>
+              </Table>
+            </TableContainer>
+            {sortedBalanceStock.length === 0 && (
+              <Box sx={{ p: 2, textAlign: 'center' }}>
+                <Typography>No balance stock data found {dateFilter.isActive ? 'for the selected dates' : ''}.</Typography>
+              </Box>
             )}
-          />
-        </Paper>
-      )}
+            <TablePagination
+              rowsPerPageOptions={[10, 25, 50, 100, 200]}
+              component="div"
+              count={sortedBalanceStock.length}
+              rowsPerPage={rowsPerPage}
+              page={page}
+              onPageChange={handleChangePage}
+              onRowsPerPageChange={handleChangeRowsPerPage}
+            />
+            {/* Add a TableFooter for balance stock to show totals * /}
+          </Paper>
+        )}
+      </div> */}
 
       {/* Dialog for adding/editing purchases */}
       <Dialog open={open} onClose={handleClose} maxWidth="lg" fullWidth>

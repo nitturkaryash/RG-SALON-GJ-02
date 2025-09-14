@@ -86,7 +86,7 @@ const InventoryTabs: React.FC = () => {
           <StyledTab label="Purchases" value="purchases" {...a11yProps('purchases')} />
           <StyledTab label="Sales" value="sales" {...a11yProps('sales')} />
           <StyledTab label="Consumption" value="consumption" {...a11yProps('consumption')} />
-          <StyledTab label="Balance Stock" value="balance_stock" {...a11yProps('balance_stock')} />
+          {/* <StyledTab label="Balance Stock" value="balance_stock" {...a11yProps('balance_stock')} /> */}
         </StyledTabs>
       </Box>
       
@@ -114,14 +114,14 @@ const InventoryTabs: React.FC = () => {
         />
       </TabPanel>
       
-      <TabPanel value={activeTab} index="balance_stock">
+      {/* <TabPanel value={activeTab} index="balance_stock">
         <BalanceStockTab
           balanceStock={balanceStockQuery.data || []}
           isLoading={balanceStockQuery.isLoading}
           error={balanceStockQuery.error as Error}
           recalculateBalanceStock={recalculateBalanceStock}
         />
-      </TabPanel>
+      </TabPanel> */}
     </Box>
   );
 };

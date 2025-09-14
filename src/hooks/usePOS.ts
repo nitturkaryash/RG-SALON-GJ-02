@@ -87,7 +87,7 @@ export interface CreateOrderData {
 	total: number;
 	gst_amount?: number; // Optional gst amount
 	total_amount: number;
-	status: Order['status'];
+	status: 'pending' | 'completed' | 'cancelled';
 	order_date: string;
 	is_walk_in: boolean;
 	consumption_purpose?: string;
@@ -364,108 +364,26 @@ export async function deleteOrder(orderId: string): Promise<{ success: boolean, 
   try {
     console.log('Deleting order with ID:', orderId);
     
-    // First fetch the order to check if it exists
-    const { data: orderData, error: fetchError } = await supabase
-      .from('pos_orders')
-      .select('*')
-      .eq('id', orderId)
-      .single();
-      
-    if (fetchError) {
-      console.error('Error fetching order for deletion:', fetchError);
-      return { success: false, message: 'Order not found or could not be fetched' };
-    }
-    
-    // Before deleting the order, update client financial records
-    if (orderData && orderData.client_name && !orderData.is_salon_consumption) {
-      try {
-        // Get the client by name
-        const { data: clientData, error: clientError } = await supabase
-          .from('clients')
-          .select('*')
-          .ilike('full_name', orderData.client_name)
-          .single();
-          
-        if (!clientError && clientData) {
-          // Calculate amount to deduct from client's records
-          const orderTotal = orderData.total || 0;
-          const paymentMethod = orderData.payment_method || 'cash';
-          
-          // Prepare updated client data
-          const clientUpdateData: any = {
-            updated_at: new Date().toISOString()
-          };
-          
-          // If BNPL, reduce pending_payment, otherwise reduce total_spent
-          if (paymentMethod === 'bnpl') {
-            clientUpdateData.pending_payment = Math.max(0, (clientData.pending_payment || 0) - orderTotal);
-          } else {
-            clientUpdateData.total_spent = Math.max(0, (clientData.total_spent || 0) - orderTotal);
-          }
-          
-          // If there's an appointment count, decrement it
-          if (typeof clientData.appointment_count === 'number') {
-            clientUpdateData.appointment_count = Math.max(0, clientData.appointment_count - 1);
-          }
-          
-          // Update the client record
-          const { error: updateError } = await supabase
-            .from('clients')
-            .update(clientUpdateData)
-            .eq('id', clientData.id);
-            
-          if (updateError) {
-            console.error('Error updating client financial records:', updateError);
-          } else {
-            console.log('Successfully updated client financial records on order deletion');
-          }
-        }
-      } catch (clientError) {
-        console.error('Error handling client financial update on order deletion:', clientError);
-        // Continue with order deletion even if client update fails
-      }
-    }
-    
-    // Delete associated order items to avoid foreign key conflict
-    const { error: deleteItemsError } = await supabase
-      .from('pos_order_items')
-      .delete()
-      .eq('pos_order_id', orderId);
+    const response = await fetch(`/api/orders?id=${orderId}`, {
+      method: 'DELETE',
+    });
 
-    if (deleteItemsError) {
-      console.error('Error deleting order items:', deleteItemsError);
-      return { success: false, message: 'Failed to delete order items: ' + deleteItemsError.message };
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || 'Failed to delete order');
     }
 
-    // Delete the order
-    const { error: deleteError } = await supabase
-      .from('pos_orders')
-      .delete()
-      .eq('id', orderId);
-      
-    if (deleteError) {
-      console.error('Error deleting order:', deleteError);
-      return { success: false, message: 'Failed to delete order: ' + deleteError.message };
-    }
-    
-    // Show success toast
-    try {
+    const result = await response.json();
+
+    if (result.success) {
       toast.success('Order deleted successfully');
-    } catch (e) {
-      console.warn('Toast notification failed:', e);
+      return { success: true, message: 'Order deleted successfully' };
+    } else {
+      throw new Error(result.error || 'Failed to delete order');
     }
-    
-    return { success: true, message: 'Order deleted successfully' };
   } catch (error) {
     console.error('Unexpected error deleting order:', error);
-    
-    // Show error toast
-    try {
-      toast.error('Failed to delete order: ' + (error instanceof Error ? error.message : String(error)));
-    } catch (e) {
-      console.warn('Toast notification failed:', e);
-    }
-    
+    toast.error('Failed to delete order: ' + (error instanceof Error ? error.message : String(error)));
     return { 
       success: false, 
       message: 'An unexpected error occurred: ' + (error instanceof Error ? error.message : String(error)) 
@@ -1751,6 +1669,73 @@ export function usePOS() {
     }
   });
 
+  // Add update order mutation for editing existing orders
+  const updateOrderMutation = useMutation<OrderFunctionResult, Error, { orderId: string; orderData: CreateOrderData }>({
+    mutationFn: async ({ orderId, orderData }): Promise<OrderFunctionResult> => {
+      try {
+        console.log('Updating order:', orderId, 'with data:', orderData);
+
+        // Call the PUT API endpoint to update the order
+        const response = await fetch('/api/orders', {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            id: orderId,
+            client_name: orderData.client_name,
+            stylist_id: orderData.stylist_id,
+            stylist_name: orderData.stylist_name,
+            services: orderData.services,
+            total: orderData.total,
+            subtotal: orderData.subtotal,
+            tax: orderData.tax,
+            discount: orderData.discount,
+            payment_method: orderData.payment_method,
+            payments: orderData.payments,
+            status: orderData.status || 'completed',
+            consumption_purpose: orderData.consumption_purpose,
+            consumption_notes: orderData.consumption_notes,
+            is_salon_consumption: orderData.is_salon_consumption || false,
+          }),
+        });
+
+        const result = await response.json();
+
+        if (!response.ok || !result.success) {
+          throw new Error(result.error || 'Failed to update order');
+        }
+
+        return {
+          success: true,
+          message: 'Order updated successfully',
+          order: result.order
+        };
+      } catch (error) {
+        console.error('Error updating order:', error);
+        return {
+          success: false,
+          message: 'Order update failed',
+          error: error instanceof Error ? error : new Error(String(error))
+        };
+      }
+    },
+    onSuccess: (result) => {
+      if (result.success) {
+        queryClient.invalidateQueries({ queryKey: ['orders'] });
+        queryClient.invalidateQueries({ queryKey: ['products'] });
+        queryClient.invalidateQueries({ queryKey: ['clients'] });
+        toast.success('Order updated successfully');
+      } else {
+        toast.error(result.message || 'Failed to update order');
+      }
+    },
+    onError: (error) => {
+      toast.error('Failed to update order');
+      console.error('Order update error:', error);
+    },
+  });
+
       return { 
     loading,
     error,
@@ -1765,6 +1750,7 @@ export function usePOS() {
     processAppointmentPayment,
     createWalkInOrder,
     updateOrderPayment,
+    updateOrder: updateOrderMutation,
     calculateTotal,
     createOrder,
     deleteOrder: deleteOrderMutation  // Rename to avoid confusion with the standalone function

@@ -2579,7 +2579,30 @@ const StylistDayView: React.FC<StylistDayViewProps> = ({
   // Format order ID for display
   const formatOrderId = (order: any) => {
     if (!order || !order.id) return 'Unknown';
-    return `INV-${order.id.substring(0, 8)}`;
+    
+    // Check if this is a salon consumption order
+    const isSalonOrder = order.is_salon_consumption === true || 
+                        order.type === 'salon_consumption' ||
+                        order.type === 'salon-consumption' ||
+                        order.consumption_purpose ||
+                        order.client_name === 'Salon Consumption';
+    
+    // Get the year from the order date
+    const orderDate = new Date(order.created_at || '');
+    const year = orderDate.getFullYear();
+    
+    // Format year as 2526 for 2025-2026 period
+    const yearFormat = year >= 2025 ? '2526' : `${year.toString().slice(-2)}${Math.floor(year / 100)}`;
+    
+    // Create a simple numeric ID from the hash
+    const hashNumber = Math.abs(order.id.split('').reduce((a: number, b: string) => {
+      a = ((a << 5) - a) + b.charCodeAt(0);
+      return a & a;
+    }, 0)) % 10000;
+    
+    const formattedNumber = String(hashNumber).padStart(4, '0');
+    
+    return isSalonOrder ? `SC${formattedNumber}/${yearFormat}` : `RNG${formattedNumber}/${yearFormat}`;
   };
 
   return (

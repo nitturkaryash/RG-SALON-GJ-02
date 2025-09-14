@@ -477,7 +477,7 @@ const PurchaseTab: React.FC<PurchaseTabProps> = ({ purchases, isLoading, error }
   const formatDate = (dateStr: string | undefined) => {
     if (!dateStr) return '';
     try {
-      return formatAsiaKolkataTime(dateStr);
+      return formatDateKolkata(dateStr);
     } catch (e) {
       return dateStr;
     }
@@ -570,7 +570,7 @@ const PurchaseTab: React.FC<PurchaseTabProps> = ({ purchases, isLoading, error }
       setExportingCSV(true);
       
       const csvData = purchases.map(purchase => ({
-        'Date': formatDateKolkata(purchase.date, true),
+        'Date': formatDateKolkata(purchase.date, false),
         'Product Name': purchase.product_name || '',
         'HSN Code': purchase.hsn_code || '',
         'Units': purchase.units || '',

@@ -50,6 +50,7 @@ import { toast } from 'react-toastify';
 import { useNavigate } from 'react-router-dom';
 import { convertToCSV, downloadCSV } from '../../utils/csvExporter';
 import { formatCurrency } from '../../utils/format';
+import { formatOrderIdForDisplay } from '../../utils/orderIdFormatter';
 
 interface ConsumptionTabProps {
   consumption: Consumption[];
@@ -527,7 +528,7 @@ const ConsumptionTab: React.FC<ConsumptionTabProps> = ({ consumption, isLoading,
                     <Box sx={{ display: 'flex', alignItems: 'center' }}>
                       <InventoryIcon fontSize="small" color="secondary" sx={{ mr: 1 }} />
                       <Typography variant="body2" fontFamily="monospace">
-                        {order.id.substring(0, 8)}...
+                        {formatOrderIdForDisplay(order, salonOrders)}
                       </Typography>
                     </Box>
                   </TableCell>

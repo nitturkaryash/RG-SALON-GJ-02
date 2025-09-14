@@ -21,6 +21,7 @@ import {
 	QrCode,
 	Info
 } from '@mui/icons-material';
+import { formatAmount, roundForDisplay } from '../utils/formatAmount';
 
 export type PaymentMethod = 'cash' | 'credit_card' | 'debit_card' | 'upi' | 'bnpl' | 'membership';
 
@@ -528,7 +529,7 @@ export const PaymentSection: React.FC<PaymentSectionProps> = ({
 									{PAYMENT_METHOD_LABELS[method as PaymentMethod]}:
 								</Typography>
 								<Typography variant="body2" fontWeight="medium">
-									₹{amount.toLocaleString()}
+									{formatAmount(amount)}
 								</Typography>
 							</Box>
 						))}
@@ -538,7 +539,7 @@ export const PaymentSection: React.FC<PaymentSectionProps> = ({
 							Total Paid:
 						</Typography>
 						<Typography variant="body2" fontWeight="bold" color={isOverpaid ? 'warning.main' : 'text.primary'}>
-							₹{totalAmountEntered.toLocaleString()}
+							{formatAmount(totalAmountEntered)}
 						</Typography>
 					</Box>
 					{remainingAmount > 0 && (
@@ -547,7 +548,7 @@ export const PaymentSection: React.FC<PaymentSectionProps> = ({
 								Remaining:
 							</Typography>
 							<Typography variant="body2" fontWeight="medium" color="warning.main">
-								₹{remainingAmount.toFixed(2)}
+								{formatAmount(remainingAmount)}
 							</Typography>
 						</Box>
 					)}

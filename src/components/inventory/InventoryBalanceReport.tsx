@@ -24,6 +24,7 @@ import {
   ListItemText,
   useTheme,
 } from '@mui/material';
+import { formatAmount, roundForDisplay } from '../../utils/formatAmount';
 import {
   Search as SearchIcon,
   FileDownload as FileDownloadIcon,
@@ -414,8 +415,8 @@ export default function InventoryBalanceReport() {
                       }}>
                         {formatNumber(extendedItem.balance_qty)}
                       </TableCell>
-                      <TableCell align="right">{formatCurrency(extendedItem.avg_rate)}</TableCell>
-                      <TableCell align="right">{formatCurrency(extendedItem.balance_value)}</TableCell>
+                      <TableCell align="right">{formatAmount(extendedItem.avg_rate)}</TableCell>
+                      <TableCell align="right">{formatAmount(extendedItem.balance_value)}</TableCell>
                       <TableCell>
                         <Chip 
                           size="small"

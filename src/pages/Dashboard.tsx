@@ -64,6 +64,7 @@ import {
 import { format } from 'date-fns'
 import { useDashboardAnalytics } from '../hooks/useDashboardAnalytics'
 import { formatCurrency } from '../utils/format'
+import { formatAmount, roundForDisplay } from '../utils/formatAmount'
 import KPICard from '../components/dashboard/KPICard'
 import DashboardSettings from '../components/dashboard/DashboardSettings'
 import DownloadableCard from '../components/dashboard/DownloadableCard'
@@ -526,7 +527,7 @@ export default function Dashboard() {
                       <Grid item xs={12} md={3}>
                         <KPICard
                           title="Period Sales"
-                          value={formatCurrency(analyticsSummary.periodSales)}
+                          value={formatAmount(analyticsSummary.periodSales)}
                           icon={<MoneyIcon />}
                           color="success"
                           subtitle={`${analyticsSummary.salesChangePercentage >= 0 ? '+' : ''}${analyticsSummary.salesChangePercentage.toFixed(1)}% vs previous`}
@@ -549,7 +550,7 @@ export default function Dashboard() {
                       <Grid item xs={12} md={3}>
                         <KPICard
                           title="Average Ticket"
-                          value={formatCurrency(analyticsSummary.averageTicketPrice)}
+                          value={formatAmount(analyticsSummary.averageTicketPrice)}
                           icon={<ReceiptIcon />}
                           color="warning"
                           subtitle={`${analyticsSummary.averageTicketChangePercentage >= 0 ? '+' : ''}${analyticsSummary.averageTicketChangePercentage.toFixed(1)}% vs previous`}
@@ -592,7 +593,7 @@ export default function Dashboard() {
                         <CardWrapper>
                           <DownloadableCard
                             title="Revenue Breakdown"
-                            subtitle={`Total: ${formatCurrency(analyticsSummary.revenueAnalytics.totalRevenue)}`}
+                            subtitle={`Total: ${formatAmount(analyticsSummary.revenueAnalytics.totalRevenue)}`}
                             data={[
                               { category: 'Services', amount: analyticsSummary.revenueAnalytics.serviceRevenue },
                               { category: 'Products', amount: analyticsSummary.revenueAnalytics.productRevenue }
@@ -669,7 +670,7 @@ export default function Dashboard() {
                                       color: 'success.main',
                                       fontWeight: 'bold'
                                     }}>
-                                      {formatCurrency(analyticsSummary.staffPerformance.averageRevenue || 0)}
+                                      {formatAmount(analyticsSummary.staffPerformance.averageRevenue || 0)}
                                     </Typography>
                                     <Typography variant="caption" sx={{ 
                                       color: 'text.secondary',
@@ -773,7 +774,7 @@ export default function Dashboard() {
                                               {staff.stylistName || `Staff ${index + 1}`}
                                             </Typography>
                                             <Chip
-                                              label={`${formatCurrency(staff.revenue)}`}
+                                              label={`${formatAmount(staff.revenue)}`}
                                               size="small"
                                               color={isHighPerformer ? 'success' : 'default'}
                                               sx={{
@@ -1189,6 +1190,14 @@ export default function Dashboard() {
                             <Typography variant="body2" color="text.secondary">
                               Total Processed
                             </Typography>
+                            {analyticsSummary?.paymentMethodBreakdown && analyticsSummary.paymentMethodBreakdown.length > 0 && (
+                              <Typography variant="caption" color="text.secondary" sx={{ wordBreak: 'break-word', px: 1 }}>
+                                ({analyticsSummary.paymentMethodBreakdown
+                                  .sort((a, b) => b.amount - a.amount)
+                                  .map(p => `${(PAYMENT_METHOD_LABELS[p.paymentMethod] || p.paymentMethod).toLowerCase()} ${Math.round(p.amount)}`)
+                                  .join(' ')})
+                              </Typography>
+                            )}
                           </Box>
                           {renderChart(settings.chartTypes.paymentMethods, paymentMethodData, 200)}
                         </DownloadableCard>

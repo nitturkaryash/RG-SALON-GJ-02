@@ -73,7 +73,7 @@ const OrdersTable: React.FC<OrdersTableProps> = ({
   const formatDate = (dateString: string | undefined) => {
     if (!dateString) return '';
     const date = new Date(dateString);
-    return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    return date.toLocaleDateString();
   };
 
   // Get payment status chip
@@ -203,6 +203,7 @@ const OrdersTable: React.FC<OrdersTableProps> = ({
           <TableHead>
             <TableRow>
               <TableCell>Order ID</TableCell>
+              <TableCell>Invoice Number</TableCell>
               <TableCell>Date</TableCell>
               <TableCell>Customer</TableCell>
               <TableCell>Stylist</TableCell>
@@ -234,6 +235,7 @@ const OrdersTable: React.FC<OrdersTableProps> = ({
                   <TableCell>
                     {order.order_id || order.id}
                   </TableCell>
+                  <TableCell>{order.invoice_number || 'N/A'}</TableCell>
                   <TableCell>{formatDate(order.date || order.created_at)}</TableCell>
                   <TableCell>{order.customer_name || order.client_name || 'Walk-in'}</TableCell>
                   <TableCell>
