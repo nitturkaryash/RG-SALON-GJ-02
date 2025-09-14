@@ -2,17 +2,17 @@
 
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { 
-  Container, 
-  Paper, 
-  Typography, 
-  List, 
-  ListItem, 
-  ListItemText, 
-  CircularProgress, 
-  Box, 
-  Alert, 
-  Divider, 
+import {
+  Container,
+  Paper,
+  Typography,
+  List,
+  ListItem,
+  ListItemText,
+  CircularProgress,
+  Box,
+  Alert,
+  Divider,
   Chip,
   Card,
   CardContent,
@@ -26,10 +26,19 @@ import {
   DialogContent,
   DialogContentText,
   DialogActions,
-  Button
+  Button,
 } from '@mui/material';
-import { supabase } from '../utils/supabase/supabaseClient';
-import { Search, Person, CardMembership, Star, CalendarMonth, AttachMoney, AccountBalanceWallet, Delete } from '@mui/icons-material';
+import { supabase } from '../lib/supabase';
+import {
+  Search,
+  Person,
+  CardMembership,
+  Star,
+  CalendarMonth,
+  AttachMoney,
+  AccountBalanceWallet,
+  Delete,
+} from '@mui/icons-material';
 import { format, differenceInMonths } from 'date-fns';
 import { toast } from 'react-toastify';
 
@@ -39,22 +48,39 @@ const ANIMATION_CONFIG = {
   INITIAL_DURATION: 1500,
 };
 
-const clamp = (val: number, min = 0, max = 100) => Math.min(Math.max(val, min), max);
+const clamp = (val: number, min = 0, max = 100) =>
+  Math.min(Math.max(val, min), max);
 const round = (val: number, p = 3) => parseFloat(val.toFixed(p));
-const adjust = (val: number, fromMin: number, fromMax: number, toMin: number, toMax: number) =>
-  round(toMin + ((toMax - toMin) * (val - fromMin)) / (fromMax - fromMin));
+const adjust = (
+  val: number,
+  fromMin: number,
+  fromMax: number,
+  toMin: number,
+  toMax: number
+) => round(toMin + ((toMax - toMin) * (val - fromMin)) / (fromMax - fromMin));
 const easeInOutCubic = (x: number) =>
   x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
 
 // Holographic Card Component
-const HolographicMemberCard = ({ member, onDelete }: { member: Member; onDelete: (member: Member) => void }) => {
+const HolographicMemberCard = ({
+  member,
+  onDelete,
+}: {
+  member: Member;
+  onDelete: (member: Member) => void;
+}) => {
   const wrapRef = useRef<HTMLDivElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
 
   const animationHandlers = useMemo(() => {
     let rafId: number | null = null;
 
-    const updateTransform = (offsetX: number, offsetY: number, card: HTMLElement, wrap: HTMLElement) => {
+    const updateTransform = (
+      offsetX: number,
+      offsetY: number,
+      card: HTMLElement,
+      wrap: HTMLElement
+    ) => {
       const { clientWidth: width, clientHeight: height } = card;
       const percentX = clamp((100 / width) * offsetX);
       const percentY = clamp((100 / height) * offsetY);
@@ -73,7 +99,13 @@ const HolographicMemberCard = ({ member, onDelete }: { member: Member; onDelete:
       Object.entries(props).forEach(([p, v]) => wrap.style.setProperty(p, v));
     };
 
-    const smoothAnimation = (duration: number, startX: number, startY: number, card: HTMLElement, wrap: HTMLElement) => {
+    const smoothAnimation = (
+      duration: number,
+      startX: number,
+      startY: number,
+      card: HTMLElement,
+      wrap: HTMLElement
+    ) => {
       const startTime = performance.now();
       const targetX = wrap.clientWidth / 2;
       const targetY = wrap.clientHeight / 2;
@@ -96,11 +128,19 @@ const HolographicMemberCard = ({ member, onDelete }: { member: Member; onDelete:
     };
   }, []);
 
-  const handlePointerMove = useCallback((e: React.PointerEvent) => {
-    if (!cardRef.current || !wrapRef.current || !animationHandlers) return;
-    const rect = cardRef.current.getBoundingClientRect();
-    animationHandlers.updateTransform(e.clientX - rect.left, e.clientY - rect.top, cardRef.current, wrapRef.current);
-  }, [animationHandlers]);
+  const handlePointerMove = useCallback(
+    (e: React.PointerEvent) => {
+      if (!cardRef.current || !wrapRef.current || !animationHandlers) return;
+      const rect = cardRef.current.getBoundingClientRect();
+      animationHandlers.updateTransform(
+        e.clientX - rect.left,
+        e.clientY - rect.top,
+        cardRef.current,
+        wrapRef.current
+      );
+    },
+    [animationHandlers]
+  );
 
   const handlePointerEnter = useCallback(() => {
     if (!wrapRef.current || !cardRef.current || !animationHandlers) return;
@@ -109,26 +149,40 @@ const HolographicMemberCard = ({ member, onDelete }: { member: Member; onDelete:
     cardRef.current.classList.add('active');
   }, [animationHandlers]);
 
-  const handlePointerLeave = useCallback((e: React.PointerEvent) => {
-    if (!wrapRef.current || !cardRef.current || !animationHandlers) return;
-    wrapRef.current.classList.remove('active');
-    cardRef.current.classList.remove('active');
-    animationHandlers.smoothAnimation(ANIMATION_CONFIG.SMOOTH_DURATION, e.nativeEvent.offsetX, e.nativeEvent.offsetY, cardRef.current, wrapRef.current);
-  }, [animationHandlers]);
-  
+  const handlePointerLeave = useCallback(
+    (e: React.PointerEvent) => {
+      if (!wrapRef.current || !cardRef.current || !animationHandlers) return;
+      wrapRef.current.classList.remove('active');
+      cardRef.current.classList.remove('active');
+      animationHandlers.smoothAnimation(
+        ANIMATION_CONFIG.SMOOTH_DURATION,
+        e.nativeEvent.offsetX,
+        e.nativeEvent.offsetY,
+        cardRef.current,
+        wrapRef.current
+      );
+    },
+    [animationHandlers]
+  );
+
   useEffect(() => {
     if (!animationHandlers || !wrapRef.current || !cardRef.current) return;
 
     const wrap = wrapRef.current;
     const card = cardRef.current;
     const { INITIAL_DURATION } = ANIMATION_CONFIG;
-    
+
     const initialX = wrap.clientWidth / 2;
     const initialY = wrap.clientHeight / 2;
 
     animationHandlers.updateTransform(initialX, initialY, card, wrap);
-    animationHandlers.smoothAnimation(INITIAL_DURATION, initialX, initialY, card, wrap);
-
+    animationHandlers.smoothAnimation(
+      INITIAL_DURATION,
+      initialX,
+      initialY,
+      card,
+      wrap
+    );
   }, [animationHandlers]);
 
   // Calculate membership status within the component
@@ -138,18 +192,20 @@ const HolographicMemberCard = ({ member, onDelete }: { member: Member; onDelete:
     const monthsPassed = differenceInMonths(today, startDate);
     const durationMonths = member.membershipDuration || 12;
     const remainingMonths = durationMonths - monthsPassed;
-    
+
     return {
       isActive: remainingMonths > 0,
       remainingMonths: Math.max(0, remainingMonths),
-      expiryDate: new Date(startDate.setMonth(startDate.getMonth() + durationMonths))
+      expiryDate: new Date(
+        startDate.setMonth(startDate.getMonth() + durationMonths)
+      ),
     };
   }, [member.purchaseDate, member.membershipDuration]);
 
   // Get color based on membership tier
   const membershipColor = useMemo(() => {
     const tier = (member.membershipTier || '').toLowerCase();
-    if (tier.includes('gold')) return '#FFD700';  // Gold
+    if (tier.includes('gold')) return '#FFD700'; // Gold
     if (tier.includes('silver')) return '#C0C0C0'; // Silver
     if (tier.includes('platinum')) return '#E5E4E2'; // Platinum
     if (tier.includes('diamond')) return '#B9F2FF'; // Diamond
@@ -160,7 +216,7 @@ const HolographicMemberCard = ({ member, onDelete }: { member: Member; onDelete:
   return (
     <div
       ref={wrapRef}
-      className="hc-wrapper"
+      className='hc-wrapper'
       style={{
         height: '100%',
         perspective: '1000px',
@@ -168,7 +224,7 @@ const HolographicMemberCard = ({ member, onDelete }: { member: Member; onDelete:
     >
       <div
         ref={cardRef}
-        className="hc-card"
+        className='hc-card'
         onPointerEnter={handlePointerEnter}
         onPointerMove={handlePointerMove}
         onPointerLeave={handlePointerLeave}
@@ -183,22 +239,28 @@ const HolographicMemberCard = ({ member, onDelete }: { member: Member; onDelete:
           overflow: 'hidden',
         }}
       >
-        <div className="hc-inside" style={{ 
-          width: '100%', 
-          height: '100%', 
-          borderRadius: '8px', 
-          overflow: 'hidden',
-          background: 'white'
-        }}>
-          <div className="hc-shine" />
-          <div className="hc-glare" />
-          <div className="hc-content-wrapper" style={{ 
-            width: '100%', 
-            height: '100%', 
-            position: 'relative',
-            display: 'flex',
-            flexDirection: 'column',
-          }}>
+        <div
+          className='hc-inside'
+          style={{
+            width: '100%',
+            height: '100%',
+            borderRadius: '8px',
+            overflow: 'hidden',
+            background: 'white',
+          }}
+        >
+          <div className='hc-shine' />
+          <div className='hc-glare' />
+          <div
+            className='hc-content-wrapper'
+            style={{
+              width: '100%',
+              height: '100%',
+              position: 'relative',
+              display: 'flex',
+              flexDirection: 'column',
+            }}
+          >
             {/* Delete button */}
             <IconButton
               sx={{
@@ -210,127 +272,197 @@ const HolographicMemberCard = ({ member, onDelete }: { member: Member; onDelete:
                 '&:hover': {
                   transform: 'scale(1.1)',
                   backgroundColor: 'rgba(239, 68, 68, 0.1)',
-                }
+                },
               }}
-              color="error"
+              color='error'
               onClick={() => onDelete(member)}
             >
               <Delete />
             </IconButton>
-            
+
             {/* Status indicator */}
             {membershipStatus.isActive && (
-              <Box sx={{
-                position: 'absolute',
-                top: 0,
-                right: 0,
-                backgroundColor: 'success.main',
-                color: 'white',
-                px: 2,
-                py: 0.5,
-                borderBottomLeftRadius: 8,
-                fontSize: '0.75rem',
-                fontWeight: 'bold',
-                zIndex: 1
-              }}>
+              <Box
+                sx={{
+                  position: 'absolute',
+                  top: 0,
+                  right: 0,
+                  backgroundColor: 'success.main',
+                  color: 'white',
+                  px: 2,
+                  py: 0.5,
+                  borderBottomLeftRadius: 8,
+                  fontSize: '0.75rem',
+                  fontWeight: 'bold',
+                  zIndex: 1,
+                }}
+              >
                 ACTIVE
               </Box>
             )}
-            
-            <CardContent sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+
+            <CardContent
+              sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}
+            >
               <Box sx={{ display: 'flex', alignItems: 'flex-start', mb: 2 }}>
-                <Avatar sx={{ 
-                  bgcolor: membershipColor, 
-                  width: 56, 
-                  height: 56,
-                  mr: 2,
-                  color: member.membershipTier?.toLowerCase().includes('gold') ? '#000' : '#fff',
-                  transition: 'all 0.3s ease',
-                }}>
+                <Avatar
+                  sx={{
+                    bgcolor: membershipColor,
+                    width: 56,
+                    height: 56,
+                    mr: 2,
+                    color: member.membershipTier?.toLowerCase().includes('gold')
+                      ? '#000'
+                      : '#fff',
+                    transition: 'all 0.3s ease',
+                  }}
+                >
                   {member.name.charAt(0).toUpperCase()}
                 </Avatar>
                 <Box>
-                  <Typography variant="h6" sx={{ fontWeight: 500, mb: 0.5 }}>
+                  <Typography variant='h6' sx={{ fontWeight: 500, mb: 0.5 }}>
                     {member.name}
                   </Typography>
-                  
+
                   {/* Membership Tier Badge */}
-                  <Box sx={{ 
-                    display: 'flex', 
-                    alignItems: 'center', 
-                    mb: 0.5,
-                    p: 0.75,
-                    borderRadius: 1,
-                    backgroundColor: membershipColor,
-                    color: member.membershipTier?.toLowerCase().includes('gold') ? '#000' : '#fff',
-                    fontWeight: 'bold',
-                    width: 'fit-content',
-                    transition: 'all 0.3s ease',
-                  }}>
-                    <CardMembership fontSize="small" sx={{ mr: 0.5 }} />
+                  <Box
+                    sx={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      mb: 0.5,
+                      p: 0.75,
+                      borderRadius: 1,
+                      backgroundColor: membershipColor,
+                      color: member.membershipTier
+                        ?.toLowerCase()
+                        .includes('gold')
+                        ? '#000'
+                        : '#fff',
+                      fontWeight: 'bold',
+                      width: 'fit-content',
+                      transition: 'all 0.3s ease',
+                    }}
+                  >
+                    <CardMembership fontSize='small' sx={{ mr: 0.5 }} />
                     {member.membershipTier}
                   </Box>
                 </Box>
               </Box>
-              
+
               <Divider sx={{ my: 1.5 }} />
-              
+
               <Box sx={{ mt: 2, flexGrow: 1 }}>
                 {member.phone && (
-                  <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5, display: 'flex', alignItems: 'center' }}>
-                    <span style={{ minWidth: '70px' }}>Phone:</span> {member.phone}
+                  <Typography
+                    variant='body2'
+                    color='text.secondary'
+                    sx={{ mb: 0.5, display: 'flex', alignItems: 'center' }}
+                  >
+                    <span style={{ minWidth: '70px' }}>Phone:</span>{' '}
+                    {member.phone}
                   </Typography>
                 )}
                 {member.email && (
-                  <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5, display: 'flex', alignItems: 'center' }}>
-                    <span style={{ minWidth: '70px' }}>Email:</span> {member.email}
+                  <Typography
+                    variant='body2'
+                    color='text.secondary'
+                    sx={{ mb: 0.5, display: 'flex', alignItems: 'center' }}
+                  >
+                    <span style={{ minWidth: '70px' }}>Email:</span>{' '}
+                    {member.email}
                   </Typography>
                 )}
-                
-                <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5, display: 'flex', alignItems: 'center' }}>
-                  <CalendarMonth fontSize="small" sx={{ mr: 1 }} />
-                  <span style={{ minWidth: '70px' }}>Member since:</span> {format(new Date(member.purchaseDate), 'MMM d, yyyy')}
+
+                <Typography
+                  variant='body2'
+                  color='text.secondary'
+                  sx={{ mb: 0.5, display: 'flex', alignItems: 'center' }}
+                >
+                  <CalendarMonth fontSize='small' sx={{ mr: 1 }} />
+                  <span style={{ minWidth: '70px' }}>Member since:</span>{' '}
+                  {format(new Date(member.purchaseDate), 'MMM d, yyyy')}
                 </Typography>
-                
+
                 {membershipPrice > 0 && (
                   <>
-                    <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5, display: 'flex', alignItems: 'center' }}>
-                      <AttachMoney fontSize="small" sx={{ mr: 1 }} />
-                      <span style={{ minWidth: '70px' }}>Total Amount:</span> Rs. {member.totalMembershipAmount?.toLocaleString() || membershipPrice.toLocaleString()}
+                    <Typography
+                      variant='body2'
+                      color='text.secondary'
+                      sx={{ mb: 0.5, display: 'flex', alignItems: 'center' }}
+                    >
+                      <AttachMoney fontSize='small' sx={{ mr: 1 }} />
+                      <span style={{ minWidth: '70px' }}>
+                        Total Amount:
+                      </span>{' '}
+                      Rs.{' '}
+                      {member.totalMembershipAmount?.toLocaleString() ||
+                        membershipPrice.toLocaleString()}
                     </Typography>
                     <Box sx={{ mb: 1, display: 'flex', alignItems: 'center' }}>
-                      <AccountBalanceWallet sx={{ mr: 1, color: 'text.secondary' }} />
-                      <Typography variant="body2">Balance: <span style={{ fontWeight: 'bold' }}>Rs. {member.currentBalance?.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span></Typography>
+                      <AccountBalanceWallet
+                        sx={{ mr: 1, color: 'text.secondary' }}
+                      />
+                      <Typography variant='body2'>
+                        Balance:{' '}
+                        <span style={{ fontWeight: 'bold' }}>
+                          Rs.{' '}
+                          {member.currentBalance?.toLocaleString('en-IN', {
+                            maximumFractionDigits: 2,
+                          })}
+                        </span>
+                      </Typography>
                     </Box>
 
                     {member.benefitAmount && member.benefitAmount > 0 && (
-                      <Box sx={{ mb: 1, display: 'flex', alignItems: 'center' }}>
+                      <Box
+                        sx={{ mb: 1, display: 'flex', alignItems: 'center' }}
+                      >
                         <Star sx={{ mr: 1, color: 'gold' }} />
-                        <Typography variant="body2">Benefit Amount: <span style={{ fontWeight: 'bold' }}>Rs. {member.benefitAmount.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span></Typography>
+                        <Typography variant='body2'>
+                          Benefit Amount:{' '}
+                          <span style={{ fontWeight: 'bold' }}>
+                            Rs.{' '}
+                            {member.benefitAmount.toLocaleString('en-IN', {
+                              maximumFractionDigits: 2,
+                            })}
+                          </span>
+                        </Typography>
                       </Box>
                     )}
                   </>
                 )}
-                
-                <Box sx={{ 
-                  mt: 'auto',
-                  pt: 1.5,
-                  borderTop: '1px dashed rgba(0,0,0,0.1)',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center'
-                }}>
-                  <Typography variant="body2" fontWeight="500" color={membershipStatus.isActive ? 'success.main' : 'text.secondary'}>
-                    {membershipStatus.isActive 
-                      ? `${membershipStatus.remainingMonths} months remaining` 
+
+                <Box
+                  sx={{
+                    mt: 'auto',
+                    pt: 1.5,
+                    borderTop: '1px dashed rgba(0,0,0,0.1)',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                  }}
+                >
+                  <Typography
+                    variant='body2'
+                    fontWeight='500'
+                    color={
+                      membershipStatus.isActive
+                        ? 'success.main'
+                        : 'text.secondary'
+                    }
+                  >
+                    {membershipStatus.isActive
+                      ? `${membershipStatus.remainingMonths} months remaining`
                       : 'Membership expired'}
                   </Typography>
-                  
-                  <Chip 
-                    size="small" 
-                    label={membershipStatus.isActive 
-                      ? `Expires ${format(membershipStatus.expiryDate, 'MMM d, yyyy')}` 
-                      : 'Renew membership'} 
+
+                  <Chip
+                    size='small'
+                    label={
+                      membershipStatus.isActive
+                        ? `Expires ${format(membershipStatus.expiryDate, 'MMM d, yyyy')}`
+                        : 'Renew membership'
+                    }
                     color={membershipStatus.isActive ? 'default' : 'primary'}
                     variant={membershipStatus.isActive ? 'outlined' : 'filled'}
                   />
@@ -366,13 +498,19 @@ const MembersPage = () => {
   const queryClient = useQueryClient();
 
   // Fetch members using dedicated members table and enrich with client & tier details
-  const { data: members, isLoading, error } = useQuery({
+  const {
+    data: members,
+    isLoading,
+    error,
+  } = useQuery({
     queryKey: ['members'],
     queryFn: async () => {
       // 1) Fetch raw membership records
       const { data: membersData, error: membersError } = await supabase
         .from('members')
-        .select('id, client_id, client_name, tier_id, purchase_date, expires_at, current_balance, total_membership_amount, benefit_amount')
+        .select(
+          'id, client_id, client_name, tier_id, purchase_date, expires_at, current_balance, total_membership_amount, benefit_amount'
+        )
         .order('purchase_date', { ascending: false });
       if (membersError) {
         console.error('Error fetching members:', membersError);
@@ -397,7 +535,9 @@ const MembersPage = () => {
 
       // 4) Combine into Member[] with computed balance after membership usage
       // Fetch membership payments for these clients
-      const membershipClientIds = Array.from(new Set(membersData.map(m => m.client_id)));
+      const membershipClientIds = Array.from(
+        new Set(membersData.map(m => m.client_id))
+      );
       const { data: ordersData } = await supabase
         .from('pos_orders')
         .select('client_id, payments')
@@ -407,7 +547,8 @@ const MembersPage = () => {
         ordersData.forEach(order => {
           (order.payments || []).forEach((p: any) => {
             if (p.payment_method === 'membership') {
-              paymentsByClient[order.client_id] = (paymentsByClient[order.client_id] || 0) + (p.amount || 0);
+              paymentsByClient[order.client_id] =
+                (paymentsByClient[order.client_id] || 0) + (p.amount || 0);
             }
           });
         });
@@ -429,38 +570,46 @@ const MembersPage = () => {
           membershipDuration: tier?.duration_months,
           currentBalance: m.current_balance,
           totalMembershipAmount: m.total_membership_amount,
-          benefitAmount: m.benefit_amount
+          benefitAmount: m.benefit_amount,
         };
       });
-    }
+    },
   });
 
   // Filter members based on search term
-  const filteredMembers = members?.filter(member => 
-    member.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (member.phone && member.phone.includes(searchTerm)) ||
-    (member.email && member.email.toLowerCase().includes(searchTerm.toLowerCase())) ||
-    (member.membershipTier && member.membershipTier.toLowerCase().includes(searchTerm.toLowerCase()))
+  const filteredMembers = members?.filter(
+    member =>
+      member.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (member.phone && member.phone.includes(searchTerm)) ||
+      (member.email &&
+        member.email.toLowerCase().includes(searchTerm.toLowerCase())) ||
+      (member.membershipTier &&
+        member.membershipTier.toLowerCase().includes(searchTerm.toLowerCase()))
   );
 
   // Calculate remaining membership duration
-  const getMembershipStatus = (purchaseDate: string, durationMonths: number = 12) => {
+  const getMembershipStatus = (
+    purchaseDate: string,
+    durationMonths: number = 12
+  ) => {
     const startDate = new Date(purchaseDate);
     const today = new Date();
     const monthsPassed = differenceInMonths(today, startDate);
     const remainingMonths = durationMonths - monthsPassed;
-    
+
     return {
       isActive: remainingMonths > 0,
       remainingMonths: Math.max(0, remainingMonths),
-      expiryDate: new Date(startDate.setMonth(startDate.getMonth() + durationMonths))
+      expiryDate: new Date(
+        startDate.setMonth(startDate.getMonth() + durationMonths)
+      ),
     };
   };
 
   // Get color based on membership tier
   const getMembershipColor = (tierName: string) => {
     const tier = tierName.toLowerCase();
-    if (tier.includes('gold')) return '#FFD700';  // Gold
+    if (tier.includes('gold')) return '#FFD700'; // Gold
     if (tier.includes('silver')) return '#C0C0C0'; // Silver
     if (tier.includes('platinum')) return '#E5E4E2'; // Platinum
     if (tier.includes('diamond')) return '#B9F2FF'; // Diamond
@@ -499,21 +648,21 @@ const MembersPage = () => {
   };
 
   return (
-    <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
+    <Container maxWidth='lg' sx={{ mt: 4, mb: 4 }}>
       <Paper elevation={3} sx={{ p: 3, borderRadius: 2 }}>
         <Divider sx={{ mb: 3 }} />
-        
+
         <TextField
           fullWidth
-          placeholder="Search by name, phone, email, or membership tier..."
-          variant="outlined"
-          size="small"
+          placeholder='Search by name, phone, email, or membership tier...'
+          variant='outlined'
+          size='small'
           value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
+          onChange={e => setSearchTerm(e.target.value)}
           sx={{ mb: 3 }}
           InputProps={{
             startAdornment: (
-              <InputAdornment position="start">
+              <InputAdornment position='start'>
                 <Search />
               </InputAdornment>
             ),
@@ -525,31 +674,41 @@ const MembersPage = () => {
             <CircularProgress />
           </Box>
         ) : error ? (
-          <Alert severity="error" sx={{ mt: 2 }}>
-            Error loading members: {error instanceof Error ? error.message : 'Unknown error'}
+          <Alert severity='error' sx={{ mt: 2 }}>
+            Error loading members:{' '}
+            {error instanceof Error ? error.message : 'Unknown error'}
           </Alert>
         ) : filteredMembers && filteredMembers.length > 0 ? (
           <Grid container spacing={2}>
-            {filteredMembers.map((member) => (
+            {filteredMembers.map(member => (
               <Grid item xs={12} sm={6} md={4} key={member.id || member.name}>
-                <HolographicMemberCard member={member} onDelete={handleDeleteClick} />
+                <HolographicMemberCard
+                  member={member}
+                  onDelete={handleDeleteClick}
+                />
               </Grid>
             ))}
           </Grid>
         ) : (
-          <Box sx={{ 
-            textAlign: 'center', 
-            py: 5, 
-            bgcolor: 'background.paper', 
-            borderRadius: 2,
-            border: '1px dashed rgba(0, 0, 0, 0.12)'
-          }}>
-            <CardMembership sx={{ fontSize: '3rem', color: 'text.disabled', mb: 2 }} />
-            <Typography variant="h6" color="text.secondary">
+          <Box
+            sx={{
+              textAlign: 'center',
+              py: 5,
+              bgcolor: 'background.paper',
+              borderRadius: 2,
+              border: '1px dashed rgba(0, 0, 0, 0.12)',
+            }}
+          >
+            <CardMembership
+              sx={{ fontSize: '3rem', color: 'text.disabled', mb: 2 }}
+            />
+            <Typography variant='h6' color='text.secondary'>
               No members found
             </Typography>
-            <Typography variant="body2" color="text.disabled" sx={{ mt: 1 }}>
-              {searchTerm ? 'Try adjusting your search criteria' : 'Add members through the POS by selling membership tiers'}
+            <Typography variant='body2' color='text.disabled' sx={{ mt: 1 }}>
+              {searchTerm
+                ? 'Try adjusting your search criteria'
+                : 'Add members through the POS by selling membership tiers'}
             </Typography>
           </Box>
         )}
@@ -563,12 +722,17 @@ const MembersPage = () => {
         <DialogTitle>Delete Membership?</DialogTitle>
         <DialogContent>
           <DialogContentText>
-            Are you sure you want to delete the membership for {memberToDelete?.name}? This action cannot be undone.
+            Are you sure you want to delete the membership for{' '}
+            {memberToDelete?.name}? This action cannot be undone.
           </DialogContentText>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setDeleteDialogOpen(false)}>Cancel</Button>
-          <Button onClick={handleDeleteConfirm} color="error" variant="contained">
+          <Button
+            onClick={handleDeleteConfirm}
+            color='error'
+            variant='contained'
+          >
             Delete
           </Button>
         </DialogActions>
@@ -726,4 +890,4 @@ const MembersPage = () => {
   );
 };
 
-export default MembersPage; 
+export default MembersPage;

@@ -1,17 +1,10 @@
-import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
-import { resolve } from 'path'
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+import { resolve } from 'path';
 
 // https://vitejs.dev/config/
 export default defineConfig({
-  plugins: [
-    react({
-      jsxImportSource: '@emotion/react',
-      babel: {
-        plugins: ['@emotion/babel-plugin']
-      }
-    })
-  ],
+  plugins: [react()],
   server: {
     hmr: {
       // Force WebSocket protocol for HMR
@@ -25,19 +18,20 @@ export default defineConfig({
         target: 'http://localhost:3001',
         changeOrigin: true,
         secure: false,
-        rewrite: (path) => path
-      }
+        rewrite: path => path,
+      },
     },
     // Add headers to prevent caching
     headers: {
       'X-Content-Type-Options': 'nosniff',
       'X-Frame-Options': 'DENY',
       'X-XSS-Protection': '1; mode=block',
-      'Content-Security-Policy': "default-src 'self' https://*.supabase.co https://*.supabase.in https://graph.facebook.com; connect-src 'self' https://*.supabase.co https://*.supabase.in https://graph.facebook.com wss://*.supabase.co wss://*.supabase.in http://localhost:* ws://localhost:*; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: https:; font-src 'self' data: https://fonts.gstatic.com; worker-src 'self' blob:;",
+      'Content-Security-Policy':
+        "default-src 'self' https://*.supabase.co https://*.supabase.in https://graph.facebook.com; connect-src 'self' https://*.supabase.co https://*.supabase.in https://graph.facebook.com wss://*.supabase.co wss://*.supabase.in http://localhost:* ws://localhost:*; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: https:; font-src 'self' data: https://fonts.gstatic.com; worker-src 'self' blob:;",
       'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
       'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
-      'Pragma': 'no-cache',
-      'Expires': '0'
+      Pragma: 'no-cache',
+      Expires: '0',
     },
     // Show more detailed errors
     strictPort: false,
@@ -46,7 +40,7 @@ export default defineConfig({
       usePolling: false,
       // Decrease the delay between file change and reload
       interval: 100,
-    }
+    },
   },
   build: {
     outDir: 'dist',
@@ -59,22 +53,22 @@ export default defineConfig({
     terserOptions: {
       compress: {
         drop_console: false, // Keep console logs for debugging
-        drop_debugger: true
+        drop_debugger: true,
       },
       output: {
-        comments: false
-      }
+        comments: false,
+      },
     },
     // Add esbuild options
     target: 'es2020',
     cssTarget: 'chrome80',
     rollupOptions: {
       input: {
-        main: resolve(__dirname, 'index.html')
+        main: resolve(__dirname, 'index.html'),
       },
       output: {
         // Configure manual chunks to split the bundle
-        manualChunks: (id) => {
+        manualChunks: id => {
           // Create a vendors chunk for node_modules
           if (id.includes('node_modules')) {
             // Split major libraries into their own chunks
@@ -102,7 +96,7 @@ export default defineConfig({
             // All other dependencies
             return 'vendor';
           }
-          
+
           // Split application code by feature
           if (id.includes('/src/components/')) {
             // Split large components into their own chunks
@@ -140,9 +134,9 @@ export default defineConfig({
           if (id.includes('/src/utils/')) {
             return 'utils';
           }
-        }
-      }
-    }
+        },
+      },
+    },
   },
   optimizeDeps: {
     // Include more dependencies for pre-bundling to prevent issues
@@ -163,25 +157,25 @@ export default defineConfig({
       '@fullcalendar/react',
       '@fullcalendar/daygrid',
       '@fullcalendar/timegrid',
-      '@fullcalendar/interaction'
+      '@fullcalendar/interaction',
     ],
     // Force nested dependencies to be pre-bundled
     force: true,
     esbuildOptions: {
       target: 'es2020',
       supported: {
-        'dynamic-import': true
-      }
-    }
+        'dynamic-import': true,
+      },
+    },
   },
   // Add resolve aliases for cleaner imports
   resolve: {
     alias: {
-      '@': resolve(__dirname, 'src')
+      '@': resolve(__dirname, 'src'),
     },
-    extensions: ['.mjs', '.js', '.ts', '.jsx', '.tsx', '.json']
+    extensions: ['.mjs', '.js', '.ts', '.jsx', '.tsx', '.json'],
   },
   esbuild: {
-    logOverride: { 'this-is-undefined-in-esm': 'silent' }
-  }
-})
+    logOverride: { 'this-is-undefined-in-esm': 'silent' },
+  },
+});

@@ -1,7 +1,10 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { sendAppointmentEmail } from '@/utils/emailService';
-import { WhatsAppAutomation, AppointmentData } from '@/whatsapp/business-api/utils/whatsappAutomation';
+import {
+  WhatsAppAutomation,
+  AppointmentData,
+} from '@/whatsapp/business-api/utils/whatsappAutomation';
 import { v4 as uuidv4 } from 'uuid';
 
 // Initialize Supabase client
@@ -37,7 +40,8 @@ export async function GET(req: Request) {
 
     let query = supabase
       .from('appointments')
-      .select(`
+      .select(
+        `
         *,
         clients (
           id,
@@ -59,7 +63,8 @@ export async function GET(req: Request) {
             name
           )
         )
-      `)
+      `
+      )
       .order('start_time', { ascending: true });
 
     if (clientId) {
@@ -73,7 +78,7 @@ export async function GET(req: Request) {
       startOfDay.setHours(0, 0, 0, 0);
       const endOfDay = new Date(date);
       endOfDay.setHours(23, 59, 59, 999);
-      
+
       query = query
         .gte('start_time', startOfDay.toISOString())
         .lte('start_time', endOfDay.toISOString());
@@ -97,24 +102,30 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   try {
     if (!isAuthorized(req)) {
-      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+      return NextResponse.json(
+        { success: false, error: 'Unauthorized' },
+        { status: 401 }
+      );
     }
     const body = await req.json();
-    const { 
-      id, 
-      client, 
-      start_time, 
+    const {
+      id,
+      client,
+      start_time,
       end_time,
-      services, 
-      stylists, 
-      status, 
+      services,
+      stylists,
+      status,
       total_amount,
-      notes 
+      notes,
     } = body;
 
     if (!client || !start_time || !status) {
       return NextResponse.json(
-        { success: false, error: 'Missing required fields: client, start_time, status' },
+        {
+          success: false,
+          error: 'Missing required fields: client, start_time, status',
+        },
         { status: 400 }
       );
     }
@@ -126,11 +137,12 @@ export async function POST(req: Request) {
     if (id) {
       // Update existing appointment
       isUpdate = true;
-      
+
       // Get existing appointment for comparison
       const { data: existingAppointment, error: fetchError } = await supabase
         .from('appointments')
-        .select(`
+        .select(
+          `
           *,
           clients (
             id,
@@ -152,7 +164,8 @@ export async function POST(req: Request) {
               name
             )
           )
-        `)
+        `
+        )
         .eq('id', id)
         .single();
 
@@ -167,7 +180,7 @@ export async function POST(req: Request) {
           end_time,
           status,
           notes,
-          total_amount
+          total_amount,
         })
         .eq('id', id)
         .select()
@@ -178,7 +191,7 @@ export async function POST(req: Request) {
     } else {
       // Create new appointment
       const appointmentId = uuidv4();
-      
+
       const { data: newAppointment, error: createError } = await supabase
         .from('appointments')
         .insert({
@@ -188,7 +201,7 @@ export async function POST(req: Request) {
           end_time,
           status,
           notes,
-          total_amount: total_amount || 0
+          total_amount: total_amount || 0,
         })
         .select()
         .single();
@@ -200,7 +213,7 @@ export async function POST(req: Request) {
       if (services && services.length > 0) {
         const appointmentServices = services.map((service: any) => ({
           appointment_id: appointmentId,
-          service_id: service.id || service.service_id
+          service_id: service.id || service.service_id,
         }));
 
         const { error: servicesError } = await supabase
@@ -214,7 +227,7 @@ export async function POST(req: Request) {
       if (stylists && stylists.length > 0) {
         const appointmentStylists = stylists.map((stylist: any) => ({
           appointment_id: appointmentId,
-          stylist_id: stylist.id || stylist.stylist_id
+          stylist_id: stylist.id || stylist.stylist_id,
         }));
 
         const { error: stylistsError } = await supabase
@@ -227,13 +240,13 @@ export async function POST(req: Request) {
 
     const notificationResults = {
       email: false,
-      whatsapp: false
+      whatsapp: false,
     };
 
     // Send email notification if client has email
     if (client.email) {
       console.log('Preparing to send email to:', client.email);
-      
+
       try {
         notificationResults.email = await sendAppointmentEmail(
           client.email,
@@ -253,7 +266,7 @@ export async function POST(req: Request) {
     // Send automatic WhatsApp message using new automation system
     if (client.phone) {
       console.log('Preparing to send WhatsApp message to:', client.phone);
-      
+
       try {
         const appointmentData: AppointmentData = {
           id: appointment.id,
@@ -261,25 +274,36 @@ export async function POST(req: Request) {
           client_phone: client.phone,
           start_time,
           services: services || [],
-          stylist: stylists && stylists.length > 0 ? stylists[0].name : 'Salon Team',
+          stylist:
+            stylists && stylists.length > 0 ? stylists[0].name : 'Salon Team',
           status,
-          total_amount: total_amount || 0
+          total_amount: total_amount || 0,
         };
 
         if (isUpdate) {
           if (status === 'cancelled') {
-            notificationResults.whatsapp = await WhatsAppAutomation.handleAppointmentCancelled(appointmentData);
+            notificationResults.whatsapp =
+              await WhatsAppAutomation.handleAppointmentCancelled(
+                appointmentData
+              );
           } else {
-            const oldData = oldAppointmentData ? {
-              start_time: oldAppointmentData.start_time,
-              status: oldAppointmentData.status
-            } : {};
-            notificationResults.whatsapp = await WhatsAppAutomation.handleAppointmentUpdated(appointmentData, oldData);
+            const oldData = oldAppointmentData
+              ? {
+                  start_time: oldAppointmentData.start_time,
+                  status: oldAppointmentData.status,
+                }
+              : {};
+            notificationResults.whatsapp =
+              await WhatsAppAutomation.handleAppointmentUpdated(
+                appointmentData,
+                oldData
+              );
           }
         } else {
-          notificationResults.whatsapp = await WhatsAppAutomation.handleAppointmentCreated(appointmentData);
+          notificationResults.whatsapp =
+            await WhatsAppAutomation.handleAppointmentCreated(appointmentData);
         }
-        
+
         console.log('WhatsApp message sent successfully');
       } catch (whatsappError) {
         console.error('Error sending WhatsApp message:', whatsappError);
@@ -288,11 +312,12 @@ export async function POST(req: Request) {
 
     return NextResponse.json({
       success: true,
-      message: isUpdate ? 'Appointment updated successfully' : 'Appointment created successfully',
+      message: isUpdate
+        ? 'Appointment updated successfully'
+        : 'Appointment created successfully',
       appointment,
-      notifications: notificationResults
+      notifications: notificationResults,
     });
-
   } catch (error) {
     console.error('Error in appointment operation:', error);
     return NextResponse.json(
@@ -306,7 +331,10 @@ export async function POST(req: Request) {
 export async function PUT(req: Request) {
   try {
     if (!isAuthorized(req)) {
-      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+      return NextResponse.json(
+        { success: false, error: 'Unauthorized' },
+        { status: 401 }
+      );
     }
     const body = await req.json();
     const { id, ...updateData } = body;
@@ -321,7 +349,8 @@ export async function PUT(req: Request) {
     // Get existing appointment for comparison
     const { data: existingAppointment, error: fetchError } = await supabase
       .from('appointments')
-      .select(`
+      .select(
+        `
         *,
         clients (
           id,
@@ -343,7 +372,8 @@ export async function PUT(req: Request) {
             name
           )
         )
-      `)
+      `
+      )
       .eq('id', id)
       .single();
 
@@ -368,22 +398,32 @@ export async function PUT(req: Request) {
           client_name: existingAppointment.clients.full_name,
           client_phone: existingAppointment.clients.phone,
           start_time: updatedAppointment.start_time,
-          services: existingAppointment.appointment_services?.map((as: any) => as.services) || [],
-          stylist: existingAppointment.appointment_stylists?.length > 0 
-            ? existingAppointment.appointment_stylists[0].stylists.name 
-            : 'Salon Team',
+          services:
+            existingAppointment.appointment_services?.map(
+              (as: any) => as.services
+            ) || [],
+          stylist:
+            existingAppointment.appointment_stylists?.length > 0
+              ? existingAppointment.appointment_stylists[0].stylists.name
+              : 'Salon Team',
           status: updatedAppointment.status,
-          total_amount: updatedAppointment.total_amount || 0
+          total_amount: updatedAppointment.total_amount || 0,
         };
 
         if (updatedAppointment.status === 'cancelled') {
-          whatsappSent = await WhatsAppAutomation.handleAppointmentCancelled(appointmentData);
+          whatsappSent =
+            await WhatsAppAutomation.handleAppointmentCancelled(
+              appointmentData
+            );
         } else {
           const oldData = {
             start_time: existingAppointment.start_time,
-            status: existingAppointment.status
+            status: existingAppointment.status,
           };
-          whatsappSent = await WhatsAppAutomation.handleAppointmentUpdated(appointmentData, oldData);
+          whatsappSent = await WhatsAppAutomation.handleAppointmentUpdated(
+            appointmentData,
+            oldData
+          );
         }
       } catch (whatsappError) {
         console.error('WhatsApp automation error:', whatsappError);
@@ -394,9 +434,8 @@ export async function PUT(req: Request) {
       success: true,
       message: 'Appointment updated successfully',
       appointment: updatedAppointment,
-      whatsapp_sent: whatsappSent
+      whatsapp_sent: whatsappSent,
     });
-
   } catch (error) {
     console.error('Error updating appointment:', error);
     return NextResponse.json(
@@ -410,7 +449,10 @@ export async function PUT(req: Request) {
 export async function DELETE(req: Request) {
   try {
     if (!isAuthorized(req)) {
-      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+      return NextResponse.json(
+        { success: false, error: 'Unauthorized' },
+        { status: 401 }
+      );
     }
     const { searchParams } = new URL(req.url);
     const id = searchParams.get('id');
@@ -426,7 +468,8 @@ export async function DELETE(req: Request) {
     // Get existing appointment for WhatsApp notification
     const { data: existingAppointment, error: fetchError } = await supabase
       .from('appointments')
-      .select(`
+      .select(
+        `
         *,
         clients (
           id,
@@ -448,15 +491,22 @@ export async function DELETE(req: Request) {
             name
           )
         )
-      `)
+      `
+      )
       .eq('id', id)
       .single();
 
     if (fetchError) throw fetchError;
 
     // Delete appointment services and stylists first
-    await supabase.from('appointment_services').delete().eq('appointment_id', id);
-    await supabase.from('appointment_stylists').delete().eq('appointment_id', id);
+    await supabase
+      .from('appointment_services')
+      .delete()
+      .eq('appointment_id', id);
+    await supabase
+      .from('appointment_stylists')
+      .delete()
+      .eq('appointment_id', id);
 
     // Delete the appointment
     const { error: deleteError } = await supabase
@@ -475,15 +525,20 @@ export async function DELETE(req: Request) {
           client_name: existingAppointment.clients.full_name,
           client_phone: existingAppointment.clients.phone,
           start_time: existingAppointment.start_time,
-          services: existingAppointment.appointment_services?.map((as: any) => as.services) || [],
-          stylist: existingAppointment.appointment_stylists?.length > 0 
-            ? existingAppointment.appointment_stylists[0].stylists.name 
-            : 'Salon Team',
+          services:
+            existingAppointment.appointment_services?.map(
+              (as: any) => as.services
+            ) || [],
+          stylist:
+            existingAppointment.appointment_stylists?.length > 0
+              ? existingAppointment.appointment_stylists[0].stylists.name
+              : 'Salon Team',
           status: 'cancelled',
-          total_amount: existingAppointment.total_amount || 0
+          total_amount: existingAppointment.total_amount || 0,
         };
 
-        whatsappSent = await WhatsAppAutomation.handleAppointmentCancelled(appointmentData);
+        whatsappSent =
+          await WhatsAppAutomation.handleAppointmentCancelled(appointmentData);
       } catch (whatsappError) {
         console.error('WhatsApp automation error:', whatsappError);
       }
@@ -492,9 +547,8 @@ export async function DELETE(req: Request) {
     return NextResponse.json({
       success: true,
       message: 'Appointment deleted successfully',
-      whatsapp_sent: whatsappSent
+      whatsapp_sent: whatsappSent,
     });
-
   } catch (error) {
     console.error('Error deleting appointment:', error);
     return NextResponse.json(
@@ -502,4 +556,4 @@ export async function DELETE(req: Request) {
       { status: 500 }
     );
   }
-} 
+}

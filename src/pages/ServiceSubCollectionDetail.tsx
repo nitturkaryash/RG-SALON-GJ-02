@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react'
-import { useParams, useNavigate, Link } from 'react-router-dom'
+import { useState, useEffect } from 'react';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import {
   Box,
   Typography,
@@ -22,7 +22,7 @@ import {
   Chip,
   CircularProgress,
   Breadcrumbs,
-} from '@mui/material'
+} from '@mui/material';
 import {
   Add as AddIcon,
   Edit as EditIcon,
@@ -30,12 +30,12 @@ import {
   ArrowBack as ArrowBackIcon,
   AccessTime as AccessTimeIcon,
   Refresh as RefreshIcon,
-} from '@mui/icons-material'
-import { useServiceCollections } from '../hooks/useServiceCollections'
-import { useSubCollections } from '../hooks/useSubCollections'
-import { useSubCollectionServices } from '../hooks/useSubCollectionServices'
-import { formatCurrency } from '../utils/format'
-import type { ServiceItem } from '../models/serviceTypes'
+} from '@mui/icons-material';
+import { useServiceCollections } from '../hooks/useServiceCollections';
+import { useSubCollections } from '../hooks/useSubCollections';
+import { useSubCollectionServices } from '../hooks/useSubCollectionServices';
+import { formatCurrency } from '../utils/formatting/format';
+import type { ServiceItem } from '../models/serviceTypes';
 
 // Initial form data for services
 const initialFormData = {
@@ -45,17 +45,22 @@ const initialFormData = {
   duration: 30,
   active: true,
   membership_eligible: true, // Default to true for backward compatibility
-}
+};
 
 export default function ServiceSubCollectionDetail() {
-  const { collectionId, subCollectionId } = useParams<{ collectionId: string; subCollectionId: string }>()
-  const navigate = useNavigate()
+  const { collectionId, subCollectionId } = useParams<{
+    collectionId: string;
+    subCollectionId: string;
+  }>();
+  const navigate = useNavigate();
 
-  const { getServiceCollection, isLoading: loadingCollection } = useServiceCollections()
-  const collection = getServiceCollection(collectionId || '')
+  const { getServiceCollection, isLoading: loadingCollection } =
+    useServiceCollections();
+  const collection = getServiceCollection(collectionId || '');
 
-  const { subCollections, isLoading: loadingSubs } = useSubCollections(collectionId)
-  const subCollection = subCollections.find(sc => sc.id === subCollectionId)
+  const { subCollections, isLoading: loadingSubs } =
+    useSubCollections(collectionId);
+  const subCollection = subCollections.find(sc => sc.id === subCollectionId);
 
   const {
     services,
@@ -64,30 +69,30 @@ export default function ServiceSubCollectionDetail() {
     updateService,
     deleteService,
     refetch: refetchServices,
-  } = useSubCollectionServices(collectionId, subCollectionId)
+  } = useSubCollectionServices(collectionId, subCollectionId);
 
-  const [open, setOpen] = useState(false)
-  const [formData, setFormData] = useState(initialFormData)
-  const [editingId, setEditingId] = useState<string | null>(null)
+  const [open, setOpen] = useState(false);
+  const [formData, setFormData] = useState(initialFormData);
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!loadingCollection && !collection) {
-      navigate('/services')
+      navigate('/services');
     }
-  }, [collection, loadingCollection, navigate])
+  }, [collection, loadingCollection, navigate]);
 
   useEffect(() => {
     if (!loadingSubs && !subCollection) {
-      navigate(`/services/${collectionId}`)
+      navigate(`/services/${collectionId}`);
     }
-  }, [subCollection, loadingSubs, navigate, collectionId])
+  }, [subCollection, loadingSubs, navigate, collectionId]);
 
-  const handleOpen = () => setOpen(true)
+  const handleOpen = () => setOpen(true);
   const handleClose = () => {
-    setOpen(false)
-    setFormData(initialFormData)
-    setEditingId(null)
-  }
+    setOpen(false);
+    setFormData(initialFormData);
+    setEditingId(null);
+  };
 
   const handleEdit = (service: ServiceItem) => {
     setFormData({
@@ -97,92 +102,121 @@ export default function ServiceSubCollectionDetail() {
       duration: service.duration,
       active: service.active,
       membership_eligible: service.membership_eligible ?? true, // Default to true if not set
-    })
-    setEditingId(service.id)
-    setOpen(true)
-  }
+    });
+    setEditingId(service.id);
+    setOpen(true);
+  };
 
   const handleDurationChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value
+    const value = e.target.value;
     if (value === '') {
-      setFormData({ ...formData, duration: 0 })
-      return
+      setFormData({ ...formData, duration: 0 });
+      return;
     }
-    const parsedValue = parseInt(value, 10)
+    const parsedValue = parseInt(value, 10);
     if (!isNaN(parsedValue)) {
-      setFormData({ ...formData, duration: parsedValue })
+      setFormData({ ...formData, duration: parsedValue });
     }
-  }
+  };
 
   const handlePriceChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value
+    const value = e.target.value;
     if (value === '') {
-      setFormData({ ...formData, price: 0 })
-      return
+      setFormData({ ...formData, price: 0 });
+      return;
     }
-    const parsedValue = parseFloat(value)
+    const parsedValue = parseFloat(value);
     if (!isNaN(parsedValue)) {
-      setFormData({ ...formData, price: parsedValue })
+      setFormData({ ...formData, price: parsedValue });
     }
-  }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+    e.preventDefault();
     if (!formData.name.trim() || formData.price < 0 || formData.duration <= 0) {
-      console.error('Form validation failed', formData)
-      return
+      console.error('Form validation failed', formData);
+      return;
     }
     try {
-      const serviceData = { ...formData, collection_id: collectionId!, subcollection_id: subCollectionId! }
+      const serviceData = {
+        ...formData,
+        collection_id: collectionId!,
+        subcollection_id: subCollectionId!,
+      };
       if (editingId) {
-        await updateService({ ...serviceData, id: editingId })
+        await updateService({ ...serviceData, id: editingId });
       } else {
-        await createService(serviceData)
+        await createService(serviceData);
       }
-      await refetchServices()
-      handleClose()
+      await refetchServices();
+      handleClose();
     } catch (error) {
-      console.error('Failed to save service:', error)
-      alert(`Error saving service: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      console.error('Failed to save service:', error);
+      alert(
+        `Error saving service: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
     }
-  }
+  };
 
   const handleDelete = (id: string) => {
     if (window.confirm('Are you sure you want to delete this service?')) {
-      deleteService(id)
+      deleteService(id);
     }
-  }
+  };
 
   if (loadingCollection || loadingSubs || loadingServices) {
     return (
-      <Box display="flex" justifyContent="center" alignItems="center" height="100vh">
+      <Box
+        display='flex'
+        justifyContent='center'
+        alignItems='center'
+        height='100vh'
+      >
         <CircularProgress />
       </Box>
-    )
+    );
   }
 
   return (
     <Box>
       <Box sx={{ mb: 3 }}>
-        <Breadcrumbs aria-label="breadcrumb">
-          <Link to="/services" style={{ textDecoration: 'none', color: 'inherit' }}>
+        <Breadcrumbs aria-label='breadcrumb'>
+          <Link
+            to='/services'
+            style={{ textDecoration: 'none', color: 'inherit' }}
+          >
             Services
           </Link>
-          <Link to={`/services/${collectionId}`} style={{ textDecoration: 'none', color: 'inherit' }}>
+          <Link
+            to={`/services/${collectionId}`}
+            style={{ textDecoration: 'none', color: 'inherit' }}
+          >
             {collection?.name}
           </Link>
-          <Typography color="text.primary">{subCollection?.name}</Typography>
+          <Typography color='text.primary'>{subCollection?.name}</Typography>
         </Breadcrumbs>
       </Box>
 
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+      <Box
+        sx={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          mb: 3,
+        }}
+      >
         <Box>
-          <Typography variant="h1">{subCollection?.name}</Typography>
-          <Typography variant="subtitle1" color="text.secondary">
+          <Typography variant='h1'>{subCollection?.name}</Typography>
+          <Typography variant='subtitle1' color='text.secondary'>
             {subCollection?.description}
           </Typography>
         </Box>
-        <Button variant="contained" startIcon={<AddIcon />} onClick={handleOpen} sx={{ height: 'fit-content' }}>
+        <Button
+          variant='contained'
+          startIcon={<AddIcon />}
+          onClick={handleOpen}
+          sx={{ height: 'fit-content' }}
+        >
           Add Service
         </Button>
       </Box>
@@ -198,40 +232,74 @@ export default function ServiceSubCollectionDetail() {
               <TableRow>
                 <TableCell>Name</TableCell>
                 <TableCell>Description</TableCell>
-                <TableCell align="right">Duration</TableCell>
-                <TableCell align="right">Price</TableCell>
+                <TableCell align='right'>Duration</TableCell>
+                <TableCell align='right'>Price</TableCell>
                 <TableCell>Status</TableCell>
                 <TableCell>Membership</TableCell>
-                <TableCell align="right">Actions</TableCell>
+                <TableCell align='right'>Actions</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {services.map((service: ServiceItem) => (
-                <TableRow key={service.id} sx={{ opacity: service.active ? 1 : 0.6 }}>
+                <TableRow
+                  key={service.id}
+                  sx={{ opacity: service.active ? 1 : 0.6 }}
+                >
                   <TableCell>{service.name}</TableCell>
                   <TableCell>{service.description}</TableCell>
-                  <TableCell align="right">
-                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
-                      <AccessTimeIcon fontSize="small" sx={{ mr: 0.5, opacity: 0.6 }} />
+                  <TableCell align='right'>
+                    <Box
+                      sx={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'flex-end',
+                      }}
+                    >
+                      <AccessTimeIcon
+                        fontSize='small'
+                        sx={{ mr: 0.5, opacity: 0.6 }}
+                      />
                       {service.duration} min
                     </Box>
                   </TableCell>
-                  <TableCell align="right">{formatCurrency(service.price)}</TableCell>
-                  <TableCell>
-                    <Chip label={service.active ? 'Active' : 'Inactive'} color={service.active ? 'success' : 'default'} size="small" />
+                  <TableCell align='right'>
+                    {formatCurrency(service.price)}
                   </TableCell>
                   <TableCell>
-                    <Chip 
-                      label={service.membership_eligible !== false ? 'Eligible' : 'Premium Only'} 
-                      color={service.membership_eligible !== false ? 'primary' : 'warning'} 
-                      size="small" 
+                    <Chip
+                      label={service.active ? 'Active' : 'Inactive'}
+                      color={service.active ? 'success' : 'default'}
+                      size='small'
                     />
                   </TableCell>
-                  <TableCell align="right">
-                    <IconButton onClick={() => handleEdit(service)} color="primary" size="small">
+                  <TableCell>
+                    <Chip
+                      label={
+                        service.membership_eligible !== false
+                          ? 'Eligible'
+                          : 'Premium Only'
+                      }
+                      color={
+                        service.membership_eligible !== false
+                          ? 'primary'
+                          : 'warning'
+                      }
+                      size='small'
+                    />
+                  </TableCell>
+                  <TableCell align='right'>
+                    <IconButton
+                      onClick={() => handleEdit(service)}
+                      color='primary'
+                      size='small'
+                    >
                       <EditIcon />
                     </IconButton>
-                    <IconButton onClick={() => handleDelete(service.id)} color="error" size="small">
+                    <IconButton
+                      onClick={() => handleDelete(service.id)}
+                      color='error'
+                      size='small'
+                    >
                       <DeleteIcon />
                     </IconButton>
                   </TableCell>
@@ -242,50 +310,115 @@ export default function ServiceSubCollectionDetail() {
         </TableContainer>
       ) : (
         <Paper sx={{ p: 3, textAlign: 'center' }}>
-          <Typography variant="body1" color="text.secondary">
-            No services found in this sub-collection. Click "Add Service" to create your first one.
+          <Typography variant='body1' color='text.secondary'>
+            No services found in this sub-collection. Click "Add Service" to
+            create your first one.
           </Typography>
-          <Button variant="outlined" color="primary" onClick={() => refetchServices()} sx={{ mt: 2 }} startIcon={<RefreshIcon />}>
+          <Button
+            variant='outlined'
+            color='primary'
+            onClick={() => refetchServices()}
+            sx={{ mt: 2 }}
+            startIcon={<RefreshIcon />}
+          >
             Refresh List
           </Button>
         </Paper>
       )}
 
       {/* Add/Edit Service Dialog */}
-      <Dialog open={open} onClose={handleClose} fullWidth maxWidth="sm">
+      <Dialog open={open} onClose={handleClose} fullWidth maxWidth='sm'>
         <form onSubmit={handleSubmit}>
-          <DialogTitle>{editingId ? 'Edit Service' : 'Add New Service'}</DialogTitle>
+          <DialogTitle>
+            {editingId ? 'Edit Service' : 'Add New Service'}
+          </DialogTitle>
           <DialogContent>
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 2 }}>
-              <TextField label="Name" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} required fullWidth />
-              <TextField label="Description" value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} multiline rows={3} fullWidth />
-              <TextField label="Duration (minutes)" type="number" value={formData.duration} onChange={handleDurationChange} required fullWidth InputProps={{ inputProps: { min: 5 } }} />
-              <TextField label="Price (₹)" type="number" value={formData.price} onChange={handlePriceChange} required fullWidth InputProps={{ inputProps: { min: 0, step: 0.01 } }} />
-              <FormControlLabel control={<Switch checked={formData.active} onChange={(e) => setFormData({ ...formData, active: e.target.checked })} color="primary" />} label="Active" />
-              <FormControlLabel 
-                control={
-                  <Switch 
-                    checked={formData.membership_eligible} 
-                    onChange={(e) => setFormData({ ...formData, membership_eligible: e.target.checked })} 
-                    color="primary" 
-                  />
-                } 
-                label="Membership Eligible" 
-              />
-              <Typography variant="caption" color="text.secondary" sx={{ mt: -1, ml: 4 }}>
-                {formData.membership_eligible 
-                  ? "This service can be purchased using membership balance" 
-                  : "This is a premium service - can only be purchased with regular payment methods"
+            <Box
+              sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 2 }}
+            >
+              <TextField
+                label='Name'
+                value={formData.name}
+                onChange={e =>
+                  setFormData({ ...formData, name: e.target.value })
                 }
+                required
+                fullWidth
+              />
+              <TextField
+                label='Description'
+                value={formData.description}
+                onChange={e =>
+                  setFormData({ ...formData, description: e.target.value })
+                }
+                multiline
+                rows={3}
+                fullWidth
+              />
+              <TextField
+                label='Duration (minutes)'
+                type='number'
+                value={formData.duration}
+                onChange={handleDurationChange}
+                required
+                fullWidth
+                InputProps={{ inputProps: { min: 5 } }}
+              />
+              <TextField
+                label='Price (₹)'
+                type='number'
+                value={formData.price}
+                onChange={handlePriceChange}
+                required
+                fullWidth
+                InputProps={{ inputProps: { min: 0, step: 0.01 } }}
+              />
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={formData.active}
+                    onChange={e =>
+                      setFormData({ ...formData, active: e.target.checked })
+                    }
+                    color='primary'
+                  />
+                }
+                label='Active'
+              />
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={formData.membership_eligible}
+                    onChange={e =>
+                      setFormData({
+                        ...formData,
+                        membership_eligible: e.target.checked,
+                      })
+                    }
+                    color='primary'
+                  />
+                }
+                label='Membership Eligible'
+              />
+              <Typography
+                variant='caption'
+                color='text.secondary'
+                sx={{ mt: -1, ml: 4 }}
+              >
+                {formData.membership_eligible
+                  ? 'This service can be purchased using membership balance'
+                  : 'This is a premium service - can only be purchased with regular payment methods'}
               </Typography>
             </Box>
           </DialogContent>
           <DialogActions>
             <Button onClick={handleClose}>Cancel</Button>
-            <Button type="submit" variant="contained">{editingId ? 'Update' : 'Create'}</Button>
+            <Button type='submit' variant='contained'>
+              {editingId ? 'Update' : 'Create'}
+            </Button>
           </DialogActions>
         </form>
       </Dialog>
     </Box>
-  )
+  );
 }

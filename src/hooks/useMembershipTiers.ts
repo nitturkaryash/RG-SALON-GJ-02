@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { toast } from 'react-toastify';
 import { MembershipTier } from '../types/membershipTier';
-import { supabase } from '../utils/supabase/supabaseClient';
+import { supabase } from '../lib/supabase';
 
 export function useMembershipTiers() {
   const [tiers, setTiers] = useState<MembershipTier[]>([]);
@@ -19,8 +19,13 @@ export function useMembershipTiers() {
           .select('*');
 
         if (supabaseError) {
-          console.error('Error fetching membership tiers from Supabase:', supabaseError);
-          toast.error(`Failed to load membership tiers: ${supabaseError.message}`);
+          console.error(
+            'Error fetching membership tiers from Supabase:',
+            supabaseError
+          );
+          toast.error(
+            `Failed to load membership tiers: ${supabaseError.message}`
+          );
           setError(supabaseError.message);
           setTiers([]);
         } else if (data) {
@@ -30,7 +35,7 @@ export function useMembershipTiers() {
             price: tier.price,
             duration_months: tier.duration_months,
             benefits: tier.benefits || [],
-            description: tier.description || ''
+            description: tier.description || '',
           }));
           setTiers(fetchedTiers);
           console.log('Fetched membership tiers from Supabase:', fetchedTiers);
@@ -39,7 +44,9 @@ export function useMembershipTiers() {
         }
       } catch (e) {
         console.error('Unexpected error fetching membership tiers:', e);
-        toast.error('An unexpected error occurred while loading membership tiers.');
+        toast.error(
+          'An unexpected error occurred while loading membership tiers.'
+        );
         setError(e instanceof Error ? e.message : 'Unknown error');
         setTiers([]);
       } finally {
@@ -52,7 +59,7 @@ export function useMembershipTiers() {
 
   const createTier = async (newTierData: Omit<MembershipTier, 'id'>) => {
     const newTierRecord = { ...newTierData, id: uuidv4() };
-    
+
     setIsLoading(true);
     const { data, error: supabaseError } = await supabase
       .from('membership_tiers')
@@ -63,7 +70,10 @@ export function useMembershipTiers() {
     setIsLoading(false);
 
     if (supabaseError) {
-      console.error('Error creating membership tier in Supabase:', supabaseError);
+      console.error(
+        'Error creating membership tier in Supabase:',
+        supabaseError
+      );
       toast.error(`Failed to create membership tier: ${supabaseError.message}`);
       return null;
     }
@@ -75,7 +85,7 @@ export function useMembershipTiers() {
         price: data.price,
         duration_months: data.duration_months,
         benefits: data.benefits || [],
-        description: data.description || ''
+        description: data.description || '',
       };
       setTiers(prevTiers => [...prevTiers, createdTier]);
       toast.success('Membership tier added successfully');
@@ -84,7 +94,10 @@ export function useMembershipTiers() {
     return null;
   };
 
-  const updateTier = async (tierId: string, updates: Partial<Omit<MembershipTier, 'id'>>) => {
+  const updateTier = async (
+    tierId: string,
+    updates: Partial<Omit<MembershipTier, 'id'>>
+  ) => {
     setIsLoading(true);
     const { data, error: supabaseError } = await supabase
       .from('membership_tiers')
@@ -92,15 +105,18 @@ export function useMembershipTiers() {
       .eq('id', tierId)
       .select()
       .single();
-    
+
     setIsLoading(false);
 
     if (supabaseError) {
-      console.error('Error updating membership tier in Supabase:', supabaseError);
+      console.error(
+        'Error updating membership tier in Supabase:',
+        supabaseError
+      );
       toast.error(`Failed to update membership tier: ${supabaseError.message}`);
       return null;
     }
-    
+
     if (data) {
       const updatedTier: MembershipTier = {
         id: data.id,
@@ -108,9 +124,11 @@ export function useMembershipTiers() {
         price: data.price,
         duration_months: data.duration_months,
         benefits: data.benefits || [],
-        description: data.description || ''
+        description: data.description || '',
       };
-      setTiers(prevTiers => prevTiers.map(t => t.id === tierId ? updatedTier : t));
+      setTiers(prevTiers =>
+        prevTiers.map(t => (t.id === tierId ? updatedTier : t))
+      );
       toast.success('Membership tier updated successfully');
       return updatedTier;
     }
@@ -123,11 +141,14 @@ export function useMembershipTiers() {
       .from('membership_tiers')
       .delete()
       .eq('id', tierId);
-    
+
     setIsLoading(false);
 
     if (supabaseError) {
-      console.error('Error deleting membership tier in Supabase:', supabaseError);
+      console.error(
+        'Error deleting membership tier in Supabase:',
+        supabaseError
+      );
       toast.error(`Failed to delete membership tier: ${supabaseError.message}`);
       return false;
     }
@@ -142,7 +163,7 @@ export function useMembershipTiers() {
       style: 'currency',
       currency: 'INR',
       minimumFractionDigits: 0,
-      maximumFractionDigits: 0
+      maximumFractionDigits: 0,
     }).format(amount);
   };
 
@@ -153,6 +174,6 @@ export function useMembershipTiers() {
     createTier,
     updateTier,
     deleteTier,
-    formatCurrency
+    formatCurrency,
   };
-} 
+}

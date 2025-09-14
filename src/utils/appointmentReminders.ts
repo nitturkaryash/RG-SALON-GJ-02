@@ -1,5 +1,8 @@
 import { supabase } from './supabase/supabaseClient';
-import { sendAppointmentNotification, AppointmentNotificationData } from './whatsapp';
+import {
+  sendAppointmentNotification,
+  AppointmentNotificationData,
+} from './whatsapp';
 
 interface AppointmentReminderData {
   id: string;
@@ -18,23 +21,31 @@ interface AppointmentReminderData {
  * @param hoursBeforeAppointment - Number of hours before appointment to send reminder
  * @returns Array of appointments needing reminders
  */
-export async function getAppointmentsNeedingReminders(hoursBeforeAppointment: number = 24): Promise<AppointmentReminderData[]> {
+export async function getAppointmentsNeedingReminders(
+  hoursBeforeAppointment: number = 24
+): Promise<AppointmentReminderData[]> {
   try {
     // Calculate the time window for reminders
     const now = new Date();
-    const reminderTime = new Date(now.getTime() + hoursBeforeAppointment * 60 * 60 * 1000);
+    const reminderTime = new Date(
+      now.getTime() + hoursBeforeAppointment * 60 * 60 * 1000
+    );
     const windowStart = new Date(reminderTime.getTime() - 30 * 60 * 1000); // 30 minutes window
     const windowEnd = new Date(reminderTime.getTime() + 30 * 60 * 1000);
 
-    console.log(`🔍 Checking for appointments needing ${hoursBeforeAppointment}h reminders between:`, {
-      windowStart: windowStart.toISOString(),
-      windowEnd: windowEnd.toISOString()
-    });
+    console.log(
+      `🔍 Checking for appointments needing ${hoursBeforeAppointment}h reminders between:`,
+      {
+        windowStart: windowStart.toISOString(),
+        windowEnd: windowEnd.toISOString(),
+      }
+    );
 
     // Query appointments in the reminder window
     const { data: appointments, error } = await supabase
       .from('appointments')
-      .select(`
+      .select(
+        `
         id,
         start_time,
         end_time,
@@ -56,39 +67,64 @@ export async function getAppointmentsNeedingReminders(hoursBeforeAppointment: nu
             name
           )
         )
-      `)
+      `
+      )
       .eq('status', 'scheduled')
       .gte('start_time', windowStart.toISOString())
       .lte('start_time', windowEnd.toISOString());
 
     if (error) {
-      console.error('❌ Error fetching appointments for reminders:', error.message, error);
+      console.error(
+        '❌ Error fetching appointments for reminders:',
+        error.message,
+        error
+      );
       return [];
     }
 
     if (!appointments || appointments.length === 0) {
-      console.log(`ℹ️ No appointments found needing ${hoursBeforeAppointment}h reminders`);
+      console.log(
+        `ℹ️ No appointments found needing ${hoursBeforeAppointment}h reminders`
+      );
       return [];
     }
 
-    console.log(`📅 Found ${appointments.length} appointments needing ${hoursBeforeAppointment}h reminders`);
+    console.log(
+      `📅 Found ${appointments.length} appointments needing ${hoursBeforeAppointment}h reminders`
+    );
 
     // Transform data for reminder processing
-    const reminderData: AppointmentReminderData[] = appointments.map(appointment => ({
-      id: appointment.id,
-      clientName: appointment.clients?.full_name || 'Unknown Client',
-      clientPhone: appointment.clients?.phone || '',
-      startTime: appointment.start_time,
-      endTime: appointment.end_time,
-      services: appointment.appointment_services?.map(as => as.services?.name).filter(Boolean) || [],
-      stylists: appointment.appointment_stylists?.map(ast => ast.stylists?.name).filter(Boolean) || [],
-      totalAmount: appointment.appointment_services?.reduce((total, as) => total + (as.services?.price || 0), 0) || 0,
-      notes: appointment.notes
-    }));
+    const reminderData: AppointmentReminderData[] = appointments.map(
+      appointment => ({
+        id: appointment.id,
+        clientName: appointment.clients?.full_name || 'Unknown Client',
+        clientPhone: appointment.clients?.phone || '',
+        startTime: appointment.start_time,
+        endTime: appointment.end_time,
+        services:
+          appointment.appointment_services
+            ?.map(as => as.services?.name)
+            .filter(Boolean) || [],
+        stylists:
+          appointment.appointment_stylists
+            ?.map(ast => ast.stylists?.name)
+            .filter(Boolean) || [],
+        totalAmount:
+          appointment.appointment_services?.reduce(
+            (total, as) => total + (as.services?.price || 0),
+            0
+          ) || 0,
+        notes: appointment.notes,
+      })
+    );
 
     return reminderData.filter(data => data.clientPhone); // Only return appointments with phone numbers
   } catch (error: any) {
-    console.error('❌ Error in getAppointmentsNeedingReminders:', error.message, error);
+    console.error(
+      '❌ Error in getAppointmentsNeedingReminders:',
+      error.message,
+      error
+    );
     return [];
   }
 }
@@ -104,7 +140,9 @@ export async function sendAppointmentReminder(
   reminderType: '24h' | '2h' = '24h'
 ): Promise<boolean> {
   try {
-    console.log(`📱 Sending ${reminderType} reminder to: ${appointmentData.clientPhone}`);
+    console.log(
+      `📱 Sending ${reminderType} reminder to: ${appointmentData.clientPhone}`
+    );
 
     // Format phone number for WhatsApp
     let phoneNumber = appointmentData.clientPhone.replace(/\D/g, '');
@@ -113,7 +151,8 @@ export async function sendAppointmentReminder(
     }
 
     const appointmentDate = new Date(appointmentData.startTime);
-    const timeUntilAppointment = reminderType === '24h' ? '24 hours' : '2 hours';
+    const timeUntilAppointment =
+      reminderType === '24h' ? '24 hours' : '2 hours';
     const urgencyEmoji = reminderType === '24h' ? '⏰' : '🚨';
 
     // Create reminder message based on timing
@@ -123,16 +162,16 @@ Hello ${appointmentData.clientName},
 
 This is a friendly reminder that you have an appointment at *RG Salon* in ${timeUntilAppointment}.
 
-📅 *Date:* ${appointmentDate.toLocaleDateString('en-IN', { 
-      weekday: 'long', 
-      year: 'numeric', 
-      month: 'long', 
-      day: 'numeric' 
+📅 *Date:* ${appointmentDate.toLocaleDateString('en-IN', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
     })}
-⏰ *Time:* ${appointmentDate.toLocaleTimeString('en-IN', { 
-      hour: 'numeric', 
-      minute: '2-digit', 
-      hour12: true 
+⏰ *Time:* ${appointmentDate.toLocaleTimeString('en-IN', {
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
     })}
 
 💅 *Services:* ${appointmentData.services.join(', ')}
@@ -168,30 +207,46 @@ Thank you for choosing RG Salon! 💖`;
         serviceDetails: appointmentData.services.map(name => ({
           name,
           duration: 60, // Default duration
-          price: 0     // Will be calculated properly in actual implementation
+          price: 0, // Will be calculated properly in actual implementation
         })),
-        totalAmount: appointmentData.totalAmount
+        totalAmount: appointmentData.totalAmount,
       };
 
-      const whatsappResult = await sendAppointmentNotification('created', reminderNotificationData);
-      
+      const whatsappResult = await sendAppointmentNotification(
+        'created',
+        reminderNotificationData
+      );
+
       if (whatsappResult.success) {
-        console.log(`✅ ${reminderType} reminder sent successfully to ${appointmentData.clientName}`);
-        
+        console.log(
+          `✅ ${reminderType} reminder sent successfully to ${appointmentData.clientName}`
+        );
+
         // Log the reminder in the database for tracking
         await logReminderSent(appointmentData.id, reminderType);
-        
+
         return true;
       } else {
-        console.warn(`⚠️ ${reminderType} reminder failed for ${appointmentData.clientName}:`, whatsappResult.error);
+        console.warn(
+          `⚠️ ${reminderType} reminder failed for ${appointmentData.clientName}:`,
+          whatsappResult.error
+        );
         return false;
       }
     } catch (whatsappError: any) {
-      console.error(`❌ Error sending ${reminderType} reminder via WhatsApp:`, whatsappError.message, whatsappError);
+      console.error(
+        `❌ Error sending ${reminderType} reminder via WhatsApp:`,
+        whatsappError.message,
+        whatsappError
+      );
       return false;
     }
   } catch (error: any) {
-    console.error(`❌ Error sending ${reminderType} reminder:`, error.message, error);
+    console.error(
+      `❌ Error sending ${reminderType} reminder:`,
+      error.message,
+      error
+    );
     return false;
   }
 }
@@ -201,19 +256,24 @@ Thank you for choosing RG Salon! 💖`;
  * @param appointmentId - ID of the appointment
  * @param reminderType - Type of reminder sent
  */
-async function logReminderSent(appointmentId: string, reminderType: string): Promise<void> {
+async function logReminderSent(
+  appointmentId: string,
+  reminderType: string
+): Promise<void> {
   try {
-    const { error } = await supabase
-      .from('appointment_reminders')
-      .insert({
-        appointment_id: appointmentId,
-        reminder_type: reminderType,
-        sent_at: new Date().toISOString(),
-        status: 'sent'
-      });
+    const { error } = await supabase.from('appointment_reminders').insert({
+      appointment_id: appointmentId,
+      reminder_type: reminderType,
+      sent_at: new Date().toISOString(),
+      status: 'sent',
+    });
 
     if (error) {
-      console.warn('⚠️ Could not log reminder in database:', error.message, error);
+      console.warn(
+        '⚠️ Could not log reminder in database:',
+        error.message,
+        error
+      );
     }
   } catch (error: any) {
     console.warn('⚠️ Error logging reminder:', error.message, error);
@@ -226,7 +286,10 @@ async function logReminderSent(appointmentId: string, reminderType: string): Pro
  * @param reminderType - Type of reminder to check
  * @returns Promise<boolean> - Whether reminder was already sent
  */
-export async function wasReminderAlreadySent(appointmentId: string, reminderType: string): Promise<boolean> {
+export async function wasReminderAlreadySent(
+  appointmentId: string,
+  reminderType: string
+): Promise<boolean> {
   try {
     const { data, error } = await supabase
       .from('appointment_reminders')
@@ -258,7 +321,9 @@ export async function processAppointmentReminders(): Promise<void> {
   try {
     // Process 24-hour reminders
     const appointments24h = await getAppointmentsNeedingReminders(24);
-    console.log(`📅 Processing ${appointments24h.length} appointments for 24h reminders`);
+    console.log(
+      `📅 Processing ${appointments24h.length} appointments for 24h reminders`
+    );
 
     for (const appointment of appointments24h) {
       // Check if reminder was already sent
@@ -268,13 +333,17 @@ export async function processAppointmentReminders(): Promise<void> {
         // Add small delay to avoid rate limiting
         await new Promise(resolve => setTimeout(resolve, 1000));
       } else {
-        console.log(`ℹ️ 24h reminder already sent for ${appointment.clientName}`);
+        console.log(
+          `ℹ️ 24h reminder already sent for ${appointment.clientName}`
+        );
       }
     }
 
     // Process 2-hour reminders
     const appointments2h = await getAppointmentsNeedingReminders(2);
-    console.log(`📅 Processing ${appointments2h.length} appointments for 2h reminders`);
+    console.log(
+      `📅 Processing ${appointments2h.length} appointments for 2h reminders`
+    );
 
     for (const appointment of appointments2h) {
       // Check if reminder was already sent
@@ -284,13 +353,19 @@ export async function processAppointmentReminders(): Promise<void> {
         // Add small delay to avoid rate limiting
         await new Promise(resolve => setTimeout(resolve, 1000));
       } else {
-        console.log(`ℹ️ 2h reminder already sent for ${appointment.clientName}`);
+        console.log(
+          `ℹ️ 2h reminder already sent for ${appointment.clientName}`
+        );
       }
     }
 
     console.log('✅ Appointment reminder processing completed');
   } catch (error: any) {
-    console.error('❌ Error in processAppointmentReminders:', error.message, error);
+    console.error(
+      '❌ Error in processAppointmentReminders:',
+      error.message,
+      error
+    );
   }
 }
 
@@ -300,7 +375,7 @@ export async function processAppointmentReminders(): Promise<void> {
  */
 export function startAutomaticReminders(): void {
   console.log('🚀 Starting automatic appointment reminder system...');
-  
+
   // Check if we're in a client environment
   if (typeof window === 'undefined') {
     console.log('⚠️ Server environment detected, skipping automatic reminders');
@@ -311,38 +386,56 @@ export function startAutomaticReminders(): void {
   const runRemindersIfAuthenticated = async () => {
     try {
       // Check auth state using the static import
-      const { data: { session }, error } = await supabase.auth.getSession();
-      
+      const {
+        data: { session },
+        error,
+      } = await supabase.auth.getSession();
+
       if (error) {
         console.log('⚠️ Auth check error, skipping reminders:', error.message);
         return;
       }
-      
+
       if (!session) {
         console.log('⚠️ No authenticated user, skipping reminders');
         return;
       }
-      
+
       // User is authenticated, run reminders
       await processAppointmentReminders();
     } catch (error: any) {
-      console.error('❌ Error checking auth for reminders:', error.message, error);
+      console.error(
+        '❌ Error checking auth for reminders:',
+        error.message,
+        error
+      );
     }
   };
 
   // Initial run after a short delay to allow auth to initialize
   setTimeout(() => {
     runRemindersIfAuthenticated().catch(error => {
-      console.error('❌ Error in initial reminder processing:', error.message, error);
+      console.error(
+        '❌ Error in initial reminder processing:',
+        error.message,
+        error
+      );
     });
   }, 5000); // Wait 5 seconds for auth to initialize
 
   // Set up interval to process reminders every hour
-  setInterval(() => {
-    runRemindersIfAuthenticated().catch(error => {
-      console.error('❌ Error in scheduled reminder processing:', error.message, error);
-    });
-  }, 60 * 60 * 1000); // 1 hour
+  setInterval(
+    () => {
+      runRemindersIfAuthenticated().catch(error => {
+        console.error(
+          '❌ Error in scheduled reminder processing:',
+          error.message,
+          error
+        );
+      });
+    },
+    60 * 60 * 1000
+  ); // 1 hour
 
   console.log('✅ Automatic reminder system started (will check every hour)');
 }
@@ -353,14 +446,20 @@ export function startAutomaticReminders(): void {
  * @param reminderType - Type of reminder to send
  * @returns Promise<boolean> - Success status
  */
-export async function sendManualReminder(appointmentId: string, reminderType: '24h' | '2h' = '24h'): Promise<boolean> {
+export async function sendManualReminder(
+  appointmentId: string,
+  reminderType: '24h' | '2h' = '24h'
+): Promise<boolean> {
   try {
-    console.log(`📱 Manually sending ${reminderType} reminder for appointment: ${appointmentId}`);
+    console.log(
+      `📱 Manually sending ${reminderType} reminder for appointment: ${appointmentId}`
+    );
 
     // Get appointment data
     const { data: appointment, error } = await supabase
       .from('appointments')
-      .select(`
+      .select(
+        `
         id,
         start_time,
         end_time,
@@ -380,12 +479,17 @@ export async function sendManualReminder(appointmentId: string, reminderType: '2
             name
           )
         )
-      `)
+      `
+      )
       .eq('id', appointmentId)
       .single();
 
     if (error || !appointment) {
-      console.error('❌ Error fetching appointment for manual reminder:', error.message, error);
+      console.error(
+        '❌ Error fetching appointment for manual reminder:',
+        error.message,
+        error
+      );
       return false;
     }
 
@@ -395,14 +499,26 @@ export async function sendManualReminder(appointmentId: string, reminderType: '2
       clientPhone: appointment.clients?.phone || '',
       startTime: appointment.start_time,
       endTime: appointment.end_time,
-      services: appointment.appointment_services?.map(as => as.services?.name).filter(Boolean) || [],
-      stylists: appointment.appointment_stylists?.map(ast => ast.stylists?.name).filter(Boolean) || [],
-      totalAmount: appointment.appointment_services?.reduce((total, as) => total + (as.services?.price || 0), 0) || 0,
-      notes: appointment.notes
+      services:
+        appointment.appointment_services
+          ?.map(as => as.services?.name)
+          .filter(Boolean) || [],
+      stylists:
+        appointment.appointment_stylists
+          ?.map(ast => ast.stylists?.name)
+          .filter(Boolean) || [],
+      totalAmount:
+        appointment.appointment_services?.reduce(
+          (total, as) => total + (as.services?.price || 0),
+          0
+        ) || 0,
+      notes: appointment.notes,
     };
 
     if (!reminderData.clientPhone) {
-      console.warn('⚠️ Cannot send manual reminder: Missing client phone number');
+      console.warn(
+        '⚠️ Cannot send manual reminder: Missing client phone number'
+      );
       return false;
     }
 
@@ -411,4 +527,4 @@ export async function sendManualReminder(appointmentId: string, reminderType: '2
     console.error('❌ Error sending manual reminder:', error.message, error);
     return false;
   }
-} 
+}

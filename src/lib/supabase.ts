@@ -1,10 +1,12 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = import.meta.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 if (!supabaseUrl || !supabaseAnonKey) {
-  throw new Error('Missing Supabase env variables (NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY)');
+  throw new Error(
+    'Missing Supabase env variables (VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY)'
+  );
 }
 
 // Create Supabase client with additional options
@@ -12,8 +14,8 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     persistSession: true,
     autoRefreshToken: true,
-    detectSessionInUrl: true
-  }
+    detectSessionInUrl: true,
+  },
 });
 
 // Database types for better TypeScript support
@@ -111,7 +113,7 @@ export const adminUserService = {
       .eq('id', id);
 
     return { data, error };
-  }
+  },
 };
 
 // Authentication helper functions
@@ -144,13 +146,19 @@ export const authService = {
 
   // Get current user
   async getCurrentUser() {
-    const { data: { user }, error } = await supabase.auth.getUser();
+    const {
+      data: { user },
+      error,
+    } = await supabase.auth.getUser();
     return { user, error };
   },
 
   // Get current session
   async getCurrentSession() {
-    const { data: { session }, error } = await supabase.auth.getSession();
+    const {
+      data: { session },
+      error,
+    } = await supabase.auth.getSession();
     return { session, error };
   },
 
@@ -158,7 +166,42 @@ export const authService = {
   async resetPassword(email: string) {
     const { data, error } = await supabase.auth.resetPasswordForEmail(email);
     return { data, error };
-  }
+  },
 };
 
-export default supabase; 
+// Database tables constants
+export const TABLES = {
+  PURCHASES: 'purchase_history_with_stock',
+  PURCHASE_HISTORY_WITH_STOCK: 'purchase_history_with_stock',
+  SALES: 'sales_history_final',
+  CONSUMPTION: 'salon_consumption_new',
+  BALANCE_STOCK: 'balance_stock',
+  POS_ORDERS: 'pos_orders',
+  POS_ORDER_ITEMS: 'pos_order_items',
+  SALES_CONSUMER: 'inventory_sales_consumer',
+  SALON_CONSUMPTION: 'salon_consumption_new',
+  SALON_CONSUMPTION_PRODUCTS: 'salon_consumption_products',
+};
+
+// Helper function to handle Supabase errors
+export const handleSupabaseError = (error: any): Error => {
+  if (!error) {
+    return new Error('Unknown error occurred');
+  }
+
+  // JWT errors
+  if (error.message?.includes('JWT') || error.message?.includes('JWS')) {
+    return new Error('Authentication error. Please log in again.');
+  }
+
+  // Connection errors
+  if (error.code === 'PGRST16' || error.message?.includes('Failed to fetch')) {
+    return new Error(
+      'Database connection error. Please check your internet connection.'
+    );
+  }
+
+  return new Error(error.message || 'Database operation failed');
+};
+
+export default supabase;

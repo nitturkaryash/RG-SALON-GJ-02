@@ -1,9 +1,24 @@
 import { useRef, useEffect } from 'react';
-import { Chart, LineElement, PointElement, LinearScale, CategoryScale, Tooltip, Legend } from 'chart.js';
+import {
+  Chart,
+  LineElement,
+  PointElement,
+  LinearScale,
+  CategoryScale,
+  Tooltip,
+  Legend,
+} from 'chart.js';
 import { Line } from 'react-chartjs-2';
 
 // Register required Chart.js components
-Chart.register(LineElement, PointElement, LinearScale, CategoryScale, Tooltip, Legend);
+Chart.register(
+  LineElement,
+  PointElement,
+  LinearScale,
+  CategoryScale,
+  Tooltip,
+  Legend
+);
 
 interface LineChartProps {
   data: {
@@ -21,7 +36,12 @@ interface LineChartProps {
   options?: any;
 }
 
-export default function LineChart({ data, height = 300, title, options = {} }: LineChartProps) {
+export default function LineChart({
+  data,
+  height = 300,
+  title,
+  options = {},
+}: LineChartProps) {
   const chartRef = useRef<any>(null);
 
   useEffect(() => {
@@ -42,7 +62,7 @@ export default function LineChart({ data, height = 300, title, options = {} }: L
         right: 10,
         top: 10,
         bottom: 30, // Extra padding for rotated labels
-      }
+      },
     },
     plugins: {
       legend: {
@@ -50,19 +70,19 @@ export default function LineChart({ data, height = 300, title, options = {} }: L
         labels: {
           padding: 20,
           usePointStyle: true,
-        }
+        },
       },
       title: {
         display: !!title,
         text: title,
         padding: {
           top: 10,
-          bottom: 20
-        }
+          bottom: 20,
+        },
       },
       tooltip: {
         callbacks: {
-          label: function(context: any) {
+          label: function (context: any) {
             let label = context.dataset.label || '';
             if (label) {
               label += ': ';
@@ -77,12 +97,12 @@ export default function LineChart({ data, height = 300, title, options = {} }: L
             }
             return label;
           },
-          title: function(context: any) {
+          title: function (context: any) {
             // Show full label on hover
             return context[0]?.label || '';
-          }
-        }
-      }
+          },
+        },
+      },
     },
     scales: {
       x: {
@@ -92,10 +112,10 @@ export default function LineChart({ data, height = 300, title, options = {} }: L
           minRotation: 30,
           maxTicksLimit: 8, // Reduced from 10 for better spacing
           font: {
-            size: 10
+            size: 10,
           },
           padding: 5,
-          callback: function(value: any, index: any, values: any) {
+          callback: function (value: any, index: any, values: any) {
             const label = this.getLabelForValue(value);
             // Smart truncation based on label type
             if (label.includes('/')) {
@@ -105,7 +125,7 @@ export default function LineChart({ data, height = 300, title, options = {} }: L
               // Likely a name, truncate and add ellipsis
               return label.length > 10 ? label.substring(0, 10) + '...' : label;
             }
-          }
+          },
         },
         grid: {
           display: true,
@@ -113,17 +133,17 @@ export default function LineChart({ data, height = 300, title, options = {} }: L
           drawBorder: false,
         },
         border: {
-          display: false
-        }
+          display: false,
+        },
       },
       y: {
         beginAtZero: true,
         ticks: {
-          callback: function(value: any) {
+          callback: function (value: any) {
             return '₹' + value.toLocaleString('en-IN');
           },
           font: {
-            size: 10
+            size: 10,
           },
           padding: 10,
         },
@@ -133,9 +153,9 @@ export default function LineChart({ data, height = 300, title, options = {} }: L
           drawBorder: false,
         },
         border: {
-          display: false
-        }
-      }
+          display: false,
+        },
+      },
     },
     elements: {
       point: {
@@ -144,12 +164,12 @@ export default function LineChart({ data, height = 300, title, options = {} }: L
         borderWidth: 2,
       },
       line: {
-        borderWidth: 2
-      }
+        borderWidth: 2,
+      },
     },
     interaction: {
       intersect: false,
-      mode: 'index' as const
+      mode: 'index' as const,
     },
     animation: {
       duration: 750,
@@ -161,11 +181,7 @@ export default function LineChart({ data, height = 300, title, options = {} }: L
 
   return (
     <div style={{ height }}>
-      <Line 
-        data={data} 
-        options={mergedOptions}
-        ref={chartRef}
-      />
+      <Line data={data} options={mergedOptions} ref={chartRef} />
     </div>
   );
-} 
+}

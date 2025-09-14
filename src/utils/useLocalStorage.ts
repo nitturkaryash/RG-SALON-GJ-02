@@ -1,11 +1,14 @@
 import React, { useState, useEffect } from 'react';
 
 /**
- * A hook that mirrors state to localStorage. 
+ * A hook that mirrors state to localStorage.
  * @param key The localStorage key.
  * @param defaultValue The default value if nothing is in storage.
  */
-export function useLocalStorage<T>(key: string, defaultValue: T): [T, React.Dispatch<React.SetStateAction<T>>] {
+export function useLocalStorage<T>(
+  key: string,
+  defaultValue: T
+): [T, React.Dispatch<React.SetStateAction<T>>] {
   const [state, setState] = useState<T>(() => {
     if (typeof window === 'undefined') {
       return defaultValue;
@@ -30,4 +33,4 @@ export function useLocalStorage<T>(key: string, defaultValue: T): [T, React.Disp
   }, [key, state]);
 
   return [state, setState];
-} 
+}

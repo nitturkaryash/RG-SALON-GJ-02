@@ -28,4 +28,4 @@ export interface Product {
   stock?: number;
   status?: 'active' | 'inactive';
   discount_on_purchase_percentage?: number;
-} 
+}

@@ -6,12 +6,15 @@ import { supabase, TABLES } from './supabase/supabaseClient';
  */
 export async function getDatabaseInfo() {
   try {
-    const { data, error } = await supabase.from('system_info').select('*').limit(1);
-    
+    const { data, error } = await supabase
+      .from('system_info')
+      .select('*')
+      .limit(1);
+
     if (error) {
       throw error;
     }
-    
+
     return data;
   } catch (error) {
     console.error('Error getting database info:', error);
@@ -25,11 +28,13 @@ export async function getDatabaseInfo() {
 export async function exportDatabaseToJson() {
   try {
     // Get all data from Supabase tables
-    const [purchasesResult, salesResult, consumptionResult] = await Promise.all([
-      supabase.from('inventory_purchases').select('*'),
-      supabase.from(TABLES.SALES).select('*'),
-      supabase.from('inventory_consumption').select('*')
-    ]);
+    const [purchasesResult, salesResult, consumptionResult] = await Promise.all(
+      [
+        supabase.from('inventory_purchases').select('*'),
+        supabase.from(TABLES.SALES).select('*'),
+        supabase.from('inventory_consumption').select('*'),
+      ]
+    );
 
     // Check for errors
     if (purchasesResult.error) throw purchasesResult.error;
@@ -40,7 +45,7 @@ export async function exportDatabaseToJson() {
       purchases: purchasesResult.data || [],
       sales: salesResult.data || [],
       consumption: consumptionResult.data || [],
-      exportDate: new Date().toISOString()
+      exportDate: new Date().toISOString(),
     };
   } catch (error) {
     console.error('Error exporting database to JSON:', error);
@@ -58,13 +63,13 @@ export async function importDatabaseFromJson(backupData: any) {
       throw new Error('No backup data provided');
     }
 
-    // Clear existing data 
+    // Clear existing data
     const clearResults = await Promise.all([
       supabase.from('inventory_purchases').delete().gt('id', '0'),
       supabase.from(TABLES.SALES).delete().gt('id', '0'),
-      supabase.from('inventory_consumption').delete().gt('id', '0')
+      supabase.from('inventory_consumption').delete().gt('id', '0'),
     ]);
-    
+
     // Check for errors
     clearResults.forEach(result => {
       if (result.error) throw result.error;
@@ -72,17 +77,17 @@ export async function importDatabaseFromJson(backupData: any) {
 
     // Import data
     const importResults = await Promise.all([
-      backupData.purchases?.length > 0 ? 
-        supabase.from('inventory_purchases').insert(backupData.purchases) : 
-        Promise.resolve({ data: null, error: null }),
-      
-      backupData.sales?.length > 0 ? 
-        supabase.from(TABLES.SALES).insert(backupData.sales) : 
-        Promise.resolve({ data: null, error: null }),
-      
-      backupData.consumption?.length > 0 ? 
-        supabase.from('inventory_consumption').insert(backupData.consumption) : 
-        Promise.resolve({ data: null, error: null })
+      backupData.purchases?.length > 0
+        ? supabase.from('inventory_purchases').insert(backupData.purchases)
+        : Promise.resolve({ data: null, error: null }),
+
+      backupData.sales?.length > 0
+        ? supabase.from(TABLES.SALES).insert(backupData.sales)
+        : Promise.resolve({ data: null, error: null }),
+
+      backupData.consumption?.length > 0
+        ? supabase.from('inventory_consumption').insert(backupData.consumption)
+        : Promise.resolve({ data: null, error: null }),
     ]);
 
     // Check for errors
@@ -93,9 +98,9 @@ export async function importDatabaseFromJson(backupData: any) {
     return { success: true };
   } catch (error) {
     console.error('Error importing database from JSON:', error);
-    return { 
-      success: false, 
-      error: error instanceof Error ? error.message : 'Unknown error' 
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
     };
   }
 }
@@ -109,7 +114,7 @@ export const saveBackupToFile = async () => {
     const json = JSON.stringify(data, null, 2);
     const blob = new Blob([json], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
-    
+
     // Create a link and programmatically click it to trigger the download
     const a = document.createElement('a');
     a.href = url;
@@ -118,7 +123,7 @@ export const saveBackupToFile = async () => {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    
+
     return true;
   } catch (error) {
     console.error('Failed to save backup:', error);
@@ -134,7 +139,7 @@ export const clearAllData = async () => {
     await supabase.from('inventory_purchases').delete().gt('id', '0');
     await supabase.from(TABLES.SALES).delete().gt('id', '0');
     await supabase.from('inventory_consumption').delete().gt('id', '0');
-    
+
     return true;
   } catch (error) {
     console.error('Failed to clear database:', error);
@@ -151,16 +156,16 @@ export const loadBackupFile = () => {
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = '.json';
-    
-    input.onchange = (event) => {
+
+    input.onchange = event => {
       const file = (event.target as HTMLInputElement).files?.[0];
       if (!file) {
         reject(new Error('No file selected'));
         return;
       }
-      
+
       const reader = new FileReader();
-      reader.onload = (e) => {
+      reader.onload = e => {
         try {
           const data = JSON.parse(e.target?.result as string);
           resolve(data);
@@ -168,14 +173,14 @@ export const loadBackupFile = () => {
           reject(new Error('Invalid JSON file'));
         }
       };
-      
+
       reader.onerror = () => {
         reject(new Error('Failed to read file'));
       };
-      
+
       reader.readAsText(file);
     };
-    
+
     input.click();
   });
-}; 
+};

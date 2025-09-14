@@ -1,11 +1,11 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { toast } from 'react-toastify'
-import { v4 as uuidv4 } from 'uuid'
-import type { ProductCollection } from '../models/productTypes'
-import { supabase } from '../utils/supabase/supabaseClient.js'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'react-toastify';
+import { v4 as uuidv4 } from 'uuid';
+import type { ProductCollection } from '../models/productTypes';
+import { supabase } from '../lib/supabase';
 
 export function useProductCollections() {
-  const queryClient = useQueryClient()
+  const queryClient = useQueryClient();
 
   const { data: productCollections, isLoading } = useQuery({
     queryKey: ['productCollections'],
@@ -24,7 +24,10 @@ export function useProductCollections() {
         }
 
         if (collectionsData && collectionsData.length > 0) {
-          console.log('Product collections data fetched successfully:', collectionsData.length);
+          console.log(
+            'Product collections data fetched successfully:',
+            collectionsData.length
+          );
           return collectionsData as ProductCollection[];
         } else {
           console.warn('No product collections found in the database.');
@@ -38,19 +41,21 @@ export function useProductCollections() {
   });
 
   const createProductCollection = useMutation({
-    mutationFn: async (newCollection: Omit<ProductCollection, 'id' | 'created_at'>) => {
+    mutationFn: async (
+      newCollection: Omit<ProductCollection, 'id' | 'created_at'>
+    ) => {
       const collectionId = uuidv4();
       const collection = {
         id: collectionId,
         created_at: new Date().toISOString(),
-        ...newCollection
+        ...newCollection,
       };
-      
+
       const { data, error } = await supabase
         .from('product_collections')
         .insert(collection)
         .select();
-      
+
       if (error) throw error;
       return data[0] as ProductCollection;
     },
@@ -58,20 +63,22 @@ export function useProductCollections() {
       queryClient.invalidateQueries({ queryKey: ['productCollections'] });
       toast.success('Product collection added successfully');
     },
-    onError: (error) => {
+    onError: error => {
       toast.error('Failed to add product collection');
       console.error('Error adding product collection:', error);
     },
   });
 
   const updateProductCollection = useMutation({
-    mutationFn: async (updates: Partial<ProductCollection> & { id: string }) => {
+    mutationFn: async (
+      updates: Partial<ProductCollection> & { id: string }
+    ) => {
       const { data, error } = await supabase
         .from('product_collections')
         .update(updates)
         .eq('id', updates.id)
         .select();
-      
+
       if (error) throw error;
       return data[0] as ProductCollection;
     },
@@ -79,7 +86,7 @@ export function useProductCollections() {
       queryClient.invalidateQueries({ queryKey: ['productCollections'] });
       toast.success('Product collection updated successfully');
     },
-    onError: (error) => {
+    onError: error => {
       toast.error('Failed to update product collection');
       console.error('Error updating product collection:', error);
     },
@@ -91,7 +98,7 @@ export function useProductCollections() {
         .from('product_collections')
         .delete()
         .eq('id', id);
-      
+
       if (error) throw error;
       return { success: true };
     },
@@ -100,7 +107,7 @@ export function useProductCollections() {
       queryClient.invalidateQueries({ queryKey: ['collectionProducts'] });
       toast.success('Product collection deleted successfully');
     },
-    onError: (error) => {
+    onError: error => {
       toast.error('Failed to delete product collection');
       console.error('Error deleting product collection:', error);
     },
@@ -118,4 +125,4 @@ export function useProductCollections() {
     updateProductCollection: updateProductCollection.mutate,
     deleteProductCollection: deleteProductCollection.mutate,
   };
-} 
+}

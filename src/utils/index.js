@@ -1,10 +1,10 @@
 // Re-export all CSV utility functions
-export { 
+export {
   objectsToCSV,
   convertToCSV,
   downloadCsv,
   downloadCSV,
   formatDate,
   formatNumber,
-  generateCsvData
-} from './csvExporter.js'; 
+  generateCsvData,
+} from './csvExporter.js';

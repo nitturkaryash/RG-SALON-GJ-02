@@ -24,7 +24,10 @@ import {
   ListItemText,
   useTheme,
 } from '@mui/material';
-import { formatAmount, roundForDisplay } from '../../utils/formatAmount';
+import {
+  formatAmount,
+  roundForDisplay,
+} from '../../utils/formatting/formatAmount';
 import {
   Search as SearchIcon,
   FileDownload as FileDownloadIcon,
@@ -34,7 +37,10 @@ import {
   ArrowDropDown as ArrowDropDownIcon,
   Warning as WarningIcon,
 } from '@mui/icons-material';
-import { useStockManagement, BalanceStock } from '../../hooks/useStockManagement';
+import {
+  useStockManagement,
+  BalanceStock,
+} from '../../hooks/inventory/useStockManagement';
 import { OrderBy } from '../../models/orderTypes';
 
 type Order = 'asc' | 'desc';
@@ -50,13 +56,9 @@ interface ExtendedBalanceStock extends BalanceStock {
 
 export default function InventoryBalanceReport() {
   const theme = useTheme();
-  const { 
-    loading, 
-    error, 
-    balanceStock, 
-    fetchBalanceStock,
-  } = useStockManagement();
-  
+  const { loading, error, balanceStock, fetchBalanceStock } =
+    useStockManagement();
+
   const [orderBy, setOrderBy] = useState<OrderBy>('product_name');
   const [order, setOrder] = useState<Order>('asc');
   const [searchQuery, setSearchQuery] = useState('');
@@ -71,11 +73,11 @@ export default function InventoryBalanceReport() {
 
   useEffect(() => {
     let result = [...balanceStock];
-    
+
     // Apply search filter
     if (searchQuery) {
       const lowerQuery = searchQuery.toLowerCase();
-      result = result.filter((item) => {
+      result = result.filter(item => {
         const extendedItem = item as ExtendedBalanceStock;
         return (
           extendedItem.product_name.toLowerCase().includes(lowerQuery) ||
@@ -87,27 +89,36 @@ export default function InventoryBalanceReport() {
 
     // Apply low stock filter
     if (filterLowStock) {
-      result = result.filter((item) => {
+      result = result.filter(item => {
         const extendedItem = item as ExtendedBalanceStock;
         return (
-          extendedItem.balance_qty !== null && extendedItem.balance_qty <= lowStockThreshold
+          extendedItem.balance_qty !== null &&
+          extendedItem.balance_qty <= lowStockThreshold
         );
       });
     }
-    
+
     // Apply sorting
     if (orderBy) {
       result = [...result].sort((a, b) => {
-        const aValue = (a as ExtendedBalanceStock)[orderBy as keyof ExtendedBalanceStock];
-        const bValue = (b as ExtendedBalanceStock)[orderBy as keyof ExtendedBalanceStock];
-        
+        const aValue = (a as ExtendedBalanceStock)[
+          orderBy as keyof ExtendedBalanceStock
+        ];
+        const bValue = (b as ExtendedBalanceStock)[
+          orderBy as keyof ExtendedBalanceStock
+        ];
+
         if (typeof aValue === 'string' && typeof bValue === 'string') {
-          return order === 'asc' ? aValue.localeCompare(bValue) : bValue.localeCompare(aValue);
+          return order === 'asc'
+            ? aValue.localeCompare(bValue)
+            : bValue.localeCompare(aValue);
         }
-        
-        if (aValue === null || aValue === undefined) return order === 'asc' ? -1 : 1;
-        if (bValue === null || bValue === undefined) return order === 'asc' ? 1 : -1;
-        
+
+        if (aValue === null || aValue === undefined)
+          return order === 'asc' ? -1 : 1;
+        if (bValue === null || bValue === undefined)
+          return order === 'asc' ? 1 : -1;
+
         // Use a safe comparison that handles undefined values
         if (order === 'asc') {
           return aValue > bValue ? 1 : aValue < bValue ? -1 : 0;
@@ -116,9 +127,16 @@ export default function InventoryBalanceReport() {
         }
       });
     }
-    
+
     setFilteredStock(result);
-  }, [balanceStock, searchQuery, orderBy, order, filterLowStock, lowStockThreshold]);
+  }, [
+    balanceStock,
+    searchQuery,
+    orderBy,
+    order,
+    filterLowStock,
+    lowStockThreshold,
+  ]);
 
   const handleRequestSort = (property: OrderBy) => {
     const isAsc = orderBy === property && order === 'asc';
@@ -166,10 +184,19 @@ export default function InventoryBalanceReport() {
       return {
         'Product Name': extendedItem.product_name,
         'HSN Code': extendedItem.hsn_code,
-        'Unit': extendedItem.unit,
-        'Balance Qty': extendedItem.balance_qty !== null ? formatNumber(extendedItem.balance_qty) : '0',
-        'Balance Value': extendedItem.balance_value !== null ? formatCurrency(extendedItem.balance_value).replace('₹', '') : '0',
-        'Average Rate': extendedItem.avg_rate !== null ? formatNumber(extendedItem.avg_rate) : '0',
+        Unit: extendedItem.unit,
+        'Balance Qty':
+          extendedItem.balance_qty !== null
+            ? formatNumber(extendedItem.balance_qty)
+            : '0',
+        'Balance Value':
+          extendedItem.balance_value !== null
+            ? formatCurrency(extendedItem.balance_value).replace('₹', '')
+            : '0',
+        'Average Rate':
+          extendedItem.avg_rate !== null
+            ? formatNumber(extendedItem.avg_rate)
+            : '0',
       };
     });
 
@@ -192,12 +219,14 @@ export default function InventoryBalanceReport() {
     const headers = Object.keys(data[0]);
     const csvRows = [
       headers.join(','),
-      ...data.map(row => 
-        headers.map(header => {
-          const escaped = ('' + row[header]).replace(/"/g, '\\"');
-          return `"${escaped}"`;
-        }).join(',')
-      )
+      ...data.map(row =>
+        headers
+          .map(header => {
+            const escaped = ('' + row[header]).replace(/"/g, '\\"');
+            return `"${escaped}"`;
+          })
+          .join(',')
+      ),
     ];
     return csvRows.join('\n');
   };
@@ -218,24 +247,29 @@ export default function InventoryBalanceReport() {
 
   return (
     <Box sx={{ mb: 4 }}>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-        <Typography variant="h6">
-          Inventory Balance Report
-        </Typography>
+      <Box
+        sx={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          mb: 2,
+        }}
+      >
+        <Typography variant='h6'>Inventory Balance Report</Typography>
         <Box>
           <Button
-            variant="contained"
-            color="primary"
+            variant='contained'
+            color='primary'
             startIcon={<FileDownloadIcon />}
             onClick={handleCsvDownload}
           >
             Download CSV
           </Button>
-          
+
           <Button
             startIcon={<RefreshIcon />}
-            variant="outlined"
-            size="small"
+            variant='outlined'
+            size='small'
             onClick={fetchBalanceStock}
             disabled={loading}
           >
@@ -245,45 +279,45 @@ export default function InventoryBalanceReport() {
       </Box>
 
       {error && (
-        <Alert severity="error" sx={{ mb: 3 }}>
+        <Alert severity='error' sx={{ mb: 3 }}>
           {error}
         </Alert>
       )}
 
       <Box sx={{ mb: 3, display: 'flex', alignItems: 'center', gap: 2 }}>
         <TextField
-          placeholder="Search products..."
-          size="small"
+          placeholder='Search products...'
+          size='small'
           value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
+          onChange={e => setSearchQuery(e.target.value)}
           InputProps={{
             startAdornment: (
-              <InputAdornment position="start">
-                <SearchIcon fontSize="small" />
+              <InputAdornment position='start'>
+                <SearchIcon fontSize='small' />
               </InputAdornment>
             ),
           }}
           sx={{ width: 300 }}
         />
-        
+
         <Button
           startIcon={<FilterListIcon />}
           endIcon={<ArrowDropDownIcon />}
-          variant="outlined"
-          size="small"
+          variant='outlined'
+          size='small'
           onClick={handleOpenFilterMenu}
         >
           Filters
           {filterLowStock && (
-            <Chip 
-              label="Low Stock" 
-              size="small" 
-              color="warning" 
-              sx={{ ml: 1, height: 20 }} 
+            <Chip
+              label='Low Stock'
+              size='small'
+              color='warning'
+              sx={{ ml: 1, height: 20 }}
             />
           )}
         </Button>
-        
+
         <Menu
           anchorEl={anchorEl}
           open={Boolean(anchorEl)}
@@ -291,22 +325,31 @@ export default function InventoryBalanceReport() {
         >
           <MenuItem onClick={handleToggleLowStockFilter}>
             <ListItemIcon>
-              <WarningIcon color={filterLowStock ? "warning" : "inherit"} fontSize="small" />
+              <WarningIcon
+                color={filterLowStock ? 'warning' : 'inherit'}
+                fontSize='small'
+              />
             </ListItemIcon>
             <ListItemText>
               Show only low stock ({lowStockThreshold} or less)
             </ListItemText>
           </MenuItem>
         </Menu>
-        
-        <Typography variant="body2" color="text.secondary" sx={{ ml: 'auto' }}>
+
+        <Typography variant='body2' color='text.secondary' sx={{ ml: 'auto' }}>
           {filteredStock.length} products found
         </Typography>
       </Box>
 
-      <Paper sx={{ width: '100%', overflow: 'hidden', borderRadius: theme.shape.borderRadius }}>
+      <Paper
+        sx={{
+          width: '100%',
+          overflow: 'hidden',
+          borderRadius: theme.shape.borderRadius,
+        }}
+      >
         <TableContainer sx={{ maxHeight: 600 }}>
-          <Table stickyHeader aria-label="inventory balance table">
+          <Table stickyHeader aria-label='inventory balance table'>
             <TableHead>
               <TableRow>
                 <TableCell>
@@ -336,7 +379,7 @@ export default function InventoryBalanceReport() {
                     Unit
                   </TableSortLabel>
                 </TableCell>
-                <TableCell align="right">
+                <TableCell align='right'>
                   <TableSortLabel
                     active={orderBy === 'balance_qty'}
                     direction={orderBy === 'balance_qty' ? order : 'asc'}
@@ -345,7 +388,7 @@ export default function InventoryBalanceReport() {
                     Balance Qty
                   </TableSortLabel>
                 </TableCell>
-                <TableCell align="right">
+                <TableCell align='right'>
                   <TableSortLabel
                     active={orderBy === 'avg_rate'}
                     direction={orderBy === 'avg_rate' ? order : 'asc'}
@@ -354,7 +397,7 @@ export default function InventoryBalanceReport() {
                     Average Rate
                   </TableSortLabel>
                 </TableCell>
-                <TableCell align="right">
+                <TableCell align='right'>
                   <TableSortLabel
                     active={orderBy === 'balance_value'}
                     direction={orderBy === 'balance_value' ? order : 'asc'}
@@ -369,35 +412,43 @@ export default function InventoryBalanceReport() {
             <TableBody>
               {loading && filteredStock.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} align="center" sx={{ py: 3 }}>
+                  <TableCell colSpan={7} align='center' sx={{ py: 3 }}>
                     <CircularProgress size={40} />
-                    <Typography variant="body2" sx={{ mt: 2 }}>
+                    <Typography variant='body2' sx={{ mt: 2 }}>
                       Loading inventory data...
                     </Typography>
                   </TableCell>
                 </TableRow>
               ) : filteredStock.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} align="center" sx={{ py: 3 }}>
-                    <Typography variant="body1">
+                  <TableCell colSpan={7} align='center' sx={{ py: 3 }}>
+                    <Typography variant='body1'>
                       No inventory data found.
                     </Typography>
-                    <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                      {searchQuery ? 'Try adjusting your search criteria.' : 'Import stock data to view inventory balance.'}
+                    <Typography
+                      variant='body2'
+                      color='text.secondary'
+                      sx={{ mt: 1 }}
+                    >
+                      {searchQuery
+                        ? 'Try adjusting your search criteria.'
+                        : 'Import stock data to view inventory balance.'}
                     </Typography>
                   </TableCell>
                 </TableRow>
               ) : (
-                filteredStock.map((item) => {
+                filteredStock.map(item => {
                   const extendedItem = item as ExtendedBalanceStock;
                   return (
-                    <TableRow 
+                    <TableRow
                       key={extendedItem.id}
                       hover
                       sx={{
-                        backgroundColor: extendedItem.balance_qty !== null && extendedItem.balance_qty <= 0 
-                          ? '#fff8e1' 
-                          : 'inherit'
+                        backgroundColor:
+                          extendedItem.balance_qty !== null &&
+                          extendedItem.balance_qty <= 0
+                            ? '#fff8e1'
+                            : 'inherit',
                       }}
                     >
                       <TableCell>
@@ -407,27 +458,36 @@ export default function InventoryBalanceReport() {
                       </TableCell>
                       <TableCell>{extendedItem.hsn_code}</TableCell>
                       <TableCell>{extendedItem.unit}</TableCell>
-                      <TableCell align="right" sx={{
-                        fontWeight: 'medium',
-                        color: extendedItem.balance_qty !== null && extendedItem.balance_qty <= lowStockThreshold
-                          ? 'error.main'
-                          : 'inherit'
-                      }}>
+                      <TableCell
+                        align='right'
+                        sx={{
+                          fontWeight: 'medium',
+                          color:
+                            extendedItem.balance_qty !== null &&
+                            extendedItem.balance_qty <= lowStockThreshold
+                              ? 'error.main'
+                              : 'inherit',
+                        }}
+                      >
                         {formatNumber(extendedItem.balance_qty)}
                       </TableCell>
-                      <TableCell align="right">{formatAmount(extendedItem.avg_rate)}</TableCell>
-                      <TableCell align="right">{formatAmount(extendedItem.balance_value)}</TableCell>
+                      <TableCell align='right'>
+                        {formatAmount(extendedItem.avg_rate)}
+                      </TableCell>
+                      <TableCell align='right'>
+                        {formatAmount(extendedItem.balance_value)}
+                      </TableCell>
                       <TableCell>
-                        <Chip 
-                          size="small"
+                        <Chip
+                          size='small'
                           label={
                             extendedItem.balance_qty === null
-                              ? "Unknown"
+                              ? 'Unknown'
                               : extendedItem.balance_qty <= 0
-                                ? "Out of Stock"
+                                ? 'Out of Stock'
                                 : extendedItem.balance_qty <= lowStockThreshold
-                                  ? "Low Stock"
-                                  : "In Stock"
+                                  ? 'Low Stock'
+                                  : 'In Stock'
                           }
                           color={getStockStatusColor(extendedItem.balance_qty)}
                         />
@@ -442,4 +502,4 @@ export default function InventoryBalanceReport() {
       </Paper>
     </Box>
   );
-} 
+}

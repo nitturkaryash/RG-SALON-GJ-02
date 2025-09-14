@@ -33,16 +33,20 @@ const LowStockWarning: React.FC<LowStockWarningProps> = ({
 }) => {
   // Skip rendering if not showing any UI elements
   if (!showChip && !showAlert) return null;
-  
+
   // Define stock status for styling and labels
   const isOutOfStock = typeof stockQuantity === 'number' && stockQuantity <= 0;
-  const isLowStock = typeof stockQuantity === 'number' && stockQuantity > 0 && stockQuantity <= lowStockThreshold;
-  const isInStock = typeof stockQuantity === 'number' && stockQuantity > lowStockThreshold;
-  
+  const isLowStock =
+    typeof stockQuantity === 'number' &&
+    stockQuantity > 0 &&
+    stockQuantity <= lowStockThreshold;
+  const isInStock =
+    typeof stockQuantity === 'number' && stockQuantity > lowStockThreshold;
+
   // Define colors based on stock status
   let color: 'success' | 'warning' | 'error' | undefined = undefined;
   let label = '';
-  
+
   if (isOutOfStock) {
     color = 'error';
     label = outOfStockLabel;
@@ -56,7 +60,7 @@ const LowStockWarning: React.FC<LowStockWarningProps> = ({
     // Unknown stock status
     return null;
   }
-  
+
   return (
     <Box>
       {showChip && (
@@ -68,26 +72,27 @@ const LowStockWarning: React.FC<LowStockWarningProps> = ({
           variant={variant}
         />
       )}
-      
+
       {showAlert && isLowStock && productName && (
-        <Alert 
-          severity="warning" 
+        <Alert
+          severity='warning'
           variant={variant === 'outlined' ? 'outlined' : 'standard'}
           sx={{ mt: 1 }}
         >
-          <Typography variant="body2">
-            <strong>{productName}</strong> is running low on stock ({stockQuantity} remaining)
+          <Typography variant='body2'>
+            <strong>{productName}</strong> is running low on stock (
+            {stockQuantity} remaining)
           </Typography>
         </Alert>
       )}
-      
+
       {showAlert && isOutOfStock && productName && (
-        <Alert 
-          severity="error" 
+        <Alert
+          severity='error'
           variant={variant === 'outlined' ? 'outlined' : 'standard'}
           sx={{ mt: 1 }}
         >
-          <Typography variant="body2">
+          <Typography variant='body2'>
             <strong>{productName}</strong> is out of stock!
           </Typography>
         </Alert>
@@ -96,4 +101,4 @@ const LowStockWarning: React.FC<LowStockWarningProps> = ({
   );
 };
 
-export default LowStockWarning; 
+export default LowStockWarning;

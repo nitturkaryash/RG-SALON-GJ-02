@@ -16,13 +16,7 @@ const getListItemProps = (props: any) => {
   renderTags={(value, getTagProps) =>
     value.map((option, index) => {
       const { chipProps, key } = getChipProps(getTagProps({ index }));
-      return (
-        <Chip
-          key={key}
-          {...chipProps}
-          label={option.name}
-        />
-      );
+      return <Chip key={key} {...chipProps} label={option.name} />;
     })
   }
   renderOption={(props, option) => {
@@ -33,4 +27,4 @@ const getListItemProps = (props: any) => {
       </li>
     );
   }}
-/> 
+/>;

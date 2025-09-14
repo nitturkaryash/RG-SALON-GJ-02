@@ -1,6 +1,10 @@
 import * as React from 'react';
 import type { ReactNode } from 'react';
-import { ThemeProvider as MuiThemeProvider, createTheme, Theme } from '@mui/material/styles';
+import {
+  ThemeProvider as MuiThemeProvider,
+  createTheme,
+  Theme,
+} from '@mui/material/styles';
 
 type ThemeMode = 'light' | 'dark';
 
@@ -72,9 +76,11 @@ const getThemeOptions = (mode: ThemeMode) => ({
           fontWeight: 600,
         },
         containedPrimary: {
-          boxShadow: mode === 'light' ? '0 4px 10px rgba(107, 142, 35, 0.2)' : 'none',
+          boxShadow:
+            mode === 'light' ? '0 4px 10px rgba(107, 142, 35, 0.2)' : 'none',
           '&:hover': {
-            boxShadow: mode === 'light' ? '0 6px 12px rgba(107, 142, 35, 0.3)' : 'none',
+            boxShadow:
+              mode === 'light' ? '0 6px 12px rgba(107, 142, 35, 0.3)' : 'none',
           },
         },
       },
@@ -83,9 +89,10 @@ const getThemeOptions = (mode: ThemeMode) => ({
       styleOverrides: {
         root: {
           borderRadius: 12,
-          boxShadow: mode === 'light' 
-            ? '0 6px 16px rgba(0, 0, 0, 0.05)' 
-            : '0 6px 16px rgba(0, 0, 0, 0.3)',
+          boxShadow:
+            mode === 'light'
+              ? '0 6px 16px rgba(0, 0, 0, 0.05)'
+              : '0 6px 16px rgba(0, 0, 0, 0.3)',
         },
       },
     },
@@ -93,21 +100,26 @@ const getThemeOptions = (mode: ThemeMode) => ({
 });
 
 // Create the theme context
-const ThemeContext = React.createContext<ThemeContextType | undefined>(undefined);
+const ThemeContext = React.createContext<ThemeContextType | undefined>(
+  undefined
+);
 
 // Create the theme provider component
 export const CustomThemeProvider = ({ children }: { children: ReactNode }) => {
   // Check if a theme preference is stored in localStorage
   const savedTheme = localStorage.getItem('themeMode') as ThemeMode;
-  const prefersDarkMode = window.matchMedia('(prefers-color-scheme: dark)').matches;
-  const defaultTheme: ThemeMode = savedTheme || (prefersDarkMode ? 'dark' : 'light');
+  const prefersDarkMode = window.matchMedia(
+    '(prefers-color-scheme: dark)'
+  ).matches;
+  const defaultTheme: ThemeMode =
+    savedTheme || (prefersDarkMode ? 'dark' : 'light');
 
   const [mode, setMode] = React.useState<ThemeMode>(defaultTheme);
   const theme = React.useMemo(() => createTheme(getThemeOptions(mode)), [mode]);
 
   // Toggle between light and dark mode
   const toggleTheme = React.useCallback(() => {
-    setMode((prevMode) => {
+    setMode(prevMode => {
       const newMode = prevMode === 'light' ? 'dark' : 'light';
       localStorage.setItem('themeMode', newMode);
       return newMode;
@@ -141,4 +153,4 @@ export const useTheme = () => {
     throw new Error('useTheme must be used within a CustomThemeProvider');
   }
   return context;
-}; 
+};

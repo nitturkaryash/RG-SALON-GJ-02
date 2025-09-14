@@ -1,10 +1,5 @@
 import { useState } from 'react';
-import { 
-  Box, 
-  Button, 
-  Typography,
-  Chip,
-} from '@mui/material';
+import { Box, Button, Typography, Chip } from '@mui/material';
 import { CalendarToday as CalendarIcon } from '@mui/icons-material';
 import { format } from 'date-fns';
 import DateRangeCalendar from './DateRangeCalendar';
@@ -15,10 +10,10 @@ interface DateRangePickerProps {
   onDateRangeChange: (startDate: Date, endDate: Date) => void;
 }
 
-export default function DateRangePicker({ 
-  startDate, 
-  endDate, 
-  onDateRangeChange 
+export default function DateRangePicker({
+  startDate,
+  endDate,
+  onDateRangeChange,
 }: DateRangePickerProps) {
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
 
@@ -38,10 +33,10 @@ export default function DateRangePicker({
     <>
       <Button
         onClick={handleClick}
-        variant="outlined"
-        color="primary"
+        variant='outlined'
+        color='primary'
         startIcon={<CalendarIcon />}
-        size="medium"
+        size='medium'
         sx={{
           borderRadius: 2,
           px: 2,
@@ -55,20 +50,22 @@ export default function DateRangePicker({
         }}
       >
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          <Typography variant="body2" color="text.primary">
+          <Typography variant='body2' color='text.primary'>
             {startDate ? format(startDate, 'd MMM yyyy') : 'All time'}
           </Typography>
-          <Typography variant="body2" color="text.secondary">
+          <Typography variant='body2' color='text.secondary'>
             →
           </Typography>
-          <Typography variant="body2" color="text.primary">
+          <Typography variant='body2' color='text.primary'>
             {endDate ? format(endDate, 'd MMM yyyy') : 'Now'}
           </Typography>
         </Box>
       </Button>
 
       <DateRangeCalendar
-        startDate={startDate ?? new Date(new Date().setDate(new Date().getDate() - 30))}
+        startDate={
+          startDate ?? new Date(new Date().setDate(new Date().getDate() - 30))
+        }
         endDate={endDate ?? new Date()}
         onDateRangeChange={handleDateRangeChange}
         onClose={handleClose}
@@ -76,4 +73,4 @@ export default function DateRangePicker({
       />
     </>
   );
-} 
+}

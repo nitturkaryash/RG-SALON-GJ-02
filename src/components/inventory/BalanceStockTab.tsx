@@ -17,18 +17,18 @@ import {
   Snackbar,
   Tabs,
   Tab,
-  Chip
+  Chip,
 } from '@mui/material';
-import { 
+import {
   Refresh as RefreshIcon,
-  FileDownload as FileDownloadIcon
+  FileDownload as FileDownloadIcon,
 } from '@mui/icons-material';
 import { styled } from '@mui/material/styles';
 import { useInventory } from '../../hooks/useInventory';
 import { BalanceStock } from '../../models/inventoryTypes';
 import { convertToCSV, downloadCSV } from '../../utils';
 import { toast } from 'react-toastify';
-import DeleteButton from '../DeleteButton';
+import DeleteButton from '../common/DeleteButton';
 import { useSupabase } from '../../hooks/useSupabase';
 import { format } from 'date-fns';
 
@@ -72,9 +72,10 @@ interface BalanceStockTabProps {
 
 const StyledTableCell = styled(TableCell)(({ theme }) => ({
   fontWeight: 'bold',
-  backgroundColor: theme.palette.mode === 'dark' 
-    ? theme.palette.primary.dark 
-    : theme.palette.primary.light,
+  backgroundColor:
+    theme.palette.mode === 'dark'
+      ? theme.palette.primary.dark
+      : theme.palette.primary.light,
   color: theme.palette.common.white,
 }));
 
@@ -86,7 +87,7 @@ const StyledTableHeaderRow = styled(TableRow)(({ theme }) => ({
     border: '1px solid #cccccc',
     textAlign: 'center',
     padding: '8px',
-  }
+  },
 }));
 
 const StyledDataCell = styled(TableCell)(({ theme }) => ({
@@ -106,28 +107,31 @@ function TabPanel(props: TabPanelProps) {
 
   return (
     <div
-      role="tabpanel"
+      role='tabpanel'
       hidden={value !== index}
       id={`balance-stock-tabpanel-${index}`}
       aria-labelledby={`balance-stock-tab-${index}`}
       {...other}
     >
-      {value === index && (
-        <Box sx={{ p: 3 }}>
-          {children}
-        </Box>
-      )}
+      {value === index && <Box sx={{ p: 3 }}>{children}</Box>}
     </div>
   );
 }
 
-const BalanceStockTab: React.FC<BalanceStockTabProps> = ({ balanceStock, isLoading, error, recalculateBalanceStock }) => {
+const BalanceStockTab: React.FC<BalanceStockTabProps> = ({
+  balanceStock,
+  isLoading,
+  error,
+  recalculateBalanceStock,
+}) => {
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [isRecalculating, setIsRecalculating] = useState(false);
   const [exportingCSV, setExportingCSV] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
-  const [stockTransactions, setStockTransactions] = useState<StockTransaction[]>([]);
+  const [stockTransactions, setStockTransactions] = useState<
+    StockTransaction[]
+  >([]);
   const [loadingTransactions, setLoadingTransactions] = useState(false);
   const [tabValue, setTabValue] = useState(0);
   const { supabase } = useSupabase();
@@ -136,7 +140,9 @@ const BalanceStockTab: React.FC<BalanceStockTabProps> = ({ balanceStock, isLoadi
     setPage(newPage);
   };
 
-  const handleChangeRowsPerPage = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleChangeRowsPerPage = (
+    event: React.ChangeEvent<HTMLInputElement>
+  ) => {
     setRowsPerPage(parseInt(event.target.value, 10));
     setPage(0);
   };
@@ -206,24 +212,27 @@ const BalanceStockTab: React.FC<BalanceStockTabProps> = ({ balanceStock, isLoadi
   const exportToCSV = async () => {
     try {
       setExportingCSV(true);
-      
+
       // Format data for CSV export
       const csvData = balanceStock.map(item => ({
         'Product Name': item.product_name,
         'HSN Code': item.hsn_code || 'N/A',
-        'Units': item.units || 'pcs',
+        Units: item.units || 'pcs',
         'Balance Qty': item.balance_qty,
         'Reference ID': item.reference_id || 'N/A',
         'Taxable Value (Rs.)': item.taxable_value,
         'IGST (Rs.)': item.igst,
         'CGST (Rs.)': item.cgst,
         'SGST (Rs.)': item.sgst,
-        'Invoice Value (Rs.)': item.invoice_value
+        'Invoice Value (Rs.)': item.invoice_value,
       }));
-      
+
       // Convert to CSV and download
       const csvString = convertToCSV(csvData);
-      downloadCSV(csvString, `Balance_Stock_${new Date().toISOString().split('T')[0]}.csv`);
+      downloadCSV(
+        csvString,
+        `Balance_Stock_${new Date().toISOString().split('T')[0]}.csv`
+      );
     } catch (error) {
       console.error('Error exporting balance stock to CSV:', error);
       toast.error('Failed to export balance stock to CSV');
@@ -252,13 +261,15 @@ const BalanceStockTab: React.FC<BalanceStockTabProps> = ({ balanceStock, isLoadi
         .eq('id', product.id);
 
       if (deleteError) throw deleteError;
-      
+
       toast.success(`Successfully deleted "${productName}" from inventory`);
       // Trigger a refresh of the balance stock data
       recalculateBalanceStock();
     } catch (error) {
       console.error(`Error deleting product "${productName}":`, error);
-      toast.error(`Failed to delete "${productName}": ${error instanceof Error ? error.message : 'Unknown error'}`);
+      toast.error(
+        `Failed to delete "${productName}": ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
     } finally {
       setIsDeleting(false);
     }
@@ -267,30 +278,53 @@ const BalanceStockTab: React.FC<BalanceStockTabProps> = ({ balanceStock, isLoadi
   return (
     <Box>
       <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}>
-        <Tabs value={tabValue} onChange={handleChangeTab} aria-label="balance stock tabs">
-          <Tab label="Current Stock" />
-          <Tab label="Stock History" />
+        <Tabs
+          value={tabValue}
+          onChange={handleChangeTab}
+          aria-label='balance stock tabs'
+        >
+          <Tab label='Current Stock' />
+          <Tab label='Stock History' />
         </Tabs>
       </Box>
 
       <TabPanel value={tabValue} index={0}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-          <Typography variant="h6">Current Stock Levels</Typography>
+        <Box
+          sx={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            mb: 3,
+          }}
+        >
+          <Typography variant='h6'>Current Stock Levels</Typography>
           <Box>
             <Button
               sx={{ mr: 2 }}
-              variant="outlined"
-              color="primary"
-              startIcon={isRecalculating ? <CircularProgress size={20} color="inherit" /> : <RefreshIcon />}
+              variant='outlined'
+              color='primary'
+              startIcon={
+                isRecalculating ? (
+                  <CircularProgress size={20} color='inherit' />
+                ) : (
+                  <RefreshIcon />
+                )
+              }
               onClick={handleRecalculate}
               disabled={isRecalculating}
             >
               Recalculate
             </Button>
             <Button
-              variant="outlined"
-              color="secondary"
-              startIcon={exportingCSV ? <CircularProgress size={20} /> : <FileDownloadIcon />}
+              variant='outlined'
+              color='secondary'
+              startIcon={
+                exportingCSV ? (
+                  <CircularProgress size={20} />
+                ) : (
+                  <FileDownloadIcon />
+                )
+              }
               onClick={exportToCSV}
               disabled={exportingCSV || balanceStock.length === 0}
             >
@@ -300,7 +334,7 @@ const BalanceStockTab: React.FC<BalanceStockTabProps> = ({ balanceStock, isLoadi
         </Box>
 
         {error && (
-          <Alert severity="error" sx={{ mb: 2 }}>
+          <Alert severity='error' sx={{ mb: 2 }}>
             Error loading balance stock data: {error.message}
           </Alert>
         )}
@@ -312,44 +346,84 @@ const BalanceStockTab: React.FC<BalanceStockTabProps> = ({ balanceStock, isLoadi
         ) : (
           <>
             {balanceStock.length === 0 ? (
-              <Alert severity="info">
-                No balance stock data available. Please add purchases, sales, or consumption records.
+              <Alert severity='info'>
+                No balance stock data available. Please add purchases, sales, or
+                consumption records.
               </Alert>
             ) : (
               <Paper>
                 <TableContainer component={Paper} sx={{ maxHeight: 440 }}>
-                  <Table stickyHeader aria-label="balance stock table">
+                  <Table stickyHeader aria-label='balance stock table'>
                     <TableHead>
                       <StyledTableHeaderRow>
                         <StyledTableCell>Product Name</StyledTableCell>
-                        <StyledTableCell align="right">Balance Qty.</StyledTableCell>
-                        <StyledTableCell align="center">Reference ID</StyledTableCell>
-                        <StyledTableCell align="right">Taxable Value (Rs.)</StyledTableCell>
-                        <StyledTableCell align="right">IGST (Rs.)</StyledTableCell>
-                        <StyledTableCell align="right">CGST (Rs.)</StyledTableCell>
-                        <StyledTableCell align="right">SGST (Rs.)</StyledTableCell>
-                        <StyledTableCell align="right">Invoice Value (Rs.)</StyledTableCell>
-                        <StyledTableCell align="center">Actions</StyledTableCell>
+                        <StyledTableCell align='right'>
+                          Balance Qty.
+                        </StyledTableCell>
+                        <StyledTableCell align='center'>
+                          Reference ID
+                        </StyledTableCell>
+                        <StyledTableCell align='right'>
+                          Taxable Value (Rs.)
+                        </StyledTableCell>
+                        <StyledTableCell align='right'>
+                          IGST (Rs.)
+                        </StyledTableCell>
+                        <StyledTableCell align='right'>
+                          CGST (Rs.)
+                        </StyledTableCell>
+                        <StyledTableCell align='right'>
+                          SGST (Rs.)
+                        </StyledTableCell>
+                        <StyledTableCell align='right'>
+                          Invoice Value (Rs.)
+                        </StyledTableCell>
+                        <StyledTableCell align='center'>
+                          Actions
+                        </StyledTableCell>
                       </StyledTableHeaderRow>
                     </TableHead>
                     <TableBody>
                       {balanceStock
-                        .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
-                        .map((item) => (
+                        .slice(
+                          page * rowsPerPage,
+                          page * rowsPerPage + rowsPerPage
+                        )
+                        .map(item => (
                           <TableRow key={item.id}>
-                            <StyledDataCell component="th" scope="row" align="left">
+                            <StyledDataCell
+                              component='th'
+                              scope='row'
+                              align='left'
+                            >
                               {item.product_name}
                             </StyledDataCell>
-                            <StyledDataCell align="right">{item.balance_qty}</StyledDataCell>
-                            <StyledDataCell align="center">{item.reference_id || '-'}</StyledDataCell>
-                            <StyledDataCell align="right">{item.taxable_value?.toFixed(2)}</StyledDataCell>
-                            <StyledDataCell align="right">{item.igst?.toFixed(2)}</StyledDataCell>
-                            <StyledDataCell align="right">{item.cgst?.toFixed(2)}</StyledDataCell>
-                            <StyledDataCell align="right">{item.sgst?.toFixed(2)}</StyledDataCell>
-                            <StyledDataCell align="right">{item.invoice_value?.toFixed(2)}</StyledDataCell>
-                            <StyledDataCell align="center">
+                            <StyledDataCell align='right'>
+                              {item.balance_qty}
+                            </StyledDataCell>
+                            <StyledDataCell align='center'>
+                              {item.reference_id || '-'}
+                            </StyledDataCell>
+                            <StyledDataCell align='right'>
+                              {item.taxable_value?.toFixed(2)}
+                            </StyledDataCell>
+                            <StyledDataCell align='right'>
+                              {item.igst?.toFixed(2)}
+                            </StyledDataCell>
+                            <StyledDataCell align='right'>
+                              {item.cgst?.toFixed(2)}
+                            </StyledDataCell>
+                            <StyledDataCell align='right'>
+                              {item.sgst?.toFixed(2)}
+                            </StyledDataCell>
+                            <StyledDataCell align='right'>
+                              {item.invoice_value?.toFixed(2)}
+                            </StyledDataCell>
+                            <StyledDataCell align='center'>
                               <DeleteButton
-                                onDelete={() => handleDeleteProduct(item.product_name)}
+                                onDelete={() =>
+                                  handleDeleteProduct(item.product_name)
+                                }
                                 disabled={isDeleting}
                                 confirmMessage={`Are you sure you want to delete "${item.product_name}" from inventory?`}
                               />
@@ -361,7 +435,7 @@ const BalanceStockTab: React.FC<BalanceStockTabProps> = ({ balanceStock, isLoadi
                 </TableContainer>
                 <TablePagination
                   rowsPerPageOptions={[5, 10, 25, 50]}
-                  component="div"
+                  component='div'
                   count={balanceStock.length}
                   rowsPerPage={rowsPerPage}
                   page={page}
@@ -375,8 +449,15 @@ const BalanceStockTab: React.FC<BalanceStockTabProps> = ({ balanceStock, isLoadi
       </TabPanel>
 
       <TabPanel value={tabValue} index={1}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-          <Typography variant="h6">Stock Transaction History</Typography>
+        <Box
+          sx={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            mb: 3,
+          }}
+        >
+          <Typography variant='h6'>Stock Transaction History</Typography>
         </Box>
 
         {loadingTransactions ? (
@@ -386,15 +467,19 @@ const BalanceStockTab: React.FC<BalanceStockTabProps> = ({ balanceStock, isLoadi
         ) : (
           <Paper>
             <TableContainer component={Paper} sx={{ maxHeight: 440 }}>
-              <Table stickyHeader aria-label="stock transactions table">
+              <Table stickyHeader aria-label='stock transactions table'>
                 <TableHead>
                   <StyledTableHeaderRow>
                     <StyledTableCell>Date & Time</StyledTableCell>
                     <StyledTableCell>Product Name</StyledTableCell>
-                    <StyledTableCell align="center">Transaction Type</StyledTableCell>
-                    <StyledTableCell align="right">Quantity</StyledTableCell>
-                    <StyledTableCell align="right">Previous Stock</StyledTableCell>
-                    <StyledTableCell align="right">New Stock</StyledTableCell>
+                    <StyledTableCell align='center'>
+                      Transaction Type
+                    </StyledTableCell>
+                    <StyledTableCell align='right'>Quantity</StyledTableCell>
+                    <StyledTableCell align='right'>
+                      Previous Stock
+                    </StyledTableCell>
+                    <StyledTableCell align='right'>New Stock</StyledTableCell>
                     <StyledTableCell>Source</StyledTableCell>
                     <StyledTableCell>Notes</StyledTableCell>
                   </StyledTableHeaderRow>
@@ -402,24 +487,38 @@ const BalanceStockTab: React.FC<BalanceStockTabProps> = ({ balanceStock, isLoadi
                 <TableBody>
                   {stockTransactions
                     .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
-                    .map((transaction) => (
+                    .map(transaction => (
                       <TableRow key={transaction.id}>
-                        <StyledDataCell align="left">
+                        <StyledDataCell align='left'>
                           {formatDateTime(transaction.created_at)}
                         </StyledDataCell>
-                        <StyledDataCell align="left">{transaction.product_name}</StyledDataCell>
-                        <StyledDataCell align="center">
-                          <Chip 
-                            label={transaction.transaction_type} 
-                            color={getTransactionTypeColor(transaction.transaction_type)}
-                            size="small"
+                        <StyledDataCell align='left'>
+                          {transaction.product_name}
+                        </StyledDataCell>
+                        <StyledDataCell align='center'>
+                          <Chip
+                            label={transaction.transaction_type}
+                            color={getTransactionTypeColor(
+                              transaction.transaction_type
+                            )}
+                            size='small'
                           />
                         </StyledDataCell>
-                        <StyledDataCell align="right">{transaction.quantity}</StyledDataCell>
-                        <StyledDataCell align="right">{transaction.previous_stock}</StyledDataCell>
-                        <StyledDataCell align="right">{transaction.new_stock}</StyledDataCell>
-                        <StyledDataCell align="left">{transaction.source}</StyledDataCell>
-                        <StyledDataCell align="left">{transaction.notes}</StyledDataCell>
+                        <StyledDataCell align='right'>
+                          {transaction.quantity}
+                        </StyledDataCell>
+                        <StyledDataCell align='right'>
+                          {transaction.previous_stock}
+                        </StyledDataCell>
+                        <StyledDataCell align='right'>
+                          {transaction.new_stock}
+                        </StyledDataCell>
+                        <StyledDataCell align='left'>
+                          {transaction.source}
+                        </StyledDataCell>
+                        <StyledDataCell align='left'>
+                          {transaction.notes}
+                        </StyledDataCell>
                       </TableRow>
                     ))}
                 </TableBody>
@@ -427,7 +526,7 @@ const BalanceStockTab: React.FC<BalanceStockTabProps> = ({ balanceStock, isLoadi
             </TableContainer>
             <TablePagination
               rowsPerPageOptions={[5, 10, 25, 50]}
-              component="div"
+              component='div'
               count={stockTransactions.length}
               rowsPerPage={rowsPerPage}
               page={page}

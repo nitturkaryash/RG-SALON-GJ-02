@@ -22,12 +22,12 @@ interface PieChartProps {
   showPercentage?: boolean;
 }
 
-export default function PieChart({ 
-  data, 
-  height = 300, 
-  title, 
+export default function PieChart({
+  data,
+  height = 300,
+  title,
   options = {},
-  showPercentage = true
+  showPercentage = true,
 }: PieChartProps) {
   const chartRef = useRef<any>(null);
 
@@ -48,40 +48,43 @@ export default function PieChart({
         position: 'top' as const,
         labels: {
           padding: 20,
-          boxWidth: 12
-        }
+          boxWidth: 12,
+        },
       },
       title: {
         display: !!title,
         text: title,
         font: {
-          size: 16
+          size: 16,
         },
         padding: {
-          bottom: 16
-        }
+          bottom: 16,
+        },
       },
       tooltip: {
         callbacks: {
-          label: function(context: any) {
+          label: function (context: any) {
             let label = context.label || '';
             if (label) {
               label += ': ';
             }
-            
+
             if (context.parsed !== null) {
               label += context.parsed.toLocaleString('en-IN');
-              
+
               if (showPercentage) {
-                const total = context.dataset.data.reduce((a: number, b: number) => a + b, 0);
+                const total = context.dataset.data.reduce(
+                  (a: number, b: number) => a + b,
+                  0
+                );
                 const percentage = Math.round((context.parsed / total) * 100);
                 label += ` (${percentage}%)`;
               }
             }
             return label;
-          }
-        }
-      }
+          },
+        },
+      },
     },
     animation: {
       animateRotate: true,
@@ -95,11 +98,7 @@ export default function PieChart({
 
   return (
     <div style={{ height }}>
-      <Pie 
-        data={data} 
-        options={mergedOptions}
-        ref={chartRef}
-      />
+      <Pie data={data} options={mergedOptions} ref={chartRef} />
     </div>
   );
-} 
+}

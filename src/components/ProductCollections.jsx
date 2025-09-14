@@ -12,7 +12,7 @@ const StyledContainer = styled(Box)(({ theme }) => ({
   flexDirection: 'column',
   padding: theme.spacing(3),
   boxSizing: 'border-box',
-  overflow: 'visible'
+  overflow: 'visible',
 }));
 
 export default function ProductCollections() {
@@ -24,19 +24,26 @@ export default function ProductCollections() {
 
   return (
     <StyledContainer>
-      <Box sx={{ 
-        display: 'flex', 
-        justifyContent: 'space-between', 
-        alignItems: 'center',
-        width: '100%',
-        mb: 4
-      }}>
-        <Typography variant="h2" component="h1" color="primary" sx={{ fontSize: { xs: '2.5rem', md: '3rem' } }}>
+      <Box
+        sx={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          width: '100%',
+          mb: 4,
+        }}
+      >
+        <Typography
+          variant='h2'
+          component='h1'
+          color='primary'
+          sx={{ fontSize: { xs: '2.5rem', md: '3rem' } }}
+        >
           Products
         </Typography>
         <Button
-          variant="contained"
-          color="primary"
+          variant='contained'
+          color='primary'
           startIcon={<AddIcon />}
           onClick={handleOpenAddDialog}
           sx={{ borderRadius: '8px' }}
@@ -47,7 +54,7 @@ export default function ProductCollections() {
 
       {/* Product collections grid */}
       <Grid container spacing={3} sx={{ width: '100%', m: 0 }}>
-        {collections.map((collection) => (
+        {collections.map(collection => (
           <Grid item xs={12} sm={6} md={4} key={collection.id} sx={{ p: 2 }}>
             {/* Collection card content */}
           </Grid>
@@ -58,4 +65,4 @@ export default function ProductCollections() {
       {/* ... rest of the component */}
     </StyledContainer>
   );
-} 
+}

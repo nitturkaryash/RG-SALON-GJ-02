@@ -12,13 +12,13 @@ export const TABLES = {
   POS_ORDER_ITEMS: 'pos_order_items',
   SALES_CONSUMER: 'inventory_sales_consumer',
   SALON_CONSUMPTION: 'salon_consumption_new', // Changed from 'salon_consumption_view' to 'salon_consumption_new'
-  SALON_CONSUMPTION_PRODUCTS: 'salon_consumption_products'
+  SALON_CONSUMPTION_PRODUCTS: 'salon_consumption_products',
 };
 
 // Global state management
 export const connectionState = {
   status: 'initializing',
-  error: null as Error | null
+  error: null as Error | null,
 };
 
 // Initialize supabase client strictly from env
@@ -26,7 +26,9 @@ const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 if (!supabaseUrl || !supabaseAnonKey) {
-  throw new Error('Missing Supabase env variables (VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY)');
+  throw new Error(
+    'Missing Supabase env variables (VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY)'
+  );
 }
 
 // Create the Supabase client
@@ -50,7 +52,9 @@ export const handleSupabaseError = (error: any): Error => {
 
   // Connection errors
   if (error.code === 'PGRST16' || error.message?.includes('Failed to fetch')) {
-    return new Error('Database connection error. Please check your internet connection.');
+    return new Error(
+      'Database connection error. Please check your internet connection.'
+    );
   }
 
   return new Error(error.message || 'Database operation failed');
@@ -85,7 +89,8 @@ export const checkDatabaseConnection = async () => {
     return { connected: true, error: null };
   } catch (error) {
     connectionState.status = 'error';
-    connectionState.error = error instanceof Error ? error : new Error('Unknown error');
+    connectionState.error =
+      error instanceof Error ? error : new Error('Unknown error');
     return { connected: false, error: connectionState.error };
   }
 };
@@ -96,7 +101,7 @@ export const retryDatabaseOperation = async <T>(
   maxRetries = 3
 ): Promise<T> => {
   let lastError: Error | null = null;
-  
+
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       return await operation();
@@ -106,6 +111,6 @@ export const retryDatabaseOperation = async <T>(
       await new Promise(resolve => setTimeout(resolve, attempt * 1000));
     }
   }
-  
+
   throw lastError || new Error('Operation failed after multiple retries');
-}; 
+};

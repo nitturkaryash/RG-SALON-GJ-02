@@ -27,7 +27,7 @@
   position: relative;
   width: 100%;
   height: 100%;
-  background: 
+  background:
     radial-gradient(
       circle at var(--pointer-x, 50%) var(--pointer-y, 50%),
       rgba(255, 255, 255, 0.1) 0%,
@@ -103,15 +103,14 @@
   left: 0;
   width: 100%;
   height: 100%;
-  background: 
-    linear-gradient(
-      45deg,
-      rgba(255, 0, 255, 0.05) 0%,
-      rgba(0, 255, 255, 0.05) 25%,
-      rgba(255, 255, 0, 0.05) 50%,
-      rgba(255, 0, 0, 0.05) 75%,
-      rgba(0, 255, 0, 0.05) 100%
-    );
+  background: linear-gradient(
+    45deg,
+    rgba(255, 0, 255, 0.05) 0%,
+    rgba(0, 255, 255, 0.05) 25%,
+    rgba(255, 255, 0, 0.05) 50%,
+    rgba(255, 0, 0, 0.05) 75%,
+    rgba(0, 255, 0, 0.05) 100%
+  );
   opacity: calc(var(--pointer-from-center, 0) * 0.3);
   transition: opacity 0.3s ease;
   pointer-events: none;
@@ -126,19 +125,18 @@
   left: 0;
   width: 100%;
   height: 100%;
-  background: 
-    conic-gradient(
-      from 0deg at var(--pointer-x, 50%) var(--pointer-y, 50%),
-      rgba(255, 255, 255, 0) 0deg,
-      rgba(255, 255, 255, 0.1) 45deg,
-      rgba(255, 255, 255, 0) 90deg,
-      rgba(255, 255, 255, 0.1) 135deg,
-      rgba(255, 255, 255, 0) 180deg,
-      rgba(255, 255, 255, 0.1) 225deg,
-      rgba(255, 255, 255, 0) 270deg,
-      rgba(255, 255, 255, 0.1) 315deg,
-      rgba(255, 255, 255, 0) 360deg
-    );
+  background: conic-gradient(
+    from 0deg at var(--pointer-x, 50%) var(--pointer-y, 50%),
+    rgba(255, 255, 255, 0) 0deg,
+    rgba(255, 255, 255, 0.1) 45deg,
+    rgba(255, 255, 255, 0) 90deg,
+    rgba(255, 255, 255, 0.1) 135deg,
+    rgba(255, 255, 255, 0) 180deg,
+    rgba(255, 255, 255, 0.1) 225deg,
+    rgba(255, 255, 255, 0) 270deg,
+    rgba(255, 255, 255, 0.1) 315deg,
+    rgba(255, 255, 255, 0) 360deg
+  );
   opacity: calc(var(--pointer-from-center, 0) * 0.4);
   transition: opacity 0.3s ease;
   pointer-events: none;
@@ -208,11 +206,11 @@
     width: 280px !important;
     height: 160px !important;
   }
-  
+
   .hc-content-wrapper {
     padding: 16px !important;
   }
-  
+
   .hc-card::before {
     display: none;
   }
@@ -223,7 +221,7 @@
     width: 260px !important;
     height: 140px !important;
   }
-  
+
   .hc-content-wrapper {
     padding: 12px !important;
   }
@@ -248,9 +246,9 @@
     transition: none !important;
     transform: none !important;
   }
-  
+
   .hc-wrapper.active,
   .hc-card.active {
     transform: none !important;
   }
-} 
+}

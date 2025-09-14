@@ -37,23 +37,30 @@ interface EnhancedOfflineStatusBarProps {
   compact?: boolean;
 }
 
-export default function EnhancedOfflineStatusBar({ 
+export default function EnhancedOfflineStatusBar({
   position = 'bottom',
-  compact = false 
+  compact = false,
 }: EnhancedOfflineStatusBarProps) {
   const networkStatus = useNetworkStatus();
   const [isExpanded, setIsExpanded] = useState(false);
   const [isSupabaseDown, setIsSupabaseDown] = useState(false);
   const [syncStatus, setSyncStatus] = useState({ pending: 0, conflicts: 0 });
   const [isManualSyncing, setIsManualSyncing] = useState(false);
-  const [lastSupabaseCheck, setLastSupabaseCheck] = useState<number | null>(null);
+  const [lastSupabaseCheck, setLastSupabaseCheck] = useState<number | null>(
+    null
+  );
 
   // Check Supabase connectivity periodically
   useEffect(() => {
     const checkSupabaseHealth = async () => {
       try {
         // Use the hybrid service to check connectivity
-        const testResult = await hybridDataService.store('health_check', 'test', { test: true }, 'create');
+        const testResult = await hybridDataService.store(
+          'health_check',
+          'test',
+          { test: true },
+          'create'
+        );
         setIsSupabaseDown(testResult.source === 'local-only');
         setLastSupabaseCheck(Date.now());
       } catch (error) {
@@ -94,23 +101,31 @@ export default function EnhancedOfflineStatusBar({
     setIsManualSyncing(true);
     try {
       toast.info('🔄 Starting manual sync...');
-      
+
       // Sync all main tables
-      const tables = ['orders', 'clients', 'appointments', 'products', 'services'];
+      const tables = [
+        'orders',
+        'clients',
+        'appointments',
+        'products',
+        'services',
+      ];
       let totalSynced = 0;
-      
+
       for (const table of tables) {
         try {
-          const result = await hybridDataService.syncBidirectional(table, 'bidirectional');
+          const result = await hybridDataService.syncBidirectional(
+            table,
+            'bidirectional'
+          );
           totalSynced += result.localToRemote + result.remoteToLocal;
         } catch (error) {
           console.warn(`⚠️ Sync failed for table ${table}:`, error);
         }
       }
-      
+
       toast.success(`✅ Sync completed! ${totalSynced} records synchronized`);
       setIsSupabaseDown(false);
-      
     } catch (error) {
       console.error('❌ Manual sync failed:', error);
       toast.error('❌ Manual sync failed');
@@ -137,7 +152,7 @@ export default function EnhancedOfflineStatusBar({
         description: 'Using local data only',
       };
     }
-    
+
     if (isSupabaseDown) {
       return {
         color: 'error' as const,
@@ -146,7 +161,7 @@ export default function EnhancedOfflineStatusBar({
         description: 'Using local backup data',
       };
     }
-    
+
     if (syncStatus.pending > 0) {
       return {
         color: 'info' as const,
@@ -155,7 +170,7 @@ export default function EnhancedOfflineStatusBar({
         description: `${syncStatus.pending} items to sync`,
       };
     }
-    
+
     return {
       color: 'success' as const,
       icon: <CloudDone />,
@@ -181,21 +196,21 @@ export default function EnhancedOfflineStatusBar({
           borderRadius: 2,
         }}
       >
-        <Stack direction="row" spacing={1} alignItems="center">
+        <Stack direction='row' spacing={1} alignItems='center'>
           <Tooltip title={statusInfo.description}>
             <Chip
               icon={statusInfo.icon}
               label={statusInfo.label}
               color={statusInfo.color}
-              size="small"
-              variant="outlined"
+              size='small'
+              variant='outlined'
             />
           </Tooltip>
-          
+
           {syncStatus.pending > 0 && (
-            <Badge badgeContent={syncStatus.pending} color="warning">
+            <Badge badgeContent={syncStatus.pending} color='warning'>
               <IconButton
-                size="small"
+                size='small'
                 onClick={handleManualSync}
                 disabled={isManualSyncing}
               >
@@ -223,10 +238,8 @@ export default function EnhancedOfflineStatusBar({
       }}
     >
       {/* Progress bar for sync operations */}
-      {isManualSyncing && (
-        <LinearProgress color="info" />
-      )}
-      
+      {isManualSyncing && <LinearProgress color='info' />}
+
       <Box
         sx={{
           display: 'flex',
@@ -238,79 +251,73 @@ export default function EnhancedOfflineStatusBar({
         }}
       >
         {/* Status indicator */}
-        <Stack direction="row" spacing={2} alignItems="center">
+        <Stack direction='row' spacing={2} alignItems='center'>
           <Chip
             icon={statusInfo.icon}
             label={statusInfo.label}
             color={statusInfo.color}
-            variant="outlined"
+            variant='outlined'
           />
-          
-          <Typography variant="body2" color="text.secondary">
+
+          <Typography variant='body2' color='text.secondary'>
             {statusInfo.description}
           </Typography>
-          
+
           {/* Network info */}
           <Chip
             icon={networkStatus.isOnline ? <Wifi /> : <WifiOff />}
             label={networkStatus.isOnline ? 'Online' : 'Offline'}
             color={networkStatus.isOnline ? 'success' : 'warning'}
-            size="small"
-            variant="outlined"
+            size='small'
+            variant='outlined'
           />
-          
+
           {/* Sync status */}
           {syncStatus.pending > 0 && (
             <Chip
               icon={<Storage />}
               label={`${syncStatus.pending} pending`}
-              color="warning"
-              size="small"
-              variant="outlined"
+              color='warning'
+              size='small'
+              variant='outlined'
             />
           )}
-          
+
           {syncStatus.conflicts > 0 && (
             <Chip
               icon={<Warning />}
               label={`${syncStatus.conflicts} conflicts`}
-              color="error"
-              size="small"
-              variant="outlined"
+              color='error'
+              size='small'
+              variant='outlined'
             />
           )}
         </Stack>
 
         {/* Actions */}
-        <Stack direction="row" spacing={1} alignItems="center">
+        <Stack direction='row' spacing={1} alignItems='center'>
           {/* Manual sync */}
-          <Tooltip title="Sync now">
+          <Tooltip title='Sync now'>
             <IconButton
               onClick={handleManualSync}
               disabled={isManualSyncing || !networkStatus.isOnline}
-              color="primary"
+              color='primary'
             >
               <Sync />
             </IconButton>
           </Tooltip>
-          
+
           {/* Force local mode */}
           {isSupabaseDown && (
-            <Tooltip title="Use local data only">
-              <IconButton
-                onClick={handleForceLocalMode}
-                color="warning"
-              >
+            <Tooltip title='Use local data only'>
+              <IconButton onClick={handleForceLocalMode} color='warning'>
                 <Storage />
               </IconButton>
             </Tooltip>
           )}
-          
+
           {/* Expand/collapse */}
-          <IconButton
-            onClick={() => setIsExpanded(!isExpanded)}
-            size="small"
-          >
+          <IconButton onClick={() => setIsExpanded(!isExpanded)} size='small'>
             {isExpanded ? <ExpandLess /> : <ExpandMore />}
           </IconButton>
         </Stack>
@@ -323,26 +330,26 @@ export default function EnhancedOfflineStatusBar({
           <Stack spacing={2}>
             {/* Connection details */}
             <Box>
-              <Typography variant="subtitle2" gutterBottom>
+              <Typography variant='subtitle2' gutterBottom>
                 Connection Status
               </Typography>
-              <Stack direction="row" spacing={2} flexWrap="wrap">
+              <Stack direction='row' spacing={2} flexWrap='wrap'>
                 <Chip
                   label={`Network: ${networkStatus.connectionType}`}
-                  size="small"
-                  variant="outlined"
+                  size='small'
+                  variant='outlined'
                 />
                 <Chip
                   label={`Slow Connection: ${networkStatus.isSlowConnection ? 'Yes' : 'No'}`}
-                  size="small"
-                  variant="outlined"
+                  size='small'
+                  variant='outlined'
                   color={networkStatus.isSlowConnection ? 'warning' : 'default'}
                 />
                 {lastSupabaseCheck && (
                   <Chip
                     label={`Last Check: ${new Date(lastSupabaseCheck).toLocaleTimeString()}`}
-                    size="small"
-                    variant="outlined"
+                    size='small'
+                    variant='outlined'
                   />
                 )}
               </Stack>
@@ -350,13 +357,14 @@ export default function EnhancedOfflineStatusBar({
 
             {/* Warnings and alerts */}
             {isSupabaseDown && networkStatus.isOnline && (
-              <Alert severity="warning" variant="outlined">
-                <Typography variant="body2">
-                  Supabase is not responding. The app is using local backup data. 
-                  Your data is safe and will sync when the connection is restored.
+              <Alert severity='warning' variant='outlined'>
+                <Typography variant='body2'>
+                  Supabase is not responding. The app is using local backup
+                  data. Your data is safe and will sync when the connection is
+                  restored.
                 </Typography>
                 <Button
-                  size="small"
+                  size='small'
                   onClick={handleManualSync}
                   disabled={isManualSyncing}
                   sx={{ mt: 1 }}
@@ -367,19 +375,21 @@ export default function EnhancedOfflineStatusBar({
             )}
 
             {!networkStatus.isOnline && (
-              <Alert severity="info" variant="outlined">
-                <Typography variant="body2">
-                  You're offline. All changes are saved locally and will sync when you're back online.
+              <Alert severity='info' variant='outlined'>
+                <Typography variant='body2'>
+                  You're offline. All changes are saved locally and will sync
+                  when you're back online.
                 </Typography>
               </Alert>
             )}
 
             {syncStatus.conflicts > 0 && (
-              <Alert severity="error" variant="outlined">
-                <Typography variant="body2">
-                  {syncStatus.conflicts} data conflicts detected. Please review and resolve them.
+              <Alert severity='error' variant='outlined'>
+                <Typography variant='body2'>
+                  {syncStatus.conflicts} data conflicts detected. Please review
+                  and resolve them.
                 </Typography>
-                <Button size="small" sx={{ mt: 1 }}>
+                <Button size='small' sx={{ mt: 1 }}>
                   Resolve Conflicts
                 </Button>
               </Alert>
@@ -387,31 +397,31 @@ export default function EnhancedOfflineStatusBar({
 
             {/* Quick actions */}
             <Box>
-              <Typography variant="subtitle2" gutterBottom>
+              <Typography variant='subtitle2' gutterBottom>
                 Quick Actions
               </Typography>
-              <Stack direction="row" spacing={1} flexWrap="wrap">
+              <Stack direction='row' spacing={1} flexWrap='wrap'>
                 <Button
-                  size="small"
+                  size='small'
                   startIcon={<Refresh />}
                   onClick={() => window.location.reload()}
-                  variant="outlined"
+                  variant='outlined'
                 >
                   Refresh App
                 </Button>
                 <Button
-                  size="small"
+                  size='small'
                   startIcon={<Storage />}
                   onClick={handleForceLocalMode}
-                  variant="outlined"
-                  color="warning"
+                  variant='outlined'
+                  color='warning'
                 >
                   Local Mode
                 </Button>
                 <Button
-                  size="small"
+                  size='small'
                   startIcon={<Settings />}
-                  variant="outlined"
+                  variant='outlined'
                   onClick={() => {
                     // Open diagnostics
                     (window as any).runOfflineDiagnostics?.();
@@ -426,4 +436,4 @@ export default function EnhancedOfflineStatusBar({
       </Collapse>
     </Paper>
   );
-} 
+}

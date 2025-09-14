@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server';
-import { 
-  processAppointmentReminders, 
-  sendManualReminder, 
-  getAppointmentsNeedingReminders 
+import {
+  processAppointmentReminders,
+  sendManualReminder,
+  getAppointmentsNeedingReminders,
 } from '@/utils/appointmentReminders';
 
 // GET - Get appointments needing reminders or check reminder status
@@ -16,12 +16,12 @@ export async function GET(req: Request) {
       // List appointments needing reminders
       const hours = type === '2h' ? 2 : 24;
       const appointments = await getAppointmentsNeedingReminders(hours);
-      
+
       return NextResponse.json({
         success: true,
         reminderType: `${hours}h`,
         count: appointments.length,
-        appointments
+        appointments,
       });
     }
 
@@ -29,9 +29,8 @@ export async function GET(req: Request) {
       success: true,
       message: 'Reminder system is active',
       availableActions: ['check', 'list'],
-      availableTypes: ['24h', '2h']
+      availableTypes: ['24h', '2h'],
     });
-
   } catch (error) {
     console.error('Error in reminders GET:', error);
     return NextResponse.json(
@@ -51,45 +50,47 @@ export async function POST(req: Request) {
       // Process all reminders
       console.log('📱 Manual trigger for appointment reminder processing...');
       await processAppointmentReminders();
-      
+
       return NextResponse.json({
         success: true,
         message: 'Reminder processing completed',
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
       });
-
     } else if (action === 'send-manual' && appointmentId) {
       // Send manual reminder for specific appointment
-      console.log(`📱 Manual reminder request for appointment: ${appointmentId}, type: ${reminderType}`);
-      
-      const success = await sendManualReminder(appointmentId, reminderType as '24h' | '2h');
-      
+      console.log(
+        `📱 Manual reminder request for appointment: ${appointmentId}, type: ${reminderType}`
+      );
+
+      const success = await sendManualReminder(
+        appointmentId,
+        reminderType as '24h' | '2h'
+      );
+
       if (success) {
         return NextResponse.json({
           success: true,
           message: `${reminderType} reminder sent successfully`,
           appointmentId,
-          reminderType
+          reminderType,
         });
       } else {
         return NextResponse.json(
-          { 
-            success: false, 
+          {
+            success: false,
             error: 'Failed to send reminder',
             appointmentId,
-            reminderType
+            reminderType,
           },
           { status: 400 }
         );
       }
-
     } else {
       return NextResponse.json(
         { success: false, error: 'Invalid action or missing parameters' },
         { status: 400 }
       );
     }
-
   } catch (error) {
     console.error('Error in reminders POST:', error);
     return NextResponse.json(
@@ -97,4 +98,4 @@ export async function POST(req: Request) {
       { status: 500 }
     );
   }
-} 
+}

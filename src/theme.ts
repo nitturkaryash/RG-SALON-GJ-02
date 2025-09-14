@@ -65,19 +65,19 @@ export const theme = createTheme({
     },
     background: {
       default: '#F5F5F0', // Off-white
-      paper: '#FFFFFF',    // White for paper elements
+      paper: '#FFFFFF', // White for paper elements
     },
     text: {
-      primary: '#333333',  // Dark gray for primary text
+      primary: '#333333', // Dark gray for primary text
       secondary: '#666666', // Medium gray for secondary text
     },
     salon: {
-      olive: '#6B8E23',     // Main olive
+      olive: '#6B8E23', // Main olive
       oliveLight: '#8FB03E', // Lighter olive
-      oliveDark: '#566E1C',  // Darker olive
-      offWhite: '#F5F5F0',   // Background off-white
-      cream: '#FFF8E7',      // Cream color for accents
-      accent: '#D2B48C',     // Tan accent
+      oliveDark: '#566E1C', // Darker olive
+      offWhite: '#F5F5F0', // Background off-white
+      cream: '#FFF8E7', // Cream color for accents
+      accent: '#D2B48C', // Tan accent
     },
     // Enhanced date picker colors for elegant highlighting
     datePicker: {
@@ -93,7 +93,8 @@ export const theme = createTheme({
     divider: 'rgba(0, 0, 0, 0.12)',
   },
   typography: {
-    fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+    fontFamily:
+      '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
     h1: {
       fontWeight: 700,
       fontSize: '2.5rem',
@@ -460,4 +461,4 @@ export const theme = createTheme({
       },
     },
   },
-}); 
+});

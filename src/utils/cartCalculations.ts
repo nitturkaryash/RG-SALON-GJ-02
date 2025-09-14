@@ -1,8 +1,8 @@
 export interface CartItem {
-  priceExcl: number;       // price excluding GST per unit
-  quantity: number;        // quantity of the item
-  discountIncl: number;    // discount amount including GST
-  gstPercentage: number;   // GST percentage for the item, e.g. 18
+  priceExcl: number; // price excluding GST per unit
+  quantity: number; // quantity of the item
+  discountIncl: number; // discount amount including GST
+  gstPercentage: number; // GST percentage for the item, e.g. 18
 }
 
 /**
@@ -35,4 +35,4 @@ export function calculateCartTotal(
   // Global discount is applied on the inclusive total, so we subtract it directly
   const combined = exSubtotal + totalGst;
   return parseFloat((combined - globalDiscountIncl).toFixed(2));
-} 
+}

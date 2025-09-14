@@ -13,7 +13,12 @@ const transporter = nodemailer.createTransport({
 });
 
 // Helper function to send email
-async function sendEmail(to: string, subject: string, body: string, isHtml = false) {
+async function sendEmail(
+  to: string,
+  subject: string,
+  body: string,
+  isHtml = false
+) {
   try {
     const mailOptions = {
       from: `"Salon" <${process.env.GMAIL_USER || 'pankajhadole4@gmail.com'}>`,
@@ -45,7 +50,10 @@ export async function POST(req: Request) {
     const success = await sendEmail(to, subject, body, html);
 
     if (success) {
-      return NextResponse.json({ success: true, message: 'Email sent successfully' });
+      return NextResponse.json({
+        success: true,
+        message: 'Email sent successfully',
+      });
     } else {
       return NextResponse.json(
         { success: false, error: 'Failed to send email' },
@@ -59,4 +67,4 @@ export async function POST(req: Request) {
       { status: 500 }
     );
   }
-} 
+}

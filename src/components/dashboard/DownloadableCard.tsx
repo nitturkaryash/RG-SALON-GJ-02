@@ -1,10 +1,10 @@
-import { 
-  Paper, 
-  Box, 
-  Typography, 
-  IconButton, 
-  Menu, 
-  MenuItem, 
+import {
+  Paper,
+  Box,
+  Typography,
+  IconButton,
+  Menu,
+  MenuItem,
   Tooltip,
   Card,
   CardContent,
@@ -32,7 +32,17 @@ interface DownloadableCardProps {
   title: string;
   children: ReactNode;
   data: any[];
-  downloadType: 'staff-revenue' | 'sales-trend' | 'payment-methods' | 'customer-analytics' | 'inventory' | 'appointments' | 'real-time' | 'staff-utilization' | 'staff-efficiency' | 'monthly-comparison';
+  downloadType:
+    | 'staff-revenue'
+    | 'sales-trend'
+    | 'payment-methods'
+    | 'customer-analytics'
+    | 'inventory'
+    | 'appointments'
+    | 'real-time'
+    | 'staff-utilization'
+    | 'staff-efficiency'
+    | 'monthly-comparison';
   height?: number;
   showDataCount?: boolean;
   subtitle?: string;
@@ -51,7 +61,8 @@ export default function DownloadableCard({
   icon,
   actionButtons,
 }: DownloadableCardProps) {
-  const [downloadMenuAnchor, setDownloadMenuAnchor] = useState<null | HTMLElement>(null);
+  const [downloadMenuAnchor, setDownloadMenuAnchor] =
+    useState<null | HTMLElement>(null);
   const [notification, setNotification] = useState<{
     open: boolean;
     message: string;
@@ -64,7 +75,10 @@ export default function DownloadableCard({
   const cardRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<HTMLDivElement>(null);
 
-  const showNotification = (message: string, severity: 'success' | 'error' | 'warning' | 'info') => {
+  const showNotification = (
+    message: string,
+    severity: 'success' | 'error' | 'warning' | 'info'
+  ) => {
     setNotification({
       open: true,
       message,
@@ -76,7 +90,9 @@ export default function DownloadableCard({
     setNotification(prev => ({ ...prev, open: false }));
   };
 
-  const handleDownloadMenuOpen = (event: React.MouseEvent<HTMLButtonElement>) => {
+  const handleDownloadMenuOpen = (
+    event: React.MouseEvent<HTMLButtonElement>
+  ) => {
     setDownloadMenuAnchor(event.currentTarget);
   };
 
@@ -87,7 +103,7 @@ export default function DownloadableCard({
   const handleDownload = async (format: 'excel' | 'csv' | 'png' | 'pdf') => {
     try {
       showNotification(`Preparing ${format.toUpperCase()} download...`, 'info');
-      
+
       const downloadDataPayload: DownloadData = {
         title,
         data,
@@ -96,7 +112,10 @@ export default function DownloadableCard({
       };
 
       await downloadData(format, downloadDataPayload);
-      showNotification(`${format.toUpperCase()} downloaded successfully!`, 'success');
+      showNotification(
+        `${format.toUpperCase()} downloaded successfully!`,
+        'success'
+      );
     } catch (error) {
       console.error('Download error:', error);
       showNotification(`Failed to download ${format.toUpperCase()}`, 'error');
@@ -106,13 +125,13 @@ export default function DownloadableCard({
 
   return (
     <>
-      <Paper 
+      <Paper
         ref={cardRef}
-        elevation={0} 
-        sx={{ 
+        elevation={0}
+        sx={{
           height: height,
-          borderRadius: 2, 
-          border: '1px solid', 
+          borderRadius: 2,
+          border: '1px solid',
           borderColor: 'divider',
           overflow: 'hidden',
           display: 'flex',
@@ -126,9 +145,9 @@ export default function DownloadableCard({
         }}
       >
         {/* Header */}
-        <Box 
-          sx={{ 
-            p: 2, 
+        <Box
+          sx={{
+            p: 2,
             pb: 1,
             borderBottom: '1px solid',
             borderColor: 'divider',
@@ -141,37 +160,40 @@ export default function DownloadableCard({
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             {icon}
             <Box>
-              <Typography variant="h6" sx={{ fontWeight: 600, lineHeight: 1.2 }}>
+              <Typography
+                variant='h6'
+                sx={{ fontWeight: 600, lineHeight: 1.2 }}
+              >
                 {title}
               </Typography>
               {subtitle && (
-                <Typography variant="caption" color="text.secondary">
+                <Typography variant='caption' color='text.secondary'>
                   {subtitle}
                 </Typography>
               )}
               {showDataCount && data.length > 0 && (
                 <Box sx={{ mt: 0.5 }}>
-                  <Chip 
-                    label={`${data.length} records`} 
-                    size="small" 
-                    variant="outlined"
-                    color="primary"
+                  <Chip
+                    label={`${data.length} records`}
+                    size='small'
+                    variant='outlined'
+                    color='primary'
                   />
                 </Box>
               )}
             </Box>
           </Box>
-          
+
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             {actionButtons}
-            
-            <Tooltip title="Download Data">
+
+            <Tooltip title='Download Data'>
               <IconButton
                 onClick={handleDownloadMenuOpen}
-                size="small"
-                sx={{ 
+                size='small'
+                sx={{
                   color: 'text.secondary',
-                  '&:hover': { color: 'primary.main' }
+                  '&:hover': { color: 'primary.main' },
                 }}
               >
                 <DownloadIcon />
@@ -181,10 +203,10 @@ export default function DownloadableCard({
         </Box>
 
         {/* Content */}
-        <Box 
+        <Box
           ref={chartRef}
-          sx={{ 
-            flex: 1, 
+          sx={{
+            flex: 1,
             p: 2,
             overflow: 'hidden',
             display: 'flex',
@@ -200,48 +222,48 @@ export default function DownloadableCard({
           open={Boolean(downloadMenuAnchor)}
           onClose={handleDownloadMenuClose}
           PaperProps={{
-            sx: { minWidth: 200 }
+            sx: { minWidth: 200 },
           }}
         >
           <MenuItem onClick={() => handleDownload('excel')}>
             <ListItemIcon>
-              <ExcelIcon color="success" />
+              <ExcelIcon color='success' />
             </ListItemIcon>
-            <ListItemText 
-              primary="Excel (.xlsx)" 
-              secondary="Complete data with analytics"
+            <ListItemText
+              primary='Excel (.xlsx)'
+              secondary='Complete data with analytics'
             />
           </MenuItem>
-          
+
           <MenuItem onClick={() => handleDownload('csv')}>
             <ListItemIcon>
-              <CsvIcon color="info" />
+              <CsvIcon color='info' />
             </ListItemIcon>
-            <ListItemText 
-              primary="CSV (.csv)" 
-              secondary="Raw data for analysis"
+            <ListItemText
+              primary='CSV (.csv)'
+              secondary='Raw data for analysis'
             />
           </MenuItem>
-          
+
           <Divider />
-          
+
           <MenuItem onClick={() => handleDownload('png')}>
             <ListItemIcon>
-              <ImageIcon color="secondary" />
+              <ImageIcon color='secondary' />
             </ListItemIcon>
-            <ListItemText 
-              primary="Image (.png)" 
-              secondary="Chart visualization"
+            <ListItemText
+              primary='Image (.png)'
+              secondary='Chart visualization'
             />
           </MenuItem>
-          
+
           <MenuItem onClick={() => handleDownload('pdf')}>
             <ListItemIcon>
-              <PdfIcon color="error" />
+              <PdfIcon color='error' />
             </ListItemIcon>
-            <ListItemText 
-              primary="PDF (.pdf)" 
-              secondary="Report with chart & data"
+            <ListItemText
+              primary='PDF (.pdf)'
+              secondary='Report with chart & data'
             />
           </MenuItem>
         </Menu>
@@ -254,10 +276,10 @@ export default function DownloadableCard({
         onClose={handleCloseNotification}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
       >
-        <Alert 
-          onClose={handleCloseNotification} 
+        <Alert
+          onClose={handleCloseNotification}
           severity={notification.severity}
-          variant="filled"
+          variant='filled'
           sx={{ width: '100%' }}
         >
           {notification.message}
@@ -265,4 +287,4 @@ export default function DownloadableCard({
       </Snackbar>
     </>
   );
-} 
+}

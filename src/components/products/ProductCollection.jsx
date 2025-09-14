@@ -16,7 +16,7 @@ import {
   Divider,
   Collapse,
   CircularProgress,
-  Tooltip
+  Tooltip,
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -25,9 +25,9 @@ import {
   ExpandMore as ExpandMoreIcon,
   ExpandLess as ExpandLessIcon,
   AddCircleOutline as AddCircleOutlineIcon,
-  Inventory as InventoryIcon
+  Inventory as InventoryIcon,
 } from '@mui/icons-material';
-import { supabase } from '../../utils/supabase/supabaseClient';
+import { supabase } from '../../lib/supabase';
 import AddProduct from './AddProduct';
 import ProductItem from './ProductItem';
 import { toast } from 'react-toastify';
@@ -52,21 +52,21 @@ const ProductCollection = ({ collection }) => {
     try {
       console.log('Fetching products for collection:', collection.id);
       const { data, error } = await supabase
-        .from("products")
-        .select("*")
-        .eq("collection_id", collection.id);
+        .from('products')
+        .select('*')
+        .eq('collection_id', collection.id);
 
       if (error) {
         console.error('Error fetching products:', error);
         toast.error(`Failed to load products: ${error.message}`);
         throw error;
       }
-      
+
       setProducts(data || []);
-      
+
       // Check inventory status for each product
       const statusMap = {};
-      
+
       for (const product of data || []) {
         try {
           const { data: inventoryData, error: inventoryError } = await supabase
@@ -74,22 +74,31 @@ const ProductCollection = ({ collection }) => {
             .select('*')
             .eq('product_id', product.id)
             .single();
-          
-          if (inventoryError && inventoryError.code !== 'PGRST116') { // Not found is expected
-            console.warn(`Error checking inventory for product ${product.id}:`, inventoryError);
+
+          if (inventoryError && inventoryError.code !== 'PGRST116') {
+            // Not found is expected
+            console.warn(
+              `Error checking inventory for product ${product.id}:`,
+              inventoryError
+            );
           }
-          
+
           statusMap[product.id] = inventoryData ? true : false;
         } catch (err) {
-          console.error(`Error checking inventory for product ${product.id}:`, err);
+          console.error(
+            `Error checking inventory for product ${product.id}:`,
+            err
+          );
           statusMap[product.id] = false;
         }
       }
-      
+
       setInventoryStatusMap(statusMap);
     } catch (error) {
       console.error('Error fetching products:', error);
-      toast.error(`Failed to load products: ${error.message || 'Unknown error'}`);
+      toast.error(
+        `Failed to load products: ${error.message || 'Unknown error'}`
+      );
     } finally {
       setLoading(false);
     }
@@ -101,7 +110,7 @@ const ProductCollection = ({ collection }) => {
 
   const handleUpdateCollection = async () => {
     if (!collectionName.trim()) return;
-    
+
     try {
       const { error } = await supabase
         .from('product_collections')
@@ -109,7 +118,7 @@ const ProductCollection = ({ collection }) => {
         .eq('id', collection.id);
 
       if (error) throw error;
-      
+
       setOpenEditDialog(false);
     } catch (error) {
       console.error('Error updating collection:', error);
@@ -117,15 +126,19 @@ const ProductCollection = ({ collection }) => {
   };
 
   const handleDeleteCollection = async () => {
-    if (window.confirm(`Are you sure you want to delete the "${collection.name}" collection?`)) {
+    if (
+      window.confirm(
+        `Are you sure you want to delete the "${collection.name}" collection?`
+      )
+    ) {
       try {
         const { error } = await supabase
           .from('product_collections')
           .delete()
           .eq('id', collection.id);
-          
+
         if (error) throw error;
-        
+
         // Refresh the page
         window.location.reload();
       } catch (error) {
@@ -134,42 +147,39 @@ const ProductCollection = ({ collection }) => {
     }
   };
 
-  const handleAddToInventory = async (product) => {
+  const handleAddToInventory = async product => {
     try {
-      const { data, error } = await supabase
-        .from('inventory_products')
-        .insert([
-          {
-            product_id: product.id,
-            product_name: product.name,
-            quantity: product.stock_quantity || 0,
-            hsn_code: product.hsn_code || '',
-            units: product.units || '',
-            mrp_incl_gst: product.mrp_incl_gst || product.price || 0,
-            gst_percentage: product.gst_percentage || 18,
-            stock_quantity: product.stock_quantity || 0,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          },
-        ]);
+      const { data, error } = await supabase.from('inventory_products').insert([
+        {
+          product_id: product.id,
+          product_name: product.name,
+          quantity: product.stock_quantity || 0,
+          hsn_code: product.hsn_code || '',
+          units: product.units || '',
+          mrp_incl_gst: product.mrp_incl_gst || product.price || 0,
+          gst_percentage: product.gst_percentage || 18,
+          stock_quantity: product.stock_quantity || 0,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        },
+      ]);
 
       if (error) throw error;
-      
+
       // Update inventory status map
       setInventoryStatusMap(prev => ({
         ...prev,
-        [product.id]: true
+        [product.id]: true,
       }));
-      
-      toast.success("Product added to inventory successfully");
-      
+
+      toast.success('Product added to inventory successfully');
     } catch (error) {
       console.error('Error adding to inventory:', error.message || error);
-      toast.error("Failed to add product to inventory");
+      toast.error('Failed to add product to inventory');
     }
   };
 
-  const handleProductAdded = (newProduct) => {
+  const handleProductAdded = newProduct => {
     // Refresh the products list
     fetchProducts();
   };
@@ -178,52 +188,65 @@ const ProductCollection = ({ collection }) => {
     <Card sx={{ mb: 2 }}>
       <CardHeader
         title={
-          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <Typography variant="h6" color="primary">
+          <Box
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+            }}
+          >
+            <Typography variant='h6' color='primary'>
               {collection.name}
             </Typography>
             <Box>
-              <IconButton size="small" onClick={() => setOpenEditDialog(true)}>
-                <EditIcon fontSize="small" />
+              <IconButton size='small' onClick={() => setOpenEditDialog(true)}>
+                <EditIcon fontSize='small' />
               </IconButton>
-              <IconButton size="small" onClick={handleDeleteCollection}>
-                <DeleteIcon fontSize="small" />
+              <IconButton size='small' onClick={handleDeleteCollection}>
+                <DeleteIcon fontSize='small' />
               </IconButton>
-              <IconButton size="small" onClick={handleToggleExpand}>
+              <IconButton size='small' onClick={handleToggleExpand}>
                 {expanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
               </IconButton>
             </Box>
           </Box>
         }
       />
-      
+
       <Collapse in={expanded}>
         <CardContent>
           <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 2 }}>
-            <Button 
-              variant="contained" 
+            <Button
+              variant='contained'
               startIcon={<AddIcon />}
               onClick={() => setAddProductOpen(true)}
-              sx={{ backgroundColor: '#7b9a47', '&:hover': { backgroundColor: '#6a8639' } }}
+              sx={{
+                backgroundColor: '#7b9a47',
+                '&:hover': { backgroundColor: '#6a8639' },
+              }}
             >
               Add Product
             </Button>
           </Box>
-          
+
           {loading ? (
             <Box sx={{ display: 'flex', justifyContent: 'center', my: 2 }}>
               <CircularProgress />
             </Box>
           ) : products.length === 0 ? (
-            <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center' }}>
+            <Typography
+              variant='body2'
+              color='text.secondary'
+              sx={{ textAlign: 'center' }}
+            >
               No products in this collection.
             </Typography>
           ) : (
             <Grid container spacing={2}>
-              {products.map((product) => (
+              {products.map(product => (
                 <Grid item xs={12} sm={6} md={4} key={product.id}>
-                  <ProductItem 
-                    product={product} 
+                  <ProductItem
+                    product={product}
                     onUpdate={fetchProducts}
                     inventoryStatus={inventoryStatusMap[product.id]}
                     onAddToInventory={handleAddToInventory}
@@ -234,35 +257,38 @@ const ProductCollection = ({ collection }) => {
           )}
         </CardContent>
       </Collapse>
-      
+
       {/* Edit Collection Dialog */}
       <Dialog open={openEditDialog} onClose={() => setOpenEditDialog(false)}>
         <DialogTitle>Edit Collection</DialogTitle>
         <DialogContent>
           <TextField
             autoFocus
-            margin="dense"
-            label="Collection Name"
-            type="text"
+            margin='dense'
+            label='Collection Name'
+            type='text'
             fullWidth
             value={collectionName}
-            onChange={(e) => setCollectionName(e.target.value)}
+            onChange={e => setCollectionName(e.target.value)}
           />
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setOpenEditDialog(false)}>Cancel</Button>
-          <Button 
-            onClick={handleUpdateCollection} 
-            variant="contained"
-            sx={{ backgroundColor: '#7b9a47', '&:hover': { backgroundColor: '#6a8639' } }}
+          <Button
+            onClick={handleUpdateCollection}
+            variant='contained'
+            sx={{
+              backgroundColor: '#7b9a47',
+              '&:hover': { backgroundColor: '#6a8639' },
+            }}
           >
             Update
           </Button>
         </DialogActions>
       </Dialog>
-      
+
       {/* Add Product Dialog */}
-      <AddProduct 
+      <AddProduct
         open={addProductOpen}
         onClose={() => setAddProductOpen(false)}
         collectionId={collection.id}
@@ -272,4 +298,4 @@ const ProductCollection = ({ collection }) => {
   );
 };
 
-export default ProductCollection; 
+export default ProductCollection;

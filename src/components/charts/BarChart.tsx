@@ -1,5 +1,12 @@
 import { useRef, useEffect } from 'react';
-import { Chart, BarElement, LinearScale, CategoryScale, Tooltip, Legend } from 'chart.js';
+import {
+  Chart,
+  BarElement,
+  LinearScale,
+  CategoryScale,
+  Tooltip,
+  Legend,
+} from 'chart.js';
 import { Bar } from 'react-chartjs-2';
 
 // Register required Chart.js components
@@ -23,13 +30,13 @@ interface BarChartProps {
   currencyFormat?: boolean;
 }
 
-export default function BarChart({ 
-  data, 
-  height = 300, 
-  title, 
+export default function BarChart({
+  data,
+  height = 300,
+  title,
   options = {},
   horizontal = false,
-  currencyFormat = true
+  currencyFormat = true,
 }: BarChartProps) {
   const chartRef = useRef<any>(null);
 
@@ -45,14 +52,14 @@ export default function BarChart({
   const defaultOptions = {
     responsive: true,
     maintainAspectRatio: false,
-    indexAxis: horizontal ? 'y' as const : 'x' as const,
+    indexAxis: horizontal ? ('y' as const) : ('x' as const),
     layout: {
       padding: {
         left: 10,
         right: 10,
         top: 10,
         bottom: 35, // Extra padding for rotated labels
-      }
+      },
     },
     plugins: {
       legend: {
@@ -60,19 +67,19 @@ export default function BarChart({
         labels: {
           padding: 20,
           usePointStyle: true,
-        }
+        },
       },
       title: {
         display: !!title,
         text: title,
         padding: {
           top: 10,
-          bottom: 20
-        }
+          bottom: 20,
+        },
       },
       tooltip: {
         callbacks: {
-          label: function(context: any) {
+          label: function (context: any) {
             let label = context.dataset.label || '';
             if (label) {
               label += ': ';
@@ -92,25 +99,25 @@ export default function BarChart({
             }
             return label;
           },
-          title: function(context: any) {
+          title: function (context: any) {
             // Show full label on hover
             return context[0]?.label || '';
-          }
-        }
-      }
+          },
+        },
+      },
     },
     scales: {
       y: {
         beginAtZero: true,
         ticks: {
-          callback: function(value: any) {
+          callback: function (value: any) {
             if (currencyFormat && !horizontal) {
               return '₹' + value.toLocaleString('en-IN');
             }
             return value;
           },
           font: {
-            size: 10
+            size: 10,
           },
           padding: 10,
         },
@@ -120,12 +127,12 @@ export default function BarChart({
           drawBorder: false,
         },
         border: {
-          display: false
-        }
+          display: false,
+        },
       },
       x: {
         ticks: {
-          callback: function(value: any, index: any, values: any) {
+          callback: function (value: any, index: any, values: any) {
             if (currencyFormat && horizontal) {
               return '₹' + value.toLocaleString('en-IN');
             }
@@ -138,11 +145,15 @@ export default function BarChart({
                   // Likely a full name, show first name + last initial
                   const parts = label.split(' ');
                   if (parts.length > 1) {
-                    return parts[0] + ' ' + parts[parts.length - 1].charAt(0) + '.';
+                    return (
+                      parts[0] + ' ' + parts[parts.length - 1].charAt(0) + '.'
+                    );
                   }
                 }
                 // Other labels, truncate at 12 characters
-                return label.length > 12 ? label.substring(0, 12) + '...' : label;
+                return label.length > 12
+                  ? label.substring(0, 12) + '...'
+                  : label;
               }
             }
             return value;
@@ -151,7 +162,7 @@ export default function BarChart({
           minRotation: 30,
           maxTicksLimit: 8, // Reduced for better spacing
           font: {
-            size: 10
+            size: 10,
           },
           padding: 8,
         },
@@ -161,9 +172,9 @@ export default function BarChart({
           drawBorder: false,
         },
         border: {
-          display: false
-        }
-      }
+          display: false,
+        },
+      },
     },
     animation: {
       duration: 750,
@@ -175,11 +186,7 @@ export default function BarChart({
 
   return (
     <div style={{ height }}>
-      <Bar 
-        data={data} 
-        options={mergedOptions}
-        ref={chartRef}
-      />
+      <Bar data={data} options={mergedOptions} ref={chartRef} />
     </div>
   );
-} 
+}

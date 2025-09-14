@@ -1,50 +1,44 @@
-import React from 'react'
-import ReactDOM from 'react-dom/client'
+import React from 'react';
+import ReactDOM from 'react-dom/client';
 
 // Import emotion cache first to ensure it's initialized before other UI libraries
-import { CacheProvider } from '@emotion/react'
-import createCache from '@emotion/cache'
+import { CacheProvider } from '@emotion/react';
+import createCache from '@emotion/cache';
 
 // Pre-initialize framer-motion to ensure it loads before components
-import { MotionConfig } from 'framer-motion'
+import { MotionConfig } from 'framer-motion';
 
 // Now import other libraries
-import { BrowserRouter } from 'react-router-dom'
-import { ThemeProvider } from '@mui/material/styles'
-import { QueryClientProvider } from '@tanstack/react-query'
-import { ToastContainer } from 'react-toastify'
-import CssBaseline from '@mui/material/CssBaseline'
-import { theme } from './theme'
-import { queryClient } from './lib/query-client'
-import { AuthContextProvider } from './contexts/AuthContext'
-import App from './App.tsx'
-import './index.css'
-import 'react-toastify/dist/ReactToastify.css'
+import { BrowserRouter } from 'react-router-dom';
+import { ThemeProvider } from '@mui/material/styles';
+import { QueryClientProvider } from '@tanstack/react-query';
+import { ToastContainer } from 'react-toastify';
+import CssBaseline from '@mui/material/CssBaseline';
+import { theme } from './theme';
+import { queryClient } from './lib/query-client';
+import { AuthContextProvider } from './contexts/AuthContext';
+import App from './App.tsx';
+import './index.css';
+import 'react-toastify/dist/ReactToastify.css';
+// Import dev tools for development
+import './utils/devTools';
 
 // Add global error handler to catch any startup errors
-window.addEventListener('error', (e) => {
+window.addEventListener('error', e => {
   console.error('🚨 Global error caught:', e.error);
   console.error('🚨 Error details:', {
     message: e.message,
     filename: e.filename,
     lineno: e.lineno,
     colno: e.colno,
-    stack: e.error?.stack
+    stack: e.error?.stack,
   });
 });
 
-window.addEventListener('unhandledrejection', (e) => {
+window.addEventListener('unhandledrejection', e => {
   console.error('🚨 Unhandled promise rejection:', e.reason);
   e.preventDefault(); // Prevent the error from being logged to console again
 });
-
-// Import security measures safely
-try {
-  import('./utils/security') // Import security measures
-  console.log('✅ Security measures imported');
-} catch (securityError) {
-  console.warn('⚠️ Security measures failed to load:', securityError);
-}
 
 try {
   console.log('🚀 Starting application initialization...');
@@ -53,7 +47,7 @@ try {
   const emotionCache = createCache({
     key: 'css',
     prepend: true, // This ensures styles are prepended to the <head> instead of appended
-  })
+  });
 
   console.log('✅ Emotion cache created');
   console.log('✅ Framer motion imported');
@@ -73,7 +67,7 @@ try {
   root.render(
     <React.StrictMode>
       <CacheProvider value={emotionCache}>
-        <MotionConfig reducedMotion="user">
+        <MotionConfig reducedMotion='user'>
           <QueryClientProvider client={queryClient}>
             <ThemeProvider theme={theme}>
               <CssBaseline />
@@ -81,7 +75,7 @@ try {
                 <BrowserRouter>
                   <App />
                   <ToastContainer
-                    position="bottom-right"
+                    position='bottom-right'
                     autoClose={5000}
                     hideProgressBar={false}
                     newestOnTop
@@ -90,7 +84,7 @@ try {
                     pauseOnFocusLoss
                     draggable
                     pauseOnHover
-                    theme="light"
+                    theme='light'
                   />
                 </BrowserRouter>
               </AuthContextProvider>
@@ -98,14 +92,13 @@ try {
           </QueryClientProvider>
         </MotionConfig>
       </CacheProvider>
-    </React.StrictMode>,
-  )
+    </React.StrictMode>
+  );
 
   console.log('✅ React app rendered successfully');
-
 } catch (error) {
   console.error('🚨 Critical error during app initialization:', error);
-  
+
   // Try to show a basic error message
   const rootElement = document.getElementById('root');
   if (rootElement) {

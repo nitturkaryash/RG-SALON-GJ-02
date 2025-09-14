@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { toast } from 'react-toastify';
-import { supabase } from '../utils/supabase/supabaseClient';
-import { MembershipTier } from '../types/membershipTier';
+import { supabase } from '../lib/supabase';
+// @ts-ignore
+import type { MembershipTier } from '../types/membershipTier';
 
 export function useMembershipTiersSupabase() {
   const [tiers, setTiers] = useState<MembershipTier[]>([]);
@@ -12,21 +13,23 @@ export function useMembershipTiersSupabase() {
   const fetchTiers = async () => {
     setIsLoading(true);
     setError(null);
-    
+
     try {
       const { data, error } = await supabase
         .from('membership_tiers')
         .select('*')
         .order('price', { ascending: false });
-      
+
       if (error) {
         throw error;
       }
-      
+
       setTiers(data as MembershipTier[]);
     } catch (err) {
       console.error('Error fetching membership tiers:', err);
-      setError(err instanceof Error ? err : new Error('Unknown error occurred'));
+      setError(
+        err instanceof Error ? err : new Error('Unknown error occurred')
+      );
       toast.error('Failed to load membership tiers');
     } finally {
       setIsLoading(false);
@@ -46,11 +49,11 @@ export function useMembershipTiersSupabase() {
         .insert([newTier])
         .select()
         .single();
-      
+
       if (error) {
         throw error;
       }
-      
+
       setTiers(prevTiers => [...prevTiers, data as MembershipTier]);
       toast.success('Membership tier added successfully');
       return data as MembershipTier;
@@ -62,7 +65,10 @@ export function useMembershipTiersSupabase() {
   };
 
   // Update an existing membership tier
-  const updateTier = async (tierId: string, updates: Partial<Omit<MembershipTier, 'id'>>) => {
+  const updateTier = async (
+    tierId: string,
+    updates: Partial<Omit<MembershipTier, 'id'>>
+  ) => {
     try {
       const { data, error } = await supabase
         .from('membership_tiers')
@@ -70,17 +76,17 @@ export function useMembershipTiersSupabase() {
         .eq('id', tierId)
         .select()
         .single();
-      
+
       if (error) {
         throw error;
       }
-      
-      setTiers(prevTiers => 
-        prevTiers.map(tier => 
-          tier.id === tierId ? { ...tier, ...data } as MembershipTier : tier
+
+      setTiers(prevTiers =>
+        prevTiers.map(tier =>
+          tier.id === tierId ? ({ ...tier, ...data } as MembershipTier) : tier
         )
       );
-      
+
       toast.success('Membership tier updated successfully');
       return data as MembershipTier;
     } catch (err) {
@@ -97,11 +103,11 @@ export function useMembershipTiersSupabase() {
         .from('membership_tiers')
         .delete()
         .eq('id', tierId);
-      
+
       if (error) {
         throw error;
       }
-      
+
       setTiers(prevTiers => prevTiers.filter(tier => tier.id !== tierId));
       toast.success('Membership tier deleted successfully');
     } catch (err) {
@@ -116,7 +122,7 @@ export function useMembershipTiersSupabase() {
       style: 'currency',
       currency: 'INR',
       minimumFractionDigits: 0,
-      maximumFractionDigits: 0
+      maximumFractionDigits: 0,
     }).format(amount);
   };
 
@@ -128,6 +134,6 @@ export function useMembershipTiersSupabase() {
     createTier,
     updateTier,
     deleteTier,
-    formatCurrency
+    formatCurrency,
   };
-} 
+}

@@ -4,14 +4,14 @@ import MembershipTiersList from '../components/membership/MembershipTiersList';
 
 const MembershipTiers: React.FC = () => {
   return (
-    <Container maxWidth="lg" sx={{ mt: 4, mb: 8 }}>
-      <Paper 
-        elevation={0} 
-        sx={{ 
-          p: 4, 
+    <Container maxWidth='lg' sx={{ mt: 4, mb: 8 }}>
+      <Paper
+        elevation={0}
+        sx={{
+          p: 4,
           borderRadius: 2,
           border: '1px solid',
-          borderColor: 'divider'
+          borderColor: 'divider',
         }}
       >
         <MembershipTiersList />
@@ -20,4 +20,4 @@ const MembershipTiers: React.FC = () => {
   );
 };
 
-export default MembershipTiers; 
+export default MembershipTiers;

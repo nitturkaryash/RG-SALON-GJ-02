@@ -11,11 +11,11 @@ const transporter = nodemailer.createTransport({
     pass: process.env.GMAIL_APP_PASSWORD,
   },
   debug: true, // Enable debug output
-  logger: true // Enable logger
+  logger: true, // Enable logger
 });
 
 // Verify SMTP connection configuration
-transporter.verify(function(error, success) {
+transporter.verify(function (error, success) {
   if (error) {
     console.error('SMTP Connection Error:', error);
     console.error('Gmail User:', process.env.GMAIL_USER);
@@ -135,7 +135,11 @@ export async function POST(req: Request) {
     const { type, to, clientName, action, appointmentTime } = body;
 
     if (!to || !clientName || !type) {
-      console.error('Missing required fields:', { type, clientName, hasEmail: !!to });
+      console.error('Missing required fields:', {
+        type,
+        clientName,
+        hasEmail: !!to,
+      });
       return NextResponse.json(
         { success: false, error: 'Missing required fields' },
         { status: 400 }
@@ -153,7 +157,12 @@ export async function POST(req: Request) {
         );
       }
       console.log('Sending appointment notification email');
-      success = await sendAppointmentNotification(to, clientName, action, appointmentTime);
+      success = await sendAppointmentNotification(
+        to,
+        clientName,
+        action,
+        appointmentTime
+      );
     } else if (type === 'reminder') {
       if (!appointmentTime) {
         console.error('Missing appointment time for reminder');
@@ -174,7 +183,10 @@ export async function POST(req: Request) {
 
     if (success) {
       console.log('Email sent successfully');
-      return NextResponse.json({ success: true, message: 'Email sent successfully' });
+      return NextResponse.json({
+        success: true,
+        message: 'Email sent successfully',
+      });
     } else {
       console.error('Failed to send email');
       return NextResponse.json(
@@ -185,8 +197,12 @@ export async function POST(req: Request) {
   } catch (error) {
     console.error('Error in appointment notification API:', error);
     return NextResponse.json(
-      { success: false, error: 'Internal server error', details: error instanceof Error ? error.message : 'Unknown error' },
+      {
+        success: false,
+        error: 'Internal server error',
+        details: error instanceof Error ? error.message : 'Unknown error',
+      },
       { status: 500 }
     );
   }
-} 
+}

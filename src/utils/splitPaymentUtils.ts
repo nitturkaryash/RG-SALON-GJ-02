@@ -58,7 +58,10 @@ export function validateSplitPayment(
   let processingFees = 0;
 
   // Calculate total paid amount
-  const totalPaid = Object.values(paymentAmounts).reduce((sum, amount) => sum + amount, 0);
+  const totalPaid = Object.values(paymentAmounts).reduce(
+    (sum, amount) => sum + amount,
+    0
+  );
   const remainingAmount = totalOrderAmount - totalPaid;
 
   // Basic validation
@@ -67,11 +70,15 @@ export function validateSplitPayment(
   }
 
   if (totalPaid > totalOrderAmount) {
-    errors.push(`Total payment (₹${totalPaid.toLocaleString()}) exceeds order amount (₹${totalOrderAmount.toLocaleString()})`);
+    errors.push(
+      `Total payment (₹${totalPaid.toLocaleString()}) exceeds order amount (₹${totalOrderAmount.toLocaleString()})`
+    );
   }
 
   if (remainingAmount > 0) {
-    warnings.push(`Payment incomplete. Remaining: ₹${remainingAmount.toLocaleString()}`);
+    warnings.push(
+      `Payment incomplete. Remaining: ₹${remainingAmount.toLocaleString()}`
+    );
   }
 
   // Validate individual payment methods
@@ -83,31 +90,41 @@ export function validateSplitPayment(
     switch (paymentMethod) {
       case 'upi':
         if (amount > PAYMENT_LIMITS.upi.transaction) {
-          errors.push(`UPI amount (₹${amount.toLocaleString()}) exceeds transaction limit (₹${PAYMENT_LIMITS.upi.transaction.toLocaleString()})`);
+          errors.push(
+            `UPI amount (₹${amount.toLocaleString()}) exceeds transaction limit (₹${PAYMENT_LIMITS.upi.transaction.toLocaleString()})`
+          );
         }
         break;
 
       case 'bnpl':
         if (amount < PAYMENT_LIMITS.bnpl.minAmount) {
-          errors.push(`Pay Later minimum amount is ₹${PAYMENT_LIMITS.bnpl.minAmount.toLocaleString()}`);
+          errors.push(
+            `Pay Later minimum amount is ₹${PAYMENT_LIMITS.bnpl.minAmount.toLocaleString()}`
+          );
         }
         if (amount > PAYMENT_LIMITS.bnpl.maxAmount) {
-          errors.push(`Pay Later amount (₹${amount.toLocaleString()}) exceeds maximum limit (₹${PAYMENT_LIMITS.bnpl.maxAmount.toLocaleString()})`);
+          errors.push(
+            `Pay Later amount (₹${amount.toLocaleString()}) exceeds maximum limit (₹${PAYMENT_LIMITS.bnpl.maxAmount.toLocaleString()})`
+          );
         }
         break;
 
       case 'membership':
         if (membershipBalance !== undefined && amount > membershipBalance) {
-          errors.push(`Membership payment (₹${amount.toLocaleString()}) exceeds available balance (₹${membershipBalance.toLocaleString()})`);
+          errors.push(
+            `Membership payment (₹${amount.toLocaleString()}) exceeds available balance (₹${membershipBalance.toLocaleString()})`
+          );
         }
         break;
 
       case 'credit_card':
-        processingFees += (amount * PAYMENT_LIMITS.credit_card.processingFee) / 100;
+        processingFees +=
+          (amount * PAYMENT_LIMITS.credit_card.processingFee) / 100;
         break;
 
       case 'debit_card':
-        processingFees += (amount * PAYMENT_LIMITS.debit_card.processingFee) / 100;
+        processingFees +=
+          (amount * PAYMENT_LIMITS.debit_card.processingFee) / 100;
         break;
     }
   });
@@ -172,7 +189,7 @@ export function processSplitPayment(
 function generateTransactionId(method: PaymentMethod): string {
   const timestamp = Date.now();
   const random = Math.random().toString(36).substring(2, 8).toUpperCase();
-  
+
   switch (method) {
     case 'upi':
       return `UPI${timestamp}${random}`;
@@ -214,7 +231,11 @@ export function calculateOptimalDistribution(
   // First, apply preferences if provided
   if (preferences) {
     Object.entries(preferences).forEach(([method, amount]) => {
-      if (availableMethods.includes(method as PaymentMethod) && amount && amount > 0) {
+      if (
+        availableMethods.includes(method as PaymentMethod) &&
+        amount &&
+        amount > 0
+      ) {
         const allocatedAmount = Math.min(amount, remainingAmount);
         distribution[method as PaymentMethod] = allocatedAmount;
         remainingAmount -= allocatedAmount;
@@ -225,7 +246,14 @@ export function calculateOptimalDistribution(
   // If there's still remaining amount, distribute optimally
   if (remainingAmount > 0) {
     // Priority order: membership > cash > UPI > debit card > credit card > BNPL
-    const priorityOrder: PaymentMethod[] = ['membership', 'cash', 'upi', 'debit_card', 'credit_card', 'bnpl'];
+    const priorityOrder: PaymentMethod[] = [
+      'membership',
+      'cash',
+      'upi',
+      'debit_card',
+      'credit_card',
+      'bnpl',
+    ];
 
     for (const method of priorityOrder) {
       if (!availableMethods.includes(method) || remainingAmount <= 0) continue;
@@ -291,7 +319,10 @@ export function getPaymentMethodColor(method: PaymentMethod): string {
 /**
  * Checks if a payment method requires additional verification
  */
-export function requiresVerification(method: PaymentMethod, amount: number): boolean {
+export function requiresVerification(
+  method: PaymentMethod,
+  amount: number
+): boolean {
   switch (method) {
     case 'upi':
       return amount > 10000; // Require verification for UPI > ₹10,000
@@ -308,7 +339,9 @@ export function requiresVerification(method: PaymentMethod, amount: number): boo
 /**
  * Calculates total processing fees for all payment methods
  */
-export function calculateTotalProcessingFees(paymentAmounts: Record<PaymentMethod, number>): number {
+export function calculateTotalProcessingFees(
+  paymentAmounts: Record<PaymentMethod, number>
+): number {
   let totalFees = 0;
 
   Object.entries(paymentAmounts).forEach(([method, amount]) => {
@@ -345,7 +378,10 @@ export function generatePaymentReceipt(
   customerName?: string
 ): PaymentReceipt {
   const payments = processSplitPayment(paymentAmounts, orderId, customerName);
-  const totalAmount = Object.values(paymentAmounts).reduce((sum, amount) => sum + amount, 0);
+  const totalAmount = Object.values(paymentAmounts).reduce(
+    (sum, amount) => sum + amount,
+    0
+  );
   const processingFees = calculateTotalProcessingFees(paymentAmounts);
 
   return {
@@ -370,10 +406,10 @@ export function convertToSplitPaymentData(
   is_split_payment: boolean;
 } {
   const splitPayments = processSplitPayment(paymentAmounts, orderId);
-  
+
   return {
     payment_method: 'split',
     split_payments: splitPayments,
     is_split_payment: true,
   };
-} 
+}

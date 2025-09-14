@@ -6,7 +6,6 @@ import CssBaseline from '@mui/material/CssBaseline';
 import { theme } from '../styles/theme';
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
-import { Toaster } from 'react-hot-toast';
 import { StrictMode } from 'react';
 import ErrorBoundary from '../components/ErrorBoundary';
 import { StylistHolidaysProvider } from '../contexts/StylistHolidaysProvider';
@@ -15,14 +14,13 @@ import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { addClientColumns } from '../utils/addClientColumns';
 
 export default function App() {
-  
   useEffect(() => {
     // Run one-time database maintenance functions
     addClientColumns().catch(err => {
       console.error('Error running addClientColumns:', err);
     });
   }, []);
-  
+
   return (
     <StrictMode>
       <ThemeProvider theme={theme}>
@@ -32,8 +30,8 @@ export default function App() {
             <StylistHolidaysProvider>
               <BrowserRouter>
                 <ToastContainer
-                  position="top-right"
-                  autoClose={3000}
+                  position='top-right'
+                  autoClose={5000}
                   hideProgressBar={false}
                   newestOnTop
                   closeOnClick
@@ -41,8 +39,8 @@ export default function App() {
                   pauseOnFocusLoss
                   draggable
                   pauseOnHover
+                  theme='colored'
                 />
-                <Toaster position="top-right" />
                 <AppRouter />
               </BrowserRouter>
             </StylistHolidaysProvider>
@@ -51,4 +49,4 @@ export default function App() {
       </ThemeProvider>
     </StrictMode>
   );
-} 
+}

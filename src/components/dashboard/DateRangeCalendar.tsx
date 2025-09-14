@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
-import { 
-  Box, 
-  Typography, 
-  Paper, 
-  Grid, 
-  Button, 
+import {
+  Box,
+  Typography,
+  Paper,
+  Grid,
+  Button,
   Popover,
   List,
   ListItem,
@@ -13,14 +13,25 @@ import {
   Divider,
   IconButton,
   ListItemIcon,
-  useTheme
+  useTheme,
 } from '@mui/material';
-import { 
+import {
   ChevronLeft as ChevronLeftIcon,
   ChevronRight as ChevronRightIcon,
-  Check as CheckIcon
+  Check as CheckIcon,
 } from '@mui/icons-material';
-import { format, addDays, addMonths, startOfMonth, endOfMonth, isSameDay, isWithinInterval, startOfWeek, startOfYear, startOfQuarter } from 'date-fns';
+import {
+  format,
+  addDays,
+  addMonths,
+  startOfMonth,
+  endOfMonth,
+  isSameDay,
+  isWithinInterval,
+  startOfWeek,
+  startOfYear,
+  startOfQuarter,
+} from 'date-fns';
 
 interface DateRangeCalendarProps {
   startDate: Date;
@@ -54,15 +65,15 @@ const presetOptions = [
   { label: 'Week to date', type: 'weekToDate' },
   { label: 'Month to date', type: 'monthToDate' },
   { label: 'Quarter to date', type: 'quarterToDate' },
-  { label: 'Year to date', type: 'yearToDate' }
+  { label: 'Year to date', type: 'yearToDate' },
 ];
 
-export default function DateRangeCalendar({ 
-  startDate, 
-  endDate, 
-  onDateRangeChange, 
+export default function DateRangeCalendar({
+  startDate,
+  endDate,
+  onDateRangeChange,
   onClose,
-  anchorEl 
+  anchorEl,
 }: DateRangeCalendarProps) {
   const theme = useTheme();
   const [leftMonth, setLeftMonth] = useState(new Date());
@@ -81,19 +92,19 @@ export default function DateRangeCalendar({
     setTempEndDate(endDate);
     setSelectionStart(startDate);
     setSelectionEnd(endDate);
-    
+
     // Determine if the current date range matches any preset
     determineSelectedPreset(startDate, endDate);
   }, [startDate, endDate]);
 
   const determineSelectedPreset = (start: Date, end: Date) => {
     const today = new Date();
-    
+
     // Check each preset to see if it matches the current date range
     for (const option of presetOptions) {
       let presetStart: Date;
       let presetEnd = new Date();
-      
+
       if (option.type === 'lastMonth') {
         const lastMonth = addMonths(today, -1);
         presetStart = startOfMonth(lastMonth);
@@ -117,22 +128,22 @@ export default function DateRangeCalendar({
       } else {
         continue;
       }
-      
+
       // Check if the current date range matches this preset
       if (isSameDay(start, presetStart) && isSameDay(end, presetEnd)) {
         setSelectedPreset(option.label);
         return;
       }
     }
-    
+
     setSelectedPreset(null);
   };
 
-  const handlePresetSelect = (option: typeof presetOptions[0]) => {
+  const handlePresetSelect = (option: (typeof presetOptions)[0]) => {
     const today = new Date();
     let newStartDate: Date;
     let newEndDate = new Date();
-    
+
     if (option.type === 'lastMonth') {
       const lastMonth = addMonths(today, -1);
       newStartDate = startOfMonth(lastMonth);
@@ -154,7 +165,7 @@ export default function DateRangeCalendar({
     } else {
       newStartDate = addDays(today, option.days);
     }
-    
+
     setTempStartDate(newStartDate);
     setTempEndDate(newEndDate);
     setSelectionStart(newStartDate);
@@ -217,40 +228,43 @@ export default function DateRangeCalendar({
     const lastDay = endOfMonth(month);
     const startDay = new Date(firstDay);
     startDay.setDate(startDay.getDate() - startDay.getDay());
-    
+
     const weeks: CalendarDay[][] = [];
     let currentWeek: CalendarDay[] = [];
     const today = new Date();
-    
+
     for (let i = 0; i < 42; i++) {
       const currentDate = new Date(startDay);
       currentDate.setDate(currentDate.getDate() + i);
-      
+
       if (i > 0 && i % 7 === 0) {
         weeks.push(currentWeek);
         currentWeek = [];
       }
-      
+
       const isCurrentMonth = currentDate.getMonth() === month.getMonth();
-      const isStartDate = selectionStart && isSameDay(currentDate, selectionStart);
+      const isStartDate =
+        selectionStart && isSameDay(currentDate, selectionStart);
       const isEndDate = selectionEnd && isSameDay(currentDate, selectionEnd);
       const isSelected = isStartDate || isEndDate;
-      
+
       let isInRange = false;
       if (selectionStart && selectionEnd) {
         isInRange = isWithinInterval(currentDate, {
           start: selectionStart,
-          end: selectionEnd
+          end: selectionEnd,
         });
       } else if (selectionStart && hoverDate) {
-        const rangeStart = selectionStart < hoverDate ? selectionStart : hoverDate;
-        const rangeEnd = selectionStart < hoverDate ? hoverDate : selectionStart;
+        const rangeStart =
+          selectionStart < hoverDate ? selectionStart : hoverDate;
+        const rangeEnd =
+          selectionStart < hoverDate ? hoverDate : selectionStart;
         isInRange = isWithinInterval(currentDate, {
           start: rangeStart,
-          end: rangeEnd
+          end: rangeEnd,
         });
       }
-      
+
       currentWeek.push({
         date: currentDate,
         isCurrentMonth,
@@ -259,114 +273,139 @@ export default function DateRangeCalendar({
         isToday: isSameDay(currentDate, today),
         isDisabled: false,
         isStartDate,
-        isEndDate
+        isEndDate,
       });
     }
-    
+
     if (currentWeek.length > 0) {
       weeks.push(currentWeek);
     }
-    
+
     return weeks.slice(0, 6);
   };
 
   const renderMonth = (month: Date) => {
     const weeks = generateMonth(month);
     const daysOfWeek = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
-    
+
     return (
       <Box>
-        <Typography variant="subtitle1" align="center" fontWeight="bold" mb={1}>
+        <Typography variant='subtitle1' align='center' fontWeight='bold' mb={1}>
           {format(month, 'MMMM yyyy')}
         </Typography>
-        
+
         <Grid container>
           {daysOfWeek.map(day => (
-            <Grid item xs={12/7} key={day}>
-              <Typography 
-                align="center" 
-                variant="caption" 
+            <Grid item xs={12 / 7} key={day}>
+              <Typography
+                align='center'
+                variant='caption'
                 sx={{ fontWeight: 500, color: 'text.secondary' }}
               >
                 {day}
               </Typography>
             </Grid>
           ))}
-          
-          {weeks.map((week, weekIndex) => (
+
+          {weeks.map((week, weekIndex) =>
             week.map((day, dayIndex) => (
-              <Grid item xs={12/7} key={`${weekIndex}-${dayIndex}`}>
-                <Box 
+              <Grid item xs={12 / 7} key={`${weekIndex}-${dayIndex}`}>
+                <Box
                   onClick={() => day.isCurrentMonth && handleDayClick(day.date)}
-                  onMouseEnter={() => day.isCurrentMonth && handleDayHover(day.date)}
+                  onMouseEnter={() =>
+                    day.isCurrentMonth && handleDayHover(day.date)
+                  }
                   sx={{
                     height: 36,
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     cursor: day.isCurrentMonth ? 'pointer' : 'default',
-                    borderRadius: day.isStartDate || day.isEndDate ? '8px' : 
-                              day.isInRange ? '6px' : '6px',
-                    backgroundColor: day.isStartDate || day.isEndDate
-                      ? theme.palette.datePicker.rangeEndBackground
-                      : day.isInRange 
-                        ? theme.palette.datePicker.rangeBackground
-                        : 'transparent',
-                    color: day.isStartDate || day.isEndDate
-                      ? theme.palette.datePicker.selectedText
-                      : day.isInRange 
+                    borderRadius:
+                      day.isStartDate || day.isEndDate
+                        ? '8px'
+                        : day.isInRange
+                          ? '6px'
+                          : '6px',
+                    backgroundColor:
+                      day.isStartDate || day.isEndDate
+                        ? theme.palette.datePicker.rangeEndBackground
+                        : day.isInRange
+                          ? theme.palette.datePicker.rangeBackground
+                          : 'transparent',
+                    color:
+                      day.isStartDate || day.isEndDate
                         ? theme.palette.datePicker.selectedText
-                        : day.isCurrentMonth 
-                          ? day.isToday 
-                            ? theme.palette.datePicker.todayText
-                            : 'text.primary' 
-                          : 'text.disabled',
+                        : day.isInRange
+                          ? theme.palette.datePicker.selectedText
+                          : day.isCurrentMonth
+                            ? day.isToday
+                              ? theme.palette.datePicker.todayText
+                              : 'text.primary'
+                            : 'text.disabled',
                     fontWeight: day.isToday || day.isSelected ? '600' : '500',
                     position: 'relative',
                     transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
                     '&:hover': {
-                      backgroundColor: day.isCurrentMonth && !day.isSelected 
-                        ? theme.palette.datePicker.hoverBackground
-                        : day.isStartDate || day.isEndDate
-                          ? theme.palette.datePicker.selectedBackgroundHover
-                          : undefined,
+                      backgroundColor:
+                        day.isCurrentMonth && !day.isSelected
+                          ? theme.palette.datePicker.hoverBackground
+                          : day.isStartDate || day.isEndDate
+                            ? theme.palette.datePicker.selectedBackgroundHover
+                            : undefined,
                       transform: day.isCurrentMonth ? 'scale(1.05)' : undefined,
                     },
-                    border: day.isToday && !day.isSelected ? '1px solid' : 'none',
-                    borderColor: day.isToday && !day.isSelected ? theme.palette.datePicker.todayBorder : undefined,
+                    border:
+                      day.isToday && !day.isSelected ? '1px solid' : 'none',
+                    borderColor:
+                      day.isToday && !day.isSelected
+                        ? theme.palette.datePicker.todayBorder
+                        : undefined,
                     // Special styling for start and end dates - softer transitions
-                    '&::before': day.isStartDate && selectionEnd ? {
-                      content: '""',
-                      position: 'absolute',
-                      right: 0,
-                      width: '50%',
-                      height: '80%',
-                      backgroundColor: theme.palette.datePicker.rangeBackground,
-                      borderRadius: '0 4px 4px 0',
-                      zIndex: -1,
-                    } : undefined,
-                    '&::after': day.isEndDate && selectionStart && selectionStart !== selectionEnd ? {
-                      content: '""',
-                      position: 'absolute',
-                      left: 0,
-                      width: '50%',
-                      height: '80%',
-                      backgroundColor: theme.palette.datePicker.rangeBackground,
-                      borderRadius: '4px 0 0 4px',
-                      zIndex: -1,
-                    } : undefined,
+                    '&::before':
+                      day.isStartDate && selectionEnd
+                        ? {
+                            content: '""',
+                            position: 'absolute',
+                            right: 0,
+                            width: '50%',
+                            height: '80%',
+                            backgroundColor:
+                              theme.palette.datePicker.rangeBackground,
+                            borderRadius: '0 4px 4px 0',
+                            zIndex: -1,
+                          }
+                        : undefined,
+                    '&::after':
+                      day.isEndDate &&
+                      selectionStart &&
+                      selectionStart !== selectionEnd
+                        ? {
+                            content: '""',
+                            position: 'absolute',
+                            left: 0,
+                            width: '50%',
+                            height: '80%',
+                            backgroundColor:
+                              theme.palette.datePicker.rangeBackground,
+                            borderRadius: '4px 0 0 4px',
+                            zIndex: -1,
+                          }
+                        : undefined,
                     // Elegant subtle shadow for selected dates
-                    boxShadow: day.isStartDate || day.isEndDate 
-                      ? `0 2px 8px ${theme.palette.datePicker.rangeEndBackground}, 0 1px 4px rgba(107, 142, 35, 0.1)` 
-                      : 'none',
+                    boxShadow:
+                      day.isStartDate || day.isEndDate
+                        ? `0 2px 8px ${theme.palette.datePicker.rangeEndBackground}, 0 1px 4px rgba(107, 142, 35, 0.1)`
+                        : 'none',
                   }}
                 >
-                  <Typography 
-                    variant="body2" 
-                    component="span"
-                    sx={{ 
+                  <Typography
+                    variant='body2'
+                    component='span'
+                    sx={{
                       lineHeight: 1,
-                      fontWeight: day.isToday || day.isSelected ? 'bold' : 'normal',
+                      fontWeight:
+                        day.isToday || day.isSelected ? 'bold' : 'normal',
                       zIndex: 1,
                     }}
                   >
@@ -375,7 +414,7 @@ export default function DateRangeCalendar({
                 </Box>
               </Grid>
             ))
-          ))}
+          )}
         </Grid>
       </Box>
     );
@@ -399,24 +438,36 @@ export default function DateRangeCalendar({
           width: 680,
           p: 2,
           display: 'flex',
-        }
+        },
       }}
     >
-      <Box sx={{ width: 200, borderRight: '1px solid', borderColor: 'divider', pr: 2, overflowY: 'auto', maxHeight: 500 }}>
-        <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 'bold' }}>
+      <Box
+        sx={{
+          width: 200,
+          borderRight: '1px solid',
+          borderColor: 'divider',
+          pr: 2,
+          overflowY: 'auto',
+          maxHeight: 500,
+        }}
+      >
+        <Typography variant='subtitle2' sx={{ mb: 1, fontWeight: 'bold' }}>
           Select Range
         </Typography>
         <List disablePadding>
-          {presetOptions.map((option) => (
+          {presetOptions.map(option => (
             <ListItem key={option.label} disablePadding>
-              <ListItemButton 
+              <ListItemButton
                 onClick={() => handlePresetSelect(option)}
                 dense
                 selected={selectedPreset === option.label}
                 sx={{
                   borderRadius: 2,
                   py: 0.5,
-                  backgroundColor: selectedPreset === option.label ? theme.palette.datePicker.selectedBackground : 'transparent',
+                  backgroundColor:
+                    selectedPreset === option.label
+                      ? theme.palette.datePicker.selectedBackground
+                      : 'transparent',
                   '&:hover': {
                     backgroundColor: theme.palette.datePicker.hoverBackground,
                   },
@@ -425,16 +476,17 @@ export default function DateRangeCalendar({
               >
                 {selectedPreset === option.label && (
                   <ListItemIcon sx={{ minWidth: 28 }}>
-                    <CheckIcon fontSize="small" color="primary" />
+                    <CheckIcon fontSize='small' color='primary' />
                   </ListItemIcon>
                 )}
-                <ListItemText 
-                  primary={option.label} 
+                <ListItemText
+                  primary={option.label}
                   primaryTypographyProps={{
-                    sx: { 
+                    sx: {
                       ml: selectedPreset === option.label ? 0 : 3.5,
-                      fontWeight: selectedPreset === option.label ? 'bold' : 'normal'
-                    }
+                      fontWeight:
+                        selectedPreset === option.label ? 'bold' : 'normal',
+                    },
                   }}
                 />
               </ListItemButton>
@@ -442,60 +494,67 @@ export default function DateRangeCalendar({
           ))}
         </List>
       </Box>
-      
+
       <Box sx={{ flex: 1, pl: 2 }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-          <IconButton onClick={handlePrevMonth} size="small">
+        <Box
+          sx={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            mb: 2,
+          }}
+        >
+          <IconButton onClick={handlePrevMonth} size='small'>
             <ChevronLeftIcon />
           </IconButton>
-          
-          <Box sx={{ 
-            display: 'flex', 
-            gap: 2, 
-            alignItems: 'center',
-            backgroundColor: theme.palette.datePicker.selectedBackground,
-            px: 2,
-            py: 0.5,
-            borderRadius: 2,
-            border: `1px solid ${theme.palette.datePicker.todayBorder}`,
-          }}>
-            <Typography variant="body1" fontWeight="medium">
+
+          <Box
+            sx={{
+              display: 'flex',
+              gap: 2,
+              alignItems: 'center',
+              backgroundColor: theme.palette.datePicker.selectedBackground,
+              px: 2,
+              py: 0.5,
+              borderRadius: 2,
+              border: `1px solid ${theme.palette.datePicker.todayBorder}`,
+            }}
+          >
+            <Typography variant='body1' fontWeight='medium'>
               {format(tempStartDate, 'd MMM yyyy')}
             </Typography>
-            <Typography variant="body2" color="text.secondary">
+            <Typography variant='body2' color='text.secondary'>
               →
             </Typography>
-            <Typography variant="body1" fontWeight="medium">
+            <Typography variant='body1' fontWeight='medium'>
               {format(tempEndDate, 'd MMM yyyy')}
             </Typography>
           </Box>
-          
-          <IconButton onClick={handleNextMonth} size="small">
+
+          <IconButton onClick={handleNextMonth} size='small'>
             <ChevronRightIcon />
           </IconButton>
         </Box>
-        
+
         <Box sx={{ display: 'flex', gap: 2 }}>
-          <Box sx={{ flex: 1 }}>
-            {renderMonth(leftMonth)}
-          </Box>
-          <Box sx={{ flex: 1 }}>
-            {renderMonth(rightMonth)}
-          </Box>
+          <Box sx={{ flex: 1 }}>{renderMonth(leftMonth)}</Box>
+          <Box sx={{ flex: 1 }}>{renderMonth(rightMonth)}</Box>
         </Box>
-        
-        <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 2, gap: 1 }}>
-          <Button onClick={handleCancel} variant="outlined">
+
+        <Box
+          sx={{ display: 'flex', justifyContent: 'flex-end', mt: 2, gap: 1 }}
+        >
+          <Button onClick={handleCancel} variant='outlined'>
             Cancel
           </Button>
-          <Button 
-            onClick={handleApply} 
-            variant="contained"
-            sx={{ 
+          <Button
+            onClick={handleApply}
+            variant='contained'
+            sx={{
               bgcolor: 'primary.main',
               '&:hover': {
                 bgcolor: 'primary.dark',
-              }
+              },
             }}
           >
             Apply
@@ -504,4 +563,4 @@ export default function DateRangeCalendar({
       </Box>
     </Popover>
   );
-} 
+}

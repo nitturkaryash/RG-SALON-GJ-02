@@ -29,17 +29,17 @@ const RefreshInventoryButton: React.FC<RefreshInventoryButtonProps> = ({
 
   const handleRefresh = async () => {
     if (isRefreshing) return;
-    
+
     setIsRefreshing(true);
     try {
       // Dispatch a global event that other components can listen for
       window.dispatchEvent(new CustomEvent('inventory-refresh-requested'));
-      
+
       // Call the custom refresh function if provided
       if (onRefresh) {
         await onRefresh();
       }
-      
+
       // Wait a moment to show the loading indicator
       await new Promise(resolve => setTimeout(resolve, 500));
     } catch (error) {
@@ -79,4 +79,4 @@ const RefreshInventoryButton: React.FC<RefreshInventoryButtonProps> = ({
   );
 };
 
-export default RefreshInventoryButton; 
+export default RefreshInventoryButton;

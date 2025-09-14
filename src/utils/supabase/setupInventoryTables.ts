@@ -145,13 +145,13 @@ WHERE (p.total_purchases - COALESCE(s.total_sales, 0) - COALESCE(c.total_consump
  * Creates the necessary tables for inventory management in Supabase
  * This should be run once to set up the database schema
  */
-export const setupInventoryTables = async (): Promise<{ 
-  success: boolean; 
+export const setupInventoryTables = async (): Promise<{
+  success: boolean;
   results: Record<string, boolean>;
   error?: string;
 }> => {
   const results: Record<string, boolean> = {};
-  
+
   try {
     // SQL to create the purchases table
     const purchasesTableSQL = `
@@ -177,7 +177,7 @@ export const setupInventoryTables = async (): Promise<{
         updated_at TIMESTAMPTZ DEFAULT NOW()
       );
     `;
-    
+
     // SQL to create the sales table
     const salesTableSQL = `
       CREATE TABLE IF NOT EXISTS ${TABLES.SALES} (
@@ -201,7 +201,7 @@ export const setupInventoryTables = async (): Promise<{
         updated_at TIMESTAMPTZ DEFAULT NOW()
       );
     `;
-    
+
     // SQL to create the consumption table
     const consumptionTableSQL = `
       CREATE TABLE IF NOT EXISTS ${TABLES.CONSUMPTION} (
@@ -224,7 +224,7 @@ export const setupInventoryTables = async (): Promise<{
         updated_at TIMESTAMPTZ DEFAULT NOW()
       );
     `;
-    
+
     // SQL to create the balance stock view
     const balanceStockViewSQL = `
       CREATE OR REPLACE VIEW ${TABLES.BALANCE_STOCK} AS
@@ -290,57 +290,65 @@ export const setupInventoryTables = async (): Promise<{
       LEFT JOIN consumption_totals c ON p.product_name = c.product_name AND p.hsn_code = c.hsn_code AND p.units = c.units
       WHERE (p.total_purchases - COALESCE(s.total_sales, 0) - COALESCE(c.total_consumption, 0)) >= 0;
     `;
-    
+
     // Execute table creation SQL
-    let { error: purchasesError } = await supabase.rpc('exec_sql', { query: purchasesTableSQL });
+    let { error: purchasesError } = await supabase.rpc('exec_sql', {
+      query: purchasesTableSQL,
+    });
     results[TABLES.PURCHASES] = !purchasesError;
-    
+
     if (purchasesError) {
       console.error('Error creating purchases table:', purchasesError);
-        } else {
+    } else {
       console.log('Purchases table created or already exists');
     }
-    
-    let { error: salesError } = await supabase.rpc('exec_sql', { query: salesTableSQL });
+
+    let { error: salesError } = await supabase.rpc('exec_sql', {
+      query: salesTableSQL,
+    });
     results[TABLES.SALES] = !salesError;
-    
+
     if (salesError) {
       console.error('Error creating sales table:', salesError);
     } else {
       console.log('Sales table created or already exists');
     }
-    
-    let { error: consumptionError } = await supabase.rpc('exec_sql', { query: consumptionTableSQL });
+
+    let { error: consumptionError } = await supabase.rpc('exec_sql', {
+      query: consumptionTableSQL,
+    });
     results[TABLES.CONSUMPTION] = !consumptionError;
-    
+
     if (consumptionError) {
       console.error('Error creating consumption table:', consumptionError);
     } else {
       console.log('Consumption table created or already exists');
     }
-    
-    let { error: viewError } = await supabase.rpc('exec_sql', { query: balanceStockViewSQL });
+
+    let { error: viewError } = await supabase.rpc('exec_sql', {
+      query: balanceStockViewSQL,
+    });
     results[TABLES.BALANCE_STOCK] = !viewError;
-    
+
     if (viewError) {
       console.error('Error creating balance stock view:', viewError);
     } else {
       console.log('Balance stock view created or replaced');
     }
-    
+
     // Verify tables exist
     const allTablesCreated = Object.values(results).every(result => result);
-    
+
     return {
       success: allTablesCreated,
-      results
+      results,
     };
   } catch (error) {
     console.error('Failed to set up inventory tables:', error);
     return {
       success: false,
       results,
-      error: error instanceof Error ? error.message : 'Unknown error'
+      error: error instanceof Error ? error.message : 'Unknown error',
     };
   }
 };
@@ -349,63 +357,78 @@ export const setupInventoryTables = async (): Promise<{
 export const checkInventoryTablesExist = async (): Promise<boolean> => {
   try {
     console.log('Checking if inventory tables exist...');
-    
+
     // Try to query the purchases table
     const { data: purchasesData, error: purchasesError } = await supabase
       .from(TABLES.PURCHASES)
       .select('count(*)', { count: 'exact', head: true });
-    
-    console.log('Purchases table check:', { data: purchasesData, error: purchasesError });
-    
+
+    console.log('Purchases table check:', {
+      data: purchasesData,
+      error: purchasesError,
+    });
+
     if (purchasesError) {
-      console.error('Error checking inventory_purchases table:', purchasesError);
+      console.error(
+        'Error checking inventory_purchases table:',
+        purchasesError
+      );
       return false;
     }
-    
+
     // Also check the other tables
     const { error: salesError } = await supabase
       .from(TABLES.SALES)
       .select('count(*)', { count: 'exact', head: true });
-      
+
     console.log('Sales table check:', { error: salesError });
-    
+
     if (salesError) {
       console.error('Error checking inventory_sales table:', salesError);
       return false;
     }
-    
+
     const { error: consumptionError } = await supabase
       .from(TABLES.CONSUMPTION)
       .select('count(*)', { count: 'exact', head: true });
-      
+
     console.log('Consumption table check:', { error: consumptionError });
-    
+
     if (consumptionError) {
-      console.error('Error checking inventory_consumption table:', consumptionError);
+      console.error(
+        'Error checking inventory_consumption table:',
+        consumptionError
+      );
       return false;
     }
-    
+
     // Also check if the view exists by trying to query it
     try {
       const { error: viewError } = await supabase
         .from(TABLES.BALANCE_STOCK)
         .select('count(*)', { count: 'exact', head: true });
-        
+
       console.log('Balance stock view check:', { error: viewError });
-      
+
       if (viewError) {
-        console.error('Error checking inventory_balance_stock view:', viewError);
+        console.error(
+          'Error checking inventory_balance_stock view:',
+          viewError
+        );
         return false;
       }
     } catch (viewError) {
-      console.error('Exception checking inventory_balance_stock view:', viewError);
+      console.error(
+        'Exception checking inventory_balance_stock view:',
+        viewError
+      );
       return false;
     }
-    
+
     console.log('All inventory tables and views exist!');
     return true;
   } catch (error) {
     console.error('Failed to check if inventory tables exist:', error);
     return false;
   }
-}; 
+};

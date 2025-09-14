@@ -1,21 +1,21 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { toast } from 'react-toastify'
-import { v4 as uuidv4 } from 'uuid'
-import { supabase } from '../utils/supabase/supabaseClient.js'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'react-toastify';
+import { v4 as uuidv4 } from 'uuid';
+import { supabase } from '../lib/supabase';
 
 // Define break interface
 export interface StylistBreak {
   id: string;
   startTime: string; // ISO date string
-  endTime: string;   // ISO date string
+  endTime: string; // ISO date string
   reason?: string;
 }
 
 // Define holiday interface
 export interface StylistHoliday {
   id: string;
-  date: string;      // ISO date string (just the date part)
-  reason?: string;   // Reason for holiday
+  date: string; // ISO date string (just the date part)
+  reason?: string; // Reason for holiday
 }
 
 export interface Stylist {
@@ -34,62 +34,63 @@ export interface Stylist {
 }
 
 export function useStylists() {
-  const queryClient = useQueryClient()
+  const queryClient = useQueryClient();
 
   // Get current user's profile ID
   const getProfileId = async () => {
     try {
       // First try to get the user from Supabase auth
-      const { data: { user } } = await supabase.auth.getUser()
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
       if (user) {
         const { data: profile, error } = await supabase
           .from('profiles')
           .select('id')
           .eq('auth_user_id', user.id)
-          .single()
+          .single();
 
-        if (error || !profile) throw new Error('Could not get profile ID')
-        return profile.id
+        if (error || !profile) throw new Error('Could not get profile ID');
+        return profile.id;
       }
 
       // Fallback to localStorage auth
-      const authUser = localStorage.getItem('auth_user')
+      const authUser = localStorage.getItem('auth_user');
       if (authUser) {
-        const userData = JSON.parse(authUser)
+        const userData = JSON.parse(authUser);
         const { data: profile, error } = await supabase
           .from('profiles')
           .select('id')
           .eq('auth_user_id', userData.id)
-          .single()
+          .single();
 
         if (error || !profile) {
           // If no profile exists, get the first available profile
-          const { data: firstProfile, error: firstProfileError } = await supabase
-            .from('profiles')
-            .select('id')
-            .limit(1)
-            .single()
+          const { data: firstProfile, error: firstProfileError } =
+            await supabase.from('profiles').select('id').limit(1).single();
 
-          if (firstProfileError || !firstProfile) throw new Error('Could not get any profile ID')
-          return firstProfile.id
+          if (firstProfileError || !firstProfile)
+            throw new Error('Could not get any profile ID');
+          return firstProfile.id;
         }
-        return profile.id
+        return profile.id;
       }
 
-      throw new Error('No authenticated user')
+      throw new Error('No authenticated user');
     } catch (error) {
-      console.error('Error getting profile ID:', error)
+      console.error('Error getting profile ID:', error);
       // Fallback to getting the first available profile
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
         .select('id')
         .limit(1)
-        .single()
+        .single();
 
-      if (profileError || !profile) throw new Error('Could not get any profile ID')
-      return profile.id
+      if (profileError || !profile)
+        throw new Error('Could not get any profile ID');
+      return profile.id;
     }
-  }
+  };
 
   const { data: stylists = [], isLoading } = useQuery({
     queryKey: ['stylists'],
@@ -113,26 +114,29 @@ export function useStylists() {
       }
 
       // Group breaks by stylist_id
-      const breaksByStyleId = breaksData.reduce((acc: Record<string, any[]>, breakItem: any) => {
-        if (!acc[breakItem.stylist_id]) {
-          acc[breakItem.stylist_id] = [];
-        }
-        acc[breakItem.stylist_id].push({
-          id: breakItem.id,
-          startTime: breakItem.start_time,
-          endTime: breakItem.end_time,
-          reason: breakItem.description
-        });
-        return acc;
-      }, {});
+      const breaksByStyleId = breaksData.reduce(
+        (acc: Record<string, any[]>, breakItem: any) => {
+          if (!acc[breakItem.stylist_id]) {
+            acc[breakItem.stylist_id] = [];
+          }
+          acc[breakItem.stylist_id].push({
+            id: breakItem.id,
+            startTime: breakItem.start_time,
+            endTime: breakItem.end_time,
+            reason: breakItem.description,
+          });
+          return acc;
+        },
+        {}
+      );
 
       // Combine stylists with their breaks
       return stylistsData.map((stylist: any) => ({
         ...stylist,
         imageUrl: stylist.image_url,
-        breaks: breaksByStyleId[stylist.id] || []
+        breaks: breaksByStyleId[stylist.id] || [],
       }));
-    }
+    },
   });
 
   const createStylist = useMutation({
@@ -140,12 +144,12 @@ export function useStylists() {
       try {
         const stylistId = uuidv4();
         const profileId = await getProfileId();
-        
+
         // Ensure specialties is an array
         if (!Array.isArray(newStylist.specialties)) {
           newStylist.specialties = [];
         }
-        
+
         // Create stylist object with snake_case field names for database
         const stylist = {
           id: stylistId,
@@ -160,7 +164,7 @@ export function useStylists() {
           breaks: newStylist.breaks || [],
           holidays: newStylist.holidays || [],
           created_at: new Date().toISOString(),
-          user_id: profileId
+          user_id: profileId,
         };
 
         // Create new stylist
@@ -170,20 +174,20 @@ export function useStylists() {
           .select();
 
         if (error) {
-          console.error("Supabase error:", error);
+          console.error('Supabase error:', error);
           throw error;
         }
 
         if (data && data[0]) {
           return {
             ...data[0],
-            imageUrl: data[0].image_url
+            imageUrl: data[0].image_url,
           } as Stylist;
         }
-        
+
         return stylist as unknown as Stylist;
       } catch (error) {
-        console.error("Error in createStylist:", error);
+        console.error('Error in createStylist:', error);
         throw error;
       }
     },
@@ -191,7 +195,7 @@ export function useStylists() {
       queryClient.invalidateQueries({ queryKey: ['stylists'] });
       toast.success('Stylist added successfully');
     },
-    onError: (error) => {
+    onError: error => {
       toast.error('Failed to add stylist');
       console.error('Error adding stylist:', error);
     },
@@ -210,12 +214,12 @@ export function useStylists() {
         phone: updates.phone,
         specialties: updates.specialties,
       };
-      
+
       // Handle camelCase to snake_case conversions
       if (updates.imageUrl !== undefined) {
         processedUpdates.image_url = updates.imageUrl;
       }
-      
+
       // If breaks are provided, update them in the breaks table
       if (updates.breaks) {
         // First, get existing breaks for this stylist
@@ -223,61 +227,69 @@ export function useStylists() {
           .from('breaks')
           .select('id')
           .eq('stylist_id', updates.id);
-          
+
         if (breaksError) {
-          throw new Error(`Failed to fetch existing breaks: ${breaksError.message}`);
+          throw new Error(
+            `Failed to fetch existing breaks: ${breaksError.message}`
+          );
         }
-        
+
         // Delete all existing breaks for this stylist
         if (existingBreaks.length > 0) {
           const { error: deleteError } = await supabase
             .from('breaks')
             .delete()
             .eq('stylist_id', updates.id);
-            
+
           if (deleteError) {
-            throw new Error(`Failed to delete existing breaks: ${deleteError.message}`);
+            throw new Error(
+              `Failed to delete existing breaks: ${deleteError.message}`
+            );
           }
         }
-        
+
         // Insert new breaks
         if (updates.breaks.length > 0) {
-          const { error: insertError } = await supabase
-            .from('breaks')
-            .insert(updates.breaks.map(breakItem => ({
+          const { error: insertError } = await supabase.from('breaks').insert(
+            updates.breaks.map(breakItem => ({
               stylist_id: updates.id,
               start_time: breakItem.startTime,
               end_time: breakItem.endTime,
-              description: breakItem.reason
-            })));
-            
+              description: breakItem.reason,
+            }))
+          );
+
           if (insertError) {
-            throw new Error(`Failed to insert new breaks: ${insertError.message}`);
+            throw new Error(
+              `Failed to insert new breaks: ${insertError.message}`
+            );
           }
         }
       }
-      
+
       // Update the stylist record
       const { data, error } = await supabase
         .from('stylists')
         .update(processedUpdates)
         .eq('id', updates.id)
         .select();
-        
+
       if (error) {
         throw error;
       }
-      
+
       // Fetch the updated breaks for this stylist
       const { data: updatedBreaks, error: breaksError } = await supabase
         .from('breaks')
         .select('*')
         .eq('stylist_id', updates.id);
-        
+
       if (breaksError) {
-        throw new Error(`Failed to fetch updated breaks: ${breaksError.message}`);
+        throw new Error(
+          `Failed to fetch updated breaks: ${breaksError.message}`
+        );
       }
-      
+
       // Return the stylist with the updated breaks
       return {
         ...data[0],
@@ -285,15 +297,15 @@ export function useStylists() {
           id: breakItem.id,
           startTime: breakItem.start_time,
           endTime: breakItem.end_time,
-          reason: breakItem.description
-        }))
+          reason: breakItem.description,
+        })),
       };
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['stylists'] });
       toast.success('Stylist updated successfully');
     },
-    onError: (error) => {
+    onError: error => {
       toast.error('Failed to update stylist');
       console.error('Error updating stylist:', error);
     },
@@ -303,13 +315,14 @@ export function useStylists() {
     mutationFn: async (id: string) => {
       try {
         // First, check if stylist has any appointments
-        const { data: appointmentsData, error: appointmentsError } = await supabase
-          .from('appointments')
-          .select('id')
-          .eq('stylist_id', id);
-          
+        const { data: appointmentsData, error: appointmentsError } =
+          await supabase.from('appointments').select('id').eq('stylist_id', id);
+
         if (appointmentsError) {
-          console.error('Error checking stylist appointments:', appointmentsError);
+          console.error(
+            'Error checking stylist appointments:',
+            appointmentsError
+          );
           throw appointmentsError;
         }
 
@@ -350,7 +363,9 @@ export function useStylists() {
       toast.success('Stylist deleted successfully');
     },
     onError: (error: any) => {
-      if (error.message === 'Cannot delete stylist with existing appointments') {
+      if (
+        error.message === 'Cannot delete stylist with existing appointments'
+      ) {
         toast.error('Cannot delete stylist with existing appointments');
       } else {
         toast.error('Failed to delete stylist');
@@ -365,5 +380,5 @@ export function useStylists() {
     createStylist: createStylist.mutate,
     updateStylist: updateStylist.mutate,
     deleteStylist: deleteStylist.mutate,
-  }
-} 
+  };
+}

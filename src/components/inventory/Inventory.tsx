@@ -1,5 +1,13 @@
 import React, { useState } from 'react';
-import { Box, Tabs, Tab, Typography, Button, CircularProgress, Alert } from '@mui/material';
+import {
+  Box,
+  Tabs,
+  Tab,
+  Typography,
+  Button,
+  CircularProgress,
+  Alert,
+} from '@mui/material';
 import { Container, Paper } from '@mui/material';
 import { styled } from '@mui/material/styles';
 import { GetApp as DownloadIcon } from '@mui/icons-material';
@@ -31,14 +39,16 @@ const TabPanel = (props: TabPanelProps) => {
 
   return (
     <div
-      role="tabpanel"
+      role='tabpanel'
       hidden={value !== index}
       id={`inventory-tabpanel-${index}`}
       aria-labelledby={`inventory-tab-${index}`}
       {...other}
       style={{ width: '100%' }}
     >
-      {value === index && <Box sx={{ width: '100%', p: 2, overflow: 'visible' }}>{children}</Box>}
+      {value === index && (
+        <Box sx={{ width: '100%', p: 2, overflow: 'visible' }}>{children}</Box>
+      )}
     </div>
   );
 };
@@ -62,23 +72,23 @@ const BoxContainer = styled(Box)(({ theme }) => ({
   boxSizing: 'border-box',
   overflow: 'visible',
   '& .MuiTabs-root': {
-    width: '100%'
+    width: '100%',
   },
   '& .MuiTabPanel-root': {
     width: '100%',
-    padding: 0
-  }
+    padding: 0,
+  },
 }));
 
 const Inventory: React.FC = () => {
   const [tabValue, setTabValue] = useState(0);
-  const { 
-    purchasesQuery, 
-    salesQuery, 
-    consumptionQuery, 
+  const {
+    purchasesQuery,
+    salesQuery,
+    consumptionQuery,
     balanceStockQuery,
     exportInventoryData,
-    isExporting
+    isExporting,
   } = useInventory();
 
   const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
@@ -95,16 +105,33 @@ const Inventory: React.FC = () => {
     }
   };
 
-  const isLoading = purchasesQuery.isLoading || salesQuery.isLoading || consumptionQuery.isLoading || balanceStockQuery.isLoading;
-  const error = purchasesQuery.error || salesQuery.error || consumptionQuery.error || balanceStockQuery.error;
-  
+  const isLoading =
+    purchasesQuery.isLoading ||
+    salesQuery.isLoading ||
+    consumptionQuery.isLoading ||
+    balanceStockQuery.isLoading;
+  const error =
+    purchasesQuery.error ||
+    salesQuery.error ||
+    consumptionQuery.error ||
+    balanceStockQuery.error;
+
   // Show a loading state while data is being fetched
   if (isLoading && !error) {
     return (
-      <Container maxWidth="lg">
-        <Box sx={{ my: 4, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '50vh' }}>
+      <Container maxWidth='lg'>
+        <Box
+          sx={{
+            my: 4,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            height: '50vh',
+          }}
+        >
           <CircularProgress size={40} sx={{ mb: 3 }} />
-          <Typography variant="h6">Loading inventory data...</Typography>
+          <Typography variant='h6'>Loading inventory data...</Typography>
         </Box>
       </Container>
     );
@@ -112,24 +139,45 @@ const Inventory: React.FC = () => {
 
   return (
     <BoxContainer>
-      <Box sx={{ 
-        width: '100%',
-        maxWidth: '1400px',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'stretch',
-        margin: '0 auto',
-        backgroundColor: 'background.default',
-        overflow: 'visible'
-      }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3, width: '100%' }}>
-          <Typography variant="h4" component="h1" gutterBottom sx={{ fontWeight: 'bold' }}>
+      <Box
+        sx={{
+          width: '100%',
+          maxWidth: '1400px',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'stretch',
+          margin: '0 auto',
+          backgroundColor: 'background.default',
+          overflow: 'visible',
+        }}
+      >
+        <Box
+          sx={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            mb: 3,
+            width: '100%',
+          }}
+        >
+          <Typography
+            variant='h4'
+            component='h1'
+            gutterBottom
+            sx={{ fontWeight: 'bold' }}
+          >
             Inventory Management
           </Typography>
           <Button
-            variant="contained"
-            color="primary"
-            startIcon={isExporting ? <CircularProgress size={20} color="inherit" /> : <DownloadIcon />}
+            variant='contained'
+            color='primary'
+            startIcon={
+              isExporting ? (
+                <CircularProgress size={20} color='inherit' />
+              ) : (
+                <DownloadIcon />
+              )
+            }
             onClick={handleExportData}
             disabled={isExporting || isLoading || !!error}
           >
@@ -138,76 +186,129 @@ const Inventory: React.FC = () => {
         </Box>
 
         {error && error.message.includes('does not exist') && (
-          <Alert 
-            severity="warning" 
+          <Alert
+            severity='warning'
             sx={{ mb: 3, textAlign: 'left', width: '100%' }}
             action={
-              <Button color="inherit" size="small" component={Link} to="/inventory-setup">
+              <Button
+                color='inherit'
+                size='small'
+                component={Link}
+                to='/inventory-setup'
+              >
                 Setup Tables
               </Button>
             }
           >
-            Database tables not found. Please run the setup utility to create the required tables.
+            Database tables not found. Please run the setup utility to create
+            the required tables.
           </Alert>
         )}
 
-        <Box sx={{ 
-          borderBottom: 1, 
-          borderColor: 'divider', 
-          width: '100%',
-          overflowX: 'auto'
-        }}>
-          <Tabs 
-            value={tabValue} 
-            onChange={handleTabChange} 
-            aria-label="inventory tabs"
-            variant="scrollable"
-            scrollButtons="auto"
-            sx={{ 
+        <Box
+          sx={{
+            borderBottom: 1,
+            borderColor: 'divider',
+            width: '100%',
+            overflowX: 'auto',
+          }}
+        >
+          <Tabs
+            value={tabValue}
+            onChange={handleTabChange}
+            aria-label='inventory tabs'
+            variant='scrollable'
+            scrollButtons='auto'
+            sx={{
               width: '100%',
               '& .MuiTab-root': {
                 textAlign: 'left',
-                alignItems: 'flex-start'
-              }
+                alignItems: 'flex-start',
+              },
             }}
           >
-            <Tab label="Purchases" {...a11yProps(0)} />
-            <Tab label="Sales to Customers" {...a11yProps(1)} />
-            <Tab label="Salon Consumption" {...a11yProps(2)} />
-            <Tab label="Purchase History" {...a11yProps(3)} />
-            <Tab label="Sales History" {...a11yProps(4)} />
+            <Tab label='Purchases' {...a11yProps(0)} />
+            <Tab label='Sales to Customers' {...a11yProps(1)} />
+            <Tab label='Salon Consumption' {...a11yProps(2)} />
+            <Tab label='Purchase History' {...a11yProps(3)} />
+            <Tab label='Sales History' {...a11yProps(4)} />
           </Tabs>
         </Box>
 
-        <TabPanel value={tabValue} index={0} sx={{ backgroundColor: 'background.default', padding: 0, mt: 2, width: '100%' }}>
-          <PurchaseTab 
-            purchases={purchasesQuery.data || []} 
-            isLoading={purchasesQuery.isLoading} 
+        <TabPanel
+          value={tabValue}
+          index={0}
+          sx={{
+            backgroundColor: 'background.default',
+            padding: 0,
+            mt: 2,
+            width: '100%',
+          }}
+        >
+          <PurchaseTab
+            purchases={purchasesQuery.data || []}
+            isLoading={purchasesQuery.isLoading}
             error={purchasesQuery.error}
           />
         </TabPanel>
-        
-        <TabPanel value={tabValue} index={1} sx={{ backgroundColor: 'background.default', padding: 0, mt: 2, width: '100%' }}>
-          <SalesTab 
-            sales={salesQuery.data || []} 
-            isLoading={salesQuery.isLoading} 
+
+        <TabPanel
+          value={tabValue}
+          index={1}
+          sx={{
+            backgroundColor: 'background.default',
+            padding: 0,
+            mt: 2,
+            width: '100%',
+          }}
+        >
+          <SalesTab
+            sales={salesQuery.data || []}
+            isLoading={salesQuery.isLoading}
             error={salesQuery.error}
           />
         </TabPanel>
-        
-        <TabPanel value={tabValue} index={2} sx={{ backgroundColor: 'background.default', padding: 0, mt: 2, width: '100%' }}>
-          <ConsumptionTab 
-            consumption={consumptionQuery.data || []} 
-            isLoading={consumptionQuery.isLoading} 
+
+        <TabPanel
+          value={tabValue}
+          index={2}
+          sx={{
+            backgroundColor: 'background.default',
+            padding: 0,
+            mt: 2,
+            width: '100%',
+          }}
+        >
+          <ConsumptionTab
+            consumption={consumptionQuery.data || []}
+            isLoading={consumptionQuery.isLoading}
             error={consumptionQuery.error}
           />
         </TabPanel>
-        
-        <TabPanel value={tabValue} index={3} sx={{ backgroundColor: 'background.default', padding: 0, mt: 2, width: '100%' }}>
+
+        <TabPanel
+          value={tabValue}
+          index={3}
+          sx={{
+            backgroundColor: 'background.default',
+            padding: 0,
+            mt: 2,
+            width: '100%',
+          }}
+        >
           <PurchaseHistory />
         </TabPanel>
-        
-        <TabPanel value={tabValue} index={4} sx={{ backgroundColor: 'background.default', padding: 0, mt: 2, width: '100%' }}>
+
+        <TabPanel
+          value={tabValue}
+          index={4}
+          sx={{
+            backgroundColor: 'background.default',
+            padding: 0,
+            mt: 2,
+            width: '100%',
+          }}
+        >
           <SalesHistory />
         </TabPanel>
       </Box>

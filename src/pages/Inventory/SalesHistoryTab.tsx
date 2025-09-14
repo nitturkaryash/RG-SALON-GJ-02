@@ -19,7 +19,7 @@ import {
   Tooltip,
   Button,
   Divider,
-  Grid
+  Grid,
 } from '@mui/material';
 import {
   Refresh as RefreshIcon,
@@ -28,14 +28,14 @@ import {
   Download as DownloadIcon,
   Info as InfoIcon,
   ArrowDownward as ArrowDownwardIcon,
-  ArrowUpward as ArrowUpwardIcon
+  ArrowUpward as ArrowUpwardIcon,
 } from '@mui/icons-material';
-import { supabase, TABLES } from '../../utils/supabase/supabaseClient';
+import { supabase, TABLES } from '../../lib/supabase';
 import { styled } from '@mui/material/styles';
 import * as XLSX from 'xlsx';
-import { toast } from 'react-hot-toast';
-import { useInventory } from '../../hooks/useInventory';
-import { formatOrderIdSimple } from '../../utils/orderIdFormatter';
+import { toast } from 'react-toastify';
+import { useInventory } from '../../hooks/inventory/useInventory';
+import { isSalonConsumptionOrder } from '../../utils/orderRenumbering';
 
 // Use the actual base table for mutations, view for reading
 const SALES_VIEW = 'sales_product_new';
@@ -107,7 +107,7 @@ const HeaderCell = styled(TableCell)(({ theme }) => ({
   padding: '16px 8px',
   borderBottom: `2px solid ${theme.palette.divider}`,
   whiteSpace: 'nowrap',
-  textAlign: 'center'
+  textAlign: 'center',
 }));
 
 const StyledChip = styled(Chip)(({ theme }) => ({
@@ -123,95 +123,55 @@ interface SalesHistoryTabProps {
 const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
   // State for data and UI
   const [salesData, setSalesData] = useState<SalesItem[]>([]);
-  const [groupedSalesData, setGroupedSalesData] = useState<GroupedSalesItem[]>([]);
+  const [groupedSalesData, setGroupedSalesData] = useState<GroupedSalesItem[]>(
+    []
+  );
   const [filteredData, setFilteredData] = useState<GroupedSalesItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [searchTerm, setSearchTerm] = useState('');
-  const [sortBy, setSortBy] = useState<{column: keyof GroupedSalesItem | null, direction: 'asc' | 'desc'}>({
+  const [sortBy, setSortBy] = useState<{
+    column: keyof GroupedSalesItem | null;
+    direction: 'asc' | 'desc';
+  }>({
     column: 'date',
-    direction: 'desc'
+    direction: 'asc',
   });
   const [dateRange, setDateRange] = useState({
-    startDate: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0], // First day of current month
-    endDate: new Date().toISOString().split('T')[0] // Today
+    startDate: new Date(new Date().getFullYear(), new Date().getMonth(), 1)
+      .toISOString()
+      .split('T')[0], // First day of current month
+    endDate: new Date().toISOString().split('T')[0], // Today
   });
   const [isExporting, setIsExporting] = useState(false);
-  const [allOrdersForContext, setAllOrdersForContext] = useState<any[]>([]);
-  const { deleteSale } = useInventory();
-  
+
   // Function to check if an order is a salon consumption order
   const isSalonConsumptionOrder = (order: any) => {
-    return order.is_salon_consumption === true || 
-           order.type === 'salon_consumption' ||
-           order.type === 'salon-consumption' ||
-           order.consumption_purpose ||
-           order.client_name === 'Salon Consumption';
+    return (
+      order.is_salon_consumption === true ||
+      order.type === 'salon_consumption' ||
+      order.type === 'salon-consumption' ||
+      order.consumption_purpose ||
+      order.client_name === 'Salon Consumption'
+    );
   };
 
-  // Function to format order ID consistently with Orders page
-  const formatOrderId = (order: any) => {
-    if (!order.id) return 'Unknown';
-    
-    // If order already has a formatted order_id, use it
-    if (order.order_id && (order.order_id.startsWith('RNG') || order.order_id.startsWith('SC'))) {
-      return order.order_id;
-    }
-    
-    // Check if this is a salon consumption order
-    const isSalonOrder = isSalonConsumptionOrder(order);
-    
-    if (!allOrdersForContext || allOrdersForContext.length === 0) {
-      return order.id.substring(0, 8); // Return shortened ID if no context
-    }
-    
-    // Sort orders by creation date to maintain consistent numbering
-    const sortedOrders = [...allOrdersForContext].sort((a, b) => {
-      const dateA = new Date(a.created_at || '').getTime();
-      const dateB = new Date(b.created_at || '').getTime();
-      return dateA - dateB;
-    });
-
-    // Find the index of the current order in the sorted list
-    const orderIndex = sortedOrders.findIndex(o => o.id === order.id);
-    
-    if (orderIndex === -1) {
-      return order.id.substring(0, 8);
-    }
-    
-    // Get all orders of the same type (salon or sales) that come before this one
-    const sameTypeOrders = sortedOrders
-      .slice(0, orderIndex + 1)
-      .filter(o => isSalonConsumptionOrder(o) === isSalonOrder);
-    
-    // Get the position of this order among orders of the same type
-    const orderNumber = sameTypeOrders.length;
-    
-    // Format with leading zeros to ensure 4 digits
-    const formattedNumber = String(orderNumber).padStart(4, '0');
-    
-    // Get the year from the order date
-    const orderDate = new Date(order.created_at || '');
-    const year = orderDate.getFullYear();
-    
-    // Format year as 2526 for 2025-2026 period
-    const yearFormat = year >= 2025 ? '2526' : `${year.toString().slice(-2)}${Math.floor(year / 100)}`;
-    
-    // Return the formatted ID based on order type
-    return isSalonOrder ? `SC${formattedNumber}/${yearFormat}` : `RNG${formattedNumber}/${yearFormat}`;
+  // Simple function to format order ID for display
+  const formatOrderId = (serialNo: number) => {
+    return `SALES-${serialNo}`;
   };
-  
+
   // Compute remaining-stock tax breakdown on the client and apply sorting
   const tableData = useMemo(() => {
     // First apply sorting
     const sortedData = [...filteredData].sort((a, b) => {
       if (!sortBy.column) return 0;
-      
+
       const aValue = a[sortBy.column];
       const bValue = b[sortBy.column];
-      
+
       // Handle different data types
       if (sortBy.column === 'date') {
         const dateA = new Date(aValue as string).getTime();
@@ -222,41 +182,51 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
       } else {
         const strA = String(aValue || '').toLowerCase();
         const strB = String(bValue || '').toLowerCase();
-        return sortBy.direction === 'asc' ? strA.localeCompare(strB) : strB.localeCompare(strA);
+        return sortBy.direction === 'asc'
+          ? strA.localeCompare(strB)
+          : strB.localeCompare(strA);
       }
     });
-    
+
     // Then assign serial numbers and calculate tax breakdowns
     return sortedData.map((item, index) => {
       // For grouped data, we calculate aggregated current stock values
       const totalCurrentStockTaxable = item.products.reduce((sum, product) => {
         const qty = product.remaining_stock ?? 0;
         const unitExcl = Number(product.purchase_cost_per_unit_ex_gst) || 0;
-        return sum + (qty * unitExcl);
+        return sum + qty * unitExcl;
       }, 0);
-      
+
       const totalCurrentStockCgst = item.products.reduce((sum, product) => {
         const qty = product.remaining_stock ?? 0;
         const unitExcl = Number(product.purchase_cost_per_unit_ex_gst) || 0;
         const gstPct = Number(product.gst_percentage) || 0;
         const taxable = qty * unitExcl;
-        return sum + (taxable * gstPct / 200);
+        return sum + (taxable * gstPct) / 200;
       }, 0);
-      
+
       const totalCurrentStockSgst = totalCurrentStockCgst; // Same as CGST
-      const totalCurrentStockTotalValue = totalCurrentStockTaxable + totalCurrentStockCgst + totalCurrentStockSgst;
+      const totalCurrentStockTotalValue =
+        totalCurrentStockTaxable +
+        totalCurrentStockCgst +
+        totalCurrentStockSgst;
 
       return {
         ...item,
-        serial_no: sortedData.length - index, // Assign serial number in reverse order
+        // Keep the original serial number from the backend view
+        // serial_no: item.serial_no, // Already set from the view
         current_stock_taxable_value: totalCurrentStockTaxable,
         current_stock_cgst: totalCurrentStockCgst,
         current_stock_sgst: totalCurrentStockSgst,
         current_stock_total_value: totalCurrentStockTotalValue,
         // Calculate discount percentage from absolute discount and taxable value
-        discount_percentage: item.total_taxable_value > 0 ? 
-          (item.total_discount / item.total_taxable_value) * 100 : 0,
-        taxable_after_discount: item.total_taxable_value * (1 - (item.total_discount / item.total_taxable_value || 0))
+        discount_percentage:
+          item.total_taxable_value > 0
+            ? (item.total_discount / item.total_taxable_value) * 100
+            : 0,
+        taxable_after_discount:
+          item.total_taxable_value *
+          (1 - (item.total_discount / item.total_taxable_value || 0)),
       };
     });
   }, [filteredData, sortBy]);
@@ -273,57 +243,33 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
     try {
       setIsLoading(true);
       setError(null);
-      
-      console.log('Fetching data from pos_orders and expanding services...');
-      
-      // First, fetch all orders for context to generate consistent order IDs
-      const { data: allOrders, error: allOrdersError } = await supabase
-        .from('pos_orders')
-        .select('id, created_at, is_salon_consumption, consumption_purpose, type, client_name, order_id')
-        .order('created_at', { ascending: false });
 
-      if (allOrdersError) {
-        console.error('Error fetching all orders for context:', allOrdersError);
-      } else {
-        setAllOrdersForContext(allOrders || []);
-      }
-      
-      const { data: ordersData, error } = await supabase
-        .from('pos_orders')
-        .select(`
-          id,
-          created_at,
-          date,
-          client_name,
-          stylist_name,
-          services,
-          payments,
-          subtotal,
-          discount,
-          tax,
-          total,
-          payment_method,
-          status,
-          serial_number,
-          order_id,
-          is_salon_consumption,
-          consumption_purpose,
-          type
-        `)
-        .eq('type', 'sale')
-        .gte('created_at', `${dateRange.startDate}T00:00:00`)
-        .lte('created_at', `${dateRange.endDate}T23:59:59`)
-        .order('created_at', { ascending: false });
+      console.log(
+        '🔄 Fetching fresh data from corrected sales_history_final view...'
+      );
+      console.log('📅 Date range:', dateRange);
+
+      // No need to fetch all orders for context since we're using backend view
+
+      // Fetch data from the corrected sales_history_final view that properly filters out ALL services
+      const { data: salesData, error } = await supabase
+        .from('sales_history_final')
+        .select('*')
+        .gte('date', `${dateRange.startDate}T00:00:00`)
+        .lte('date', `${dateRange.endDate}T23:59:59`)
+        .order('date', { ascending: false });
 
       if (error) {
-        console.error('Error fetching orders data:', error);
-        setError(`Failed to load sales data: ${error.message || 'Unknown error'}`);
+        console.error('Error fetching sales history:', error);
+        setError(
+          `Failed to load sales data: ${error.message || 'Unknown error'}`
+        );
         setIsLoading(false);
         return;
       }
 
-      if (!ordersData || ordersData.length === 0) {
-        console.warn('No orders data found for the selected date range.');
+      if (!salesData || salesData.length === 0) {
+        console.warn('No sales data found for the selected date range.');
         setSalesData([]);
         setGroupedSalesData([]);
         setFilteredData([]);
@@ -331,93 +277,80 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
         return;
       }
 
-      console.log(`Received ${ordersData.length} orders. Now processing items within each order.`);
+      console.log(
+        `Received ${salesData.length} product records from corrected sales_history_final view.`
+      );
 
-      // Manually expand and process sales items from the services JSON
-      const flattenedSales: SalesItem[] = ordersData.flatMap(order => {
-        if (!order.services || !Array.isArray(order.services)) {
-          console.warn(`Order ${order.id} has no services array.`);
-          return [];
-        }
-        
-        return order.services.map((service: any, index: number) => {
-          const taxableValue = Number(service.subtotal) || (Number(service.price) * Number(service.quantity));
-          
-          // Improved product type detection logic
-          let itemType: string = 'unknown';
-          
-          // First check if type is explicitly set
-          if (service.type) {
-            itemType = service.type;
-          } 
-          // Check if category is set 
-          else if (service.category) {
-            itemType = service.category;
-          }
-          // Check if it has product-like attributes
-          else if (service.product_id || service.product_name || (service.hsn_code && service.hsn_code.trim() !== '')) {
-            itemType = 'product';
-          }
-          // Check if it's a membership (service name contains "membership")
-          else if (service.service_name && service.service_name.toLowerCase().includes('membership')) {
-            itemType = 'membership';
-          }
-          // Default to service if none of the above
-          else {
-            itemType = 'service';
-          }
-          
-          // Debug logging for type detection
-          console.log(`🔍 SalesHistoryTab - Type detection for "${service.service_name || service.name}":`, {
-            original_type: service.type,
-            category: service.category,
-            has_product_id: !!service.product_id,
-            has_product_name: !!service.product_name,
-            has_hsn_code: !!(service.hsn_code && service.hsn_code.trim() !== ''),
-            hsn_code: service.hsn_code,
-            detected_type: itemType
-          });
-          
+      // Process the data from the new backend view
+      const flattenedSales: SalesItem[] = salesData.map(
+        (item: any, index: number) => {
+          const unitPrice = Number(item.unit_price_ex_gst) || 0;
+          const quantity = Number(item.quantity) || 1;
+          const gstPercentage = Number(item.gst_percentage) || 0;
+          const taxableValue = Number(item.taxable_value) || 0;
+          const taxAmount = Number(item.tax_amount) || 0;
+          const totalAmount = Number(item.total_amount) || 0;
+          const cgstAmount = taxAmount / 2;
+          const sgstAmount = taxAmount / 2;
+
+          console.log(
+            `Processing product "${item.product_name}" with type: ${item.product_type}`
+          );
+
+          // Use invoice_number if available, otherwise create a simple formatted ID
+          const formattedOrderId = item.invoice_number || formatOrderId(item.serial_no);
+
           return {
-            id: order.id,
-            order_item_pk: service.id || `${order.id}-${index}`,
-            serial_no: order.serial_number || order.id,
-            original_serial_no: order.serial_number,
-            order_id: formatOrderId(order),
-            order_item_id: service.service_id || service.id,
-            date: order.date || order.created_at,
-            product_name: service.service_name || service.name,
-            quantity: Number(service.quantity) || 0,
-            unit_price_ex_gst: Number(service.unit_price) || Number(service.price) || 0,
-            unit_price_inc_gst: Number(service.unit_price_inc_gst) || 0,
-            gst_percentage: Number(service.gst_percentage) || 0,
+            id: item.order_id,
+            order_item_pk: item.order_item_id || item.order_id,
+            serial_no: parseInt(item.serial_no.replace('SALES-', '')) || (index + 1), // Extract number from SALES-XXX
+            original_serial_no: item.serial_no,
+            order_id: item.serial_no, // Use the formatted serial_no as order_id
+            order_item_id: item.order_item_id,
+            date: item.date,
+            product_name: item.product_name,
+            quantity: quantity,
+            unit_price_ex_gst: unitPrice,
+            unit_price_inc_gst: unitPrice * (1 + gstPercentage / 100),
+            gst_percentage: gstPercentage,
             taxable_value: taxableValue,
-            cgst_amount: (Number(service.tax_amount) / 2) || 0,
-            sgst_amount: (Number(service.tax_amount) / 2) || 0,
-            total_purchase_cost: 0, // This would need a join to product_master
-            discount: Number(service.discount_amount) || Number(service.discount) || 0,
-            discount_percentage: Number(service.discount_percentage) || 0,
-            tax: Number(service.tax_amount) || 0,
-            hsn_code: service.hsn_code || '',
-            product_type: itemType,
-            mrp_incl_gst: Number(service.mrp_incl_gst) || 0,
-            discounted_sales_rate_ex_gst: Number(service.unit_price) || 0,
-            invoice_value: Number(service.total_amount) || Number(service.total) || 0,
-            igst_amount: 0,
-            initial_stock: 0, // Requires join/RPC
-            remaining_stock: 0, // Requires join/RPC
-            current_stock: Number(service.current_stock) || 0, // Use current_stock from imported data
-            purchase_cost_per_unit_ex_gst: 0, // Requires join
+            cgst_amount: cgstAmount,
+            sgst_amount: sgstAmount,
+            total_purchase_cost: 0, // Not available from this view
+            discount: Number(item.discount) || 0,
+            discount_percentage: 0,
+            tax: taxAmount,
+            hsn_code: item.hsn_code || '',
+            product_type: item.product_type || 'product',
+            mrp_incl_gst: 0, // Not available from this view
+            discounted_sales_rate_ex_gst: unitPrice,
+            invoice_value: totalAmount,
+            igst_amount: 0, // Using CGST/SGST instead
+            initial_stock: 0, // Not available from this view
+            remaining_stock: 0, // Not available from this view
+            current_stock: 0, // Not available from this view
+            purchase_cost_per_unit_ex_gst: 0, // Not available from this view
           };
-        });
-      });
+        }
+      );
 
       console.log(`Processed ${flattenedSales.length} individual sales items.`);
+
+      // Log product type distribution for debugging
+      const typeDistribution = flattenedSales.reduce(
+        (acc, item) => {
+          acc[item.product_type] = (acc[item.product_type] || 0) + 1;
+          return acc;
+        },
+        {} as Record<string, number>
+      );
+      console.log('Product type distribution:', typeDistribution);
+
       setSalesData(flattenedSales);
 
       // Group the flattened data by order_id for display
       const groupedData = new Map<string, GroupedSalesItem>();
-      
+
       flattenedSales.forEach(item => {
         if (!groupedData.has(item.order_id)) {
           groupedData.set(item.order_id, {
@@ -438,7 +371,7 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
             gst_percentage: 0,
           });
         }
-        
+
         const group = groupedData.get(item.order_id)!;
         group.products.push(item);
         group.total_quantity += item.quantity;
@@ -448,45 +381,55 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
         group.total_discount += item.discount;
         group.total_invoice_value += item.invoice_value;
       });
-      
+
       // Finalize grouped data
       const finalGroupedData = Array.from(groupedData.values()).map(group => {
         const productNames = group.products.map(p => p.product_name);
         const hsnCodes = group.products.map(p => p.hsn_code).filter(Boolean);
         const productTypes = group.products.map(p => p.product_type);
-        
+
         group.combined_product_names = productNames.join(', ');
         group.combined_hsn_codes = [...new Set(hsnCodes)].join(', ');
         group.combined_product_types = [...new Set(productTypes)].join(', ');
-        
+
         // Debug logging for combined types
-        console.log(`🔍 SalesHistoryTab - Order ${group.order_id} combined types:`, {
-          individual_types: productTypes,
-          unique_types: [...new Set(productTypes)],
-          combined: group.combined_product_types
-        });
-        
+        console.log(
+          `🔍 SalesHistoryTab - Order ${group.order_id} combined types:`,
+          {
+            individual_types: productTypes,
+            unique_types: [...new Set(productTypes)],
+            combined: group.combined_product_types,
+          }
+        );
+
         // Find most common GST percentage
         if (group.products.length > 0) {
           const gstRates = group.products.map(p => p.gst_percentage);
-          const rateCounts = gstRates.reduce((acc, rate) => {
-            acc[rate] = (acc[rate] || 0) + 1;
-            return acc;
-          }, {} as Record<number, number>);
-          const mostCommonRate = Object.keys(rateCounts).reduce((a, b) => rateCounts[Number(a)] > rateCounts[Number(b)] ? a : b);
+          const rateCounts = gstRates.reduce(
+            (acc, rate) => {
+              acc[rate] = (acc[rate] || 0) + 1;
+              return acc;
+            },
+            {} as Record<number, number>
+          );
+          const mostCommonRate = Object.keys(rateCounts).reduce((a, b) =>
+            rateCounts[Number(a)] > rateCounts[Number(b)] ? a : b
+          );
           group.gst_percentage = Number(mostCommonRate);
         }
-        
+
         return group;
       });
 
-      console.log(`Grouped data into ${finalGroupedData.length} orders for display.`);
+      console.log(
+        `Grouped data into ${finalGroupedData.length} orders for display.`
+      );
       setGroupedSalesData(finalGroupedData);
       setFilteredData(finalGroupedData);
-
     } catch (err) {
       console.error('An unexpected error occurred:', err);
-      const errorMessage = (err instanceof Error) ? err.message : 'An unknown error occurred';
+      const errorMessage =
+        err instanceof Error ? err.message : 'An unknown error occurred';
       setError(`An unexpected error occurred: ${errorMessage}`);
       toast.error('An unexpected error occurred while fetching sales data.');
     } finally {
@@ -505,44 +448,45 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
     const date = new Date(dateString);
     return date.toLocaleDateString();
   };
-  
+
   // Format currency values
   const formatCurrency = (value: number | null | undefined) => {
     if (value === null || value === undefined) return 'N/A';
     const roundedValue = Math.round(value);
-    return new Intl.NumberFormat('en-IN', { 
-      style: 'currency', 
+    return new Intl.NumberFormat('en-IN', {
+      style: 'currency',
       currency: 'INR',
       minimumFractionDigits: 0,
-      maximumFractionDigits: 0
+      maximumFractionDigits: 0,
     }).format(roundedValue);
   };
-  
+
   // Handle pagination
   const handleChangePage = (event: unknown, newPage: number) => {
     setPage(newPage);
   };
-  
-  const handleChangeRowsPerPage = (event: React.ChangeEvent<HTMLInputElement>) => {
+
+  const handleChangeRowsPerPage = (
+    event: React.ChangeEvent<HTMLInputElement>
+  ) => {
     setRowsPerPage(parseInt(event.target.value, 10));
     setPage(0);
   };
-  
+
   // Handle sorting for grouped data
   const handleSort = (column: keyof GroupedSalesItem) => {
     setSortBy(prev => ({
       column,
-      direction: prev.column === column && prev.direction === 'asc' ? 'desc' : 'asc'
+      direction:
+        prev.column === column && prev.direction === 'asc' ? 'desc' : 'asc',
     }));
   };
-  
-
 
   // Handle search for grouped data
   const handleSearch = (event: React.ChangeEvent<HTMLInputElement>) => {
     const searchValue = event.target.value.toLowerCase();
     setSearchTerm(searchValue);
-    
+
     // Apply the search filter
     if (searchValue.trim() === '') {
       // Apply initial sorting by date (newest first)
@@ -553,49 +497,61 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
       });
       setFilteredData(sortedData);
     } else {
-      const filtered = groupedSalesData.filter(item => 
-        item.combined_product_names.toLowerCase().includes(searchValue) ||
-        item.combined_hsn_codes.toLowerCase().includes(searchValue) ||
-        item.combined_product_types.toLowerCase().includes(searchValue) ||
-        item.order_id.toLowerCase().includes(searchValue)
+      const filtered = groupedSalesData.filter(
+        item =>
+          item.combined_product_names.toLowerCase().includes(searchValue) ||
+          item.combined_hsn_codes.toLowerCase().includes(searchValue) ||
+          item.combined_product_types.toLowerCase().includes(searchValue) ||
+          item.order_id.toLowerCase().includes(searchValue)
       );
-      
+
       // Sort filtered results by date (newest first)
       const sortedFiltered = filtered.sort((a, b) => {
         const dateA = new Date(a.date).getTime();
         const dateB = new Date(b.date).getTime();
         return dateB - dateA; // Newest first
       });
-      
+
       setFilteredData(sortedFiltered);
     }
-    
+
     setPage(0); // Reset to first page
   };
-  
+
   const handleDateChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = event.target;
     setDateRange(prev => ({
       ...prev,
-      [name]: value
+      [name]: value,
     }));
   };
-  
+
   // Apply date filter when the Apply button is clicked
   const applyDateFilter = () => {
     fetchSalesData();
   };
-  
+
   // Export data to Excel
   const handleExport = () => {
     try {
       setIsExporting(true);
-      
+
       // Build header and row arrays so Excel columns exactly match the UI table
       const headers = [
-        'Serial No.', 'Date', 'Product Names', 'HSN Codes', 'Product Types', 'Total Qty.',
-        'Taxable Value', 'GST %', 'Discount %', 'Taxable After Discount', 
-        'CGST', 'SGST', 'Total Value', 'Order ID'
+        'Serial No.',
+        'Date',
+        'Product Names',
+        'HSN Codes',
+        'Product Types',
+        'Total Qty.',
+        'Taxable Value',
+        'GST %',
+        'Discount %',
+        'Taxable After Discount',
+        'CGST',
+        'SGST',
+        'Total Value',
+        'Order ID',
       ];
       const dataRows = tableData.map(item => [
         item.serial_no,
@@ -611,10 +567,10 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
         item.total_cgst_amount,
         item.total_sgst_amount,
         item.total_invoice_value,
-        item.order_id
+        item.order_id,
       ]);
       const worksheet = XLSX.utils.aoa_to_sheet([headers, ...dataRows]);
-      
+
       // Auto size columns
       const range = XLSX.utils.decode_range(worksheet['!ref'] || 'A1:A1');
       for (let i = range.s.c; i <= range.e.c; i++) {
@@ -622,14 +578,14 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
         // Skip first row (header)
         worksheet[`${colName}1`].s = { font: { bold: true } };
       }
-      
+
       // Create workbook
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, worksheet, 'Sales History');
-      
+
       // Generate filename
       const fileName = `Sales_History_${new Date().toISOString().split('T')[0]}.xlsx`;
-      
+
       // Export
       XLSX.writeFile(workbook, fileName);
       toast.success('Sales data exported successfully!');
@@ -640,45 +596,57 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
       setIsExporting(false);
     }
   };
-  
-  // Calculate totals including remaining-stock tax breakdown
-  const totals = tableData.reduce((sum, item) => {
-    // Helper to safely parse and sum, treating non-numbers as 0
-    const safeAdd = (currentSum: number, value: any): number => {
-      const num = parseFloat(String(value));
-      return currentSum + (isNaN(num) ? 0 : num);
-    };
 
-    return {
-      quantity: safeAdd(sum.quantity, item.total_quantity),
-      taxableValue: safeAdd(sum.taxableValue, item.total_taxable_value),
-      taxableAfterDiscount: safeAdd(sum.taxableAfterDiscount, item.taxable_after_discount),
-      cgst: safeAdd(sum.cgst, item.total_cgst_amount),
-      sgst: safeAdd(sum.sgst, item.total_sgst_amount),
-      totalValue: safeAdd(sum.totalValue, item.total_invoice_value)
-    };
-  }, {
-    quantity: 0,
-    taxableValue: 0,
-    taxableAfterDiscount: 0,
-    cgst: 0,
-    sgst: 0,
-    totalValue: 0
-  });
-  
+  // Calculate totals including remaining-stock tax breakdown
+  const totals = tableData.reduce(
+    (sum, item) => {
+      // Helper to safely parse and sum, treating non-numbers as 0
+      const safeAdd = (currentSum: number, value: any): number => {
+        const num = parseFloat(String(value));
+        return currentSum + (isNaN(num) ? 0 : num);
+      };
+
+      return {
+        quantity: safeAdd(sum.quantity, item.total_quantity),
+        taxableValue: safeAdd(sum.taxableValue, item.total_taxable_value),
+        taxableAfterDiscount: safeAdd(
+          sum.taxableAfterDiscount,
+          item.taxable_after_discount
+        ),
+        cgst: safeAdd(sum.cgst, item.total_cgst_amount),
+        sgst: safeAdd(sum.sgst, item.total_sgst_amount),
+        totalValue: safeAdd(sum.totalValue, item.total_invoice_value),
+      };
+    },
+    {
+      quantity: 0,
+      taxableValue: 0,
+      taxableAfterDiscount: 0,
+      cgst: 0,
+      sgst: 0,
+      totalValue: 0,
+    }
+  );
+
   // Helper for rendering sortable table headers
-  const renderSortableHeader = (column: keyof GroupedSalesItem | null, label: string) => ( // Make column possibly null
+  const renderSortableHeader = (
+    column: keyof GroupedSalesItem | null,
+    label: string // Make column possibly null
+  ) => (
     <HeaderCell
       onClick={() => column && handleSort(column)} // Check if column is not null before calling handleSort
       style={{ cursor: column ? 'pointer' : 'default' }} // Only show pointer if sortable
     >
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <Box
+        sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+      >
         {label}
-        {sortBy.column === column && (
-          sortBy.direction === 'asc' 
-            ? <ArrowUpwardIcon fontSize="small" sx={{ ml: 0.5 }} /> 
-            : <ArrowDownwardIcon fontSize="small" sx={{ ml: 0.5 }} />
-        )}
+        {sortBy.column === column &&
+          (sortBy.direction === 'asc' ? (
+            <ArrowUpwardIcon fontSize='small' sx={{ ml: 0.5 }} />
+          ) : (
+            <ArrowDownwardIcon fontSize='small' sx={{ ml: 0.5 }} />
+          ))}
       </Box>
     </HeaderCell>
   );
@@ -686,59 +654,64 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
   return (
     <Box sx={{ p: 0 }}>
       {error && (
-        <Alert 
-          severity="error" 
-          sx={{ mb: 2 }}
-        >
+        <Alert severity='error' sx={{ mb: 2 }}>
           {error}
         </Alert>
       )}
-      
-      <Box sx={{ mb: 2, display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1 }}>
-        <Grid container spacing={2} alignItems="center">
+
+      <Box
+        sx={{
+          mb: 2,
+          display: 'flex',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: 1,
+        }}
+      >
+        <Grid container spacing={2} alignItems='center'>
           <Grid item xs={12} md={4}>
             <TextField
               fullWidth
-              placeholder="Search by product name, HSN code, product type, or order ID"
+              placeholder='Search by product name, HSN code, product type, or order ID'
               value={searchTerm}
               onChange={handleSearch}
-              variant="outlined"
-              size="small"
+              variant='outlined'
+              size='small'
               InputProps={{
                 startAdornment: (
-                  <InputAdornment position="start">
+                  <InputAdornment position='start'>
                     <SearchIcon />
                   </InputAdornment>
-                )
+                ),
               }}
             />
           </Grid>
-          
+
           <Grid item xs={12} md={6}>
             <Box sx={{ display: 'flex', gap: 2 }}>
               <TextField
-                label="Start Date"
-                type="date"
-                size="small"
-                name="startDate"
+                label='Start Date'
+                type='date'
+                size='small'
+                name='startDate'
                 value={dateRange.startDate}
                 onChange={handleDateChange}
                 InputLabelProps={{ shrink: true }}
               />
-              
+
               <TextField
-                label="End Date"
-                type="date"
-                size="small"
-                name="endDate"
+                label='End Date'
+                type='date'
+                size='small'
+                name='endDate'
                 value={dateRange.endDate}
                 onChange={handleDateChange}
                 InputLabelProps={{ shrink: true }}
               />
-              
-              <Button 
-                variant="outlined" 
-                size="small"
+
+              <Button
+                variant='outlined'
+                size='small'
                 onClick={applyDateFilter}
                 startIcon={<FilterIcon />}
               >
@@ -746,14 +719,19 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
               </Button>
             </Box>
           </Grid>
-          
+
           <Grid item xs={12} md={2}>
             <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end' }}>
               <Button
-                variant="outlined"
-                size="small"
+                variant='outlined'
+                size='small'
                 startIcon={<RefreshIcon />}
-                onClick={() => fetchSalesData()}
+                onClick={() => {
+                  console.log(
+                    '🔄 Manual refresh triggered - fetching products only'
+                  );
+                  fetchSalesData();
+                }}
                 disabled={isLoading}
               >
                 Refresh
@@ -762,18 +740,26 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
           </Grid>
         </Grid>
       </Box>
-      
+
       <Paper sx={{ width: '100%', overflow: 'hidden' }}>
-        <TableContainer sx={{ maxHeight: 'calc(100vh - 300px)', overflow: 'auto' }}>
-          <Table stickyHeader aria-label="sales history table">
+        <TableContainer
+          sx={{ maxHeight: 'calc(100vh - 300px)', overflow: 'auto' }}
+        >
+          <Table stickyHeader aria-label='sales history table'>
             <TableHead>
               <TableRow>
-                <TableCell padding="checkbox" /> {/* For expand/collapse */}
-                {renderSortableHeader('serial_no', 'Serial No.')}
+                <TableCell padding='checkbox' /> {/* For expand/collapse */}
+                {renderSortableHeader('serial_no', 'S.No')}
                 {renderSortableHeader('date', 'Date')}
-                {renderSortableHeader('combined_product_names', 'Product Names')}
+                {renderSortableHeader(
+                  'combined_product_names',
+                  'Product Names'
+                )}
                 {renderSortableHeader('combined_hsn_codes', 'HSN Codes')}
-                {renderSortableHeader('combined_product_types', 'Product Types')}
+                {renderSortableHeader(
+                  'combined_product_types',
+                  'Product Types'
+                )}
                 {renderSortableHeader('total_quantity', 'Total Qty.')}
                 {renderSortableHeader('total_taxable_value', 'Taxable Value')}
                 {renderSortableHeader('gst_percentage', 'GST %')}
@@ -788,9 +774,9 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={15} align="center" sx={{ py: 3 }}>
+                  <TableCell colSpan={15} align='center' sx={{ py: 3 }}>
                     <CircularProgress />
-                    <Typography variant="body2" sx={{ mt: 1 }}>
+                    <Typography variant='body2' sx={{ mt: 1 }}>
                       Loading sales data...
                     </Typography>
                   </TableCell>
@@ -798,26 +784,62 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
               ) : filteredData.length > 0 ? (
                 tableData
                   .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
-                  .map((row) => (
-                    <TableRow key={row.order_id} sx={{ '&:last-child td, &:last-child th': { border: 0 } }} hover>
-                      <TableCell padding="checkbox" />
-                      <TableCell align="center">{row.serial_no}</TableCell>
-                      <TableCell align="center">{formatDate(row.date)}</TableCell>
-                      <TableCell align="left">{row.combined_product_names}</TableCell>
-                      <TableCell align="center">{row.combined_hsn_codes}</TableCell>
-                      <TableCell align="center">{row.combined_product_types || 'N/A'}</TableCell>
-                      <TableCell align="center">{row.total_quantity}</TableCell>
-                      <TableCell align="right">{formatCurrency(row.total_taxable_value)}</TableCell>
-                      <TableCell align="right">{Number(row.gst_percentage ?? 0).toFixed(2)}%</TableCell>
-                      <TableCell align="right">{Number(row.discount_percentage ?? 0).toFixed(2)}%</TableCell>
-                      <TableCell align="right">{formatCurrency(row.taxable_after_discount)}</TableCell>
-                      <TableCell align="right">{formatCurrency(row.total_cgst_amount)}</TableCell>
-                      <TableCell align="right">{formatCurrency(row.total_sgst_amount)}</TableCell>
-                      <TableCell align="right">{formatCurrency(row.total_invoice_value)}</TableCell>
-                      <TableCell align="center">
+                  .map(row => (
+                    <TableRow
+                      key={row.order_id}
+                      sx={{ '&:last-child td, &:last-child th': { border: 0 } }}
+                      hover
+                    >
+                      <TableCell padding='checkbox' />
+                      <TableCell align='center'>{row.serial_no}</TableCell>
+                      <TableCell align='center'>
+                        {formatDate(row.date)}
+                      </TableCell>
+                      <TableCell align='left'>
+                        {row.combined_product_names}
+                      </TableCell>
+                      <TableCell align='center'>
+                        {row.combined_hsn_codes}
+                      </TableCell>
+                      <TableCell align='center'>
+                        {row.combined_product_types || 'N/A'}
+                      </TableCell>
+                      <TableCell align='center'>{row.total_quantity}</TableCell>
+                      <TableCell align='right'>
+                        {formatCurrency(row.total_taxable_value)}
+                      </TableCell>
+                      <TableCell align='right'>
+                        {Number(row.gst_percentage ?? 0).toFixed(2)}%
+                      </TableCell>
+                      <TableCell align='right'>
+                        {Number(row.discount_percentage ?? 0).toFixed(2)}%
+                      </TableCell>
+                      <TableCell align='right'>
+                        {formatCurrency(row.taxable_after_discount)}
+                      </TableCell>
+                      <TableCell align='right'>
+                        {formatCurrency(row.total_cgst_amount)}
+                      </TableCell>
+                      <TableCell align='right'>
+                        {formatCurrency(row.total_sgst_amount)}
+                      </TableCell>
+                      <TableCell align='right'>
+                        {formatCurrency(row.total_invoice_value)}
+                      </TableCell>
+                      <TableCell align='center'>
                         <Tooltip title={row.order_id}>
-                          <Typography variant="body2" sx={{ color: 'text.secondary', fontSize: '0.75rem', maxWidth: 80, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {formatOrderIdSimple(row.order_id)}
+                          <Typography
+                            variant='body2'
+                            sx={{
+                              color: 'text.secondary',
+                              fontSize: '0.75rem',
+                              maxWidth: 80,
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            {row.order_id}
                           </Typography>
                         </Tooltip>
                       </TableCell>
@@ -825,39 +847,67 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
                   ))
               ) : (
                 <TableRow>
-                  <TableCell colSpan={15} align="center" sx={{ py: 3 }}>
-                    <Typography variant="body1">No sales data found</Typography>
-                    <Typography variant="body2" color="textSecondary" sx={{ mt: 1 }}>
-                      {searchTerm 
-                        ? 'Try adjusting your search criteria' 
+                  <TableCell colSpan={15} align='center' sx={{ py: 3 }}>
+                    <Typography variant='body1'>No sales data found</Typography>
+                    <Typography
+                      variant='body2'
+                      color='textSecondary'
+                      sx={{ mt: 1 }}
+                    >
+                      {searchTerm
+                        ? 'Try adjusting your search criteria'
                         : 'There are no sales records for the selected period'}
                     </Typography>
                   </TableCell>
                 </TableRow>
               )}
-              
+
               {/* Totals row */}
               {tableData.length > 0 && (
                 <TableRow sx={{ backgroundColor: '#f8f9fa' }}>
-                  <TableCell colSpan={6} align="right" sx={{ fontWeight: 'bold' }}>Totals:</TableCell>
-                  <TableCell align="right" sx={{ fontWeight: 'bold' }}>{totals.quantity}</TableCell>
-                  <TableCell align="right" sx={{ fontWeight: 'bold' }}>{formatCurrency(totals.taxableValue)}</TableCell>
-                  <TableCell align="right" sx={{ fontWeight: 'bold' }}></TableCell>
-                  <TableCell align="right" sx={{ fontWeight: 'bold' }}></TableCell>
-                  <TableCell align="right" sx={{ fontWeight: 'bold' }}>{formatCurrency(totals.taxableAfterDiscount)}</TableCell>
-                  <TableCell align="right" sx={{ fontWeight: 'bold' }}>{formatCurrency(totals.cgst)}</TableCell>
-                  <TableCell align="right" sx={{ fontWeight: 'bold' }}>{formatCurrency(totals.sgst)}</TableCell>
-                  <TableCell align="right" sx={{ fontWeight: 'bold' }}>{formatCurrency(totals.totalValue)}</TableCell>
+                  <TableCell
+                    colSpan={6}
+                    align='right'
+                    sx={{ fontWeight: 'bold' }}
+                  >
+                    Totals:
+                  </TableCell>
+                  <TableCell align='right' sx={{ fontWeight: 'bold' }}>
+                    {totals.quantity}
+                  </TableCell>
+                  <TableCell align='right' sx={{ fontWeight: 'bold' }}>
+                    {formatCurrency(totals.taxableValue)}
+                  </TableCell>
+                  <TableCell
+                    align='right'
+                    sx={{ fontWeight: 'bold' }}
+                  ></TableCell>
+                  <TableCell
+                    align='right'
+                    sx={{ fontWeight: 'bold' }}
+                  ></TableCell>
+                  <TableCell align='right' sx={{ fontWeight: 'bold' }}>
+                    {formatCurrency(totals.taxableAfterDiscount)}
+                  </TableCell>
+                  <TableCell align='right' sx={{ fontWeight: 'bold' }}>
+                    {formatCurrency(totals.cgst)}
+                  </TableCell>
+                  <TableCell align='right' sx={{ fontWeight: 'bold' }}>
+                    {formatCurrency(totals.sgst)}
+                  </TableCell>
+                  <TableCell align='right' sx={{ fontWeight: 'bold' }}>
+                    {formatCurrency(totals.totalValue)}
+                  </TableCell>
                   <TableCell></TableCell>
                 </TableRow>
               )}
             </TableBody>
           </Table>
         </TableContainer>
-        
+
         <TablePagination
           rowsPerPageOptions={[10, 25, 50, 100]}
-          component="div"
+          component='div'
           count={filteredData.length}
           rowsPerPage={rowsPerPage}
           page={page}
@@ -869,4 +919,4 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
   );
 };
 
-export default SalesHistoryTab; 
+export default SalesHistoryTab;

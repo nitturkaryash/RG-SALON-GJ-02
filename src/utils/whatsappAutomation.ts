@@ -67,7 +67,7 @@ export class WhatsAppAutomation {
       inventoryLow: true,
       clientWelcome: true,
       paymentReceived: true,
-    }
+    },
   };
 
   static setConfig(config: Partial<AutoMessageConfig>) {
@@ -94,7 +94,7 @@ export class WhatsAppAutomation {
       const services = orderData.items.map(item => ({
         name: item.name,
         price: item.price,
-        duration: item.type === 'service' ? 30 : 0 // Default duration for services
+        duration: item.type === 'service' ? 30 : 0, // Default duration for services
       }));
 
       await WhatsAppService.sendAppointmentConfirmation(
@@ -113,7 +113,10 @@ export class WhatsAppAutomation {
     }
   }
 
-  static async handleOrderUpdated(orderData: OrderData, changes: Partial<OrderData>): Promise<boolean> {
+  static async handleOrderUpdated(
+    orderData: OrderData,
+    changes: Partial<OrderData>
+  ): Promise<boolean> {
     if (!this.config.enabled || !this.config.messageTypes.orderUpdated) {
       return false;
     }
@@ -126,7 +129,7 @@ export class WhatsAppAutomation {
       const services = orderData.items.map(item => ({
         name: item.name,
         price: item.price,
-        duration: item.type === 'service' ? 30 : 0
+        duration: item.type === 'service' ? 30 : 0,
       }));
 
       // For now, send a general update message
@@ -147,7 +150,10 @@ export class WhatsAppAutomation {
     }
   }
 
-  static async handleOrderDeleted(orderData: OrderData, reason?: string): Promise<boolean> {
+  static async handleOrderDeleted(
+    orderData: OrderData,
+    reason?: string
+  ): Promise<boolean> {
     if (!this.config.enabled || !this.config.messageTypes.orderDeleted) {
       return false;
     }
@@ -163,7 +169,9 @@ export class WhatsAppAutomation {
         new Date(orderData.created_at || new Date())
       );
 
-      console.log(`✅ Order cancellation message sent to ${orderData.client_name}`);
+      console.log(
+        `✅ Order cancellation message sent to ${orderData.client_name}`
+      );
       return true;
     } catch (error) {
       console.error('Error sending order cancellation message:', error);
@@ -172,7 +180,9 @@ export class WhatsAppAutomation {
   }
 
   // APPOINTMENT CRUD AUTO-MESSAGES
-  static async handleAppointmentCreated(appointmentData: AppointmentData): Promise<boolean> {
+  static async handleAppointmentCreated(
+    appointmentData: AppointmentData
+  ): Promise<boolean> {
     if (!this.config.enabled || !this.config.messageTypes.appointmentCreated) {
       return false;
     }
@@ -190,7 +200,9 @@ export class WhatsAppAutomation {
         appointmentData.stylist
       );
 
-      console.log(`✅ Appointment created message sent to ${appointmentData.client_name}`);
+      console.log(
+        `✅ Appointment created message sent to ${appointmentData.client_name}`
+      );
       return true;
     } catch (error) {
       console.error('Error sending appointment created message:', error);
@@ -199,7 +211,7 @@ export class WhatsAppAutomation {
   }
 
   static async handleAppointmentUpdated(
-    appointmentData: AppointmentData, 
+    appointmentData: AppointmentData,
     oldData: Partial<AppointmentData>
   ): Promise<boolean> {
     if (!this.config.enabled || !this.config.messageTypes.appointmentUpdated) {
@@ -211,7 +223,10 @@ export class WhatsAppAutomation {
     }
 
     try {
-      if (oldData.start_time && oldData.start_time !== appointmentData.start_time) {
+      if (
+        oldData.start_time &&
+        oldData.start_time !== appointmentData.start_time
+      ) {
         // Time changed - send update message
         await WhatsAppService.sendAppointmentUpdate(
           appointmentData.client_phone,
@@ -233,7 +248,9 @@ export class WhatsAppAutomation {
         );
       }
 
-      console.log(`✅ Appointment updated message sent to ${appointmentData.client_name}`);
+      console.log(
+        `✅ Appointment updated message sent to ${appointmentData.client_name}`
+      );
       return true;
     } catch (error) {
       console.error('Error sending appointment updated message:', error);
@@ -241,8 +258,13 @@ export class WhatsAppAutomation {
     }
   }
 
-  static async handleAppointmentCancelled(appointmentData: AppointmentData): Promise<boolean> {
-    if (!this.config.enabled || !this.config.messageTypes.appointmentCancelled) {
+  static async handleAppointmentCancelled(
+    appointmentData: AppointmentData
+  ): Promise<boolean> {
+    if (
+      !this.config.enabled ||
+      !this.config.messageTypes.appointmentCancelled
+    ) {
       return false;
     }
 
@@ -257,7 +279,9 @@ export class WhatsAppAutomation {
         new Date(appointmentData.start_time)
       );
 
-      console.log(`✅ Appointment cancellation message sent to ${appointmentData.client_name}`);
+      console.log(
+        `✅ Appointment cancellation message sent to ${appointmentData.client_name}`
+      );
       return true;
     } catch (error) {
       console.error('Error sending appointment cancellation message:', error);
@@ -266,7 +290,9 @@ export class WhatsAppAutomation {
   }
 
   // INVENTORY AUTO-MESSAGES
-  static async handleInventoryLowStock(alertData: InventoryAlertData): Promise<boolean> {
+  static async handleInventoryLowStock(
+    alertData: InventoryAlertData
+  ): Promise<boolean> {
     if (!this.config.enabled || !this.config.messageTypes.inventoryLow) {
       return false;
     }
@@ -274,7 +300,7 @@ export class WhatsAppAutomation {
     try {
       // Send inventory alert to manager
       const message = `🚨 *LOW STOCK ALERT*\n\nProduct: ${alertData.product_name}\nCurrent Stock: ${alertData.current_stock}\nMinimum Required: ${alertData.min_threshold}\n\nPlease reorder this item soon!`;
-      
+
       // You'll need to implement a simple message sender for non-template messages
       // For now, we'll use the special offer template as a workaround
       await WhatsAppService.sendSpecialOffer(
@@ -293,7 +319,10 @@ export class WhatsAppAutomation {
   }
 
   // CLIENT AUTO-MESSAGES
-  static async handleClientWelcome(clientName: string, clientPhone: string): Promise<boolean> {
+  static async handleClientWelcome(
+    clientName: string,
+    clientPhone: string
+  ): Promise<boolean> {
     if (!this.config.enabled || !this.config.messageTypes.clientWelcome) {
       return false;
     }
@@ -316,9 +345,9 @@ export class WhatsAppAutomation {
 
   // PAYMENT AUTO-MESSAGES
   static async handlePaymentReceived(
-    clientName: string, 
-    clientPhone: string, 
-    amount: number, 
+    clientName: string,
+    clientPhone: string,
+    amount: number,
     paymentMethod: string
   ): Promise<boolean> {
     if (!this.config.enabled || !this.config.messageTypes.paymentReceived) {
@@ -330,7 +359,7 @@ export class WhatsAppAutomation {
         style: 'currency',
         currency: 'INR',
         minimumFractionDigits: 0,
-        maximumFractionDigits: 0
+        maximumFractionDigits: 0,
       }).format(amount);
 
       await WhatsAppService.sendSpecialOffer(
@@ -350,8 +379,8 @@ export class WhatsAppAutomation {
 
   // UTILITY METHODS
   static async sendCustomMessage(
-    phoneNumber: string, 
-    clientName: string, 
+    phoneNumber: string,
+    clientName: string,
     message: string
   ): Promise<boolean> {
     try {
@@ -361,7 +390,7 @@ export class WhatsAppAutomation {
         message,
         new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
       );
-      
+
       console.log(`✅ Custom message sent to ${clientName}`);
       return true;
     } catch (error) {
@@ -371,4 +400,4 @@ export class WhatsAppAutomation {
   }
 }
 
-export default WhatsAppAutomation; 
+export default WhatsAppAutomation;

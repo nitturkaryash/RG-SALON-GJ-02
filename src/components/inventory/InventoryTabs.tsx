@@ -40,7 +40,7 @@ function TabPanel(props: TabPanelProps) {
 
   return (
     <div
-      role="tabpanel"
+      role='tabpanel'
       hidden={value !== index}
       id={`inventory-tabpanel-${index}`}
       aria-labelledby={`inventory-tab-${index}`}
@@ -65,7 +65,7 @@ const InventoryTabs: React.FC = () => {
     salesQuery,
     consumptionQuery,
     balanceStockQuery,
-    recalculateBalanceStock
+    recalculateBalanceStock,
   } = useInventory();
 
   const handleTabChange = (event: React.SyntheticEvent, newValue: string) => {
@@ -76,44 +76,52 @@ const InventoryTabs: React.FC = () => {
   return (
     <Box sx={{ width: '100%' }}>
       <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
-        <StyledTabs 
-          value={activeTab} 
-          onChange={handleTabChange} 
-          aria-label="inventory tabs"
-          variant="scrollable"
-          scrollButtons="auto"
+        <StyledTabs
+          value={activeTab}
+          onChange={handleTabChange}
+          aria-label='inventory tabs'
+          variant='scrollable'
+          scrollButtons='auto'
         >
-          <StyledTab label="Purchases" value="purchases" {...a11yProps('purchases')} />
-          <StyledTab label="Sales" value="sales" {...a11yProps('sales')} />
-          <StyledTab label="Consumption" value="consumption" {...a11yProps('consumption')} />
+          <StyledTab
+            label='Purchases'
+            value='purchases'
+            {...a11yProps('purchases')}
+          />
+          <StyledTab label='Sales' value='sales' {...a11yProps('sales')} />
+          <StyledTab
+            label='Consumption'
+            value='consumption'
+            {...a11yProps('consumption')}
+          />
           {/* <StyledTab label="Balance Stock" value="balance_stock" {...a11yProps('balance_stock')} /> */}
         </StyledTabs>
       </Box>
-      
-      <TabPanel value={activeTab} index="purchases">
+
+      <TabPanel value={activeTab} index='purchases'>
         <PurchaseTab
           purchases={purchasesQuery.data || []}
           isLoading={purchasesQuery.isLoading}
           error={purchasesQuery.error as Error}
         />
       </TabPanel>
-      
-      <TabPanel value={activeTab} index="sales">
+
+      <TabPanel value={activeTab} index='sales'>
         <SalesTab
           sales={salesQuery.data || []}
           isLoading={salesQuery.isLoading}
           error={salesQuery.error as Error}
         />
       </TabPanel>
-      
-      <TabPanel value={activeTab} index="consumption">
+
+      <TabPanel value={activeTab} index='consumption'>
         <ConsumptionTab
           consumption={consumptionQuery.data || []}
           isLoading={consumptionQuery.isLoading}
           error={consumptionQuery.error as Error}
         />
       </TabPanel>
-      
+
       {/* <TabPanel value={activeTab} index="balance_stock">
         <BalanceStockTab
           balanceStock={balanceStockQuery.data || []}
@@ -126,4 +134,4 @@ const InventoryTabs: React.FC = () => {
   );
 };
 
-export default InventoryTabs; 
+export default InventoryTabs;

@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { useTheme } from '@mui/material/styles';
-import { 
-  Box, 
-  CircularProgress, 
+import {
+  Box,
+  CircularProgress,
   Container,
   FormControl,
   Grid,
@@ -63,17 +63,31 @@ interface SalesItem {
 export default function SalesHistory() {
   const theme = useTheme();
   // Use hook for fetching and deleting sales history
-  const { salesHistory, isLoading: loading, error, fetchSalesHistory, deleteSalesEntry } = useSalesHistory();
+  const {
+    salesHistory,
+    isLoading: loading,
+    error,
+    fetchSalesHistory,
+    deleteSalesEntry,
+  } = useSalesHistory();
   const [filteredData, setFilteredData] = useState<SalesItem[]>([]);
-  const [startDate, setStartDate] = useState<Date | null>(new Date(new Date().setDate(new Date().getDate() - 30))); // Last 30 days
+  const [startDate, setStartDate] = useState<Date | null>(
+    new Date(new Date().setDate(new Date().getDate() - 30))
+  ); // Last 30 days
   const [endDate, setEndDate] = useState<Date | null>(new Date());
   const [searchTerm, setSearchTerm] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('all');
   const [productType, setProductType] = useState('all');
 
   // Calculate totals
-  const totalSales = filteredData.reduce((sum, item) => sum + Number(item.payment_amount), 0);
-  const totalTax = filteredData.reduce((sum, item) => sum + Number(item.tax), 0);
+  const totalSales = filteredData.reduce(
+    (sum, item) => sum + Number(item.payment_amount),
+    0
+  );
+  const totalTax = filteredData.reduce(
+    (sum, item) => sum + Number(item.tax),
+    0
+  );
 
   // Fetch sales history on mount
   useEffect(() => {
@@ -84,14 +98,19 @@ export default function SalesHistory() {
   // Debug log when salesHistory changes
   useEffect(() => {
     if (salesHistory.length > 0) {
-      console.log('[SalesHistory] Sales history loaded:', salesHistory.length, 'items');
+      console.log(
+        '[SalesHistory] Sales history loaded:',
+        salesHistory.length,
+        'items'
+      );
       // Log first few items to check product types
       const sampleItems = salesHistory.slice(0, 3);
-      console.log('[SalesHistory] Sample items with product types:', 
+      console.log(
+        '[SalesHistory] Sample items with product types:',
         sampleItems.map(item => ({
           product_name: item.product_name,
           product_type: item.product_type,
-          hsn_code: item.hsn_code
+          hsn_code: item.hsn_code,
         }))
       );
     }
@@ -112,25 +131,39 @@ export default function SalesHistory() {
     // Search term filter
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
-      filtered = filtered.filter(item => 
-        (item.product_name && item.product_name.toLowerCase().includes(term)) ||
-        (item.serial_no && item.serial_no.toString().toLowerCase().includes(term))
+      filtered = filtered.filter(
+        item =>
+          (item.product_name &&
+            item.product_name.toLowerCase().includes(term)) ||
+          (item.serial_no &&
+            item.serial_no.toString().toLowerCase().includes(term))
       );
     }
     // Payment method filter
     if (paymentMethod !== 'all') {
-      filtered = filtered.filter(item => 
-        item.payment_method && item.payment_method.toLowerCase() === paymentMethod.toLowerCase()
+      filtered = filtered.filter(
+        item =>
+          item.payment_method &&
+          item.payment_method.toLowerCase() === paymentMethod.toLowerCase()
       );
     }
     // Product type filter
     if (productType !== 'all') {
-      filtered = filtered.filter(item => 
-        item.product_type && item.product_type.toLowerCase() === productType.toLowerCase()
+      filtered = filtered.filter(
+        item =>
+          item.product_type &&
+          item.product_type.toLowerCase() === productType.toLowerCase()
       );
     }
     setFilteredData(filtered);
-  }, [salesHistory, startDate, endDate, searchTerm, paymentMethod, productType]);
+  }, [
+    salesHistory,
+    startDate,
+    endDate,
+    searchTerm,
+    paymentMethod,
+    productType,
+  ]);
 
   const exportToCSV = () => {
     // Headers for the CSV
@@ -159,7 +192,7 @@ export default function SalesHistory() {
       'Current CGST',
       'Current SGST',
       'Current Tax',
-      'Payment Method'
+      'Payment Method',
     ];
 
     // Convert data to CSV format
@@ -192,7 +225,7 @@ export default function SalesHistory() {
         item.c_cgst || '',
         item.c_sgst || '',
         item.c_tax || '',
-        `"${item.payment_method || ''}"`
+        `"${item.payment_method || ''}"`,
       ];
       csvRows.push(row.join(','));
     }
@@ -203,7 +236,10 @@ export default function SalesHistory() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.setAttribute('href', url);
-    link.setAttribute('download', `sales_history_${new Date().toISOString().slice(0, 10)}.csv`);
+    link.setAttribute(
+      'download',
+      `sales_history_${new Date().toISOString().slice(0, 10)}.csv`
+    );
     link.style.visibility = 'hidden';
     document.body.appendChild(link);
     link.click();
@@ -211,16 +247,18 @@ export default function SalesHistory() {
   };
 
   return (
-    <Container maxWidth="xl">
+    <Container maxWidth='xl'>
       <Paper sx={{ p: 3, mb: 3 }}>
-        <Typography variant="h5" gutterBottom>Sales History</Typography>
-        
+        <Typography variant='h5' gutterBottom>
+          Sales History
+        </Typography>
+
         <Grid container spacing={3} sx={{ mb: 3 }}>
           {/* Date filters */}
           <Grid item xs={12} sm={6} md={3}>
             <LocalizationProvider dateAdapter={AdapterDateFns}>
               <DatePicker
-                label="Start Date"
+                label='Start Date'
                 value={startDate}
                 onChange={setStartDate}
                 slotProps={{ textField: { fullWidth: true, size: 'small' } }}
@@ -230,76 +268,76 @@ export default function SalesHistory() {
           <Grid item xs={12} sm={6} md={3}>
             <LocalizationProvider dateAdapter={AdapterDateFns}>
               <DatePicker
-                label="End Date"
+                label='End Date'
                 value={endDate}
                 onChange={setEndDate}
                 slotProps={{ textField: { fullWidth: true, size: 'small' } }}
               />
             </LocalizationProvider>
           </Grid>
-          
+
           {/* Search field */}
           <Grid item xs={12} sm={6} md={3}>
             <TextField
               fullWidth
-              label="Search Products"
-              variant="outlined"
-              size="small"
+              label='Search Products'
+              variant='outlined'
+              size='small'
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={e => setSearchTerm(e.target.value)}
             />
           </Grid>
-          
+
           {/* Payment method filter */}
           <Grid item xs={12} sm={6} md={1.5}>
-            <FormControl fullWidth size="small">
+            <FormControl fullWidth size='small'>
               <InputLabel>Payment Method</InputLabel>
               <Select
                 value={paymentMethod}
-                label="Payment Method"
-                onChange={(e) => setPaymentMethod(e.target.value)}
+                label='Payment Method'
+                onChange={e => setPaymentMethod(e.target.value)}
               >
-                <MenuItem value="all">All Methods</MenuItem>
-                <MenuItem value="cash">Cash</MenuItem>
-                <MenuItem value="card">Card</MenuItem>
-                <MenuItem value="upi">UPI</MenuItem>
-                <MenuItem value="split">Split</MenuItem>
+                <MenuItem value='all'>All Methods</MenuItem>
+                <MenuItem value='cash'>Cash</MenuItem>
+                <MenuItem value='card'>Card</MenuItem>
+                <MenuItem value='upi'>UPI</MenuItem>
+                <MenuItem value='split'>Split</MenuItem>
               </Select>
             </FormControl>
           </Grid>
-          
+
           {/* Product type filter */}
           <Grid item xs={12} sm={6} md={1.5}>
-            <FormControl fullWidth size="small">
+            <FormControl fullWidth size='small'>
               <InputLabel>Product Type</InputLabel>
               <Select
                 value={productType}
-                label="Product Type"
-                onChange={(e) => setProductType(e.target.value)}
+                label='Product Type'
+                onChange={e => setProductType(e.target.value)}
               >
-                <MenuItem value="all">All Types</MenuItem>
-                <MenuItem value="product">Product</MenuItem>
-                <MenuItem value="service">Service</MenuItem>
+                <MenuItem value='all'>All Types</MenuItem>
+                <MenuItem value='product'>Product</MenuItem>
+                <MenuItem value='service'>Service</MenuItem>
               </Select>
             </FormControl>
           </Grid>
         </Grid>
-        
+
         {loading ? (
           <Box sx={{ display: 'flex', justifyContent: 'center', p: 3 }}>
             <CircularProgress />
           </Box>
         ) : (
-          <SalesHistoryTable 
-            salesData={filteredData} 
-            totalSales={totalSales} 
+          <SalesHistoryTable
+            salesData={filteredData}
+            totalSales={totalSales}
             totalTax={totalTax}
             loading={loading}
             onExportCsv={exportToCSV}
             onDeleteSale={deleteSalesEntry}
           />
         )}
-        {error && <Alert severity="error">{error}</Alert>}
+        {error && <Alert severity='error'>{error}</Alert>}
       </Paper>
     </Container>
   );

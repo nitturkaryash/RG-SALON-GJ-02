@@ -17,7 +17,7 @@ function TabPanel(props: TabPanelProps) {
 
   return (
     <div
-      role="tabpanel"
+      role='tabpanel'
       hidden={value !== index}
       id={`orders-tabpanel-${index}`}
       aria-labelledby={`orders-tab-${index}`}
@@ -42,19 +42,23 @@ const OrdersPage = () => {
         .from('pos_orders')
         .select('*')
         .order('date', { ascending: false });
-        
+
       if (error) {
         console.error('Error fetching orders from database:', error);
         // Fall back to localStorage
         getOrdersFromLocalStorage();
         return;
       }
-      
+
       if (dbOrders && dbOrders.length > 0) {
         console.log(`Fetched ${dbOrders.length} orders from database`);
-        const regularOrders = dbOrders.filter(order => order.purchase_type !== 'salon_consumption');
-        const salonConsumptionOrders = dbOrders.filter(order => order.purchase_type === 'salon_consumption');
-        
+        const regularOrders = dbOrders.filter(
+          order => order.purchase_type !== 'salon_consumption'
+        );
+        const salonConsumptionOrders = dbOrders.filter(
+          order => order.purchase_type === 'salon_consumption'
+        );
+
         setOrders(regularOrders);
         setSalonOrders(salonConsumptionOrders);
       } else {
@@ -76,18 +80,20 @@ const OrdersPage = () => {
       if (savedOrders) {
         const parsedOrders = JSON.parse(savedOrders);
         console.log(`Loaded ${parsedOrders.length} orders from localStorage`);
-        
+
         // Split into regular and salon consumption orders
-        const regularOrders = parsedOrders.filter((order: any) => 
-          order.purchase_type !== 'salon_consumption' && 
-          order.is_salon_consumption !== true
+        const regularOrders = parsedOrders.filter(
+          (order: any) =>
+            order.purchase_type !== 'salon_consumption' &&
+            order.is_salon_consumption !== true
         );
-        
-        const salonConsumptionOrders = parsedOrders.filter((order: any) => 
-          order.purchase_type === 'salon_consumption' || 
-          order.is_salon_consumption === true
+
+        const salonConsumptionOrders = parsedOrders.filter(
+          (order: any) =>
+            order.purchase_type === 'salon_consumption' ||
+            order.is_salon_consumption === true
         );
-        
+
         setOrders(regularOrders);
         setSalonOrders(salonConsumptionOrders);
       } else {
@@ -109,54 +115,54 @@ const OrdersPage = () => {
   // Fetch orders on mount
   useEffect(() => {
     fetchOrders();
-    
+
     // Listen for order-deleted events
     const handleOrderDeleted = () => {
       console.log('Order deleted, refreshing data');
       fetchOrders();
     };
-    
+
     window.addEventListener('order-deleted', handleOrderDeleted);
-    
+
     return () => {
       window.removeEventListener('order-deleted', handleOrderDeleted);
     };
   }, []);
 
   return (
-    <Container maxWidth="lg">
+    <Container maxWidth='lg'>
       <Box mt={4}>
-        <Typography variant="h4" component="h1" gutterBottom>
+        <Typography variant='h4' component='h1' gutterBottom>
           Orders
         </Typography>
         <Divider sx={{ mb: 3 }} />
-        
+
         <Tabs
           value={tabValue}
           onChange={handleTabChange}
-          indicatorColor="primary"
-          textColor="primary"
-          variant="fullWidth"
+          indicatorColor='primary'
+          textColor='primary'
+          variant='fullWidth'
         >
-          <Tab label="Customer Orders" />
-          <Tab label="Salon Consumption" />
+          <Tab label='Customer Orders' />
+          <Tab label='Salon Consumption' />
         </Tabs>
-        
+
         <TabPanel value={tabValue} index={0}>
-          <OrdersTable 
-            orders={orders} 
-            isLoading={isLoading} 
+          <OrdersTable
+            orders={orders}
+            isLoading={isLoading}
             onOrderDeleted={fetchOrders}
-            title="Customer Orders"
+            title='Customer Orders'
           />
         </TabPanel>
-        
+
         <TabPanel value={tabValue} index={1}>
-          <OrdersTable 
-            orders={salonOrders} 
-            isLoading={isLoading} 
+          <OrdersTable
+            orders={salonOrders}
+            isLoading={isLoading}
             onOrderDeleted={fetchOrders}
-            title="Salon Consumption Orders"
+            title='Salon Consumption Orders'
           />
         </TabPanel>
       </Box>
@@ -164,4 +170,4 @@ const OrdersPage = () => {
   );
 };
 
-export default OrdersPage; 
+export default OrdersPage;

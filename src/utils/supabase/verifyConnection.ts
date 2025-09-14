@@ -11,27 +11,28 @@ const initializeSupabase = async () => {
   try {
     // Dynamic import to avoid circular dependencies
     const module = await import('./supabaseClient');
-    
+
     // Get the exported values
     supabase = module.supabase;
     TABLES = module.TABLES;
     connectionStatus = module.connectionStatus;
     connectionError = module.connectionError;
-    
+
     return {
       supabase,
       TABLES,
       connectionStatus,
-      connectionError
+      connectionError,
     };
   } catch (e) {
     console.error('Error initializing Supabase connection:', e);
-    connectionError = e instanceof Error ? e : new Error('Unknown initialization error');
+    connectionError =
+      e instanceof Error ? e : new Error('Unknown initialization error');
     return {
       supabase: null,
       TABLES: {},
       connectionStatus: 'initialization-error',
-      connectionError
+      connectionError,
     };
   }
 };
@@ -56,17 +57,18 @@ export const verifySupabaseConnection = async (): Promise<{
   diagnostics?: any;
 }> => {
   // Initialize the Supabase client and get other exports
-  const { supabase, TABLES, connectionStatus, connectionError } = await initializeSupabase();
-  
+  const { supabase, TABLES, connectionStatus, connectionError } =
+    await initializeSupabase();
+
   if (!supabase) {
     return {
       connected: false,
       tables: {},
       error: 'Failed to initialize Supabase client',
-      diagnostics: { connectionStatus, connectionError }
+      diagnostics: { connectionStatus, connectionError },
     };
   }
-  
+
   // Prepare diagnostics information
   const diagnostics = {
     connectionStatus,
@@ -74,15 +76,18 @@ export const verifySupabaseConnection = async (): Promise<{
     jwToken: {
       provided: !!import.meta.env.VITE_SUPABASE_ANON_KEY,
       length: import.meta.env.VITE_SUPABASE_ANON_KEY?.length || 0,
-      format: import.meta.env.VITE_SUPABASE_ANON_KEY?.split('.').length === 3 ? 'valid' : 'invalid',
-      parts: import.meta.env.VITE_SUPABASE_ANON_KEY?.split('.').length || 0
+      format:
+        import.meta.env.VITE_SUPABASE_ANON_KEY?.split('.').length === 3
+          ? 'valid'
+          : 'invalid',
+      parts: import.meta.env.VITE_SUPABASE_ANON_KEY?.split('.').length || 0,
     },
     databaseUrl: {
       provided: !!import.meta.env.VITE_SUPABASE_URL,
-      value: import.meta.env.VITE_SUPABASE_URL || ''
+      value: import.meta.env.VITE_SUPABASE_URL || '',
     },
     timestamp: new Date().toISOString(),
-    attempts: [] as any[]
+    attempts: [] as any[],
   };
 
   try {
@@ -94,20 +99,22 @@ export const verifySupabaseConnection = async (): Promise<{
       type: 'simple_query',
       table: salesTable,
       duration: Date.now() - simpleCheckStart,
-      result: firstAttempt
+      result: firstAttempt,
     });
 
     // If we have a JWT error, return immediately with diagnostic info
     const errorMsg = (firstAttempt.error as ErrorWithMessage)?.message || '';
-    if (firstAttempt.error && 
-        (errorMsg.includes('JWT') || 
-         errorMsg.includes('JWS') ||
-         errorMsg.includes('CompactDecodeError'))) {
+    if (
+      firstAttempt.error &&
+      (errorMsg.includes('JWT') ||
+        errorMsg.includes('JWS') ||
+        errorMsg.includes('CompactDecodeError'))
+    ) {
       return {
         connected: false,
         tables: {},
         error: `Failed to connect to Supabase: ${errorMsg}`,
-        diagnostics
+        diagnostics,
       };
     }
 
@@ -121,44 +128,45 @@ export const verifySupabaseConnection = async (): Promise<{
         connected: false,
         tables: {},
         error: `Failed to connect to Supabase: ${errorMsg}`,
-        diagnostics
+        diagnostics,
       };
     }
-    
+
     // Check if all required tables exist
     const tablesResult: Record<string, boolean> = {};
-    
+
     // Get all table names from the TABLES object
     const tableNames = Object.values(TABLES);
-    
+
     // Check each table
     for (const tableName of tableNames) {
       try {
         const { data, error, count } = await supabase
           .from(tableName)
           .select('*', { count: 'exact', head: true });
-          
+
         tablesResult[tableName] = !error;
       } catch (err) {
         tablesResult[tableName] = false;
       }
     }
-    
+
     return {
       connected: true,
       tables: tablesResult,
-      diagnostics
+      diagnostics,
     };
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorMessage =
+      error instanceof Error ? error.message : 'Unknown error';
     return {
       connected: false,
       tables: {},
       error: errorMessage,
       diagnostics: {
         ...diagnostics,
-        finalError: error
-      }
+        finalError: error,
+      },
     };
   }
 };
@@ -171,9 +179,9 @@ async function runDiagnosticQuery(tableName: string, supabaseClient: any) {
     const { data, error, count } = await supabaseClient
       .from(tableName)
       .select('*', { count: 'exact', head: true });
-      
+
     return { data, error, count };
   } catch (err) {
     return { data: null, error: err, count: 0 };
   }
-} 
+}

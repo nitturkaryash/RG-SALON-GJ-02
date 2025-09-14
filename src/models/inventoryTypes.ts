@@ -225,7 +225,7 @@ export enum InventoryFilterType {
   All = 'all',
   InStock = 'in-stock',
   LowStock = 'low-stock',
-  OutOfStock = 'out-of-stock'
+  OutOfStock = 'out-of-stock',
 }
 
 // Order types for inventory display
@@ -235,7 +235,7 @@ export enum InventoryOrderType {
   PriceAsc = 'price-asc',
   PriceDesc = 'price-desc',
   StockAsc = 'stock-asc',
-  StockDesc = 'stock-desc'
+  StockDesc = 'stock-desc',
 }
 
 // Calculate profit for a product
@@ -247,4 +247,4 @@ export const calculateProfit = (price: number, cost: number): number => {
 export const calculateProfitMargin = (price: number, cost: number): number => {
   if (price <= 0) return 0;
   return parseFloat((((price - cost) / price) * 100).toFixed(2));
-}; 
+};

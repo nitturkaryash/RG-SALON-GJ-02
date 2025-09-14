@@ -18,7 +18,8 @@ const RegisterContainer = styled(Paper)(({ theme }) => ({
     left: 0,
     right: 0,
     bottom: 0,
-    background: 'radial-gradient(circle at top right, rgba(255, 215, 0, 0.1), transparent 70%)',
+    background:
+      'radial-gradient(circle at top right, rgba(255, 215, 0, 0.1), transparent 70%)',
     pointerEvents: 'none',
   },
 }));
@@ -58,28 +59,28 @@ export default function Register() {
         padding: theme.spacing(3),
       }}
     >
-      <Container maxWidth="sm">
+      <Container maxWidth='sm'>
         <Box>
           <LogoBox>
             <ContentCut />
           </LogoBox>
-          
+
           <RegisterContainer>
             <Box sx={{ textAlign: 'center', mb: 3 }}>
-              <Typography 
-                variant="h4" 
-                sx={{ 
-                  color: '#FFD700', 
-                  fontWeight: 'bold', 
+              <Typography
+                variant='h4'
+                sx={{
+                  color: '#FFD700',
+                  fontWeight: 'bold',
                   mb: 1,
                   textShadow: '0 0 20px rgba(255, 215, 0, 0.3)',
                 }}
               >
                 Create Account
               </Typography>
-              <Typography 
-                variant="h6" 
-                sx={{ 
+              <Typography
+                variant='h6'
+                sx={{
                   color: 'rgba(255, 255, 255, 0.9)',
                   mb: 2,
                   fontWeight: 500,
@@ -87,9 +88,9 @@ export default function Register() {
               >
                 R&G Salon Management
               </Typography>
-              <Typography 
-                variant="body1" 
-                sx={{ 
+              <Typography
+                variant='body1'
+                sx={{
                   color: 'rgba(255, 255, 255, 0.7)',
                   maxWidth: '400px',
                   margin: '0 auto',
@@ -98,10 +99,10 @@ export default function Register() {
               >
                 To create a new account, please contact our administrators:
               </Typography>
-              <Typography 
-                variant="body1" 
-                component="div"
-                sx={{ 
+              <Typography
+                variant='body1'
+                component='div'
+                sx={{
                   color: '#FFD700',
                   mb: 2,
                   '& a': {
@@ -113,26 +114,30 @@ export default function Register() {
                   },
                 }}
               >
-                <a href="mailto:nitturkaryash@gmail.com">nitturkaryash@gmail.com</a>
+                <a href='mailto:nitturkaryash@gmail.com'>
+                  nitturkaryash@gmail.com
+                </a>
                 <br />
-                <a href="mailto:pankajhadole4@gmail.com">pankajhadole4@gmail.com</a>
+                <a href='mailto:pankajhadole4@gmail.com'>
+                  pankajhadole4@gmail.com
+                </a>
               </Typography>
             </Box>
 
             <Box sx={{ textAlign: 'center', mt: 2 }}>
-              <Typography 
-                variant="body2" 
-                sx={{ 
+              <Typography
+                variant='body2'
+                sx={{
                   color: 'rgba(255, 255, 255, 0.7)',
                 }}
               >
                 Already have an account?{' '}
-                <Link 
-                  to="/login" 
-                  style={{ 
+                <Link
+                  to='/login'
+                  style={{
                     color: '#FFD700',
                     textDecoration: 'none',
-                    fontWeight: 'bold'
+                    fontWeight: 'bold',
                   }}
                 >
                   Sign In
@@ -144,4 +149,4 @@ export default function Register() {
       </Container>
     </Box>
   );
-} 
+}

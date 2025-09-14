@@ -8,8 +8,11 @@
  * @param gstPercentage GST percentage (e.g., 18 for 18%)
  * @returns Price excluding GST
  */
-export const calculatePriceExcludingGST = (priceInclGst: number, gstPercentage: number): number => {
-  const price = priceInclGst / (1 + (gstPercentage / 100));
+export const calculatePriceExcludingGST = (
+  priceInclGst: number,
+  gstPercentage: number
+): number => {
+  const price = priceInclGst / (1 + gstPercentage / 100);
   return parseFloat(price.toFixed(2));
 };
 
@@ -19,8 +22,11 @@ export const calculatePriceExcludingGST = (priceInclGst: number, gstPercentage: 
  * @param gstPercentage GST percentage (e.g., 18 for 18%)
  * @returns Price including GST
  */
-export const calculatePriceIncludingGST = (priceExclGst: number, gstPercentage: number): number => {
-  const price = priceExclGst * (1 + (gstPercentage / 100));
+export const calculatePriceIncludingGST = (
+  priceExclGst: number,
+  gstPercentage: number
+): number => {
+  const price = priceExclGst * (1 + gstPercentage / 100);
   return parseFloat(price.toFixed(2));
 };
 
@@ -30,7 +36,10 @@ export const calculatePriceIncludingGST = (priceExclGst: number, gstPercentage: 
  * @param gstPercentage GST percentage (e.g., 18 for 18%)
  * @returns GST amount
  */
-export const calculateGSTAmount = (priceInclGst: number, gstPercentage: number): number => {
+export const calculateGSTAmount = (
+  priceInclGst: number,
+  gstPercentage: number
+): number => {
   const priceExclGst = calculatePriceExcludingGST(priceInclGst, gstPercentage);
   const gstAmount = priceInclGst - priceExclGst;
   return parseFloat(gstAmount.toFixed(2));
@@ -42,13 +51,16 @@ export const calculateGSTAmount = (priceInclGst: number, gstPercentage: number):
  * @param gstPercentage GST percentage (e.g., 18 for 18%)
  * @returns Object containing CGST and SGST amounts
  */
-export const calculateCGSTSGST = (priceInclGst: number, gstPercentage: number): { cgst: number; sgst: number } => {
+export const calculateCGSTSGST = (
+  priceInclGst: number,
+  gstPercentage: number
+): { cgst: number; sgst: number } => {
   const totalGST = calculateGSTAmount(priceInclGst, gstPercentage);
   // Split GST equally into CGST and SGST
   const halfGST = totalGST / 2;
   return {
     cgst: parseFloat(halfGST.toFixed(2)),
-    sgst: parseFloat(halfGST.toFixed(2))
+    sgst: parseFloat(halfGST.toFixed(2)),
   };
 };
 
@@ -58,17 +70,20 @@ export const calculateCGSTSGST = (priceInclGst: number, gstPercentage: number): 
  * @param gstPercentage GST percentage (e.g., 18 for 18%)
  * @returns Complete price breakdown
  */
-export const calculatePriceBreakdown = (priceInclGst: number, gstPercentage: number) => {
+export const calculatePriceBreakdown = (
+  priceInclGst: number,
+  gstPercentage: number
+) => {
   const priceExclGst = calculatePriceExcludingGST(priceInclGst, gstPercentage);
   const gstAmount = calculateGSTAmount(priceInclGst, gstPercentage);
   const { cgst, sgst } = calculateCGSTSGST(priceInclGst, gstPercentage);
-  
+
   return {
     priceInclGst,
     priceExclGst,
     gstAmount,
     gstPercentage,
     cgst,
-    sgst
+    sgst,
   };
-}; 
+};

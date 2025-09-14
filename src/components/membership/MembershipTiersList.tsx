@@ -1,5 +1,12 @@
 import React, { useState } from 'react';
-import { Grid, Box, Button, Typography, Alert, CircularProgress } from '@mui/material';
+import {
+  Grid,
+  Box,
+  Button,
+  Typography,
+  Alert,
+  CircularProgress,
+} from '@mui/material';
 import { Add as AddIcon } from '@mui/icons-material';
 import MembershipTierCard from './MembershipTierCard';
 import AddMembershipTierForm from './AddMembershipTierForm';
@@ -7,11 +14,16 @@ import { MembershipTier } from '../../types/membershipTier';
 import { useMembershipTiers } from '../../hooks/useMembershipTiers';
 
 const MembershipTiersList: React.FC = () => {
-  const { tiers, isLoading, createTier, updateTier, deleteTier } = useMembershipTiers();
-  
+  const { tiers, isLoading, createTier, updateTier, deleteTier } =
+    useMembershipTiers();
+
   const [isFormOpen, setIsFormOpen] = useState(false);
-  const [editingTier, setEditingTier] = useState<MembershipTier | undefined>(undefined);
-  const [viewingTier, setViewingTier] = useState<MembershipTier | undefined>(undefined);
+  const [editingTier, setEditingTier] = useState<MembershipTier | undefined>(
+    undefined
+  );
+  const [viewingTier, setViewingTier] = useState<MembershipTier | undefined>(
+    undefined
+  );
 
   const handleOpenForm = () => {
     setEditingTier(undefined);
@@ -34,7 +46,9 @@ const MembershipTiersList: React.FC = () => {
     console.log('Viewing tier details:', tier);
   };
 
-  const handleFormSubmit = (tierData: Omit<MembershipTier, 'id'> | MembershipTier) => {
+  const handleFormSubmit = (
+    tierData: Omit<MembershipTier, 'id'> | MembershipTier
+  ) => {
     if ('id' in tierData && editingTier) {
       // Update existing tier
       updateTier(tierData.id, tierData);
@@ -47,7 +61,12 @@ const MembershipTiersList: React.FC = () => {
 
   if (isLoading) {
     return (
-      <Box display="flex" justifyContent="center" alignItems="center" height="50vh">
+      <Box
+        display='flex'
+        justifyContent='center'
+        alignItems='center'
+        height='50vh'
+      >
         <CircularProgress />
       </Box>
     );
@@ -55,29 +74,34 @@ const MembershipTiersList: React.FC = () => {
 
   return (
     <>
-      <Box display="flex" justifyContent="space-between" alignItems="center" mb={4}>
-        <Typography 
-          variant="h1" 
-          component="h1" 
-          sx={{ 
-            fontSize: '2.5rem', 
-            fontWeight: 'bold', 
-            color: 'rgb(94, 129, 34)'
+      <Box
+        display='flex'
+        justifyContent='space-between'
+        alignItems='center'
+        mb={4}
+      >
+        <Typography
+          variant='h1'
+          component='h1'
+          sx={{
+            fontSize: '2.5rem',
+            fontWeight: 'bold',
+            color: 'rgb(94, 129, 34)',
           }}
         >
           Membership Tiers
         </Typography>
         <Button
-          variant="contained"
-          color="primary"
+          variant='contained'
+          color='primary'
           startIcon={<AddIcon />}
           onClick={handleOpenForm}
           sx={{
             bgcolor: 'rgb(94, 129, 34)',
             borderRadius: '20px',
             '&:hover': {
-              bgcolor: 'rgb(75, 103, 27)'
-            }
+              bgcolor: 'rgb(75, 103, 27)',
+            },
           }}
         >
           Add New Tier
@@ -85,17 +109,17 @@ const MembershipTiersList: React.FC = () => {
       </Box>
 
       {tiers.length === 0 ? (
-        <Alert severity="info" sx={{ mb: 4 }}>
+        <Alert severity='info' sx={{ mb: 4 }}>
           No membership tiers found. Create your first tier to get started.
         </Alert>
       ) : (
-        <Box 
-          sx={{ 
-            display: 'flex', 
-            flexWrap: 'wrap', 
-            gap: 3, 
+        <Box
+          sx={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: 3,
             justifyContent: 'flex-start',
-            alignItems: 'flex-start'
+            alignItems: 'flex-start',
           }}
         >
           {tiers.map(tier => (
@@ -106,8 +130,8 @@ const MembershipTiersList: React.FC = () => {
               onDelete={deleteTier}
               onViewDetails={handleViewDetails}
             />
-                      ))}
-          </Box>
+          ))}
+        </Box>
       )}
 
       <AddMembershipTierForm
@@ -121,4 +145,4 @@ const MembershipTiersList: React.FC = () => {
   );
 };
 
-export default MembershipTiersList; 
+export default MembershipTiersList;

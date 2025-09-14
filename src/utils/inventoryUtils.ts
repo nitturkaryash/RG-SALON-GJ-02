@@ -1,15 +1,19 @@
 import { supabase, handleSupabaseError } from './supabase/supabaseClient';
 import { TABLES } from './supabase/supabaseClient'; // Import TABLES constant
-import { Product } from '../hooks/useProducts'; // Import Product type if needed elsewhere
-import { PurchaseTransaction } from '../hooks/usePurchaseHistory'; // Assuming this defines the structure accurately
+import { Product } from '../hooks/products/useProducts'; // Import Product type if needed elsewhere
+import { PurchaseTransaction } from '../hooks/inventory/usePurchaseHistory'; // Assuming this defines the structure accurately
 import { v4 as uuidv4 } from 'uuid';
+import { handlePurchaseDeletion } from './stockRecalculation';
 
 // Type for the input data expected from the form
 // Adapt this based on the actual formData structure in Products.tsx
-export type PurchaseFormData = Omit<PurchaseTransaction, 'purchase_id' | 'created_at' | 'updated_at'> & {
+export type PurchaseFormData = Omit<
+  PurchaseTransaction,
+  'purchase_id' | 'created_at' | 'updated_at'
+> & {
   // Include any fields from the form that might not be directly in PurchaseTransaction
   id?: string; // Added to support editing existing purchases
-  unit_type?: string; 
+  unit_type?: string;
   invoice_number?: string;
   purchase_cost_taxable_value?: number;
   purchase_invoice_value?: number;
@@ -27,7 +31,9 @@ export type PurchaseFormData = Omit<PurchaseTransaction, 'purchase_id' | 'create
  * @param purchaseData - The data for the new purchase transaction from the form.
  * @returns {Promise<{success: boolean, error?: any}>}
  */
-export const addPurchaseTransaction = async (purchaseData: PurchaseFormData) => {
+export const addPurchaseTransaction = async (
+  purchaseData: PurchaseFormData
+) => {
   try {
     // This function should only handle adding NEW purchases.
     // Editing is handled by editPurchaseTransaction. The routing logic is handled
@@ -42,29 +48,36 @@ export const addPurchaseTransaction = async (purchaseData: PurchaseFormData) => 
     const timestamp = new Date().toISOString();
     let productId: string;
 
-    console.log(`Adding new purchase transaction for product: ${purchaseData.product_name}`);
+    console.log(
+      `Adding new purchase transaction for product: ${purchaseData.product_name}`
+    );
 
     // --- Step 1: Find or create the product ---
     const { data: existingProduct, error: fetchProductError } = await supabase
       .from('product_master')
-      .select('id, stock_quantity, name, hsn_code, units, gst_percentage, mrp_incl_gst, mrp_excl_gst')
+      .select(
+        'id, stock_quantity, name, hsn_code, units, gst_percentage, mrp_incl_gst, mrp_excl_gst'
+      )
       .eq('name', purchaseData.product_name)
       .maybeSingle();
 
     if (fetchProductError) {
-      console.error("Error fetching product:", fetchProductError);
+      console.error('Error fetching product:', fetchProductError);
       throw new Error(`Failed to find product: ${fetchProductError.message}`);
     }
 
     if (!existingProduct) {
       // Product doesn't exist, create it first
-      console.log(`Product '${purchaseData.product_name}' not found. Creating new product...`);
-      
+      console.log(
+        `Product '${purchaseData.product_name}' not found. Creating new product...`
+      );
+
       const gstPercentage = purchaseData.gst_percentage || 18;
       const mrpInclGst = purchaseData.mrp_incl_gst || 0;
-      const mrpExclGst = purchaseData.mrp_per_unit_excl_gst || 
-        (mrpInclGst / (1 + (gstPercentage / 100)));
-      
+      const mrpExclGst =
+        purchaseData.mrp_per_unit_excl_gst ||
+        mrpInclGst / (1 + gstPercentage / 100);
+
       const newProduct = {
         name: purchaseData.product_name,
         hsn_code: purchaseData.hsn_code || '',
@@ -77,115 +90,151 @@ export const addPurchaseTransaction = async (purchaseData: PurchaseFormData) => 
         active: true,
         created_at: timestamp,
         updated_at: timestamp,
-        category: 'Auto-created'
+        category: 'Auto-created',
       };
-      
+
       const { data: newProductData, error: createProductError } = await supabase
         .from('product_master')
         .insert(newProduct)
         .select('id')
         .single();
-        
+
       if (createProductError) {
-        console.error("Error creating product:", createProductError);
-        throw new Error(`Failed to create product: ${createProductError.message}`);
+        console.error('Error creating product:', createProductError);
+        throw new Error(
+          `Failed to create product: ${createProductError.message}`
+        );
       }
       productId = newProductData.id;
       console.log(`Created new product with ID: ${productId}`);
     } else {
       productId = existingProduct.id;
-      console.log(`Found existing product with ID: ${productId}, current stock: ${existingProduct.stock_quantity}`);
+      console.log(
+        `Found existing product with ID: ${productId}, current stock: ${existingProduct.stock_quantity}`
+      );
     }
 
     const currentProductStock = existingProduct?.stock_quantity || 0;
     const quantityChange = purchaseData.purchase_qty || 0;
     const newOverallProductStock = currentProductStock + quantityChange;
-    console.log(`New purchase. Quantity change: ${quantityChange}, New overall stock: ${newOverallProductStock}`);
+    console.log(
+      `New purchase. Quantity change: ${quantityChange}, New overall stock: ${newOverallProductStock}`
+    );
 
     // --- Step 3: Prepare data for purchase_history_with_stock table ---
     // Calculate derived values
-    const basePrice = purchaseData.mrp_excl_gst || purchaseData.mrp_per_unit_excl_gst || 0;
+    const basePrice =
+      purchaseData.mrp_excl_gst || purchaseData.mrp_per_unit_excl_gst || 0;
     const gstPercentage = purchaseData.gst_percentage || 18;
-    const discountPercentage = purchaseData.discount_on_purchase_percentage || 0;
-    
+    const discountPercentage =
+      purchaseData.discount_on_purchase_percentage || 0;
+
     // Calculate purchase cost per unit after discount
-    const purchaseCostPerUnit = basePrice * (1 - (discountPercentage / 100));
-    
+    const purchaseCostPerUnit = basePrice * (1 - discountPercentage / 100);
+
     // Calculate taxable value
     const calculatedTaxableValue = purchaseCostPerUnit * quantityChange;
-    
+
     // Calculate GST amounts
     const gstAmount = (calculatedTaxableValue * gstPercentage) / 100;
     const cgstAmount = gstAmount / 2;
     const sgstAmount = gstAmount / 2;
     const igstAmount = purchaseData.is_interstate ? gstAmount : 0;
-    
+
     // Calculate final invoice value
     const calculatedInvoiceValue = calculatedTaxableValue + gstAmount;
 
     const purchaseRecord: Record<string, any> = {
-      purchase_id: uuidv4(), 
+      purchase_id: uuidv4(),
       date: purchaseData.date || timestamp,
       product_id: productId,
       product_name: purchaseData.product_name,
       hsn_code: purchaseData.hsn_code || null,
       units: purchaseData.unit_type || purchaseData.units || null,
-      purchase_invoice_number: purchaseData.invoice_number || purchaseData.purchase_invoice_number || 'N/A',
+      purchase_invoice_number:
+        purchaseData.invoice_number ||
+        purchaseData.purchase_invoice_number ||
+        'N/A',
       purchase_qty: quantityChange,
       mrp_incl_gst: purchaseData.mrp_incl_gst || 0,
       mrp_excl_gst: basePrice,
       discount_on_purchase_percentage: discountPercentage,
       gst_percentage: gstPercentage,
-      purchase_taxable_value: purchaseData.purchase_cost_taxable_value || calculatedTaxableValue,
+      purchase_taxable_value:
+        purchaseData.purchase_cost_taxable_value || calculatedTaxableValue,
       purchase_igst: purchaseData.is_interstate ? igstAmount : 0,
       purchase_cgst: purchaseData.is_interstate ? 0 : cgstAmount,
       purchase_sgst: purchaseData.is_interstate ? 0 : sgstAmount,
-      purchase_invoice_value_rs: purchaseData.purchase_invoice_value || calculatedInvoiceValue,
+      purchase_invoice_value_rs:
+        purchaseData.purchase_invoice_value || calculatedInvoiceValue,
       supplier: purchaseData.vendor || null,
       current_stock_at_purchase: newOverallProductStock,
-      computed_stock_taxable_value: newOverallProductStock * purchaseCostPerUnit,
-      computed_stock_igst: newOverallProductStock * (purchaseData.is_interstate ? igstAmount / quantityChange : 0),
-      computed_stock_cgst: newOverallProductStock * (purchaseData.is_interstate ? 0 : cgstAmount / quantityChange),
-      computed_stock_sgst: newOverallProductStock * (purchaseData.is_interstate ? 0 : sgstAmount / quantityChange),
-      computed_stock_total_value: newOverallProductStock * (purchaseCostPerUnit + (gstAmount / quantityChange)),
-      "Purchase_Cost/Unit(Ex.GST)": purchaseCostPerUnit,
+      computed_stock_taxable_value:
+        newOverallProductStock * purchaseCostPerUnit,
+      computed_stock_igst:
+        newOverallProductStock *
+        (purchaseData.is_interstate ? igstAmount / quantityChange : 0),
+      computed_stock_cgst:
+        newOverallProductStock *
+        (purchaseData.is_interstate ? 0 : cgstAmount / quantityChange),
+      computed_stock_sgst:
+        newOverallProductStock *
+        (purchaseData.is_interstate ? 0 : sgstAmount / quantityChange),
+      computed_stock_total_value:
+        newOverallProductStock *
+        (purchaseCostPerUnit + gstAmount / quantityChange),
+      'Purchase_Cost/Unit(Ex.GST)': purchaseCostPerUnit,
       price_inlcuding_disc: purchaseCostPerUnit,
       transaction_type: 'purchase',
       created_at: timestamp,
-      updated_at: timestamp
+      updated_at: timestamp,
     };
-    
+
     // --- Step 4: Persist the purchase record ---
     const { error: purchaseInsertError } = await supabase
-        .from('purchase_history_with_stock')
-        .insert(purchaseRecord);
+      .from('purchase_history_with_stock')
+      .insert(purchaseRecord);
     if (purchaseInsertError) {
-        console.error("Error inserting purchase record:", purchaseInsertError);
-        throw new Error(`Failed to record purchase: ${purchaseInsertError.message || purchaseInsertError.details || JSON.stringify(purchaseInsertError)}`);
+      console.error('Error inserting purchase record:', purchaseInsertError);
+      throw new Error(
+        `Failed to record purchase: ${purchaseInsertError.message || purchaseInsertError.details || JSON.stringify(purchaseInsertError)}`
+      );
     }
-    console.log("New purchase record inserted successfully with ID:", purchaseRecord.purchase_id);
-
+    console.log(
+      'New purchase record inserted successfully with ID:',
+      purchaseRecord.purchase_id
+    );
 
     // --- Step 5: Update product's total stock quantity ---
-    if (newOverallProductStock !== currentProductStock || !existingProduct?.stock_quantity) {
-        console.log(`Updating product stock for ID ${productId} from ${currentProductStock} to ${newOverallProductStock}`);
-        const { error: stockUpdateError } = await supabase
-          .from('product_master')
-          .update({ 
-              stock_quantity: newOverallProductStock,
-              updated_at: timestamp
-          })
-          .eq('id', productId);
+    if (
+      newOverallProductStock !== currentProductStock ||
+      !existingProduct?.stock_quantity
+    ) {
+      console.log(
+        `Updating product stock for ID ${productId} from ${currentProductStock} to ${newOverallProductStock}`
+      );
+      const { error: stockUpdateError } = await supabase
+        .from('product_master')
+        .update({
+          stock_quantity: newOverallProductStock,
+          updated_at: timestamp,
+        })
+        .eq('id', productId);
 
-        if (stockUpdateError) {
-            console.error("Error updating product stock:", stockUpdateError);
-            throw new Error(`Failed to update product stock: ${stockUpdateError.message}`);
-        }
-        console.log(`Product stock updated to: ${newOverallProductStock} for product ID: ${productId}`);
+      if (stockUpdateError) {
+        console.error('Error updating product stock:', stockUpdateError);
+        throw new Error(
+          `Failed to update product stock: ${stockUpdateError.message}`
+        );
+      }
+      console.log(
+        `Product stock updated to: ${newOverallProductStock} for product ID: ${productId}`
+      );
     } else {
-        console.log(`Product stock for ID ${productId} is already ${newOverallProductStock}. No update needed.`);
+      console.log(
+        `Product stock for ID ${productId} is already ${newOverallProductStock}. No update needed.`
+      );
     }
-
 
     // --- Step 6: Record the transaction in stock_history ---
     const stockHistoryRecord = {
@@ -195,7 +244,7 @@ export const addPurchaseTransaction = async (purchaseData: PurchaseFormData) => 
       units: purchaseData.unit_type || purchaseData.units || 'pcs',
       date: purchaseData.date || timestamp,
       // previous_qty for stock_history is the product's stock before this transaction's effect.
-      previous_qty: currentProductStock, 
+      previous_qty: currentProductStock,
       current_qty: currentProductStock,
       change_qty: quantityChange, // For new purchase, this is always positive
       stock_after: newOverallProductStock,
@@ -205,34 +254,45 @@ export const addPurchaseTransaction = async (purchaseData: PurchaseFormData) => 
       created_at: timestamp,
     };
 
-    console.log('Attempting to insert stock history record:', stockHistoryRecord);
+    console.log(
+      'Attempting to insert stock history record:',
+      stockHistoryRecord
+    );
     const { error: historyInsertError } = await supabase
       .from('stock_history')
       .insert(stockHistoryRecord);
 
     if (historyInsertError) {
-      console.error("Error inserting into stock_history:", historyInsertError);
-      throw new Error(`Failed to record stock history: ${historyInsertError.message}`);
+      console.error('Error inserting into stock_history:', historyInsertError);
+      throw new Error(
+        `Failed to record stock history: ${historyInsertError.message}`
+      );
     }
-    console.log(`Successfully recorded stock history for product ID: ${productId}, change: ${quantityChange}`);
-    
-    // Return the created purchase record
-    const resultData = { ...purchaseData, purchase_id: purchaseRecord.purchase_id, stock_after_purchase: newOverallProductStock };
+    console.log(
+      `Successfully recorded stock history for product ID: ${productId}, change: ${quantityChange}`
+    );
 
-    return { 
-      success: true,
-      message: existingProduct 
-        ? 'Purchase added successfully.' 
-        : 'New product created and purchase added successfully.',
-      data: resultData
+    // Return the created purchase record
+    const resultData = {
+      ...purchaseData,
+      purchase_id: purchaseRecord.purchase_id,
+      stock_after_purchase: newOverallProductStock,
     };
 
+    return {
+      success: true,
+      message: existingProduct
+        ? 'Purchase added successfully.'
+        : 'New product created and purchase added successfully.',
+      data: resultData,
+    };
   } catch (error) {
     console.error('Error in addPurchaseTransaction:', error);
-    
+
     // Provide more detailed error information
-    let errorMessage = 'An unknown error occurred during the purchase transaction.';
-    
+    let errorMessage =
+      'An unknown error occurred during the purchase transaction.';
+
     if (error instanceof Error) {
       errorMessage = error.message;
     } else if (typeof error === 'object' && error !== null) {
@@ -248,16 +308,20 @@ export const addPurchaseTransaction = async (purchaseData: PurchaseFormData) => 
         errorMessage = JSON.stringify(error);
       }
     }
-    
-    return { 
-        success: false, 
-        error: new Error(errorMessage)
+
+    return {
+      success: false,
+      error: new Error(errorMessage),
     };
   }
-}; 
+};
 
 // Function to update product stock
-export const updateProductStock = async (productId: string, quantity: number, transactionType: string = 'opening_balance') => {
+export const updateProductStock = async (
+  productId: string,
+  quantity: number,
+  transactionType: string = 'opening_balance'
+) => {
   try {
     // Get product details first
     const { data: product, error: productError } = await supabase
@@ -280,13 +344,15 @@ export const updateProductStock = async (productId: string, quantity: number, tr
       .limit(1)
       .single();
 
-    if (stockError && stockError.code !== 'PGRST116') { // Ignore "no rows returned" error
+    if (stockError && stockError.code !== 'PGRST116') {
+      // Ignore "no rows returned" error
       console.error('Error fetching current stock:', stockError);
       throw stockError;
     }
 
     // Use either the latest stock from history or the product's stock_quantity
-    const currentStock = latestStock?.current_stock_at_purchase ?? product.stock_quantity ?? 0;
+    const currentStock =
+      latestStock?.current_stock_at_purchase ?? product.stock_quantity ?? 0;
     const newStock = Math.max(0, currentStock + quantity); // Add for purchase, subtract for sales
 
     // Calculate GST values
@@ -325,7 +391,7 @@ export const updateProductStock = async (productId: string, quantity: number, tr
       updated_at: new Date().toISOString(),
       'Purchase_Cost/Unit(Ex.GST)': priceExclGst,
       price_inlcuding_disc: priceExclGst,
-      transaction_type: transactionType
+      transaction_type: transactionType,
     };
 
     // Start a transaction to update both tables
@@ -341,9 +407,9 @@ export const updateProductStock = async (productId: string, quantity: number, tr
     // Update the products table stock
     const { error: updateError } = await supabase
       .from('product_master')
-      .update({ 
+      .update({
         stock_quantity: newStock,
-        updated_at: new Date().toISOString()
+        updated_at: new Date().toISOString(),
       })
       .eq('id', productId);
 
@@ -355,16 +421,16 @@ export const updateProductStock = async (productId: string, quantity: number, tr
     return {
       success: true,
       newStock,
-      message: 'Stock updated successfully'
+      message: 'Stock updated successfully',
     };
   } catch (error) {
     console.error('Error in updateProductStock:', error);
     return {
       success: false,
-      error: error instanceof Error ? error.message : String(error)
+      error: error instanceof Error ? error.message : String(error),
     };
   }
-}; 
+};
 
 /**
  * A comprehensive function to edit an existing purchase transaction.
@@ -380,7 +446,10 @@ export const updateProductStock = async (productId: string, quantity: number, tr
  * @param updatedData The new data for the purchase from the form.
  * @returns {Promise<{success: boolean, error?: any}>}
  */
-export const editPurchaseTransaction = async (purchaseId: string, updatedData: PurchaseFormData) => {
+export const editPurchaseTransaction = async (
+  purchaseId: string,
+  updatedData: PurchaseFormData
+) => {
   const transactionTimestamp = new Date().toISOString();
 
   try {
@@ -394,12 +463,18 @@ export const editPurchaseTransaction = async (purchaseId: string, updatedData: P
     if (fetchError) {
       // Log the specific error but throw a more user-friendly message
       console.error('Error fetching original purchase:', fetchError);
-      throw new Error(`A database error occurred while fetching purchase ID ${purchaseId}. Details: ${fetchError.message}`);
+      throw new Error(
+        `A database error occurred while fetching purchase ID ${purchaseId}. Details: ${fetchError.message}`
+      );
     }
 
     if (!originalPurchase) {
-      console.error(`Attempted to edit a purchase with ID ${purchaseId}, but it was not found.`);
-      throw new Error(`Could not find the original purchase with ID ${purchaseId}. It may have been deleted.`);
+      console.error(
+        `Attempted to edit a purchase with ID ${purchaseId}, but it was not found.`
+      );
+      throw new Error(
+        `Could not find the original purchase with ID ${purchaseId}. It may have been deleted.`
+      );
     }
 
     const productId = originalPurchase.product_id;
@@ -413,12 +488,18 @@ export const editPurchaseTransaction = async (purchaseId: string, updatedData: P
 
     if (productError) {
       console.error('Error fetching product master data:', productError);
-      throw new Error(`Product with ID ${productId} could not be fetched. Details: ${productError.message}`);
+      throw new Error(
+        `Product with ID ${productId} could not be fetched. Details: ${productError.message}`
+      );
     }
-    
+
     if (!product) {
-      console.error(`Product with ID ${productId} not found in product master for purchase ID ${purchaseId}.`);
-      throw new Error(`The associated product (ID: ${productId}) for this purchase could not be found.`);
+      console.error(
+        `Product with ID ${productId} not found in product master for purchase ID ${purchaseId}.`
+      );
+      throw new Error(
+        `The associated product (ID: ${productId}) for this purchase could not be found.`
+      );
     }
 
     // Note: Price change detection and updates are now handled by database trigger
@@ -429,44 +510,69 @@ export const editPurchaseTransaction = async (purchaseId: string, updatedData: P
       product_name: updatedData.product_name,
       hsn_code: updatedData.hsn_code,
       units: updatedData.unit_type || updatedData.units,
-      purchase_invoice_number: updatedData.invoice_number || updatedData.purchase_invoice_number,
+      purchase_invoice_number:
+        updatedData.invoice_number || updatedData.purchase_invoice_number,
       purchase_qty: updatedData.purchase_qty,
       mrp_incl_gst: updatedData.mrp_incl_gst,
-      mrp_excl_gst: updatedData.mrp_excl_gst || updatedData.mrp_per_unit_excl_gst,
-      discount_on_purchase_percentage: updatedData.discount_on_purchase_percentage,
+      mrp_excl_gst:
+        updatedData.mrp_excl_gst || updatedData.mrp_per_unit_excl_gst,
+      discount_on_purchase_percentage:
+        updatedData.discount_on_purchase_percentage,
       gst_percentage: updatedData.gst_percentage,
       purchase_taxable_value: updatedData.purchase_cost_taxable_value,
-      purchase_igst: updatedData.is_interstate ? ((updatedData.purchase_cost_taxable_value || 0) * (updatedData.gst_percentage || 18) / 100) : 0,
-      purchase_cgst: !updatedData.is_interstate ? ((updatedData.purchase_cost_taxable_value || 0) * (updatedData.gst_percentage || 18) / 200) : 0,
-      purchase_sgst: !updatedData.is_interstate ? ((updatedData.purchase_cost_taxable_value || 0) * (updatedData.gst_percentage || 18) / 200) : 0,
+      purchase_igst: updatedData.is_interstate
+        ? ((updatedData.purchase_cost_taxable_value || 0) *
+            (updatedData.gst_percentage || 18)) /
+          100
+        : 0,
+      purchase_cgst: !updatedData.is_interstate
+        ? ((updatedData.purchase_cost_taxable_value || 0) *
+            (updatedData.gst_percentage || 18)) /
+          200
+        : 0,
+      purchase_sgst: !updatedData.is_interstate
+        ? ((updatedData.purchase_cost_taxable_value || 0) *
+            (updatedData.gst_percentage || 18)) /
+          200
+        : 0,
       purchase_invoice_value_rs: updatedData.purchase_invoice_value,
       supplier: updatedData.vendor,
-      "Purchase_Cost/Unit(Ex.GST)": updatedData.mrp_excl_gst || updatedData.mrp_per_unit_excl_gst || 0,
-      price_inlcuding_disc: updatedData.mrp_excl_gst || updatedData.mrp_per_unit_excl_gst || 0,
+      'Purchase_Cost/Unit(Ex.GST)':
+        updatedData.mrp_excl_gst || updatedData.mrp_per_unit_excl_gst || 0,
+      price_inlcuding_disc:
+        updatedData.mrp_excl_gst || updatedData.mrp_per_unit_excl_gst || 0,
       updated_at: transactionTimestamp,
     };
-    
+
     // Note: The database trigger will automatically:
     // 1. Update product master prices if they changed
     // 2. Log price changes to product_price_history
     // 3. Update stock quantities
     // 4. Log stock changes to stock_history
-    
+
     const { error: updatePurchaseError } = await supabase
       .from('purchase_history_with_stock')
       .update(updatedPurchaseRecord)
       .eq('purchase_id', purchaseId);
 
     if (updatePurchaseError) {
-      throw new Error(`Failed to update purchase record: ${updatePurchaseError.message}`);
+      throw new Error(
+        `Failed to update purchase record: ${updatePurchaseError.message}`
+      );
     }
 
-    console.log(`Purchase record updated successfully. Database trigger will handle price/stock updates.`);
+    console.log(
+      `Purchase record updated successfully. Database trigger will handle price/stock updates.`
+    );
 
     return { success: true };
   } catch (error) {
     console.error('Error in editPurchaseTransaction:', error);
-    return { success: false, error: error instanceof Error ? error : new Error('An unknown error occurred') };
+    return {
+      success: false,
+      error:
+        error instanceof Error ? error : new Error('An unknown error occurred'),
+    };
   }
 };
 
@@ -477,22 +583,37 @@ export const editPurchaseTransaction = async (purchaseId: string, updatedData: P
  */
 export const deletePurchaseTransaction = async (purchaseId: string) => {
   try {
-    // Use the comprehensive database function for deletion with automatic stock recalculation
-    const { data: result, error } = await supabase
-      .rpc('delete_purchase_with_stock_recalculation_comprehensive', {
-        purchase_id_param: purchaseId
-      });
+    // First, trigger our stock recalculation system as a backup
+    try {
+      await handlePurchaseDeletion(purchaseId);
+    } catch (recalcError) {
+      console.warn(
+        'Stock recalculation system failed, continuing with database RPC:',
+        recalcError
+      );
+    }
 
-    console.log("Function call result:", { result, error });
+    // Use the comprehensive database function for deletion with automatic stock recalculation
+    const { data: result, error } = await supabase.rpc(
+      'delete_purchase_with_stock_recalculation_comprehensive',
+      {
+        purchase_id_param: purchaseId,
+      }
+    );
+
+    console.log('Function call result:', { result, error });
 
     if (error) {
-      console.error("Error deleting purchase with stock recalculation:", error);
+      console.error('Error deleting purchase with stock recalculation:', error);
       throw new Error(`Failed to delete purchase: ${error.message}`);
     }
 
     if (!result || !result.success) {
-      const errorMessage = result?.message || result?.error || 'Unknown error occurred during deletion';
-      console.error("Function returned error:", result);
+      const errorMessage =
+        result?.message ||
+        result?.error ||
+        'Unknown error occurred during deletion';
+      console.error('Function returned error:', result);
       throw new Error(errorMessage);
     }
 
@@ -500,43 +621,46 @@ export const deletePurchaseTransaction = async (purchaseId: string) => {
 
     // If the function indicates that product stock needs manual update, do it
     if (result.data?.requiresProductUpdate) {
-      console.log("Updating product stock manually...");
-      
+      console.log('Updating product stock manually...');
+
       // Update product stock using standard Supabase client
       const { error: stockError } = await supabase
         .from('product_master')
-        .update({ 
+        .update({
           stock_quantity: result.data.newStock,
-          updated_at: new Date().toISOString()
+          updated_at: new Date().toISOString(),
         })
         .eq('id', result.data.productId);
 
       if (stockError) {
-        console.error("Error updating product stock:", stockError);
+        console.error('Error updating product stock:', stockError);
         // Don't throw error here, just log it
-        console.warn("Product stock update failed, but purchase was deleted successfully");
+        console.warn(
+          'Product stock update failed, but purchase was deleted successfully'
+        );
       } else {
-        console.log("Product stock updated successfully:", {
+        console.log('Product stock updated successfully:', {
           productId: result.data.productId,
           oldStock: result.data.oldStock,
           newStock: result.data.newStock,
           deletedQuantity: result.data.deletedQuantity,
-          updatedEntriesCount: result.data.updatedEntriesCount
+          updatedEntriesCount: result.data.updatedEntriesCount,
         });
       }
     }
 
     return {
       success: true,
-      message: result.message || 'Purchase deleted successfully and stock updated',
-      data: result.data
+      message:
+        result.message || 'Purchase deleted successfully and stock updated',
+      data: result.data,
     };
-
   } catch (error) {
     console.error('Error in deletePurchaseTransaction:', error);
     return {
       success: false,
-      error: error instanceof Error ? error : new Error('Failed to delete purchase')
+      error:
+        error instanceof Error ? error : new Error('Failed to delete purchase'),
     };
   }
 };
@@ -555,23 +679,23 @@ export const getPurchaseById = async (purchaseId: string) => {
       .single();
 
     if (error) {
-      console.error("Error fetching purchase:", error);
+      console.error('Error fetching purchase:', error);
       throw new Error(`Failed to fetch purchase: ${error.message}`);
     }
 
     return {
       success: true,
-      data: purchase
+      data: purchase,
     };
-
   } catch (error) {
     console.error('Error in getPurchaseById:', error);
     return {
       success: false,
-      error: error instanceof Error ? error : new Error('Failed to fetch purchase')
+      error:
+        error instanceof Error ? error : new Error('Failed to fetch purchase'),
     };
   }
-}; 
+};
 
 /**
  * Gets all purchase transactions with optional filtering
@@ -608,33 +732,39 @@ export const getAllPurchases = async (filters?: {
         query = query.ilike('supplier', `%${filters.supplier}%`);
       }
       if (filters.invoiceNumber) {
-        query = query.ilike('purchase_invoice_number', `%${filters.invoiceNumber}%`);
+        query = query.ilike(
+          'purchase_invoice_number',
+          `%${filters.invoiceNumber}%`
+        );
       }
       if (filters.limit) {
         query = query.limit(filters.limit);
       }
       if (filters.offset) {
-        query = query.range(filters.offset, filters.offset + (filters.limit || 50) - 1);
+        query = query.range(
+          filters.offset,
+          filters.offset + (filters.limit || 50) - 1
+        );
       }
     }
 
     const { data: purchases, error } = await query;
 
     if (error) {
-      console.error("Error fetching purchases:", error);
+      console.error('Error fetching purchases:', error);
       throw new Error(`Failed to fetch purchases: ${error.message}`);
     }
 
     return {
       success: true,
-      data: purchases || []
+      data: purchases || [],
     };
-
   } catch (error) {
     console.error('Error in getAllPurchases:', error);
     return {
       success: false,
-      error: error instanceof Error ? error : new Error('Failed to fetch purchases')
+      error:
+        error instanceof Error ? error : new Error('Failed to fetch purchases'),
     };
   }
 };
@@ -651,7 +781,9 @@ export const getPurchaseStatistics = async (filters?: {
   try {
     let query = supabase
       .from('purchase_history_with_stock')
-      .select('purchase_qty, purchase_invoice_value_rs, purchase_taxable_value');
+      .select(
+        'purchase_qty, purchase_invoice_value_rs, purchase_taxable_value'
+      );
 
     // Apply date filters if provided
     if (filters) {
@@ -666,16 +798,24 @@ export const getPurchaseStatistics = async (filters?: {
     const { data: purchases, error } = await query;
 
     if (error) {
-      console.error("Error fetching purchase statistics:", error);
+      console.error('Error fetching purchase statistics:', error);
       throw new Error(`Failed to fetch purchase statistics: ${error.message}`);
     }
 
     // Calculate statistics
     const totalPurchases = purchases?.length || 0;
-    const totalQuantity = purchases?.reduce((sum, p) => sum + (p.purchase_qty || 0), 0) || 0;
-    const totalValue = purchases?.reduce((sum, p) => sum + (p.purchase_invoice_value_rs || 0), 0) || 0;
-    const totalTaxableValue = purchases?.reduce((sum, p) => sum + (p.purchase_taxable_value || 0), 0) || 0;
-    const averageOrderValue = totalPurchases > 0 ? totalValue / totalPurchases : 0;
+    const totalQuantity =
+      purchases?.reduce((sum, p) => sum + (p.purchase_qty || 0), 0) || 0;
+    const totalValue =
+      purchases?.reduce(
+        (sum, p) => sum + (p.purchase_invoice_value_rs || 0),
+        0
+      ) || 0;
+    const totalTaxableValue =
+      purchases?.reduce((sum, p) => sum + (p.purchase_taxable_value || 0), 0) ||
+      0;
+    const averageOrderValue =
+      totalPurchases > 0 ? totalValue / totalPurchases : 0;
 
     return {
       success: true,
@@ -684,18 +824,20 @@ export const getPurchaseStatistics = async (filters?: {
         totalQuantity,
         totalValue,
         totalTaxableValue,
-        averageOrderValue
-      }
+        averageOrderValue,
+      },
     };
-
   } catch (error) {
     console.error('Error in getPurchaseStatistics:', error);
     return {
       success: false,
-      error: error instanceof Error ? error : new Error('Failed to fetch purchase statistics')
+      error:
+        error instanceof Error
+          ? error
+          : new Error('Failed to fetch purchase statistics'),
     };
   }
-}; 
+};
 
 /**
  * Validates purchase form data before processing
@@ -722,7 +864,10 @@ export const validatePurchaseData = (purchaseData: PurchaseFormData) => {
     errors.push('Vendor/Supplier name is required');
   }
 
-  if (!purchaseData.purchase_invoice_number?.trim() && !purchaseData.invoice_number?.trim()) {
+  if (
+    !purchaseData.purchase_invoice_number?.trim() &&
+    !purchaseData.invoice_number?.trim()
+  ) {
     errors.push('Purchase invoice number is required');
   }
 
@@ -735,11 +880,18 @@ export const validatePurchaseData = (purchaseData: PurchaseFormData) => {
     errors.push('MRP including GST must be greater than 0');
   }
 
-  if (purchaseData.gst_percentage && (purchaseData.gst_percentage < 0 || purchaseData.gst_percentage > 100)) {
+  if (
+    purchaseData.gst_percentage &&
+    (purchaseData.gst_percentage < 0 || purchaseData.gst_percentage > 100)
+  ) {
     errors.push('GST percentage must be between 0 and 100');
   }
 
-  if (purchaseData.discount_on_purchase_percentage && (purchaseData.discount_on_purchase_percentage < 0 || purchaseData.discount_on_purchase_percentage > 100)) {
+  if (
+    purchaseData.discount_on_purchase_percentage &&
+    (purchaseData.discount_on_purchase_percentage < 0 ||
+      purchaseData.discount_on_purchase_percentage > 100)
+  ) {
     errors.push('Discount percentage must be between 0 and 100');
   }
 
@@ -754,7 +906,7 @@ export const validatePurchaseData = (purchaseData: PurchaseFormData) => {
 
   return {
     isValid: errors.length === 0,
-    errors
+    errors,
   };
 };
 
@@ -764,29 +916,34 @@ export const validatePurchaseData = (purchaseData: PurchaseFormData) => {
  * @returns Calculated values for the purchase
  */
 export const calculatePurchaseValues = (purchaseData: PurchaseFormData) => {
-  const basePrice = purchaseData.mrp_excl_gst || purchaseData.mrp_per_unit_excl_gst || 0;
+  const basePrice =
+    purchaseData.mrp_excl_gst || purchaseData.mrp_per_unit_excl_gst || 0;
   const gstPercentage = purchaseData.gst_percentage || 18;
   const discountPercentage = purchaseData.discount_on_purchase_percentage || 0;
   const quantity = purchaseData.purchase_qty || 0;
   const isInterstate = purchaseData.is_interstate || false;
 
   // Calculate purchase cost per unit after discount
-  const purchaseCostPerUnit = basePrice * (1 - (discountPercentage / 100));
-  
+  const purchaseCostPerUnit = basePrice * (1 - discountPercentage / 100);
+
   // Calculate taxable value
   const taxableValue = purchaseCostPerUnit * quantity;
-  
+
   // Calculate GST amounts
   const totalGstAmount = (taxableValue * gstPercentage) / 100;
   const cgstAmount = isInterstate ? 0 : totalGstAmount / 2;
   const sgstAmount = isInterstate ? 0 : totalGstAmount / 2;
   const igstAmount = isInterstate ? totalGstAmount : 0;
-  
+
   // Calculate final invoice value
   const invoiceValue = taxableValue + totalGstAmount;
 
   // Calculate MRP excluding GST if not provided
-  const mrpExclGst = basePrice || (purchaseData.mrp_incl_gst ? purchaseData.mrp_incl_gst / (1 + (gstPercentage / 100)) : 0);
+  const mrpExclGst =
+    basePrice ||
+    (purchaseData.mrp_incl_gst
+      ? purchaseData.mrp_incl_gst / (1 + gstPercentage / 100)
+      : 0);
 
   return {
     purchaseCostPerUnit,
@@ -798,6 +955,11 @@ export const calculatePurchaseValues = (purchaseData: PurchaseFormData) => {
     invoiceValue,
     mrpExclGst,
     effectiveDiscountAmount: (basePrice - purchaseCostPerUnit) * quantity,
-    profitMargin: purchaseData.mrp_incl_gst ? ((purchaseData.mrp_incl_gst - (purchaseCostPerUnit * (1 + gstPercentage / 100))) / purchaseData.mrp_incl_gst) * 100 : 0
+    profitMargin: purchaseData.mrp_incl_gst
+      ? ((purchaseData.mrp_incl_gst -
+          purchaseCostPerUnit * (1 + gstPercentage / 100)) /
+          purchaseData.mrp_incl_gst) *
+        100
+      : 0,
   };
-}; 
+};

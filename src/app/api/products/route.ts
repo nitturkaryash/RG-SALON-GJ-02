@@ -22,7 +22,10 @@ const isAuthorized = (req: Request) => {
 export async function GET(req: Request) {
   try {
     if (!isAuthorized(req)) {
-      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+      return NextResponse.json(
+        { success: false, error: 'Unauthorized' },
+        { status: 401 }
+      );
     }
 
     const { data: products, error } = await supabase
@@ -46,7 +49,10 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   try {
     if (!isAuthorized(req)) {
-      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+      return NextResponse.json(
+        { success: false, error: 'Unauthorized' },
+        { status: 401 }
+      );
     }
 
     const body = await req.json();
@@ -62,7 +68,7 @@ export async function POST(req: Request) {
       category,
       product_type,
       stock_quantity = 0,
-      user_id
+      user_id,
     } = body;
 
     if (!name) {
@@ -92,30 +98,32 @@ export async function POST(req: Request) {
 
     if (existingProducts && existingProducts.length > 0) {
       // Check for exact name match first (case-insensitive)
-      const nameMatch = existingProducts.find(product => 
-        product.name.toLowerCase() === name.toLowerCase()
+      const nameMatch = existingProducts.find(
+        product => product.name.toLowerCase() === name.toLowerCase()
       );
-      
+
       if (nameMatch) {
         return NextResponse.json(
-          { 
-            success: false, 
+          {
+            success: false,
             error: `A product with the name "${name}" already exists`,
-            existing_product: nameMatch
+            existing_product: nameMatch,
           },
           { status: 409 }
         );
       }
-      
+
       // Check for HSN code match
-      const hsnMatch = existingProducts.find(product => product.hsn_code === hsn_code);
-      
+      const hsnMatch = existingProducts.find(
+        product => product.hsn_code === hsn_code
+      );
+
       if (hsnMatch) {
         return NextResponse.json(
-          { 
-            success: false, 
+          {
+            success: false,
             error: `A product with the HSN code "${hsn_code}" already exists: ${hsnMatch.name}`,
-            existing_product: hsnMatch
+            existing_product: hsnMatch,
           },
           { status: 409 }
         );
@@ -140,7 +148,7 @@ export async function POST(req: Request) {
         stock_quantity: stock_quantity || 0,
         user_id: user_id || null,
         created_at: now,
-        updated_at: now
+        updated_at: now,
       })
       .select()
       .single();
@@ -150,9 +158,8 @@ export async function POST(req: Request) {
     return NextResponse.json({
       success: true,
       message: 'Product created successfully',
-      product
+      product,
     });
-
   } catch (error) {
     console.error('Error creating product:', error);
     return NextResponse.json(
@@ -166,7 +173,10 @@ export async function POST(req: Request) {
 export async function PUT(req: Request) {
   try {
     if (!isAuthorized(req)) {
-      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+      return NextResponse.json(
+        { success: false, error: 'Unauthorized' },
+        { status: 401 }
+      );
     }
 
     const body = await req.json();
@@ -191,32 +201,34 @@ export async function PUT(req: Request) {
       if (existingProducts && existingProducts.length > 0) {
         // Check for name conflict if name is being updated
         if (name) {
-          const nameMatch = existingProducts.find(product => 
-            product.name.toLowerCase() === name.toLowerCase()
+          const nameMatch = existingProducts.find(
+            product => product.name.toLowerCase() === name.toLowerCase()
           );
-          
+
           if (nameMatch) {
             return NextResponse.json(
-              { 
-                success: false, 
+              {
+                success: false,
                 error: `A product with the name "${name}" already exists`,
-                existing_product: nameMatch
+                existing_product: nameMatch,
               },
               { status: 409 }
             );
           }
         }
-        
+
         // Check for HSN code conflict if hsn_code is being updated
         if (hsn_code) {
-          const hsnMatch = existingProducts.find(product => product.hsn_code === hsn_code);
-          
+          const hsnMatch = existingProducts.find(
+            product => product.hsn_code === hsn_code
+          );
+
           if (hsnMatch) {
             return NextResponse.json(
-              { 
-                success: false, 
+              {
+                success: false,
                 error: `A product with the HSN code "${hsn_code}" already exists: ${hsnMatch.name}`,
-                existing_product: hsnMatch
+                existing_product: hsnMatch,
               },
               { status: 409 }
             );
@@ -230,7 +242,7 @@ export async function PUT(req: Request) {
       ...updateData,
       ...(name && { name }),
       ...(hsn_code && { hsn_code }),
-      updated_at: new Date().toISOString()
+      updated_at: new Date().toISOString(),
     };
 
     // Update the product
@@ -246,9 +258,8 @@ export async function PUT(req: Request) {
     return NextResponse.json({
       success: true,
       message: 'Product updated successfully',
-      product: updatedProduct
+      product: updatedProduct,
     });
-
   } catch (error) {
     console.error('Error updating product:', error);
     return NextResponse.json(
@@ -262,7 +273,10 @@ export async function PUT(req: Request) {
 export async function DELETE(req: Request) {
   try {
     if (!isAuthorized(req)) {
-      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+      return NextResponse.json(
+        { success: false, error: 'Unauthorized' },
+        { status: 401 }
+      );
     }
 
     const { searchParams } = new URL(req.url);
@@ -284,9 +298,8 @@ export async function DELETE(req: Request) {
 
     return NextResponse.json({
       success: true,
-      message: 'Product deleted successfully'
+      message: 'Product deleted successfully',
     });
-
   } catch (error) {
     console.error('Error deleting product:', error);
     return NextResponse.json(

@@ -7,20 +7,23 @@ import { toast } from 'react-toastify';
  */
 export const checkAuthentication = async () => {
   try {
-    const { data: { user }, error } = await supabase.auth.getUser();
-    
+    const {
+      data: { user },
+      error,
+    } = await supabase.auth.getUser();
+
     if (error) {
       console.error('Authentication error:', error);
       toast.error(`Authentication error: ${error.message}`);
       throw new Error(`Authentication error: ${error.message}`);
     }
-    
+
     if (!user) {
       const errorMsg = 'User is not authenticated. Please log in again.';
       toast.error(errorMsg);
       throw new Error(errorMsg);
     }
-    
+
     return user;
   } catch (error) {
     console.error('Error checking authentication:', error);
@@ -81,7 +84,7 @@ export const signInUser = async (email: string, password: string) => {
 export const signOutUser = async () => {
   try {
     const { error } = await supabase.auth.signOut();
-    
+
     if (error) {
       throw new Error(error.message);
     }
@@ -89,7 +92,7 @@ export const signOutUser = async () => {
     // Clear localStorage
     localStorage.removeItem('auth_token');
     localStorage.removeItem('auth_user');
-    
+
     return true;
   } catch (error) {
     console.error('Error signing out user:', error);
@@ -103,12 +106,12 @@ export const signOutUser = async () => {
 export const insertWithAuth = async (table: string, data: any) => {
   try {
     const user = await checkAuthentication();
-    
+
     const { data: result, error } = await supabase
       .from(table)
       .insert({
         ...data,
-        user_id: user.id
+        user_id: user.id,
       })
       .select();
 
@@ -126,13 +129,15 @@ export const insertWithAuth = async (table: string, data: any) => {
 /**
  * Generic function to select data scoped to current user
  */
-export const selectWithAuth = async (table: string, select: string = '*', filters: any = {}) => {
+export const selectWithAuth = async (
+  table: string,
+  select: string = '*',
+  filters: any = {}
+) => {
   try {
     const user = await checkAuthentication();
-    
-    let query = supabase
-      .from(table)
-      .select(select);
+
+    let query = supabase.from(table).select(select);
 
     // Add additional filters
     Object.keys(filters).forEach(key => {
@@ -155,10 +160,14 @@ export const selectWithAuth = async (table: string, select: string = '*', filter
 /**
  * Generic function to update data scoped to current user
  */
-export const updateWithAuth = async (table: string, id: string, updates: any) => {
+export const updateWithAuth = async (
+  table: string,
+  id: string,
+  updates: any
+) => {
   try {
     const user = await checkAuthentication();
-    
+
     const { data, error } = await supabase
       .from(table)
       .update(updates)
@@ -183,7 +192,7 @@ export const updateWithAuth = async (table: string, id: string, updates: any) =>
 export const deleteWithAuth = async (table: string, id: string) => {
   try {
     const user = await checkAuthentication();
-    
+
     const { data, error } = await supabase
       .from(table)
       .delete()
@@ -208,19 +217,19 @@ export const deleteWithAuth = async (table: string, id: string) => {
  */
 export const handleAuthError = (error: unknown) => {
   console.error('Authentication error:', error);
-  
+
   let errorMessage = 'Authentication error occurred';
-  
+
   if (error instanceof Error) {
     errorMessage = error.message;
   }
-  
+
   toast.error(`Authentication error: ${errorMessage}`);
-  
+
   // Redirect to login page after a short delay
   setTimeout(() => {
     window.location.href = '/login';
   }, 2000);
-  
+
   return errorMessage;
-}; 
+};

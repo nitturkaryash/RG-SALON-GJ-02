@@ -9,19 +9,23 @@ import { CheckCircle, Error, Close } from '@mui/icons-material';
  * @param {string} props.message Message to display
  * @param {number} props.duration Duration in ms before auto-hiding (0 for no auto-hide)
  */
-const DatabaseSaveIndicator = ({ status = 'saving', message = '', duration = 5000 }) => {
+const DatabaseSaveIndicator = ({
+  status = 'saving',
+  message = '',
+  duration = 5000,
+}) => {
   const [visible, setVisible] = useState(true);
 
   useEffect(() => {
     // Reset visibility when status changes
     setVisible(true);
-    
+
     // Auto-hide after duration if not saving
     if (status !== 'saving' && duration > 0) {
       const timer = setTimeout(() => {
         setVisible(false);
       }, duration);
-      
+
       return () => clearTimeout(timer);
     }
   }, [status, duration]);
@@ -31,7 +35,7 @@ const DatabaseSaveIndicator = ({ status = 'saving', message = '', duration = 500
   let alertProps = {
     severity: 'info',
     icon: <CircularProgress size={20} />,
-    action: null
+    action: null,
   };
 
   switch (status) {
@@ -41,14 +45,14 @@ const DatabaseSaveIndicator = ({ status = 'saving', message = '', duration = 500
         icon: <CheckCircle />,
         action: (
           <IconButton
-            aria-label="close"
-            color="inherit"
-            size="small"
+            aria-label='close'
+            color='inherit'
+            size='small'
             onClick={() => setVisible(false)}
           >
-            <Close fontSize="inherit" />
+            <Close fontSize='inherit' />
           </IconButton>
-        )
+        ),
       };
       break;
     case 'error':
@@ -57,14 +61,14 @@ const DatabaseSaveIndicator = ({ status = 'saving', message = '', duration = 500
         icon: <Error />,
         action: (
           <IconButton
-            aria-label="close"
-            color="inherit"
-            size="small"
+            aria-label='close'
+            color='inherit'
+            size='small'
             onClick={() => setVisible(false)}
           >
-            <Close fontSize="inherit" />
+            <Close fontSize='inherit' />
           </IconButton>
-        )
+        ),
       };
       break;
     default:
@@ -75,23 +79,25 @@ const DatabaseSaveIndicator = ({ status = 'saving', message = '', duration = 500
   return (
     <Box sx={{ position: 'fixed', bottom: 20, right: 20, zIndex: 1000 }}>
       <Alert
-        variant="filled"
+        variant='filled'
         {...alertProps}
         sx={{
           minWidth: '250px',
           boxShadow: 3,
-          animation: 'fadeIn 0.3s ease-in-out'
+          animation: 'fadeIn 0.3s ease-in-out',
         }}
       >
-        {message || (
-          status === 'saving' ? 'Saving to database...' :
-          status === 'success' ? 'Successfully saved to database!' :
-          status === 'error' ? 'Failed to save to database' :
-          'Processing...'
-        )}
+        {message ||
+          (status === 'saving'
+            ? 'Saving to database...'
+            : status === 'success'
+              ? 'Successfully saved to database!'
+              : status === 'error'
+                ? 'Failed to save to database'
+                : 'Processing...')}
       </Alert>
     </Box>
   );
 };
 
-export default DatabaseSaveIndicator; 
+export default DatabaseSaveIndicator;

@@ -1,14 +1,20 @@
 // Fix OrderBy type to match the string literals used in the components
-export type OrderBy = 
-  'product_name' | 
-  'hsn_code' | 
-  'unit' | 
-  'balance_qty' | 
-  'avg_rate' | 
-  'balance_value';
+export type OrderBy =
+  | 'product_name'
+  | 'hsn_code'
+  | 'unit'
+  | 'balance_qty'
+  | 'avg_rate'
+  | 'balance_value';
 
 // Type for payment methods
-export type PaymentMethod = 'cash' | 'credit_card' | 'debit_card' | 'upi' | 'bnpl' | 'membership';
+export type PaymentMethod =
+  | 'cash'
+  | 'credit_card'
+  | 'debit_card'
+  | 'upi'
+  | 'bnpl'
+  | 'membership';
 
 // Service interface for order items
 export interface Service {
@@ -28,6 +34,7 @@ export interface Service {
 
 // Order interface for POS system
 export interface Order {
+  appointment_id: string;
   id: string;
   order_id?: string;
   invoice_number?: string;
@@ -92,4 +99,4 @@ export interface OrderSummary {
   discount: number;
   total: number;
   items: OrderItem[];
-} 
+}

@@ -1,7 +1,13 @@
 /* Styles for break visualization */
 .break-block {
   background-color: rgba(220, 0, 0, 0.15);
-  background-image: repeating-linear-gradient(135deg, transparent, transparent 8px, rgba(220, 0, 0, 0.3) 8px, rgba(220, 0, 0, 0.3) 16px);
+  background-image: repeating-linear-gradient(
+    135deg,
+    transparent,
+    transparent 8px,
+    rgba(220, 0, 0, 0.3) 8px,
+    rgba(220, 0, 0, 0.3) 16px
+  );
   border-left: 4px solid #dc3545;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
   border-radius: 0;
@@ -30,14 +36,14 @@
 
 /* Improve appointment time display */
 .appointment-time {
-  font-weight: bold !important; 
+  font-weight: bold !important;
   background-color: rgba(255, 255, 255, 0.25) !important;
   border-radius: 4px !important;
   padding: 1px 4px !important;
   width: fit-content !important;
   margin-top: 4px !important;
-} 
+}
 
 .hide-component {
   display: none !important;
-} 
+}

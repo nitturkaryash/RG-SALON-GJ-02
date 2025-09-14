@@ -1,16 +1,15 @@
 import React from 'react';
 import { Box, Typography, Chip } from '@mui/material';
-import { useInventory } from '../../hooks/useInventory';
+import { useInventory } from '../../hooks/inventory/useInventory';
 import InventoryTable from '../../components/inventory/InventoryTable';
-import { formatCurrency } from '../../utils/format';
+import { formatCurrency } from '../../utils/formatting/format';
 import { toast } from 'react-toastify';
+import { usePurchaseHistory } from '../../hooks/inventory/usePurchaseHistory';
 
 const PurchasesTab = () => {
-  const { 
-    purchasesQuery, 
-    deletePurchase,
-    recalculateBalanceStock 
-  } = useInventory();
+  const { purchasesQuery, deletePurchaseTransaction, recalculateBalanceStock } =
+    usePurchaseHistory();
+  useInventory();
 
   const isLoading = purchasesQuery.isLoading;
   const purchases = purchasesQuery.data || [];
@@ -18,7 +17,7 @@ const PurchasesTab = () => {
   // Handle purchase deletion
   const handleDeletePurchase = async (purchaseId: string) => {
     try {
-      const result = await deletePurchase(purchaseId);
+      const result = await deletePurchaseTransaction(purchaseId);
       if (result.success) {
         toast.success('Purchase record deleted successfully');
         // Refresh data after deletion
@@ -43,21 +42,21 @@ const PurchasesTab = () => {
 
   // Column definitions
   const columns = [
-    { 
-      id: 'date', 
-      label: 'Date', 
+    {
+      id: 'date',
+      label: 'Date',
       minWidth: 100,
-      format: (value: string) => formatDate(value)
+      format: (value: string) => formatDate(value),
     },
-    { 
-      id: 'product_name', 
-      label: 'Product Name', 
-      minWidth: 170 
+    {
+      id: 'product_name',
+      label: 'Product Name',
+      minWidth: 170,
     },
-    { 
-      id: 'hsn_code', 
-      label: 'HSN Code', 
-      minWidth: 100 
+    {
+      id: 'hsn_code',
+      label: 'HSN Code',
+      minWidth: 100,
     },
     {
       id: 'purchase_qty',
@@ -70,21 +69,21 @@ const PurchasesTab = () => {
       label: 'MRP (Incl. GST)',
       minWidth: 120,
       align: 'right' as const,
-      format: (value: number) => formatCurrency(value)
+      format: (value: number) => formatCurrency(value),
     },
     {
       id: 'discount_on_purchase_percentage',
       label: 'Discount %',
       minWidth: 100,
       align: 'right' as const,
-      format: (value: number) => value ? `${value.toFixed(2)}%` : '0%'
+      format: (value: number) => (value ? `${value.toFixed(2)}%` : '0%'),
     },
     {
       id: 'purchase_invoice_value_rs',
       label: 'Invoice Value',
       minWidth: 120,
       align: 'right' as const,
-      format: (value: number) => formatCurrency(value)
+      format: (value: number) => formatCurrency(value),
     },
     {
       id: 'purchase_invoice_number',
@@ -101,19 +100,19 @@ const PurchasesTab = () => {
   return (
     <Box sx={{ p: 2 }}>
       <InventoryTable
-        title="Purchase Records"
+        title='Purchase Records'
         data={purchases}
         columns={columns}
         isLoading={isLoading}
         onDelete={handleDeletePurchase}
-        itemType="purchase"
+        itemType='purchase'
         onRefresh={() => purchasesQuery.refetch()}
-        emptyMessage="No purchase records found"
+        emptyMessage='No purchase records found'
         getItemName={getPurchaseName}
-        deleteIdField="purchase_id"
+        deleteIdField='purchase_id'
       />
     </Box>
   );
 };
 
-export default PurchasesTab; 
+export default PurchasesTab;

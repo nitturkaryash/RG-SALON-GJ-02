@@ -33,7 +33,9 @@ export async function GET(req: Request) {
       .range(offset, offset + limit - 1);
 
     if (search) {
-      query = query.or(`full_name.ilike.%${search}%,phone.ilike.%${search}%,email.ilike.%${search}%`);
+      query = query.or(
+        `full_name.ilike.%${search}%,phone.ilike.%${search}%,email.ilike.%${search}%`
+      );
     }
 
     const { data: clients, error } = await query;
@@ -54,16 +56,13 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   try {
     if (!isAuthorized(req)) {
-      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+      return NextResponse.json(
+        { success: false, error: 'Unauthorized' },
+        { status: 401 }
+      );
     }
     const body = await req.json();
-    const {
-      full_name,
-      phone,
-      email,
-      notes,
-      send_welcome = true
-    } = body;
+    const { full_name, phone, email, notes, send_welcome = true } = body;
 
     if (!full_name) {
       return NextResponse.json(
@@ -90,10 +89,10 @@ export async function POST(req: Request) {
 
     if (nameCheck && nameCheck.length > 0) {
       return NextResponse.json(
-        { 
-          success: false, 
+        {
+          success: false,
           error: `Client with name "${nameCheck[0].full_name}" already exists. Please use a different name.`,
-          existing_client: nameCheck[0]
+          existing_client: nameCheck[0],
         },
         { status: 409 }
       );
@@ -110,10 +109,10 @@ export async function POST(req: Request) {
 
       if (phoneCheck && phoneCheck.length > 0) {
         return NextResponse.json(
-          { 
-            success: false, 
+          {
+            success: false,
             error: `Phone number "${normalizedPhone}" is already registered to client "${phoneCheck[0].full_name}". Please use a different phone number.`,
-            existing_client: phoneCheck[0]
+            existing_client: phoneCheck[0],
           },
           { status: 409 }
         );
@@ -131,10 +130,10 @@ export async function POST(req: Request) {
 
       if (emailCheck && emailCheck.length > 0) {
         return NextResponse.json(
-          { 
-            success: false, 
+          {
+            success: false,
             error: `Email "${normalizedEmail}" is already registered to client "${emailCheck[0].full_name}". Please use a different email address.`,
-            existing_client: emailCheck[0]
+            existing_client: emailCheck[0],
           },
           { status: 409 }
         );
@@ -153,7 +152,7 @@ export async function POST(req: Request) {
         total_spent: 0,
         pending_payment: 0,
         created_at: now,
-        updated_at: now
+        updated_at: now,
       })
       .select()
       .single();
@@ -164,7 +163,10 @@ export async function POST(req: Request) {
     let whatsappSent = false;
     if (phone && send_welcome) {
       try {
-        whatsappSent = await WhatsAppAutomation.handleClientWelcome(full_name, phone);
+        whatsappSent = await WhatsAppAutomation.handleClientWelcome(
+          full_name,
+          phone
+        );
       } catch (whatsappError) {
         console.error('WhatsApp welcome message error:', whatsappError);
         // Don't fail client creation if WhatsApp fails
@@ -175,9 +177,8 @@ export async function POST(req: Request) {
       success: true,
       message: 'Client created successfully',
       client,
-      whatsapp_welcome_sent: whatsappSent
+      whatsapp_welcome_sent: whatsappSent,
     });
-
   } catch (error) {
     console.error('Error creating client:', error);
     return NextResponse.json(
@@ -191,7 +192,10 @@ export async function POST(req: Request) {
 export async function PUT(req: Request) {
   try {
     if (!isAuthorized(req)) {
-      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+      return NextResponse.json(
+        { success: false, error: 'Unauthorized' },
+        { status: 401 }
+      );
     }
     const body = await req.json();
     const { id, ...updateData } = body;
@@ -219,9 +223,8 @@ export async function PUT(req: Request) {
     return NextResponse.json({
       success: true,
       message: 'Client updated successfully',
-      client: updatedClient
+      client: updatedClient,
     });
-
   } catch (error) {
     console.error('Error updating client:', error);
     return NextResponse.json(
@@ -235,7 +238,10 @@ export async function PUT(req: Request) {
 export async function DELETE(req: Request) {
   try {
     if (!isAuthorized(req)) {
-      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+      return NextResponse.json(
+        { success: false, error: 'Unauthorized' },
+        { status: 401 }
+      );
     }
     const { searchParams } = new URL(req.url);
     const id = searchParams.get('id');
@@ -258,9 +264,10 @@ export async function DELETE(req: Request) {
 
     if (appointments && appointments.length > 0) {
       return NextResponse.json(
-        { 
-          success: false, 
-          error: 'Cannot delete client with existing appointments. Please cancel or complete all appointments first.' 
+        {
+          success: false,
+          error:
+            'Cannot delete client with existing appointments. Please cancel or complete all appointments first.',
         },
         { status: 400 }
       );
@@ -276,9 +283,8 @@ export async function DELETE(req: Request) {
 
     return NextResponse.json({
       success: true,
-      message: 'Client deleted successfully'
+      message: 'Client deleted successfully',
     });
-
   } catch (error) {
     console.error('Error deleting client:', error);
     return NextResponse.json(
@@ -286,4 +292,4 @@ export async function DELETE(req: Request) {
       { status: 500 }
     );
   }
-} 
+}

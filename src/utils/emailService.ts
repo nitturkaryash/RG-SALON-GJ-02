@@ -14,7 +14,7 @@ function formatDateTime(dateTime: string | Date) {
 function formatCurrency(amount: number) {
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
-    currency: 'INR'
+    currency: 'INR',
   }).format(amount);
 }
 
@@ -363,47 +363,61 @@ export async function sendAppointmentEmail(
       weekday: 'long',
       year: 'numeric',
       month: 'long',
-      day: 'numeric'
+      day: 'numeric',
     });
     const formattedTime = appointmentDate.toLocaleTimeString('en-US', {
       hour: '2-digit',
-      minute: '2-digit'
+      minute: '2-digit',
     });
 
     // Create services table
-    const servicesTable = services.length > 0 ? `
+    const servicesTable =
+      services.length > 0
+        ? `
       <table class="service-table">
         <tr>
           <th>Service</th>
           <th>Duration</th>
           <th>Price</th>
         </tr>
-        ${services.map(service => `
+        ${services
+          .map(
+            service => `
           <tr>
             <td>${service.name}</td>
             <td>${service.duration} mins</td>
             <td>${formatCurrency(service.price)}</td>
           </tr>
-        `).join('')}
+        `
+          )
+          .join('')}
         <tr class="total-row">
           <td colspan="2">Total Amount</td>
           <td>${formatCurrency(totalAmount)}</td>
         </tr>
       </table>
-    ` : '';
+    `
+        : '';
 
     // Create stylists section
-    const stylistsSection = stylists.length > 0 ? `
+    const stylistsSection =
+      stylists.length > 0
+        ? `
       <div class="stylist-section">
         <h3>Your Expert Stylist(s)</h3>
-        ${stylists.map(stylist => `
+        ${stylists
+          .map(
+            stylist => `
           <div class="stylist-card">
             <div class="stylist-avatar">${stylist.name.charAt(0)}</div>
             <div>${stylist.name}</div>
           </div>
-        `).join('')}
+        `
+          )
+          .join('')}
       </div>
-    ` : '';
+    `
+        : '';
 
     switch (type) {
       case 'booked':
@@ -538,19 +552,22 @@ export async function sendAppointmentEmail(
 
     const emailBody = createEmailTemplate(content);
 
-    const response = await fetch('http://localhost:3001/api/notifications/email', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        to,
-        clientName,
-        appointmentTime,
-        type,
-        html: emailBody
-      }),
-    });
+    const response = await fetch(
+      'http://localhost:3001/api/notifications/email',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          to,
+          clientName,
+          appointmentTime,
+          type,
+          html: emailBody,
+        }),
+      }
+    );
 
     const data = await response.json();
     return data.success;
@@ -558,4 +575,4 @@ export async function sendAppointmentEmail(
     console.error('Error sending email:', error);
     return false;
   }
-} 
+}

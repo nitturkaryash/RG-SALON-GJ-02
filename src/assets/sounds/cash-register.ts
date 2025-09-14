@@ -20,4 +20,4 @@ export const playCashRegisterSound = async (volume = 1.0): Promise<boolean> => {
 export const addCashRegisterTestButton = (): void => {
   // This function is now disabled - does nothing
   return;
-}; 
+};

@@ -24,7 +24,10 @@ export async function GET(req: Request) {
   try {
     // Verify cron secret if needed
     const authHeader = req.headers.get('authorization');
-    if (process.env.CRON_SECRET && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+    if (
+      process.env.CRON_SECRET &&
+      authHeader !== `Bearer ${process.env.CRON_SECRET}`
+    ) {
       return NextResponse.json(
         { success: false, error: 'Unauthorized' },
         { status: 401 }
@@ -36,15 +39,20 @@ export async function GET(req: Request) {
 
     // ===== 24-HOUR REMINDERS =====
     console.log('Processing 24-hour reminders...');
-    
+
     // Calculate time range for 24-hour reminders (23-25 hours from now)
-    const twentyThreeHoursFromNow = new Date(now.getTime() + 23 * 60 * 60 * 1000);
-    const twentyFiveHoursFromNow = new Date(now.getTime() + 25 * 60 * 60 * 1000);
+    const twentyThreeHoursFromNow = new Date(
+      now.getTime() + 23 * 60 * 60 * 1000
+    );
+    const twentyFiveHoursFromNow = new Date(
+      now.getTime() + 25 * 60 * 60 * 1000
+    );
 
     // Fetch appointments that need 24-hour reminders
     const { data: appointments24h, error: error24h } = await supabase
       .from('appointments')
-      .select(`
+      .select(
+        `
         id,
         start_time,
         end_time,
@@ -68,7 +76,8 @@ export async function GET(req: Request) {
             name
           )
         )
-      `)
+      `
+      )
       .gte('start_time', twentyThreeHoursFromNow.toISOString())
       .lte('start_time', twentyFiveHoursFromNow.toISOString())
       .eq('reminder_24h_sent', false)
@@ -80,14 +89,22 @@ export async function GET(req: Request) {
       // Send 24-hour reminders
       for (const appointment of appointments24h || []) {
         if (!appointment.clients?.phone) {
-          console.log(`Skipping 24h reminder for appointment ${appointment.id}: No phone number`);
+          console.log(
+            `Skipping 24h reminder for appointment ${appointment.id}: No phone number`
+          );
           continue;
         }
 
         try {
           // Prepare notification data
-          const services = appointment.appointment_services?.map((as: any) => as.services.name) || [];
-          const stylists = appointment.appointment_stylists?.map((ast: any) => ast.stylists.name) || [];
+          const services =
+            appointment.appointment_services?.map(
+              (as: any) => as.services.name
+            ) || [];
+          const stylists =
+            appointment.appointment_stylists?.map(
+              (ast: any) => ast.stylists.name
+            ) || [];
 
           const notificationData = {
             clientName: appointment.clients.full_name,
@@ -97,7 +114,7 @@ export async function GET(req: Request) {
             startTime: appointment.start_time,
             endTime: appointment.end_time,
             status: 'scheduled',
-            notes: appointment.notes || ''
+            notes: appointment.notes || '',
           };
 
           // Send WhatsApp 24-hour reminder
@@ -140,15 +157,20 @@ export async function GET(req: Request) {
 
     // ===== 2-HOUR REMINDERS =====
     console.log('Processing 2-hour reminders...');
-    
+
     // Calculate time range for 2-hour reminders (1.5-2.5 hours from now)
-    const oneAndHalfHoursFromNow = new Date(now.getTime() + 1.5 * 60 * 60 * 1000);
-    const twoAndHalfHoursFromNow = new Date(now.getTime() + 2.5 * 60 * 60 * 1000);
+    const oneAndHalfHoursFromNow = new Date(
+      now.getTime() + 1.5 * 60 * 60 * 1000
+    );
+    const twoAndHalfHoursFromNow = new Date(
+      now.getTime() + 2.5 * 60 * 60 * 1000
+    );
 
     // Fetch appointments that need 2-hour reminders
     const { data: appointments2h, error: error2h } = await supabase
       .from('appointments')
-      .select(`
+      .select(
+        `
         id,
         start_time,
         end_time,
@@ -172,7 +194,8 @@ export async function GET(req: Request) {
             name
           )
         )
-      `)
+      `
+      )
       .gte('start_time', oneAndHalfHoursFromNow.toISOString())
       .lte('start_time', twoAndHalfHoursFromNow.toISOString())
       .eq('reminder_2h_sent', false)
@@ -184,14 +207,22 @@ export async function GET(req: Request) {
       // Send 2-hour reminders
       for (const appointment of appointments2h || []) {
         if (!appointment.clients?.phone) {
-          console.log(`Skipping 2h reminder for appointment ${appointment.id}: No phone number`);
+          console.log(
+            `Skipping 2h reminder for appointment ${appointment.id}: No phone number`
+          );
           continue;
         }
 
         try {
           // Prepare notification data for 2-hour reminder
-          const services = appointment.appointment_services?.map((as: any) => as.services.name) || [];
-          const stylists = appointment.appointment_stylists?.map((ast: any) => ast.stylists.name) || [];
+          const services =
+            appointment.appointment_services?.map(
+              (as: any) => as.services.name
+            ) || [];
+          const stylists =
+            appointment.appointment_stylists?.map(
+              (ast: any) => ast.stylists.name
+            ) || [];
 
           const notificationData = {
             clientName: appointment.clients.full_name,
@@ -201,7 +232,7 @@ export async function GET(req: Request) {
             startTime: appointment.start_time,
             endTime: appointment.end_time,
             status: 'scheduled',
-            notes: appointment.notes || ''
+            notes: appointment.notes || '',
           };
 
           // Send WhatsApp 2-hour reminder
@@ -249,8 +280,10 @@ export async function GET(req: Request) {
         total: results.length,
         '24h_reminders': results.filter(r => r.type === '24-hour').length,
         '2h_reminders': results.filter(r => r.type === '2-hour').length,
-        successful: results.filter(r => r.status === 'reminder sent successfully').length,
-        failed: results.filter(r => r.status.includes('failed')).length
+        successful: results.filter(
+          r => r.status === 'reminder sent successfully'
+        ).length,
+        failed: results.filter(r => r.status.includes('failed')).length,
       },
       results,
     });
@@ -261,4 +294,4 @@ export async function GET(req: Request) {
       { status: 500 }
     );
   }
-} 
+}

@@ -8,7 +8,11 @@ export async function POST(req: Request) {
     const { type, to, clientName, action, appointmentTime, html } = body;
 
     if (!to || !clientName || !type) {
-      console.error('Missing required fields:', { type, clientName, hasEmail: !!to });
+      console.error('Missing required fields:', {
+        type,
+        clientName,
+        hasEmail: !!to,
+      });
       return NextResponse.json(
         { success: false, error: 'Missing required fields' },
         { status: 400 }
@@ -40,4 +44,4 @@ export async function POST(req: Request) {
       { status: 500 }
     );
   }
-} 
+}

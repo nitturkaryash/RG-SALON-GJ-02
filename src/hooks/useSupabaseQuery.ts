@@ -1,39 +1,39 @@
-import { useQuery } from '@tanstack/react-query'
-import { supabase } from '../utils/supabase/supabaseClient.js'
-import type { Tables } from '../utils/supabase/types'
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '../lib/supabase';
+import type { Tables } from '../utils/supabase/types';
 
-type TableNames = keyof Tables
+type TableNames = keyof Tables;
 
 export function useSupabaseQuery<T extends TableNames>(
   tableName: T,
   options?: {
-    select?: string
-    filter?: Record<string, any>
-    limit?: number
+    select?: string;
+    filter?: Record<string, any>;
+    limit?: number;
   }
 ) {
   return useQuery({
     queryKey: [tableName, options],
     queryFn: async () => {
-      let query = supabase.from(tableName).select(options?.select || '*')
+      let query = supabase.from(tableName).select(options?.select || '*');
 
       if (options?.filter) {
         Object.entries(options.filter).forEach(([key, value]) => {
-          query = query.eq(key, value)
-        })
+          query = query.eq(key, value);
+        });
       }
 
       if (options?.limit) {
-        query = query.limit(options.limit)
+        query = query.limit(options.limit);
       }
 
-      const { data, error } = await query
+      const { data, error } = await query;
 
       if (error) {
-        throw error
+        throw error;
       }
 
-      return data as unknown as Tables[T][]
+      return data as unknown as Tables[T][];
     },
-  })
-} 
+  });
+}

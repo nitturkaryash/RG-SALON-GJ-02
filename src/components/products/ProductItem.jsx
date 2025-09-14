@@ -12,28 +12,33 @@ import {
   TextField,
   Button,
   Divider,
-  Tooltip
+  Tooltip,
 } from '@mui/material';
 import {
   Edit as EditIcon,
   Delete as DeleteIcon,
-  Inventory as InventoryIcon
+  Inventory as InventoryIcon,
 } from '@mui/icons-material';
-import { supabase } from '../../utils/supabase/supabaseClient';
+import { supabase } from '../../lib/supabase';
 
-const ProductItem = ({ product, onUpdate, inventoryStatus = false, onAddToInventory }) => {
+const ProductItem = ({
+  product,
+  onUpdate,
+  inventoryStatus = false,
+  onAddToInventory,
+}) => {
   const [openEditDialog, setOpenEditDialog] = useState(false);
   const [openDeleteDialog, setOpenDeleteDialog] = useState(false);
   const previousFocusRef = React.useRef(null);
   const editButtonRef = React.useRef(null);
   const deleteButtonRef = React.useRef(null);
   const safeContainerRef = React.useRef(null);
-  
+
   const [editedProduct, setEditedProduct] = useState({
     name: product.name,
     description: product.description || '',
     price: product.price || '',
-    stock_quantity: product.stock_quantity || ''
+    stock_quantity: product.stock_quantity || '',
   });
 
   const handleOpenEditDialog = () => {
@@ -51,7 +56,7 @@ const ProductItem = ({ product, onUpdate, inventoryStatus = false, onAddToInvent
       const updatedData = {
         ...editedProduct,
         price: parseFloat(editedProduct.price) || 0,
-        stock_quantity: parseInt(editedProduct.stock_quantity) || 0
+        stock_quantity: parseInt(editedProduct.stock_quantity) || 0,
       };
 
       const { error } = await supabase
@@ -60,7 +65,7 @@ const ProductItem = ({ product, onUpdate, inventoryStatus = false, onAddToInvent
         .eq('id', product.id);
 
       if (error) throw error;
-      
+
       handleCloseEditDialog();
       if (onUpdate) onUpdate();
     } catch (error) {
@@ -76,7 +81,7 @@ const ProductItem = ({ product, onUpdate, inventoryStatus = false, onAddToInvent
         .eq('id', product.id);
 
       if (error) throw error;
-      
+
       handleCloseDeleteDialog();
       if (onUpdate) onUpdate();
     } catch (error) {
@@ -88,11 +93,14 @@ const ProductItem = ({ product, onUpdate, inventoryStatus = false, onAddToInvent
     if (document.activeElement) {
       document.activeElement.blur();
     }
-    
+
     setOpenEditDialog(false);
-    
+
     setTimeout(() => {
-      if (previousFocusRef.current && typeof previousFocusRef.current.focus === 'function') {
+      if (
+        previousFocusRef.current &&
+        typeof previousFocusRef.current.focus === 'function'
+      ) {
         previousFocusRef.current.focus();
       } else if (editButtonRef.current) {
         editButtonRef.current.focus();
@@ -106,11 +114,14 @@ const ProductItem = ({ product, onUpdate, inventoryStatus = false, onAddToInvent
     if (document.activeElement) {
       document.activeElement.blur();
     }
-    
+
     setOpenDeleteDialog(false);
-    
+
     setTimeout(() => {
-      if (previousFocusRef.current && typeof previousFocusRef.current.focus === 'function') {
+      if (
+        previousFocusRef.current &&
+        typeof previousFocusRef.current.focus === 'function'
+      ) {
         previousFocusRef.current.focus();
       } else if (deleteButtonRef.current) {
         deleteButtonRef.current.focus();
@@ -129,88 +140,114 @@ const ProductItem = ({ product, onUpdate, inventoryStatus = false, onAddToInvent
 
   return (
     <>
-      <Card 
+      <Card
         ref={safeContainerRef}
         tabIndex={-1}
-        sx={{ 
-          height: '100%', 
-          display: 'flex', 
+        sx={{
+          height: '100%',
+          display: 'flex',
           flexDirection: 'column',
           position: 'relative',
-          '&:hover .actions': { opacity: 1 }
+          '&:hover .actions': { opacity: 1 },
         }}
       >
-        <Box 
-          className="actions" 
-          sx={{ 
-            position: 'absolute', 
-            top: 5, 
-            right: 5, 
-            opacity: 0, 
+        <Box
+          className='actions'
+          sx={{
+            position: 'absolute',
+            top: 5,
+            right: 5,
+            opacity: 0,
             transition: 'opacity 0.3s',
             backgroundColor: 'rgba(255,255,255,0.8)',
             borderRadius: 1,
-            padding: '2px'
+            padding: '2px',
           }}
         >
-          <IconButton size="small" onClick={handleOpenEditDialog} ref={editButtonRef}>
-            <EditIcon fontSize="small" />
+          <IconButton
+            size='small'
+            onClick={handleOpenEditDialog}
+            ref={editButtonRef}
+          >
+            <EditIcon fontSize='small' />
           </IconButton>
-          <IconButton size="small" color="error" onClick={handleOpenDeleteDialog} ref={deleteButtonRef}>
-            <DeleteIcon fontSize="small" />
+          <IconButton
+            size='small'
+            color='error'
+            onClick={handleOpenDeleteDialog}
+            ref={deleteButtonRef}
+          >
+            <DeleteIcon fontSize='small' />
           </IconButton>
         </Box>
-        
-        <CardContent sx={{ 
-          flexGrow: 1,
-          display: 'flex',
-          flexDirection: 'column',
-          p: 2
-        }}>
-          <Typography variant="h6" component="div" gutterBottom>
+
+        <CardContent
+          sx={{
+            flexGrow: 1,
+            display: 'flex',
+            flexDirection: 'column',
+            p: 2,
+          }}
+        >
+          <Typography variant='h6' component='div' gutterBottom>
             {product.name}
           </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 1, minHeight: '40px' }}>
+          <Typography
+            variant='body2'
+            color='text.secondary'
+            sx={{ mb: 1, minHeight: '40px' }}
+          >
             {product.description || 'No description'}
           </Typography>
-          
+
           <Box sx={{ mt: 'auto' }}>
-            <Typography variant="h6" sx={{ mb: 1 }}>
+            <Typography variant='h6' sx={{ mb: 1 }}>
               ₹{product.price || 0}
             </Typography>
-            
+
             <Divider sx={{ my: 1 }} />
-            
-            <Box sx={{ 
-              display: 'flex', 
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              mt: 1.5,
-              width: '100%'
-            }}>
-              <Typography variant="body2" sx={{ fontSize: '0.9rem', fontWeight: '500' }}>
+
+            <Box
+              sx={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                mt: 1.5,
+                width: '100%',
+              }}
+            >
+              <Typography
+                variant='body2'
+                sx={{ fontSize: '0.9rem', fontWeight: '500' }}
+              >
                 Stock: {product.stock_quantity || 0}
               </Typography>
-              
+
               {inventoryStatus && (
-                <Box sx={{ 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  gap: 0.8,
-                  backgroundColor: 'rgba(123, 154, 71, 0.12)',
-                  borderRadius: '4px',
-                  padding: '6px 10px',
-                  boxShadow: '0px 1px 2px rgba(0,0,0,0.05)'
-                }}>
-                  <InventoryIcon color="success" fontSize="small" sx={{ fontSize: '1.1rem' }} />
-                  <Typography 
-                    variant="body2" 
-                    color="success.main" 
-                    sx={{ 
-                      fontSize: '0.85rem', 
+                <Box
+                  sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 0.8,
+                    backgroundColor: 'rgba(123, 154, 71, 0.12)',
+                    borderRadius: '4px',
+                    padding: '6px 10px',
+                    boxShadow: '0px 1px 2px rgba(0,0,0,0.05)',
+                  }}
+                >
+                  <InventoryIcon
+                    color='success'
+                    fontSize='small'
+                    sx={{ fontSize: '1.1rem' }}
+                  />
+                  <Typography
+                    variant='body2'
+                    color='success.main'
+                    sx={{
+                      fontSize: '0.85rem',
                       fontWeight: '500',
                       whiteSpace: 'nowrap',
-                      letterSpacing: '0.01em'
+                      letterSpacing: '0.01em',
                     }}
                   >
                     In Inventory
@@ -223,76 +260,93 @@ const ProductItem = ({ product, onUpdate, inventoryStatus = false, onAddToInvent
       </Card>
 
       {/* Edit Product Dialog */}
-      <Dialog 
-        open={openEditDialog} 
+      <Dialog
+        open={openEditDialog}
         onClose={handleCloseEditDialog}
         fullWidth
-        aria-labelledby="edit-product-title"
+        aria-labelledby='edit-product-title'
         disableRestoreFocus={false}
         keepMounted={false}
       >
-        <DialogTitle id="edit-product-title">Edit Product</DialogTitle>
+        <DialogTitle id='edit-product-title'>Edit Product</DialogTitle>
         <DialogContent>
           <TextField
             autoFocus
-            margin="dense"
-            label="Product Name"
-            type="text"
+            margin='dense'
+            label='Product Name'
+            type='text'
             fullWidth
             value={editedProduct.name}
-            onChange={(e) => setEditedProduct({...editedProduct, name: e.target.value})}
+            onChange={e =>
+              setEditedProduct({ ...editedProduct, name: e.target.value })
+            }
           />
           <TextField
-            margin="dense"
-            label="Description"
-            type="text"
+            margin='dense'
+            label='Description'
+            type='text'
             fullWidth
             multiline
             rows={2}
             value={editedProduct.description}
-            onChange={(e) => setEditedProduct({...editedProduct, description: e.target.value})}
+            onChange={e =>
+              setEditedProduct({
+                ...editedProduct,
+                description: e.target.value,
+              })
+            }
           />
           <TextField
-            margin="dense"
-            label="Price"
-            type="number"
+            margin='dense'
+            label='Price'
+            type='number'
             fullWidth
             value={editedProduct.price}
-            onChange={(e) => setEditedProduct({...editedProduct, price: e.target.value})}
+            onChange={e =>
+              setEditedProduct({ ...editedProduct, price: e.target.value })
+            }
             InputProps={{
-              startAdornment: "₹"
+              startAdornment: '₹',
             }}
           />
           <TextField
-            margin="dense"
-            label="Stock Quantity"
-            type="number"
+            margin='dense'
+            label='Stock Quantity'
+            type='number'
             fullWidth
             value={editedProduct.stock_quantity}
-            onChange={(e) => setEditedProduct({...editedProduct, stock_quantity: e.target.value})}
+            onChange={e =>
+              setEditedProduct({
+                ...editedProduct,
+                stock_quantity: e.target.value,
+              })
+            }
           />
         </DialogContent>
         <DialogActions>
           <Button onClick={handleCloseEditDialog}>Cancel</Button>
-          
+
           {!inventoryStatus && (
-            <Button 
+            <Button
               startIcon={<InventoryIcon />}
               onClick={handleAddToInventory}
-              sx={{ 
-                borderColor: '#7b9a47', 
+              sx={{
+                borderColor: '#7b9a47',
                 color: '#7b9a47',
-                '&:hover': { color: '#6a8639' }
+                '&:hover': { color: '#6a8639' },
               }}
             >
               Add to Inventory
             </Button>
           )}
-          
-          <Button 
-            onClick={handleUpdateProduct} 
-            variant="contained"
-            sx={{ backgroundColor: '#7b9a47', '&:hover': { backgroundColor: '#6a8639' } }}
+
+          <Button
+            onClick={handleUpdateProduct}
+            variant='contained'
+            sx={{
+              backgroundColor: '#7b9a47',
+              '&:hover': { backgroundColor: '#6a8639' },
+            }}
           >
             Update
           </Button>
@@ -300,27 +354,27 @@ const ProductItem = ({ product, onUpdate, inventoryStatus = false, onAddToInvent
       </Dialog>
 
       {/* Delete Product Dialog */}
-      <Dialog 
-        open={openDeleteDialog} 
-        onClose={handleCloseDeleteDialog} 
+      <Dialog
+        open={openDeleteDialog}
+        onClose={handleCloseDeleteDialog}
         fullWidth
-        aria-labelledby="delete-product-title"
+        aria-labelledby='delete-product-title'
         disableRestoreFocus={false}
         keepMounted={false}
       >
-        <DialogTitle id="delete-product-title">Delete Product</DialogTitle>
+        <DialogTitle id='delete-product-title'>Delete Product</DialogTitle>
         <DialogContent>
           <Typography>
-            Are you sure you want to delete the product "{product.name}"? 
-            This action cannot be undone.
+            Are you sure you want to delete the product "{product.name}"? This
+            action cannot be undone.
           </Typography>
         </DialogContent>
         <DialogActions>
           <Button onClick={handleCloseDeleteDialog}>Cancel</Button>
-          <Button 
-            onClick={handleDeleteProduct} 
-            variant="contained"
-            color="error"
+          <Button
+            onClick={handleDeleteProduct}
+            variant='contained'
+            color='error'
           >
             Delete
           </Button>
@@ -330,4 +384,4 @@ const ProductItem = ({ product, onUpdate, inventoryStatus = false, onAddToInvent
   );
 };
 
-export default ProductItem; 
+export default ProductItem;

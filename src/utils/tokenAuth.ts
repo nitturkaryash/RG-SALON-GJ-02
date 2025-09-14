@@ -28,7 +28,7 @@ export const authenticateWithProvidedToken = async () => {
 export const isTokenAuthenticated = (): boolean => {
   const token = localStorage.getItem('auth_token');
   const user = localStorage.getItem('auth_user');
-  
+
   return !!(token && user);
 };
 
@@ -39,7 +39,7 @@ export const isTokenAuthenticated = (): boolean => {
 export const getTokenAuthenticatedUser = () => {
   const userStr = localStorage.getItem('auth_user');
   if (!userStr) return null;
-  
+
   try {
     return JSON.parse(userStr);
   } catch (error) {
@@ -54,11 +54,13 @@ export const getTokenAuthenticatedUser = () => {
 export const logoutTokenUser = () => {
   localStorage.removeItem('auth_token');
   localStorage.removeItem('auth_user');
-  
+
   // Trigger auth state change
-  window.dispatchEvent(new CustomEvent('authStateChanged', { 
-    detail: { user: null, session: null } 
-  }));
+  window.dispatchEvent(
+    new CustomEvent('authStateChanged', {
+      detail: { user: null, session: null },
+    })
+  );
 };
 
 /**
@@ -68,7 +70,8 @@ export const logoutTokenUser = () => {
  */
 export const isValidTokenFormat = (token: string): boolean => {
   // Check if token is a valid UUID format
-  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const uuidRegex =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   return uuidRegex.test(token);
 };
 
@@ -80,13 +83,13 @@ export const setupTokenAuthentication = () => {
   // Check if token is already stored
   const token = localStorage.getItem('auth_token');
   const user = localStorage.getItem('auth_user');
-  
+
   if (token && user) {
     // User is already authenticated with token
     console.log('User already authenticated with token');
     return true;
   }
-  
+
   // Optionally auto-authenticate with the provided token
   // Uncomment the following lines if you want automatic authentication
   /*
@@ -96,6 +99,6 @@ export const setupTokenAuthentication = () => {
     });
   }
   */
-  
+
   return false;
-}; 
+};

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react';
 import {
   Box,
   Typography,
@@ -33,8 +33,8 @@ import {
   TableRow,
   Badge,
   Tooltip,
-  Alert
-} from '@mui/material'
+  Alert,
+} from '@mui/material';
 import {
   PersonAdd as PersonAddIcon,
   Edit as EditIcon,
@@ -47,26 +47,44 @@ import {
   Add as AddIcon,
   HolidayVillage as HolidayIcon,
   EventBusy as EventBusyIcon,
-  CalendarMonth
-} from '@mui/icons-material'
-import { useStylists, Stylist } from '../hooks/useStylists'
-import { useStylistHolidays, StylistHoliday } from '../hooks/useStylistHolidays'
-import { useServices } from '../hooks/useServices'
-import { useServiceCollections } from '../hooks/useServiceCollections'
-import { toast } from 'react-toastify'
-import { format, isToday, isBefore, isAfter, isSameDay, startOfMonth, endOfMonth, eachDayOfInterval, getDay, parse, addMonths, subMonths, isWithinInterval } from 'date-fns'
-import { LocalizationProvider, DatePicker } from '@mui/x-date-pickers'
-import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns'
-import { v4 as uuidv4 } from 'uuid'
-import { useQueryClient } from '@tanstack/react-query'
-import { useOrders } from '../hooks/useOrders'
-import { formatCurrency } from '../utils/format'
-import DateRangePicker from '../components/dashboard/DateRangePicker'
+  CalendarMonth,
+} from '@mui/icons-material';
+import { useStylists, Stylist } from '../hooks/useStylists';
+import {
+  useStylistHolidays,
+  StylistHoliday,
+} from '../hooks/useStylistHolidays';
+import { useServices } from '../hooks/products/useServices';
+import { useServiceCollections } from '../hooks/useServiceCollections';
+import { toast } from 'react-toastify';
+import {
+  format,
+  isToday,
+  isBefore,
+  isAfter,
+  isSameDay,
+  startOfMonth,
+  endOfMonth,
+  eachDayOfInterval,
+  getDay,
+  parse,
+  addMonths,
+  subMonths,
+  isWithinInterval,
+} from 'date-fns';
+import { LocalizationProvider, DatePicker } from '@mui/x-date-pickers';
+import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
+import { v4 as uuidv4 } from 'uuid';
+import { useQueryClient } from '@tanstack/react-query';
+import { useOrders } from '../hooks/orders/useOrders';
+import { formatCurrency } from '../utils/formatting/format';
+import DateRangePicker from '../components/dashboard/DateRangePicker';
 
 // Default avatar image
-const DEFAULT_AVATAR = 'https://ui-avatars.com/api/?name=Stylist&background=6B8E23&color=fff&size=150'
+const DEFAULT_AVATAR =
+  'https://ui-avatars.com/api/?name=Stylist&background=6B8E23&color=fff&size=150';
 
-type StylistFormData = Omit<Stylist, 'id'> & { id?: string }
+type StylistFormData = Omit<Stylist, 'id'> & { id?: string };
 
 interface HolidayReport {
   stylistId: string;
@@ -88,56 +106,67 @@ const initialFormData: StylistFormData = {
   email: '',
   phone: '',
   breaks: [],
-  holidays: [] // Initialize empty holidays array
-}
+  holidays: [], // Initialize empty holidays array
+};
 
 export default function Stylists() {
-  const { stylists, isLoading, createStylist, updateStylist, deleteStylist } = useStylists()
-  const { 
-    holidays: allHolidays, 
+  const { stylists, isLoading, createStylist, updateStylist, deleteStylist } =
+    useStylists();
+  const {
+    holidays: allHolidays,
     isLoading: isLoadingHolidays,
     getStylistHolidays,
     addHoliday,
     updateHoliday,
     deleteHoliday,
-    isStylistOnHoliday
-  } = useStylistHolidays()
-  const { services } = useServices()
-  const { serviceCollections, isLoading: isLoadingServiceCollections } = useServiceCollections()
-  const { orders, isLoading: isLoadingOrders } = useOrders()
-  
+    isStylistOnHoliday,
+  } = useStylistHolidays();
+  const { services } = useServices();
+  const { serviceCollections, isLoading: isLoadingServiceCollections } =
+    useServiceCollections();
+  const { orders, isLoading: isLoadingOrders } = useOrders();
+
   // Debug orders loading
   useEffect(() => {
     console.log('🔍 STYLISTS DEBUG - Orders loaded:', {
       ordersLength: orders?.length || 0,
       isLoadingOrders,
       firstOrder: orders?.[0],
-      ordersWithSangam: orders?.filter(order => 
-        (order as any).stylist_name === 'Sangam' || 
-        (order as any).stylist?.name === 'Sangam'
-      )?.length || 0
+      ordersWithSangam:
+        orders?.filter(
+          order =>
+            (order as any).stylist_name === 'Sangam' ||
+            (order as any).stylist?.name === 'Sangam'
+        )?.length || 0,
     });
   }, [orders, isLoadingOrders]);
-  const [open, setOpen] = useState(false)
-  const [formData, setFormData] = useState<StylistFormData>(initialFormData)
-  const [editingId, setEditingId] = useState<string | null>(null)
-  const [specialties, setSpecialties] = useState<string[]>([])
-  const [holidayDate, setHolidayDate] = useState<Date | null>(new Date())
-  const [holidayReason, setHolidayReason] = useState<string>('')
-  const [holidayEndDate, setHolidayEndDate] = useState<Date | null>(new Date())
-  const [holidayDialogOpen, setHolidayDialogOpen] = useState<boolean>(false)
-  const [selectedStylistForHoliday, setSelectedStylistForHoliday] = useState<Stylist | null>(null)
-  const [editingHoliday, setEditingHoliday] = useState<StylistHoliday | null>(null)
-  const [endDate, setEndDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [open, setOpen] = useState(false);
+  const [formData, setFormData] = useState<StylistFormData>(initialFormData);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [specialties, setSpecialties] = useState<string[]>([]);
+  const [holidayDate, setHolidayDate] = useState<Date | null>(new Date());
+  const [holidayReason, setHolidayReason] = useState<string>('');
+  const [holidayEndDate, setHolidayEndDate] = useState<Date | null>(new Date());
+  const [holidayDialogOpen, setHolidayDialogOpen] = useState<boolean>(false);
+  const [selectedStylistForHoliday, setSelectedStylistForHoliday] =
+    useState<Stylist | null>(null);
+  const [editingHoliday, setEditingHoliday] = useState<StylistHoliday | null>(
+    null
+  );
+  const [endDate, setEndDate] = useState<string>(
+    new Date().toISOString().split('T')[0]
+  );
   const [startDate, setStartDate] = useState<string>(() => {
     const date = new Date();
     date.setDate(date.getDate() - 30); // Default to last 30 days
     return date.toISOString().split('T')[0];
   });
-  const [holidayReports, setHolidayReports] = useState<HolidayReport[]>([])
-  const [stylistHolidays, setStylistHolidays] = useState<Record<string, StylistHoliday[]>>({})
+  const [holidayReports, setHolidayReports] = useState<HolidayReport[]>([]);
+  const [stylistHolidays, setStylistHolidays] = useState<
+    Record<string, StylistHoliday[]>
+  >({});
 
-  const queryClient = useQueryClient()
+  const queryClient = useQueryClient();
 
   // Handle date range changes
   const handleDateRangeChange = (newStartDate: Date, newEndDate: Date) => {
@@ -149,33 +178,35 @@ export default function Stylists() {
   useEffect(() => {
     if (serviceCollections?.length) {
       // Extract all service names from service collections
-      const allSpecialties = new Set<string>()
-      
+      const allSpecialties = new Set<string>();
+
       // First try to get service names directly from the collections
       serviceCollections.forEach(collection => {
-        allSpecialties.add(collection.name)
-      })
-      
+        allSpecialties.add(collection.name);
+      });
+
       // If we have services data, add those names too
       if (services?.length) {
         services.forEach(service => {
           if (service.name) {
-            allSpecialties.add(service.name)
+            allSpecialties.add(service.name);
           }
-        })
+        });
       }
-      
+
       // Convert set to sorted array
-      setSpecialties(Array.from(allSpecialties).sort())
+      setSpecialties(Array.from(allSpecialties).sort());
     }
-  }, [serviceCollections, services])
+  }, [serviceCollections, services]);
 
   // Build stylistHolidays map from the fetched allHolidays list
   useEffect(() => {
     if (stylists?.length && allHolidays) {
       const holidaysMap: Record<string, StylistHoliday[]> = {};
       stylists.forEach(stylist => {
-        holidaysMap[stylist.id] = allHolidays.filter(h => h.stylist_id === stylist.id);
+        holidaysMap[stylist.id] = allHolidays.filter(
+          h => h.stylist_id === stylist.id
+        );
       });
       setStylistHolidays(holidaysMap);
     }
@@ -187,7 +218,7 @@ export default function Stylists() {
       console.log(`🔍 ORDERS DEBUG - Total orders loaded:`, orders.length);
       console.log(`🔍 ORDERS DEBUG - First 3 orders:`, orders.slice(0, 3));
       console.log(`🔍 ORDERS DEBUG - Date range:`, { startDate, endDate });
-      
+
       const rangeStart = new Date(startDate);
       const rangeEnd = new Date(endDate);
       // Extend rangeEnd to include the full day (23:59:59.999)
@@ -196,11 +227,14 @@ export default function Stylists() {
 
       const reports: HolidayReport[] = stylists.map(stylist => {
         const stylistHolidayList = stylistHolidays[stylist.id] || [];
-        
+
         // Filter holidays for the selected date range
         const holidaysInRange = stylistHolidayList.filter(holiday => {
           const holidayDate = new Date(holiday.holiday_date);
-          return isWithinInterval(holidayDate, { start: rangeStart, end: rangeEnd });
+          return isWithinInterval(holidayDate, {
+            start: rangeStart,
+            end: rangeEnd,
+          });
         });
 
         // Count upcoming and past holidays within the selected range
@@ -213,11 +247,13 @@ export default function Stylists() {
           const holidayDate = new Date(holiday.holiday_date);
           return isBefore(holidayDate, today) && !isToday(holidayDate);
         }).length;
-        
+
         // 🔄 Calculate service revenue with equal sharing among experts (multi-expert) while maintaining legacy support
         // Excludes memberships, products, and services paid via membership
         const serviceRevenue = orders.reduce((total, order) => {
-          const orderDate = new Date((order as any).created_at || order.created_at);
+          const orderDate = new Date(
+            (order as any).created_at || order.created_at
+          );
 
           // Debug logging for walk-in orders specifically
           if ((order as any).is_walk_in) {
@@ -226,12 +262,17 @@ export default function Stylists() {
               orderStatus: order.status,
               isWalkIn: (order as any).is_walk_in,
               orderDate: orderDate,
-              isInRange: isWithinInterval(orderDate, { start: rangeStart, end: rangeEnd }),
+              isInRange: isWithinInterval(orderDate, {
+                start: rangeStart,
+                end: rangeEnd,
+              }),
               stylistId: (order as any).stylist_id,
               stylistName: (order as any).stylist_name,
               hasServices: !!(order as any).services,
               servicesArray: (order as any).services,
-              servicesCount: Array.isArray((order as any).services) ? (order as any).services.length : 0
+              servicesCount: Array.isArray((order as any).services)
+                ? (order as any).services.length
+                : 0,
             });
           }
 
@@ -241,17 +282,23 @@ export default function Stylists() {
               orderId: (order as any).id,
               orderStatus: order.status,
               orderDate: orderDate,
-              isInRange: isWithinInterval(orderDate, { start: rangeStart, end: rangeEnd }),
+              isInRange: isWithinInterval(orderDate, {
+                start: rangeStart,
+                end: rangeEnd,
+              }),
               hasServices: !!(order as any).services,
               servicesArray: (order as any).services,
               stylistId: (order as any).stylist_id,
-              stylistName: (order as any).stylist_name
+              stylistName: (order as any).stylist_name,
             });
           }
 
           // Skip orders outside the selected range or not completed
           if (
-            !isWithinInterval(orderDate, { start: rangeStart, end: rangeEnd }) ||
+            !isWithinInterval(orderDate, {
+              start: rangeStart,
+              end: rangeEnd,
+            }) ||
             order.status !== 'completed' ||
             !(order as any).services ||
             !Array.isArray((order as any).services)
@@ -259,10 +306,18 @@ export default function Stylists() {
             if (stylist.name === 'Sangam') {
               console.log(`🚫 SANGAM DEBUG - Skipping order:`, {
                 orderId: (order as any).id,
-                reason: !isWithinInterval(orderDate, { start: rangeStart, end: rangeEnd }) ? 'Date out of range' :
-                       order.status !== 'completed' ? 'Not completed' :
-                       !(order as any).services ? 'No services' :
-                       !Array.isArray((order as any).services) ? 'Services not array' : 'Unknown'
+                reason: !isWithinInterval(orderDate, {
+                  start: rangeStart,
+                  end: rangeEnd,
+                })
+                  ? 'Date out of range'
+                  : order.status !== 'completed'
+                    ? 'Not completed'
+                    : !(order as any).services
+                      ? 'No services'
+                      : !Array.isArray((order as any).services)
+                        ? 'Services not array'
+                        : 'Unknown',
               });
             }
             return total;
@@ -272,67 +327,91 @@ export default function Stylists() {
           (order as any).services
             .filter((svc: any) => {
               if (!svc) return false;
-              
+
               // Enhanced debugging for walk-in orders
               if ((order as any).is_walk_in) {
-                console.log(`🚶 WALK-IN SERVICE DEBUG for ${stylist.name} - ORDER ${(order as any).id}:`, {
-                  service_name: svc.service_name || svc.name,
-                  type: svc.type,
-                  category: svc.category,
-                  price: svc.price,
-                  is_membership_payment: svc.is_membership_payment,
-                  membership_payment: svc.membership_payment,
-                  full_service: svc
-                });
+                console.log(
+                  `🚶 WALK-IN SERVICE DEBUG for ${stylist.name} - ORDER ${(order as any).id}:`,
+                  {
+                    service_name: svc.service_name || svc.name,
+                    type: svc.type,
+                    category: svc.category,
+                    price: svc.price,
+                    is_membership_payment: svc.is_membership_payment,
+                    membership_payment: svc.membership_payment,
+                    full_service: svc,
+                  }
+                );
               }
-              
+
               // Enhanced debugging for this specific order
-              if ((order as any).id === 'sales-0022' || (svc.service_name === 'Basic Haircut' && svc.price === 300)) {
-                console.log(`🔍 DEBUGGING ORDER ${(order as any).id || 'unknown'} - SERVICE:`, {
-                  service_name: svc.service_name || svc.name,
-                  type: svc.type,
-                  category: svc.category,
-                  price: svc.price,
-                  is_membership_payment: svc.is_membership_payment,
-                  membership_payment: svc.membership_payment,
-                  full_service: svc
-                });
+              if (
+                (order as any).id === 'sales-0022' ||
+                (svc.service_name === 'Basic Haircut' && svc.price === 300)
+              ) {
+                console.log(
+                  `🔍 DEBUGGING ORDER ${(order as any).id || 'unknown'} - SERVICE:`,
+                  {
+                    service_name: svc.service_name || svc.name,
+                    type: svc.type,
+                    category: svc.category,
+                    price: svc.price,
+                    is_membership_payment: svc.is_membership_payment,
+                    membership_payment: svc.membership_payment,
+                    full_service: svc,
+                  }
+                );
               }
-              
+
               // CRITICAL FIX: Check for membership type/category FIRST before any other logic
               const isMembership =
                 svc.type === 'membership' ||
                 svc.category === 'membership' ||
-                (typeof svc.duration_months === 'number' && svc.duration_months > 0) ||
+                (typeof svc.duration_months === 'number' &&
+                  svc.duration_months > 0) ||
                 /membership/i.test(svc.name || svc.service_name || '');
 
               // IMMEDIATELY exclude memberships - no membership revenue should ever reach stylists
               if (isMembership) {
-                if ((order as any).is_walk_in) console.log(`🚶 WALK-IN: 🚫 Membership exclusion for ${stylist.name}: ${svc.service_name || svc.name}`);
+                if ((order as any).is_walk_in)
+                  console.log(
+                    `🚶 WALK-IN: 🚫 Membership exclusion for ${stylist.name}: ${svc.service_name || svc.name}`
+                  );
                 return false;
               }
 
-              const isProduct = svc.type === 'product' || svc.category === 'product';
-              
-              // IMMEDIATELY exclude products - no product revenue should reach stylists  
+              const isProduct =
+                svc.type === 'product' || svc.category === 'product';
+
+              // IMMEDIATELY exclude products - no product revenue should reach stylists
               if (isProduct) {
-                if ((order as any).is_walk_in) console.log(`🚶 WALK-IN: 🚫 Product exclusion for ${stylist.name}: ${svc.service_name || svc.name}`);
+                if ((order as any).is_walk_in)
+                  console.log(
+                    `🚶 WALK-IN: 🚫 Product exclusion for ${stylist.name}: ${svc.service_name || svc.name}`
+                  );
                 return false;
               }
 
               // Exclude services paid via membership
-              const isPaidViaMembership = svc.is_membership_payment || svc.membership_payment;
+              const isPaidViaMembership =
+                svc.is_membership_payment || svc.membership_payment;
               if (isPaidViaMembership) {
-                if ((order as any).is_walk_in) console.log(`🚶 WALK-IN: 🚫 Membership Payment exclusion for ${stylist.name}: ${svc.service_name || svc.name}`);
+                if ((order as any).is_walk_in)
+                  console.log(
+                    `🚶 WALK-IN: 🚫 Membership Payment exclusion for ${stylist.name}: ${svc.service_name || svc.name}`
+                  );
                 return false;
               }
 
               // Only include actual paid services
               const isService = svc.type === 'service';
               if (!isService) {
-                if ((order as any).is_walk_in) console.log(`🚶 WALK-IN: 🚫 Not a service exclusion for ${stylist.name}: ${svc.service_name || svc.name} (type: ${svc.type})`);
+                if ((order as any).is_walk_in)
+                  console.log(
+                    `🚶 WALK-IN: 🚫 Not a service exclusion for ${stylist.name}: ${svc.service_name || svc.name} (type: ${svc.type})`
+                  );
               }
-              
+
               return isService;
             })
             .forEach((svc: any) => {
@@ -340,52 +419,69 @@ export default function Stylists() {
 
               // Enhanced debugging for stylist assignment in walk-in orders
               if ((order as any).is_walk_in) {
-                console.log(`🚶 WALK-IN STYLIST ASSIGNMENT DEBUG for ${stylist.name} - ORDER ${(order as any).id}:`, {
-                  service: svc.service_name || svc.name,
-                  baseAmount,
-                  orderStylistId: (order as any).stylist_id,
-                  orderStylistName: (order as any).stylist_name,
-                  currentStylistId: stylist.id,
-                  currentStylistName: stylist.name,
-                  experts: svc.experts,
-                  matchById: (order as any).stylist_id === stylist.id,
-                  matchByName: (order as any).stylist_name === stylist.name
-                });
+                console.log(
+                  `🚶 WALK-IN STYLIST ASSIGNMENT DEBUG for ${stylist.name} - ORDER ${(order as any).id}:`,
+                  {
+                    service: svc.service_name || svc.name,
+                    baseAmount,
+                    orderStylistId: (order as any).stylist_id,
+                    orderStylistName: (order as any).stylist_name,
+                    currentStylistId: stylist.id,
+                    currentStylistName: stylist.name,
+                    experts: svc.experts,
+                    matchById: (order as any).stylist_id === stylist.id,
+                    matchByName: (order as any).stylist_name === stylist.name,
+                  }
+                );
               }
 
               // Enhanced debugging for stylist assignment
-              if ((order as any).id === 'sales-0022' || (svc.service_name === 'Basic Haircut' && svc.price === 300)) {
-                console.log(`🔍 STYLIST ASSIGNMENT DEBUG for ${stylist.name}:`, {
-                  service: svc.service_name || svc.name,
-                  baseAmount,
-                  orderStylistId: (order as any).stylist_id,
-                  orderStylistName: (order as any).stylist_name,
-                  currentStylistId: stylist.id,
-                  currentStylistName: stylist.name,
-                  experts: svc.experts,
-                  orderData: {
-                    id: (order as any).id,
-                    stylist_id: (order as any).stylist_id,
-                    stylist_name: (order as any).stylist_name,
-                    stylist: (order as any).stylist
+              if (
+                (order as any).id === 'sales-0022' ||
+                (svc.service_name === 'Basic Haircut' && svc.price === 300)
+              ) {
+                console.log(
+                  `🔍 STYLIST ASSIGNMENT DEBUG for ${stylist.name}:`,
+                  {
+                    service: svc.service_name || svc.name,
+                    baseAmount,
+                    orderStylistId: (order as any).stylist_id,
+                    orderStylistName: (order as any).stylist_name,
+                    currentStylistId: stylist.id,
+                    currentStylistName: stylist.name,
+                    experts: svc.experts,
+                    orderData: {
+                      id: (order as any).id,
+                      stylist_id: (order as any).stylist_id,
+                      stylist_name: (order as any).stylist_name,
+                      stylist: (order as any).stylist,
+                    },
                   }
-                });
+                );
               }
 
               // If the service has an experts array, split equally among them
-              const experts: any[] = Array.isArray(svc.experts) ? svc.experts : [];
+              const experts: any[] = Array.isArray(svc.experts)
+                ? svc.experts
+                : [];
 
               if (experts.length > 0) {
                 const stylistInvolved = experts.some(
-                  (exp: any) => exp.id === stylist.id || exp.name === stylist.name
+                  (exp: any) =>
+                    exp.id === stylist.id || exp.name === stylist.name
                 );
 
                 if (stylistInvolved) {
-                  console.log(`💰 EXPERT REVENUE for ${stylist.name} in order ${(order as any).id}: +₹${baseAmount / experts.length} (split ${experts.length} ways) for service "${svc.service_name}"`);
+                  console.log(
+                    `💰 EXPERT REVENUE for ${stylist.name} in order ${(order as any).id}: +₹${baseAmount / experts.length} (split ${experts.length} ways) for service "${svc.service_name}"`
+                  );
                   total += baseAmount / experts.length; // equal share
                 } else {
                   if ((order as any).is_walk_in) {
-                    console.log(`🚶 WALK-IN: Stylist ${stylist.name} not in experts list for service "${svc.service_name}" in order ${(order as any).id}. Experts:`, experts.map(e => e.name));
+                    console.log(
+                      `🚶 WALK-IN: Stylist ${stylist.name} not in experts list for service "${svc.service_name}" in order ${(order as any).id}. Experts:`,
+                      experts.map(e => e.name)
+                    );
                   }
                 }
               } else {
@@ -400,10 +496,14 @@ export default function Stylists() {
                   : orderStylistName === stylist.name;
 
                 if (isOrderStylist) {
-                  console.log(`💰 LEGACY REVENUE for ${stylist.name} in order ${(order as any).id}: +₹${baseAmount} for service "${svc.service_name}"`);
+                  console.log(
+                    `💰 LEGACY REVENUE for ${stylist.name} in order ${(order as any).id}: +₹${baseAmount} for service "${svc.service_name}"`
+                  );
                   total += baseAmount;
                 } else if ((order as any).is_walk_in) {
-                  console.log(`🚶 WALK-IN: Stylist ${stylist.name} does not match legacy order stylist ${orderStylistName} (${orderStylistId}) for order ${(order as any).id}`);
+                  console.log(
+                    `🚶 WALK-IN: Stylist ${stylist.name} does not match legacy order stylist ${orderStylistName} (${orderStylistId}) for order ${(order as any).id}`
+                  );
                 }
               }
             });
@@ -417,10 +517,12 @@ export default function Stylists() {
           totalHolidays: holidaysInRange.length,
           upcomingHolidays,
           pastHolidays,
-          holidays: holidaysInRange.sort((a: StylistHoliday, b: StylistHoliday) => 
-            new Date(a.holiday_date).getTime() - new Date(b.holiday_date).getTime()
+          holidays: holidaysInRange.sort(
+            (a: StylistHoliday, b: StylistHoliday) =>
+              new Date(a.holiday_date).getTime() -
+              new Date(b.holiday_date).getTime()
           ),
-          serviceRevenue
+          serviceRevenue,
         };
       });
 
@@ -428,13 +530,13 @@ export default function Stylists() {
     }
   }, [stylists, startDate, endDate, stylistHolidays, allHolidays, orders]);
 
-  const handleOpen = () => setOpen(true)
-  
+  const handleOpen = () => setOpen(true);
+
   const handleClose = () => {
-    setOpen(false)
-    setFormData(initialFormData)
-    setEditingId(null)
-  }
+    setOpen(false);
+    setFormData(initialFormData);
+    setEditingId(null);
+  };
 
   const handleEdit = (stylist: Stylist) => {
     setFormData({
@@ -447,64 +549,64 @@ export default function Stylists() {
       email: stylist.email || '',
       phone: stylist.phone || '',
       breaks: stylist.breaks || [],
-      holidays: stylist.holidays || []
-    })
-    setEditingId(stylist.id)
-    setOpen(true)
-  }
+      holidays: stylist.holidays || [],
+    });
+    setEditingId(stylist.id);
+    setOpen(true);
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
+    e.preventDefault();
     if (!formData.name) {
-      toast.error('Stylist name is required')
-      return
+      toast.error('Stylist name is required');
+      return;
     }
 
     if (editingId) {
-      updateStylist({ ...formData, id: editingId })
+      updateStylist({ ...formData, id: editingId });
     } else {
-      createStylist(formData)
+      createStylist(formData);
     }
-    
-    handleClose()
-  }
+
+    handleClose();
+  };
 
   const handleDelete = async (id: string) => {
     if (window.confirm('Are you sure you want to delete this stylist?')) {
-      deleteStylist(id)
+      deleteStylist(id);
     }
-  }
+  };
 
   const openHolidayDialog = (stylist: Stylist, existingHoliday?: any) => {
-    setSelectedStylistForHoliday(stylist)
-    
+    setSelectedStylistForHoliday(stylist);
+
     if (existingHoliday) {
       // Edit mode
-      setEditingHoliday(existingHoliday)
-      setHolidayDate(new Date(existingHoliday.holiday_date))
-      setHolidayEndDate(new Date(existingHoliday.holiday_date))
-      setHolidayReason(existingHoliday.reason || '')
+      setEditingHoliday(existingHoliday);
+      setHolidayDate(new Date(existingHoliday.holiday_date));
+      setHolidayEndDate(new Date(existingHoliday.holiday_date));
+      setHolidayReason(existingHoliday.reason || '');
     } else {
       // Add mode
-      setEditingHoliday(null)
-      setHolidayDate(new Date())
-      setHolidayEndDate(new Date())
-      setHolidayReason('')
+      setEditingHoliday(null);
+      setHolidayDate(new Date());
+      setHolidayEndDate(new Date());
+      setHolidayReason('');
     }
-    
-    setHolidayDialogOpen(true)
-  }
+
+    setHolidayDialogOpen(true);
+  };
 
   const closeHolidayDialog = () => {
-    setHolidayDialogOpen(false)
-    setSelectedStylistForHoliday(null)
-    setEditingHoliday(null)
-  }
+    setHolidayDialogOpen(false);
+    setSelectedStylistForHoliday(null);
+    setEditingHoliday(null);
+  };
 
   const addOrUpdateHoliday = async () => {
     if (!selectedStylistForHoliday || !holidayDate) {
-      toast.error('Please select a stylist and a start date')
-      return
+      toast.error('Please select a stylist and a start date');
+      return;
     }
     try {
       if (editingHoliday) {
@@ -512,41 +614,48 @@ export default function Stylists() {
         await updateHoliday.mutateAsync({
           holidayId: editingHoliday.id,
           holidayDate: format(holidayDate, 'yyyy-MM-dd'),
-          reason: holidayReason
-        })
-        toast.success(`Holiday updated for ${selectedStylistForHoliday.name}`)
+          reason: holidayReason,
+        });
+        toast.success(`Holiday updated for ${selectedStylistForHoliday.name}`);
       } else {
         // Add new holiday(s) for the selected range
         if (!holidayEndDate) {
-          toast.error('Please select an end date')
-          return
+          toast.error('Please select an end date');
+          return;
         }
         if (holidayEndDate < holidayDate) {
-          toast.error('End date cannot be before start date')
-          return
+          toast.error('End date cannot be before start date');
+          return;
         }
-        const datesInRange = eachDayOfInterval({ start: holidayDate, end: holidayEndDate })
+        const datesInRange = eachDayOfInterval({
+          start: holidayDate,
+          end: holidayEndDate,
+        });
         for (const date of datesInRange) {
           await addHoliday.mutateAsync({
             stylistId: selectedStylistForHoliday.id,
             holidayDate: format(date, 'yyyy-MM-dd'),
-            reason: holidayReason
-          })
+            reason: holidayReason,
+          });
         }
-        toast.success(`Holidays added for ${selectedStylistForHoliday.name}`)
+        toast.success(`Holidays added for ${selectedStylistForHoliday.name}`);
       }
       // Refresh data
-      queryClient.invalidateQueries({ queryKey: ['stylist_holidays'] })
-      queryClient.invalidateQueries({ queryKey: ['stylists'] })
-      closeHolidayDialog()
+      queryClient.invalidateQueries({ queryKey: ['stylist_holidays'] });
+      queryClient.invalidateQueries({ queryKey: ['stylists'] });
+      closeHolidayDialog();
     } catch (error) {
-      console.error('Error managing holiday:', error)
-      toast.error('Error saving holiday')
+      console.error('Error managing holiday:', error);
+      toast.error('Error saving holiday');
     }
-  }
+  };
 
   const removeHoliday = async (stylist: Stylist, holidayId: string) => {
-    if (!window.confirm(`Are you sure you want to remove this holiday for ${stylist.name}?`)) {
+    if (
+      !window.confirm(
+        `Are you sure you want to remove this holiday for ${stylist.name}?`
+      )
+    ) {
       return;
     }
 
@@ -559,115 +668,144 @@ export default function Stylists() {
       // Update local state to remove the holiday immediately
       setStylistHolidays(prev => ({
         ...prev,
-        [stylist.id]: prev[stylist.id]?.filter(h => h.id !== holidayId) || []
+        [stylist.id]: prev[stylist.id]?.filter(h => h.id !== holidayId) || [],
       }));
     } catch (error) {
       console.error('Error removing holiday:', error);
       toast.error('Error removing holiday');
     }
-  }
+  };
 
   // Handler to delete holiday from within the Edit Holiday dialog
   const handleDialogDelete = async () => {
-    if (!selectedStylistForHoliday || !editingHoliday) return
-    if (!window.confirm(`Are you sure you want to remove this holiday for ${selectedStylistForHoliday.name}?`)) return
+    if (!selectedStylistForHoliday || !editingHoliday) return;
+    if (
+      !window.confirm(
+        `Are you sure you want to remove this holiday for ${selectedStylistForHoliday.name}?`
+      )
+    )
+      return;
     try {
-      await deleteHoliday.mutateAsync(editingHoliday.id)
-      toast.success(`Holiday removed for ${selectedStylistForHoliday.name}`)
-      queryClient.invalidateQueries({ queryKey: ['stylist_holidays'] })
-      queryClient.invalidateQueries({ queryKey: ['stylists'] })
-      closeHolidayDialog()
+      await deleteHoliday.mutateAsync(editingHoliday.id);
+      toast.success(`Holiday removed for ${selectedStylistForHoliday.name}`);
+      queryClient.invalidateQueries({ queryKey: ['stylist_holidays'] });
+      queryClient.invalidateQueries({ queryKey: ['stylists'] });
+      closeHolidayDialog();
     } catch (error) {
-      console.error('Error removing holiday:', error)
-      toast.error('Error removing holiday')
+      console.error('Error removing holiday:', error);
+      toast.error('Error removing holiday');
     }
-  }
+  };
 
-  const checkStylistOnHolidayToday = async (stylist: Stylist): Promise<boolean> => {
+  const checkStylistOnHolidayToday = async (
+    stylist: Stylist
+  ): Promise<boolean> => {
     return isStylistOnHoliday(stylist.id);
-  }
+  };
 
   const getSpecialtyIcon = (specialty: string) => {
     switch (specialty.toLowerCase()) {
       case 'haircut':
-        return <ContentCut fontSize="small" />
+        return <ContentCut fontSize='small' />;
       case 'color':
-        return <Palette fontSize="small" />
+        return <Palette fontSize='small' />;
       default:
-        return <Spa fontSize="small" />
+        return <Spa fontSize='small' />;
     }
-  }
+  };
 
   // Helper to get the day name for a date
   const getDayName = (date: Date): string => {
     return format(date, 'EEE');
-  }
+  };
 
   // Add function to check if a stylist is on holiday on a specific date
-  const getStylistHolidayForDate = (stylist: Stylist, date: Date): StylistHoliday | undefined => {
+  const getStylistHolidayForDate = (
+    stylist: Stylist,
+    date: Date
+  ): StylistHoliday | undefined => {
     const formattedDate = format(date, 'yyyy-MM-dd');
-    return stylistHolidays[stylist.id]?.find(holiday => 
-      holiday.holiday_date === formattedDate
+    return stylistHolidays[stylist.id]?.find(
+      holiday => holiday.holiday_date === formattedDate
+    );
+  };
+
+  // Count stylists on holiday today
+  const stylistsOnHolidayToday =
+    stylists?.filter(stylist => {
+      // Since this is an async function now, we need to ensure it's handled properly
+      // We'll use the synchronous check based on the stylistHolidays map
+      const today = format(new Date(), 'yyyy-MM-dd');
+      return (
+        stylistHolidays[stylist.id]?.some(h => h.holiday_date === today) ||
+        false
+      );
+    }) || [];
+
+  if (
+    isLoading ||
+    isLoadingServiceCollections ||
+    isLoadingHolidays ||
+    isLoadingOrders
+  ) {
+    return (
+      <Box
+        display='flex'
+        justifyContent='center'
+        alignItems='center'
+        height='100vh'
+      >
+        <CircularProgress />
+      </Box>
     );
   }
 
-  // Count stylists on holiday today
-  const stylistsOnHolidayToday = stylists?.filter(stylist => {
-    // Since this is an async function now, we need to ensure it's handled properly
-    // We'll use the synchronous check based on the stylistHolidays map
-    const today = format(new Date(), 'yyyy-MM-dd');
-    return stylistHolidays[stylist.id]?.some(h => h.holiday_date === today) || false;
-  }) || [];
-
-  if (isLoading || isLoadingServiceCollections || isLoadingHolidays || isLoadingOrders) {
-    return (
-      <Box display="flex" justifyContent="center" alignItems="center" height="100vh">
-        <CircularProgress />
-      </Box>
-    )
-  }
-
   return (
-    <Box sx={{ 
-      width: '100%', 
-      maxWidth: '1400px',
-      margin: '0 auto',
-      display: 'flex', 
-      flexDirection: 'column',
-      alignItems: 'stretch'
-    }}>
+    <Box
+      sx={{
+        width: '100%',
+        maxWidth: '1400px',
+        margin: '0 auto',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'stretch',
+      }}
+    >
       {/* Add notification for stylists on holiday today */}
       {stylistsOnHolidayToday.length > 0 && (
-        <Alert 
-          severity="success" 
-          sx={{ mb: 3 }}
-        >
-          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
-            <Typography variant="body1">
-              {stylistsOnHolidayToday.length === 1 
-                ? `${stylistsOnHolidayToday[0].name} is on holiday today.` 
-                : `${stylistsOnHolidayToday.length} stylists are on holiday today: ${stylistsOnHolidayToday.map(s => s.name).join(', ')}`
-              }
+        <Alert severity='success' sx={{ mb: 3 }}>
+          <Box
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              width: '100%',
+            }}
+          >
+            <Typography variant='body1'>
+              {stylistsOnHolidayToday.length === 1
+                ? `${stylistsOnHolidayToday[0].name} is on holiday today.`
+                : `${stylistsOnHolidayToday.length} stylists are on holiday today: ${stylistsOnHolidayToday.map(s => s.name).join(', ')}`}
             </Typography>
           </Box>
         </Alert>
       )}
 
-      <Box sx={{ 
-        display: 'flex', 
-        justifyContent: 'space-between', 
-        alignItems: 'center', 
-        mb: 3,
-        width: '100%'
-      }}>
-        <Typography variant="h1">
-          Stylists
-        </Typography>
+      <Box
+        sx={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          mb: 3,
+          width: '100%',
+        }}
+      >
+        <Typography variant='h1'>Stylists</Typography>
         <Box sx={{ display: 'flex', gap: 2 }}>
-          <Button 
-            variant="contained" 
-            color="primary" 
-            startIcon={<PersonAddIcon />} 
+          <Button
+            variant='contained'
+            color='primary'
+            startIcon={<PersonAddIcon />}
             onClick={handleOpen}
           >
             Add Stylist
@@ -678,7 +816,14 @@ export default function Stylists() {
       {/* HOLIDAY REPORT VIEW - updated */}
       {stylists?.length ? (
         <Paper sx={{ p: 3, width: '100%', borderRadius: 2 }}>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+          <Box
+            sx={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              mb: 3,
+            }}
+          >
             <DateRangePicker
               startDate={new Date(startDate)}
               endDate={new Date(endDate)}
@@ -688,52 +833,56 @@ export default function Stylists() {
 
           {/* Summary section */}
           <Box sx={{ mb: 3 }}>
-            <Typography variant="subtitle1" sx={{ mb: 1 }}>
-
-
-            </Typography>
+            <Typography variant='subtitle1' sx={{ mb: 1 }}></Typography>
             <Grid container spacing={2}>
               <Grid item xs={12} sm={4}>
-                <Paper sx={{ 
-                  p: 2, 
-                  bgcolor: 'rgba(107, 142, 35, 0.15)', 
-                  color: '#6B8E23',
-                  boxShadow: '0 2px 4px rgba(0,0,0,0.08)'
-                }}>
-                  <Typography variant="h6">
-                    {holidayReports.reduce((sum, report) => sum + report.totalHolidays, 0)}
+                <Paper
+                  sx={{
+                    p: 2,
+                    bgcolor: 'rgba(107, 142, 35, 0.15)',
+                    color: '#6B8E23',
+                    boxShadow: '0 2px 4px rgba(0,0,0,0.08)',
+                  }}
+                >
+                  <Typography variant='h6'>
+                    {holidayReports.reduce(
+                      (sum, report) => sum + report.totalHolidays,
+                      0
+                    )}
                   </Typography>
-                  <Typography variant="body2">
-                    Total Holidays
-                  </Typography>
+                  <Typography variant='body2'>Total Holidays</Typography>
                 </Paper>
               </Grid>
               <Grid item xs={12} sm={4}>
-                <Paper sx={{ 
-                  p: 2, 
-                  bgcolor: 'rgba(107, 142, 35, 0.4)', 
-                  color: 'white',
-                  boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
-                }}>
-                  <Typography variant="h6">
+                <Paper
+                  sx={{
+                    p: 2,
+                    bgcolor: 'rgba(107, 142, 35, 0.4)',
+                    color: 'white',
+                    boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                  }}
+                >
+                  <Typography variant='h6'>
                     {stylistsOnHolidayToday.length}
                   </Typography>
-                  <Typography variant="body2">
+                  <Typography variant='body2'>
                     Stylists on Holiday Today
                   </Typography>
                 </Paper>
               </Grid>
               <Grid item xs={12} sm={4}>
-                <Paper sx={{ 
-                  p: 2, 
-                  bgcolor: '#6B8E23', 
-                  color: 'white',
-                  boxShadow: '0 2px 4px rgba(0,0,0,0.12)'
-                }}>
-                  <Typography variant="h6">
+                <Paper
+                  sx={{
+                    p: 2,
+                    bgcolor: '#6B8E23',
+                    color: 'white',
+                    boxShadow: '0 2px 4px rgba(0,0,0,0.12)',
+                  }}
+                >
+                  <Typography variant='h6'>
                     {stylists.length - stylistsOnHolidayToday.length}
                   </Typography>
-                  <Typography variant="body2">
+                  <Typography variant='body2'>
                     Stylists Available Today
                   </Typography>
                 </Paper>
@@ -741,7 +890,10 @@ export default function Stylists() {
             </Grid>
           </Box>
 
-          <TableContainer component={Paper} sx={{ borderRadius: 2, overflow: 'hidden' }}>
+          <TableContainer
+            component={Paper}
+            sx={{ borderRadius: 2, overflow: 'hidden' }}
+          >
             <Table>
               <TableHead>
                 <TableRow>
@@ -755,81 +907,139 @@ export default function Stylists() {
               <TableBody>
                 {holidayReports
                   .sort((a, b) => a.stylistName.localeCompare(b.stylistName))
-                  .map((report) => {
-                    const stylist = stylists.find(s => s.id === report.stylistId);
+                  .map(report => {
+                    const stylist = stylists.find(
+                      s => s.id === report.stylistId
+                    );
                     if (!stylist) return null;
-                    
+
                     // Synchronously check if stylist is on holiday today
                     const todayDate = format(new Date(), 'yyyy-MM-dd');
-                    const todayHoliday = getStylistHolidayForDate(stylist, new Date());
+                    const todayHoliday = getStylistHolidayForDate(
+                      stylist,
+                      new Date()
+                    );
                     const isOnHolidayToday = !!todayHoliday;
-                    
+
                     return (
-                                              <TableRow 
+                      <TableRow
                         key={report.stylistId}
-                        sx={{ 
-                          bgcolor: isOnHolidayToday ? 'rgba(76, 175, 80, 0.1)' : 'inherit',
-                          '&:hover': { backgroundColor: 'action.hover' }
+                        sx={{
+                          bgcolor: isOnHolidayToday
+                            ? 'rgba(76, 175, 80, 0.1)'
+                            : 'inherit',
+                          '&:hover': { backgroundColor: 'action.hover' },
                         }}
                       >
                         <TableCell>
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                            <Avatar 
-                              src={stylist.imageUrl || DEFAULT_AVATAR} 
+                          <Box
+                            sx={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 2,
+                            }}
+                          >
+                            <Avatar
+                              src={stylist.imageUrl || DEFAULT_AVATAR}
                               sx={{ width: 40, height: 40 }}
                             />
                             <Box>
-                              <Typography variant="subtitle2">
+                              <Typography variant='subtitle2'>
                                 {report.stylistName}
                               </Typography>
-                              <Typography variant="caption" color={isOnHolidayToday ? 'success.main' : 'text.secondary'}>
-                                {isOnHolidayToday ? 'On Holiday Today' : stylist.available ? 'Available' : 'Not Available'}
+                              <Typography
+                                variant='caption'
+                                color={
+                                  isOnHolidayToday
+                                    ? 'success.main'
+                                    : 'text.secondary'
+                                }
+                              >
+                                {isOnHolidayToday
+                                  ? 'On Holiday Today'
+                                  : stylist.available
+                                    ? 'Available'
+                                    : 'Not Available'}
                               </Typography>
                             </Box>
                           </Box>
                         </TableCell>
                         <TableCell>
                           {report.totalHolidays > 0 ? (
-                            <Chip 
-                              label={`${report.totalHolidays} holiday(s)`} 
-                              color="success" 
-                              size="small" 
+                            <Chip
+                              label={`${report.totalHolidays} holiday(s)`}
+                              color='success'
+                              size='small'
                             />
-                          ) : 'No holidays this month'}
+                          ) : (
+                            'No holidays this month'
+                          )}
                         </TableCell>
                         <TableCell>
-                          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, alignItems: 'center' }}>
+                          <Box
+                            sx={{
+                              display: 'flex',
+                              flexWrap: 'wrap',
+                              gap: 1,
+                              alignItems: 'center',
+                            }}
+                          >
                             {report.holidays.map(holiday => {
-                              const holidayDate = new Date(holiday.holiday_date);
-                              const isToday = isSameDay(holidayDate, new Date());
-                              const isPast = isBefore(holidayDate, new Date()) && !isToday;
-                              
+                              const holidayDate = new Date(
+                                holiday.holiday_date
+                              );
+                              const isToday = isSameDay(
+                                holidayDate,
+                                new Date()
+                              );
+                              const isPast =
+                                isBefore(holidayDate, new Date()) && !isToday;
+
                               return (
-                                <Box key={holiday.id} sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                  <Tooltip title={holiday.reason || 'No reason provided'}>
+                                <Box
+                                  key={holiday.id}
+                                  sx={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 0.5,
+                                  }}
+                                >
+                                  <Tooltip
+                                    title={
+                                      holiday.reason || 'No reason provided'
+                                    }
+                                  >
                                     <Chip
                                       icon={<EventBusyIcon />}
-                                      label={format(holidayDate, 'MMM dd (EEE)')}
-                                      size="small"
-                                      color="success"
+                                      label={format(
+                                        holidayDate,
+                                        'MMM dd (EEE)'
+                                      )}
+                                      size='small'
+                                      color='success'
                                       variant={isPast ? 'outlined' : 'filled'}
-                                      sx={{ 
-                                        textDecoration: isPast ? 'line-through' : 'none',
-                                        opacity: isPast ? 0.7 : 1
+                                      sx={{
+                                        textDecoration: isPast
+                                          ? 'line-through'
+                                          : 'none',
+                                        opacity: isPast ? 0.7 : 1,
                                       }}
                                     />
                                   </Tooltip>
                                   <IconButton
-                                    size="small"
-                                    color="error"
-                                    onClick={() => stylist && removeHoliday(stylist, holiday.id)}
-                                    sx={{ 
-                                      width: 24, 
+                                    size='small'
+                                    color='error'
+                                    onClick={() =>
+                                      stylist &&
+                                      removeHoliday(stylist, holiday.id)
+                                    }
+                                    sx={{
+                                      width: 24,
                                       height: 24,
-                                      ml: 0.5
+                                      ml: 0.5,
                                     }}
                                   >
-                                    <DeleteIcon fontSize="small" />
+                                    <DeleteIcon fontSize='small' />
                                   </IconButton>
                                 </Box>
                               );
@@ -837,90 +1047,131 @@ export default function Stylists() {
                           </Box>
                         </TableCell>
                         <TableCell>
-                          <Typography variant="subtitle2" color="primary">
+                          <Typography variant='subtitle2' color='primary'>
                             {formatCurrency(report.serviceRevenue)}
                           </Typography>
                           {/* Show indicator if this stylist has any multi-expert orders in the current date range */}
-                                    {orders && orders.some(order => {
-            const orderDate = new Date((order as any).created_at || order.created_at);
-            const rangeEnd = new Date(endDate);
-            rangeEnd.setHours(23, 59, 59, 999);
-            const isInRange = isWithinInterval(orderDate, { start: new Date(startDate), end: rangeEnd });
-            const orderStylistId = (order as any).stylist_id || (order as any).stylist?.id;
-            const orderStylistName = (order as any).stylist_name || (order as any).stylist?.name;
-            const isStylistOrder = orderStylistId ? orderStylistId === stylist.id : orderStylistName === stylist.name;
-                            
-                            // Check if this order is part of a multi-expert appointment
-                            if (isInRange && isStylistOrder && (order as any).appointment_id) {
-                              const relatedOrders = orders.filter(relOrder => 
-                                (relOrder as any).appointment_id === (order as any).appointment_id && 
-                                relOrder.status === 'completed' &&
-                                relOrder.id !== order.id // Exclude the current order
+                          {orders &&
+                            orders.some(order => {
+                              const orderDate = new Date(
+                                (order as any).created_at || order.created_at
                               );
-                              return relatedOrders.length > 0; // If there are other orders with same appointment_id
-                            }
-                            return false;
-                          }) && (
-                            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.7rem' }}>
-                              * Revenue shared with other experts
-                            </Typography>
-                          )}
+                              const rangeEnd = new Date(endDate);
+                              rangeEnd.setHours(23, 59, 59, 999);
+                              const isInRange = isWithinInterval(orderDate, {
+                                start: new Date(startDate),
+                                end: rangeEnd,
+                              });
+                              const orderStylistId =
+                                (order as any).stylist_id ||
+                                (order as any).stylist?.id;
+                              const orderStylistName =
+                                (order as any).stylist_name ||
+                                (order as any).stylist?.name;
+                              const isStylistOrder = orderStylistId
+                                ? orderStylistId === stylist.id
+                                : orderStylistName === stylist.name;
+
+                              // Check if this order is part of a multi-expert appointment
+                              if (
+                                isInRange &&
+                                isStylistOrder &&
+                                (order as any).appointment_id
+                              ) {
+                                const relatedOrders = orders.filter(
+                                  relOrder =>
+                                    (relOrder as any).appointment_id ===
+                                      (order as any).appointment_id &&
+                                    relOrder.status === 'completed' &&
+                                    relOrder.id !== order.id // Exclude the current order
+                                );
+                                return relatedOrders.length > 0; // If there are other orders with same appointment_id
+                              }
+                              return false;
+                            }) && (
+                              <Typography
+                                variant='caption'
+                                color='text.secondary'
+                                sx={{ display: 'block', fontSize: '0.7rem' }}
+                              >
+                                * Revenue shared with other experts
+                              </Typography>
+                            )}
                         </TableCell>
                         <TableCell>
-                          <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
-                            <Tooltip title="Edit Stylist">
+                          <Box
+                            sx={{
+                              display: 'flex',
+                              gap: 1,
+                              alignItems: 'center',
+                              flexWrap: 'wrap',
+                            }}
+                          >
+                            <Tooltip title='Edit Stylist'>
                               <IconButton
-                                size="small"
-                                color="primary"
+                                size='small'
+                                color='primary'
                                 onClick={() => handleEdit(stylist)}
-                                sx={{ 
+                                sx={{
                                   bgcolor: 'rgba(25, 118, 210, 0.1)',
-                                  '&:hover': { bgcolor: 'rgba(25, 118, 210, 0.2)' }
+                                  '&:hover': {
+                                    bgcolor: 'rgba(25, 118, 210, 0.2)',
+                                  },
                                 }}
                               >
                                 <EditIcon />
                               </IconButton>
                             </Tooltip>
-                            <Tooltip title="Delete Stylist">
+                            <Tooltip title='Delete Stylist'>
                               <IconButton
-                                size="small"
-                                color="error"
+                                size='small'
+                                color='error'
                                 onClick={() => handleDelete(stylist.id)}
-                                sx={{ 
+                                sx={{
                                   bgcolor: 'rgba(244, 67, 54, 0.1)',
-                                  '&:hover': { bgcolor: 'rgba(244, 67, 54, 0.2)' }
+                                  '&:hover': {
+                                    bgcolor: 'rgba(244, 67, 54, 0.2)',
+                                  },
                                 }}
                               >
                                 <DeleteIcon />
                               </IconButton>
                             </Tooltip>
-                            <Divider orientation="vertical" flexItem sx={{ mx: 0.5 }} />
-                            <Tooltip title="Add Holiday">
+                            <Divider
+                              orientation='vertical'
+                              flexItem
+                              sx={{ mx: 0.5 }}
+                            />
+                            <Tooltip title='Add Holiday'>
                               <IconButton
-                                size="small"
-                                color="success"
+                                size='small'
+                                color='success'
                                 onClick={() => openHolidayDialog(stylist)}
-                                sx={{ 
+                                sx={{
                                   bgcolor: 'rgba(76, 175, 80, 0.1)',
-                                  '&:hover': { bgcolor: 'rgba(76, 175, 80, 0.2)' }
+                                  '&:hover': {
+                                    bgcolor: 'rgba(76, 175, 80, 0.2)',
+                                  },
                                 }}
                               >
                                 <HolidayIcon />
                               </IconButton>
                             </Tooltip>
                             {report.totalHolidays > 0 && (
-                              <Tooltip title="Edit Holidays">
+                              <Tooltip title='Edit Holidays'>
                                 <IconButton
-                                  size="small"
-                                  color="warning"
+                                  size='small'
+                                  color='warning'
                                   onClick={() => {
                                     // edit the first holiday in the list
                                     const firstHoliday = report.holidays[0];
                                     openHolidayDialog(stylist, firstHoliday);
                                   }}
-                                  sx={{ 
+                                  sx={{
                                     bgcolor: 'rgba(255, 152, 0, 0.1)',
-                                    '&:hover': { bgcolor: 'rgba(255, 152, 0, 0.2)' }
+                                    '&:hover': {
+                                      bgcolor: 'rgba(255, 152, 0, 0.2)',
+                                    },
                                   }}
                                 >
                                   <CalendarMonth />
@@ -938,14 +1189,14 @@ export default function Stylists() {
         </Paper>
       ) : (
         <Paper sx={{ p: 3, textAlign: 'center' }}>
-          <Typography variant="body1" color="text.secondary">
+          <Typography variant='body1' color='text.secondary'>
             No stylists found. Add your first stylist to get started.
           </Typography>
         </Paper>
       )}
 
       {/* Add/Edit Stylist Dialog */}
-      <Dialog open={open} onClose={handleClose} maxWidth="md" fullWidth>
+      <Dialog open={open} onClose={handleClose} maxWidth='md' fullWidth>
         <form onSubmit={handleSubmit}>
           <DialogTitle>
             {editingId ? 'Edit Stylist' : 'Add New Stylist'}
@@ -954,9 +1205,11 @@ export default function Stylists() {
             <Grid container spacing={2} sx={{ mt: 0.5 }}>
               <Grid item xs={12} sm={6}>
                 <TextField
-                  label="Name"
+                  label='Name'
                   value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  onChange={e =>
+                    setFormData({ ...formData, name: e.target.value })
+                  }
                   required
                   fullWidth
                 />
@@ -966,12 +1219,17 @@ export default function Stylists() {
                   <InputLabel>Gender</InputLabel>
                   <Select
                     value={formData.gender || 'other'}
-                    onChange={(e) => setFormData({ ...formData, gender: e.target.value as 'male' | 'female' | 'other' })}
-                    label="Gender"
+                    onChange={e =>
+                      setFormData({
+                        ...formData,
+                        gender: e.target.value as 'male' | 'female' | 'other',
+                      })
+                    }
+                    label='Gender'
                   >
-                    <MenuItem value="male">Male</MenuItem>
-                    <MenuItem value="female">Female</MenuItem>
-                    <MenuItem value="other">Other</MenuItem>
+                    <MenuItem value='male'>Male</MenuItem>
+                    <MenuItem value='female'>Female</MenuItem>
+                    <MenuItem value='other'>Other</MenuItem>
                   </Select>
                 </FormControl>
               </Grid>
@@ -980,20 +1238,22 @@ export default function Stylists() {
                   multiple
                   options={specialties}
                   value={formData.specialties}
-                  onChange={(_, newValue) => setFormData({ ...formData, specialties: newValue })}
-                  renderInput={(params) => (
+                  onChange={(_, newValue) =>
+                    setFormData({ ...formData, specialties: newValue })
+                  }
+                  renderInput={params => (
                     <TextField
                       {...params}
-                      label="Specialties"
-                      placeholder="Select specialties"
-                      helperText="Select the services this stylist can perform"
+                      label='Specialties'
+                      placeholder='Select specialties'
+                      helperText='Select the services this stylist can perform'
                     />
                   )}
                   renderTags={(value, getTagProps) =>
                     value.map((option, index) => (
                       <Chip
                         label={option}
-                        size="small"
+                        size='small'
                         icon={getSpecialtyIcon(option)}
                         {...getTagProps({ index })}
                       />
@@ -1003,9 +1263,11 @@ export default function Stylists() {
               </Grid>
               <Grid item xs={12}>
                 <TextField
-                  label="Bio"
+                  label='Bio'
                   value={formData.bio}
-                  onChange={(e) => setFormData({ ...formData, bio: e.target.value })}
+                  onChange={e =>
+                    setFormData({ ...formData, bio: e.target.value })
+                  }
                   multiline
                   rows={3}
                   fullWidth
@@ -1014,26 +1276,32 @@ export default function Stylists() {
               </Grid>
               <Grid item xs={12} sm={6}>
                 <TextField
-                  label="Email"
-                  type="email"
+                  label='Email'
+                  type='email'
                   value={formData.email}
-                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                  onChange={e =>
+                    setFormData({ ...formData, email: e.target.value })
+                  }
                   fullWidth
                 />
               </Grid>
               <Grid item xs={12} sm={6}>
                 <TextField
-                  label="Phone"
+                  label='Phone'
                   value={formData.phone}
-                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                  onChange={e =>
+                    setFormData({ ...formData, phone: e.target.value })
+                  }
                   fullWidth
                 />
               </Grid>
               <Grid item xs={12}>
                 <TextField
-                  label="Profile Image URL"
+                  label='Profile Image URL'
                   value={formData.imageUrl}
-                  onChange={(e) => setFormData({ ...formData, imageUrl: e.target.value })}
+                  onChange={e =>
+                    setFormData({ ...formData, imageUrl: e.target.value })
+                  }
                   fullWidth
                   helperText="Enter a URL for the stylist's profile image"
                 />
@@ -1043,106 +1311,141 @@ export default function Stylists() {
                   control={
                     <Switch
                       checked={formData.available}
-                      onChange={(e) => setFormData({ ...formData, available: e.target.checked })}
-                      color="primary"
+                      onChange={e =>
+                        setFormData({
+                          ...formData,
+                          available: e.target.checked,
+                        })
+                      }
+                      color='primary'
                     />
                   }
-                  label="Available for appointments"
+                  label='Available for appointments'
                 />
               </Grid>
 
               {/* Holidays section in the edit dialog (optional) */}
-              {editingId && formData.holidays && formData.holidays.filter(holiday => {
-                const holidayDate = new Date(holiday.date);
-                const rangeStart = new Date(startDate);
-                const rangeEnd = new Date(endDate);
-                rangeEnd.setHours(23, 59, 59, 999);
-                return isWithinInterval(holidayDate, { start: rangeStart, end: rangeEnd });
-              }).length > 0 && (
-                <Grid item xs={12}>
-                  <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                    Holidays (In Selected Range)
-                  </Typography>
-                  <TableContainer component={Paper} variant="outlined">
-                    <Table size="small">
-                      <TableHead>
-                        <TableRow>
-                          <TableCell>Date</TableCell>
-                          <TableCell>Day</TableCell>
-                          <TableCell>Reason</TableCell>
-                          <TableCell align="right">Actions</TableCell>
-                        </TableRow>
-                      </TableHead>
-                      <TableBody>
-                        {formData.holidays
-                          .filter(holiday => {
-                            const holidayDate = new Date(holiday.date);
-                            const rangeStart = new Date(startDate);
-                            const rangeEnd = new Date(endDate);
-                            rangeEnd.setHours(23, 59, 59, 999);
-                            return isWithinInterval(holidayDate, { start: rangeStart, end: rangeEnd });
-                          })
-                          .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
-                          .map((holiday) => (
-                                                          <TableRow 
-                              key={holiday.id}
-                              sx={{
-                                bgcolor: isToday(new Date(holiday.date)) ? 'rgba(76, 175, 80, 0.1)' : 'inherit'
-                              }}
-                            >
-                              <TableCell>{format(new Date(holiday.date), 'MMM dd, yyyy')}</TableCell>
-                              <TableCell>{format(new Date(holiday.date), 'EEEE')}</TableCell>
-                              <TableCell>{holiday.reason || 'N/A'}</TableCell>
-                              <TableCell align="right">
-                                <Box>
-                                  <IconButton
-                                    size="small"
-                                    color="primary"
-                                    onClick={() => {
-                                      if (editingId) {
-                                        // Create temporary stylist object to pass to the edit function
-                                        const tempStylist: Stylist = {
-                                          id: editingId,
-                                          name: formData.name,
-                                          specialties: formData.specialties,
-                                          holidays: formData.holidays,
-                                          gender: formData.gender as 'male' | 'female' | 'other',
-                                          available: formData.available,
-                                          breaks: formData.breaks
-                                        };
-                                        openHolidayDialog(tempStylist, holiday as any);
-                                      }
-                                    }}
-                                    sx={{ mr: 1 }}
-                                  >
-                                    <EditIcon fontSize="small" />
-                                  </IconButton>
-                                  <IconButton
-                                    size="small"
-                                    color="error"
-                                    onClick={() => {
-                                      setFormData({
-                                        ...formData,
-                                        holidays: formData.holidays?.filter(h => h.id !== holiday.id) || []
-                                      })
-                                    }}
-                                  >
-                                    <DeleteIcon fontSize="small" />
-                                  </IconButton>
-                                </Box>
-                              </TableCell>
-                            </TableRow>
-                          ))}
-                      </TableBody>
-                    </Table>
-                  </TableContainer>
-                </Grid>
-              )}
+              {editingId &&
+                formData.holidays &&
+                formData.holidays.filter(holiday => {
+                  const holidayDate = new Date(holiday.date);
+                  const rangeStart = new Date(startDate);
+                  const rangeEnd = new Date(endDate);
+                  rangeEnd.setHours(23, 59, 59, 999);
+                  return isWithinInterval(holidayDate, {
+                    start: rangeStart,
+                    end: rangeEnd,
+                  });
+                }).length > 0 && (
+                  <Grid item xs={12}>
+                    <Typography variant='subtitle2' sx={{ mb: 1 }}>
+                      Holidays (In Selected Range)
+                    </Typography>
+                    <TableContainer component={Paper} variant='outlined'>
+                      <Table size='small'>
+                        <TableHead>
+                          <TableRow>
+                            <TableCell>Date</TableCell>
+                            <TableCell>Day</TableCell>
+                            <TableCell>Reason</TableCell>
+                            <TableCell align='right'>Actions</TableCell>
+                          </TableRow>
+                        </TableHead>
+                        <TableBody>
+                          {formData.holidays
+                            .filter(holiday => {
+                              const holidayDate = new Date(holiday.date);
+                              const rangeStart = new Date(startDate);
+                              const rangeEnd = new Date(endDate);
+                              rangeEnd.setHours(23, 59, 59, 999);
+                              return isWithinInterval(holidayDate, {
+                                start: rangeStart,
+                                end: rangeEnd,
+                              });
+                            })
+                            .sort(
+                              (a, b) =>
+                                new Date(a.date).getTime() -
+                                new Date(b.date).getTime()
+                            )
+                            .map(holiday => (
+                              <TableRow
+                                key={holiday.id}
+                                sx={{
+                                  bgcolor: isToday(new Date(holiday.date))
+                                    ? 'rgba(76, 175, 80, 0.1)'
+                                    : 'inherit',
+                                }}
+                              >
+                                <TableCell>
+                                  {format(
+                                    new Date(holiday.date),
+                                    'MMM dd, yyyy'
+                                  )}
+                                </TableCell>
+                                <TableCell>
+                                  {format(new Date(holiday.date), 'EEEE')}
+                                </TableCell>
+                                <TableCell>{holiday.reason || 'N/A'}</TableCell>
+                                <TableCell align='right'>
+                                  <Box>
+                                    <IconButton
+                                      size='small'
+                                      color='primary'
+                                      onClick={() => {
+                                        if (editingId) {
+                                          // Create temporary stylist object to pass to the edit function
+                                          const tempStylist: Stylist = {
+                                            id: editingId,
+                                            name: formData.name,
+                                            specialties: formData.specialties,
+                                            holidays: formData.holidays,
+                                            gender: formData.gender as
+                                              | 'male'
+                                              | 'female'
+                                              | 'other',
+                                            available: formData.available,
+                                            breaks: formData.breaks,
+                                          };
+                                          openHolidayDialog(
+                                            tempStylist,
+                                            holiday as any
+                                          );
+                                        }
+                                      }}
+                                      sx={{ mr: 1 }}
+                                    >
+                                      <EditIcon fontSize='small' />
+                                    </IconButton>
+                                    <IconButton
+                                      size='small'
+                                      color='error'
+                                      onClick={() => {
+                                        setFormData({
+                                          ...formData,
+                                          holidays:
+                                            formData.holidays?.filter(
+                                              h => h.id !== holiday.id
+                                            ) || [],
+                                        });
+                                      }}
+                                    >
+                                      <DeleteIcon fontSize='small' />
+                                    </IconButton>
+                                  </Box>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                        </TableBody>
+                      </Table>
+                    </TableContainer>
+                  </Grid>
+                )}
             </Grid>
           </DialogContent>
           <DialogActions>
             <Button onClick={handleClose}>Cancel</Button>
-            <Button type="submit" variant="contained">
+            <Button type='submit' variant='contained'>
               {editingId ? 'Update' : 'Add'}
             </Button>
           </DialogActions>
@@ -1150,141 +1453,207 @@ export default function Stylists() {
       </Dialog>
 
       {/* Add/Edit Holiday Dialog */}
-      <Dialog open={holidayDialogOpen} onClose={closeHolidayDialog} maxWidth="sm" fullWidth>
+      <Dialog
+        open={holidayDialogOpen}
+        onClose={closeHolidayDialog}
+        maxWidth='sm'
+        fullWidth
+      >
         <DialogTitle>
-          {editingHoliday 
-            ? `Edit Holiday for ${selectedStylistForHoliday?.name}` 
+          {editingHoliday
+            ? `Edit Holiday for ${selectedStylistForHoliday?.name}`
             : `Add Holiday for ${selectedStylistForHoliday?.name}`}
         </DialogTitle>
         <DialogContent>
           <Box sx={{ pt: 2 }}>
-            <Typography variant="body2" color="error" sx={{ mb: 2 }}>
-              Note: The stylist will be automatically marked as unavailable on holiday dates.
+            <Typography variant='body2' color='error' sx={{ mb: 2 }}>
+              Note: The stylist will be automatically marked as unavailable on
+              holiday dates.
             </Typography>
-            
+
             <LocalizationProvider dateAdapter={AdapterDateFns}>
               {!editingHoliday ? (
                 <>
                   <DatePicker
-                    label="Start Date"
+                    label='Start Date'
                     value={holidayDate}
-                    onChange={(newDate) => setHolidayDate(newDate)}
-                    slotProps={{ textField: { fullWidth: true, margin: 'normal', variant: 'outlined' } }}
+                    onChange={newDate => setHolidayDate(newDate)}
+                    slotProps={{
+                      textField: {
+                        fullWidth: true,
+                        margin: 'normal',
+                        variant: 'outlined',
+                      },
+                    }}
                   />
                   <DatePicker
-                    label="End Date"
+                    label='End Date'
                     value={holidayEndDate}
                     minDate={holidayDate}
-                    onChange={(newDate) => setHolidayEndDate(newDate)}
-                    slotProps={{ textField: { fullWidth: true, margin: 'normal', variant: 'outlined' } }}
+                    onChange={newDate => setHolidayEndDate(newDate)}
+                    slotProps={{
+                      textField: {
+                        fullWidth: true,
+                        margin: 'normal',
+                        variant: 'outlined',
+                      },
+                    }}
                   />
                 </>
               ) : (
                 <DatePicker
-                  label="Holiday Date"
+                  label='Holiday Date'
                   value={holidayDate}
-                  onChange={(newDate) => setHolidayDate(newDate)}
-                  slotProps={{ textField: { fullWidth: true, margin: 'normal', variant: 'outlined' } }}
+                  onChange={newDate => setHolidayDate(newDate)}
+                  slotProps={{
+                    textField: {
+                      fullWidth: true,
+                      margin: 'normal',
+                      variant: 'outlined',
+                    },
+                  }}
                 />
               )}
             </LocalizationProvider>
 
             <TextField
-              label="Reason (Optional)"
+              label='Reason (Optional)'
               value={holidayReason}
-              onChange={(e) => setHolidayReason(e.target.value)}
+              onChange={e => setHolidayReason(e.target.value)}
               fullWidth
-              margin="normal"
-              placeholder="Vacation, Personal, etc."
+              margin='normal'
+              placeholder='Vacation, Personal, etc.'
             />
 
             {/* Existing Holidays List */}
-            {selectedStylistForHoliday && stylistHolidays[selectedStylistForHoliday.id]?.some(holiday => {
-              const holidayDate = new Date(holiday.holiday_date);
-              const rangeStart = new Date(startDate);
-              const rangeEnd = new Date(endDate);
-              rangeEnd.setHours(23, 59, 59, 999);
-              return isWithinInterval(holidayDate, { start: rangeStart, end: rangeEnd });
-            }) && (
-              <Box sx={{ mt: 3 }}>
-                <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                  Existing Holidays (In Selected Range)
-                </Typography>
-                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                  {stylistHolidays[selectedStylistForHoliday.id]
-                    .filter(holiday => {
+            {selectedStylistForHoliday &&
+              stylistHolidays[selectedStylistForHoliday.id]?.some(holiday => {
+                const holidayDate = new Date(holiday.holiday_date);
+                const rangeStart = new Date(startDate);
+                const rangeEnd = new Date(endDate);
+                rangeEnd.setHours(23, 59, 59, 999);
+                return isWithinInterval(holidayDate, {
+                  start: rangeStart,
+                  end: rangeEnd,
+                });
+              }) && (
+                <Box sx={{ mt: 3 }}>
+                  <Typography variant='subtitle2' sx={{ mb: 1 }}>
+                    Existing Holidays (In Selected Range)
+                  </Typography>
+                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                    {stylistHolidays[selectedStylistForHoliday.id]
+                      .filter(holiday => {
+                        const holidayDate = new Date(holiday.holiday_date);
+                        const rangeStart = new Date(startDate);
+                        const rangeEnd = new Date(endDate);
+                        rangeEnd.setHours(23, 59, 59, 999);
+                        return isWithinInterval(holidayDate, {
+                          start: rangeStart,
+                          end: rangeEnd,
+                        });
+                      })
+                      .map(holiday => {
+                        const hDate = new Date(holiday.holiday_date);
+                        const isTodayChip = isSameDay(hDate, new Date());
+                        const isPastChip =
+                          isBefore(hDate, new Date()) && !isTodayChip;
+                        return (
+                          <Box
+                            key={holiday.id}
+                            sx={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 0.5,
+                              m: 0.5,
+                            }}
+                          >
+                            <Tooltip
+                              title={holiday.reason || 'No reason provided'}
+                            >
+                              <Chip
+                                clickable
+                                onClick={() =>
+                                  openHolidayDialog(
+                                    selectedStylistForHoliday,
+                                    holiday
+                                  )
+                                }
+                                icon={<EventBusyIcon />}
+                                label={format(hDate, 'MMM dd (EEE)')}
+                                size='small'
+                                color='success'
+                                variant={isPastChip ? 'outlined' : 'filled'}
+                                sx={{
+                                  cursor: 'pointer',
+                                  textDecoration: isPastChip
+                                    ? 'line-through'
+                                    : 'none',
+                                  opacity: isPastChip ? 0.7 : 1,
+                                }}
+                              />
+                            </Tooltip>
+                            <IconButton
+                              size='small'
+                              color='error'
+                              onClick={() =>
+                                removeHoliday(
+                                  selectedStylistForHoliday,
+                                  holiday.id
+                                )
+                              }
+                              sx={{ width: 20, height: 20 }}
+                            >
+                              <DeleteIcon fontSize='small' />
+                            </IconButton>
+                          </Box>
+                        );
+                      })}
+                  </Box>
+                  {stylistHolidays[selectedStylistForHoliday.id].filter(
+                    holiday => {
                       const holidayDate = new Date(holiday.holiday_date);
                       const rangeStart = new Date(startDate);
                       const rangeEnd = new Date(endDate);
                       rangeEnd.setHours(23, 59, 59, 999);
-                      return isWithinInterval(holidayDate, { start: rangeStart, end: rangeEnd });
-                    })
-                    .map((holiday) => {
-                    const hDate = new Date(holiday.holiday_date);
-                    const isTodayChip = isSameDay(hDate, new Date());
-                    const isPastChip = isBefore(hDate, new Date()) && !isTodayChip;
-                    return (
-                      <Box key={holiday.id} sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, m: 0.5 }}>
-                        <Tooltip title={holiday.reason || 'No reason provided'}>
-                          <Chip
-                            clickable
-                            onClick={() => openHolidayDialog(selectedStylistForHoliday, holiday)}
-                            icon={<EventBusyIcon />}
-                            label={format(hDate, 'MMM dd (EEE)')}
-                            size="small"
-                            color="success"
-                            variant={isPastChip ? 'outlined' : 'filled'}
-                            sx={{ 
-                              cursor: 'pointer', 
-                              textDecoration: isPastChip ? 'line-through' : 'none', 
-                              opacity: isPastChip ? 0.7 : 1 
-                            }}
-                          />
-                        </Tooltip>
-                        <IconButton
-                          size="small"
-                          color="error"
-                          onClick={() => removeHoliday(selectedStylistForHoliday, holiday.id)}
-                          sx={{ width: 20, height: 20 }}
-                        >
-                          <DeleteIcon fontSize="small" />
-                        </IconButton>
-                      </Box>
-                    );
-                  })}
+                      return isWithinInterval(holidayDate, {
+                        start: rangeStart,
+                        end: rangeEnd,
+                      });
+                    }
+                  ).length === 0 && (
+                    <Typography
+                      variant='body2'
+                      color='text.secondary'
+                      sx={{ mt: 1 }}
+                    >
+                      No holidays in the selected date range.
+                    </Typography>
+                  )}
                 </Box>
-                {stylistHolidays[selectedStylistForHoliday.id]
-                  .filter(holiday => {
-                    const holidayDate = new Date(holiday.holiday_date);
-                    const rangeStart = new Date(startDate);
-                    const rangeEnd = new Date(endDate);
-                    rangeEnd.setHours(23, 59, 59, 999);
-                    return isWithinInterval(holidayDate, { start: rangeStart, end: rangeEnd });
-                  }).length === 0 && (
-                  <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                    No holidays in the selected date range.
-                  </Typography>
-                )}
-              </Box>
-            )}
+              )}
           </Box>
         </DialogContent>
         <DialogActions>
           <Button onClick={closeHolidayDialog}>Cancel</Button>
           {editingHoliday && (
-            <Button onClick={handleDialogDelete} variant="outlined" color="error">
+            <Button
+              onClick={handleDialogDelete}
+              variant='outlined'
+              color='error'
+            >
               Delete Holiday
             </Button>
           )}
-          <Button 
-            onClick={addOrUpdateHoliday} 
-            variant="contained" 
-            color="primary"
+          <Button
+            onClick={addOrUpdateHoliday}
+            variant='contained'
+            color='primary'
           >
             {editingHoliday ? 'Update Holiday' : 'Add Holiday'}
           </Button>
         </DialogActions>
       </Dialog>
     </Box>
-  )
-} 
+  );
+}

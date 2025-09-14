@@ -29,48 +29,48 @@ interface GaugeChartProps {
   };
 }
 
-export default function GaugeChart({ 
-  value, 
-  max = 100, 
-  height = 200, 
-  title, 
+export default function GaugeChart({
+  value,
+  max = 100,
+  height = 200,
+  title,
   options = {},
   thresholds = {
     low: 30,
     medium: 70,
-    high: 100
+    high: 100,
   },
   labels = {
     low: 'Low',
     medium: 'Medium',
-    high: 'Good'
+    high: 'Good',
   },
   colors = {
     low: '#f44336',
     medium: '#ff9800',
     high: '#4caf50',
-    background: '#f5f5f5'
-  }
+    background: '#f5f5f5',
+  },
 }: GaugeChartProps) {
   const chartRef = useRef<any>(null);
-  
+
   // Ensure value is within bounds
   const safeValue = Math.min(Math.max(0, value), max);
-  
+
   // Determine color based on thresholds
   const getColor = (value: number) => {
     if (value < thresholds.low) return colors.low;
     if (value < thresholds.medium) return colors.medium;
     return colors.high;
   };
-  
+
   // Determine label based on thresholds
   const getLabel = (value: number) => {
     if (value < thresholds.low) return labels.low;
     if (value < thresholds.medium) return labels.medium;
     return labels.high;
   };
-  
+
   // Data for the gauge
   const data = {
     datasets: [
@@ -105,11 +105,11 @@ export default function GaugeChart({
         display: !!title,
         text: title,
         font: {
-          size: 16
+          size: 16,
         },
         padding: {
-          bottom: 20
-        }
+          bottom: 20,
+        },
       },
       tooltip: {
         enabled: false,
@@ -125,11 +125,7 @@ export default function GaugeChart({
 
   return (
     <div style={{ height, position: 'relative', marginBottom: '10px' }}>
-      <Doughnut 
-        data={data} 
-        options={mergedOptions}
-        ref={chartRef}
-      />
+      <Doughnut data={data} options={mergedOptions} ref={chartRef} />
       <div
         style={{
           position: 'absolute',
@@ -142,27 +138,31 @@ export default function GaugeChart({
           boxSizing: 'border-box',
         }}
       >
-        <div style={{ 
-          fontSize: '1.75rem', 
-          fontWeight: 'bold', 
-          color: getColor(safeValue),
-          marginBottom: '10px',
-          lineHeight: 1.2,
-        }}>
+        <div
+          style={{
+            fontSize: '1.75rem',
+            fontWeight: 'bold',
+            color: getColor(safeValue),
+            marginBottom: '10px',
+            lineHeight: 1.2,
+          }}
+        >
           {safeValue}%
         </div>
-        <div style={{ 
-          fontSize: '0.875rem', 
-          color: 'rgba(0, 0, 0, 0.6)',
-          marginTop: '5px',
-          letterSpacing: '0.01em',
-          whiteSpace: 'nowrap',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-        }}>
+        <div
+          style={{
+            fontSize: '0.875rem',
+            color: 'rgba(0, 0, 0, 0.6)',
+            marginTop: '5px',
+            letterSpacing: '0.01em',
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+          }}
+        >
           {getLabel(safeValue)}
         </div>
       </div>
     </div>
   );
-} 
+}

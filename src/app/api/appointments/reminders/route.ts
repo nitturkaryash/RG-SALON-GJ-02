@@ -17,7 +17,10 @@ function isAuthorized(req: Request): boolean {
 export async function GET(req: Request) {
   try {
     if (!isAuthorized(req)) {
-      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+      return NextResponse.json(
+        { success: false, error: 'Unauthorized' },
+        { status: 401 }
+      );
     }
     const results: Array<{
       appointmentId: string;
@@ -32,7 +35,8 @@ export async function GET(req: Request) {
     // Get appointments that need reminders
     const { data: appointments, error } = await supabase
       .from('appointments')
-      .select(`
+      .select(
+        `
         id,
         start_time,
         services,
@@ -44,11 +48,18 @@ export async function GET(req: Request) {
           email,
           phone
         )
-      `)
+      `
+      )
       .eq('status', 'scheduled')
       .eq('reminder_sent', false)
-      .gte('start_time', new Date(Date.now() + 23 * 60 * 60 * 1000).toISOString()) // Within next 24 hours
-      .lte('start_time', new Date(Date.now() + 25 * 60 * 60 * 1000).toISOString()); // But not more than 25 hours away
+      .gte(
+        'start_time',
+        new Date(Date.now() + 23 * 60 * 60 * 1000).toISOString()
+      ) // Within next 24 hours
+      .lte(
+        'start_time',
+        new Date(Date.now() + 25 * 60 * 60 * 1000).toISOString()
+      ); // But not more than 25 hours away
 
     if (error) {
       console.error('Error fetching appointments:', error);
@@ -64,7 +75,7 @@ export async function GET(req: Request) {
 
       const notificationResults = {
         email: false,
-        whatsapp: false
+        whatsapp: false,
       };
 
       // Send email reminder
@@ -109,19 +120,22 @@ export async function GET(req: Request) {
           .eq('id', appointment.id);
 
         if (updateError) {
-          console.error('Error updating appointment reminder status:', updateError);
+          console.error(
+            'Error updating appointment reminder status:',
+            updateError
+          );
           results.push({
             appointmentId: appointment.id,
             clientName: appointment.clients.full_name,
             status: 'failed to update reminder status',
-            notifications: notificationResults
+            notifications: notificationResults,
           });
         } else {
           results.push({
             appointmentId: appointment.id,
             clientName: appointment.clients.full_name,
             status: 'reminder sent',
-            notifications: notificationResults
+            notifications: notificationResults,
           });
         }
       } else {
@@ -129,7 +143,7 @@ export async function GET(req: Request) {
           appointmentId: appointment.id,
           clientName: appointment.clients.full_name,
           status: 'failed to send reminders',
-          notifications: notificationResults
+          notifications: notificationResults,
         });
       }
     }
@@ -146,4 +160,4 @@ export async function GET(req: Request) {
       { status: 500 }
     );
   }
-} 
+}

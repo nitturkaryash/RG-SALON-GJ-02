@@ -1,11 +1,11 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { toast } from 'react-toastify'
-import { v4 as uuidv4 } from 'uuid'
-import type { Product } from '../models/productTypes'
-import { supabase } from '../utils/supabase/supabaseClient.js'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'react-toastify';
+import { v4 as uuidv4 } from 'uuid';
+import type { Product } from '../models/productTypes';
+import { supabase } from '../lib/supabase';
 
 export function useCollectionProducts(collectionId?: string) {
-  const queryClient = useQueryClient()
+  const queryClient = useQueryClient();
 
   const { data: collectionProducts, isLoading } = useQuery({
     queryKey: ['collectionProducts', collectionId],
@@ -24,8 +24,8 @@ export function useCollectionProducts(collectionId?: string) {
           }
 
           return productsData as Product[];
-        } 
-        
+        }
+
         console.log(`Fetching products for collection ID: ${collectionId}`);
         const { data: productsData, error } = await supabase
           .from('collection_products')
@@ -34,12 +34,17 @@ export function useCollectionProducts(collectionId?: string) {
           .order('name', { ascending: true });
 
         if (error) {
-          console.error(`Error fetching products for collection ${collectionId}:`, error);
+          console.error(
+            `Error fetching products for collection ${collectionId}:`,
+            error
+          );
           throw error;
         }
 
         if (productsData && productsData.length > 0) {
-          console.log(`Found ${productsData.length} products for collection ${collectionId}`);
+          console.log(
+            `Found ${productsData.length} products for collection ${collectionId}`
+          );
           return productsData as Product[];
         } else {
           console.warn(`No products found for collection ${collectionId}`);
@@ -59,22 +64,24 @@ export function useCollectionProducts(collectionId?: string) {
       const product = {
         id: productId,
         created_at: new Date().toISOString(),
-        ...newProduct
+        ...newProduct,
       };
-      
+
       const { data, error } = await supabase
         .from('collection_products')
         .insert(product)
         .select();
-      
+
       if (error) throw error;
       return data[0] as Product;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['collectionProducts', collectionId] });
+      queryClient.invalidateQueries({
+        queryKey: ['collectionProducts', collectionId],
+      });
       toast.success('Product added successfully');
     },
-    onError: (error) => {
+    onError: error => {
       toast.error('Failed to add product');
       console.error('Error adding product:', error);
     },
@@ -87,15 +94,17 @@ export function useCollectionProducts(collectionId?: string) {
         .update(updates)
         .eq('id', updates.id)
         .select();
-      
+
       if (error) throw error;
       return data[0] as Product;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['collectionProducts', collectionId] });
+      queryClient.invalidateQueries({
+        queryKey: ['collectionProducts', collectionId],
+      });
       toast.success('Product updated successfully');
     },
-    onError: (error) => {
+    onError: error => {
       toast.error('Failed to update product');
       console.error('Error updating product:', error);
     },
@@ -107,15 +116,17 @@ export function useCollectionProducts(collectionId?: string) {
         .from('collection_products')
         .delete()
         .eq('id', id);
-      
+
       if (error) throw error;
       return { success: true };
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['collectionProducts', collectionId] });
+      queryClient.invalidateQueries({
+        queryKey: ['collectionProducts', collectionId],
+      });
       toast.success('Product deleted successfully');
     },
-    onError: (error) => {
+    onError: error => {
       toast.error('Failed to delete product');
       console.error('Error deleting product:', error);
     },
@@ -124,20 +135,22 @@ export function useCollectionProducts(collectionId?: string) {
   const deleteAllProductsInCollection = useMutation({
     mutationFn: async () => {
       if (!collectionId) throw new Error('No collection ID provided');
-      
+
       const { error } = await supabase
         .from('collection_products')
         .delete()
         .eq('collection_id', collectionId);
-      
+
       if (error) throw error;
       return { success: true };
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['collectionProducts', collectionId] });
+      queryClient.invalidateQueries({
+        queryKey: ['collectionProducts', collectionId],
+      });
       toast.success('All products in collection deleted successfully');
     },
-    onError: (error) => {
+    onError: error => {
       toast.error('Failed to delete products in collection');
       console.error('Error deleting products in collection:', error);
     },
@@ -156,4 +169,4 @@ export function useCollectionProducts(collectionId?: string) {
     deleteProduct: deleteProduct.mutate,
     deleteAllProductsInCollection: deleteAllProductsInCollection.mutate,
   };
-} 
+}

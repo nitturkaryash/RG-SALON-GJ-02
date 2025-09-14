@@ -9,9 +9,7 @@
     "customConditions": ["node"],
     "jsx": "react-jsx"
   },
-  "include": [
-    "src/whatsapp/business-api/services/whatsappService.ts"
-  ],
+  "include": ["src/whatsapp/business-api/services/whatsappService.ts"],
   "exclude": [
     "node_modules",
     "dist",
@@ -30,4 +28,4 @@
     "src/index.tsx",
     "src/vite-env.d.ts"
   ]
-} 
+}

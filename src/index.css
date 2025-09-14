@@ -5,7 +5,7 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  --primary-color: #6B8E23;
+  --primary-color: #6b8e23;
   --secondary-color: #333;
   --background-color: #fff;
   --text-color: #333;
@@ -195,7 +195,8 @@ p {
 }
 
 /* Allow text selection in input fields and textareas */
-input, textarea {
+input,
+textarea {
   -webkit-user-select: text;
   -moz-user-select: text;
   -ms-user-select: text;

@@ -33,3 +33,36 @@ yarn-error.log*
 *.sw?
 /.cursor
 /.cursor
+
+# Documentation files (except README.md)
+*.md
+!README.md
+
+# Test files
+*.test.*
+*.spec.*
+**/__tests__/**
+**/test/**
+**/tests/**
+
+# Backup files
+*.bak
+*.backup
+*.old
+*.orig
+*.tmp
+*~
+
+# SQL files
+*.sql
+*.db
+*.sqlite
+*.sqlite3
+
+# Log files
+*.log
+logs/
+
+# Temporary files
+temp/
+tmp/

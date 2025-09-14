@@ -68,7 +68,7 @@ const REFRESH_INTERVALS = [
 export default function DashboardSettings({
   settings,
   onSettingsChange,
-  onRefresh 
+  onRefresh,
 }: DashboardSettingsProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -84,7 +84,9 @@ export default function DashboardSettings({
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
   // Count enabled metrics for badge
-  const enabledMetricsCount = Object.values(settings.visibleMetrics).filter(Boolean).length;
+  const enabledMetricsCount = Object.values(settings.visibleMetrics).filter(
+    Boolean
+  ).length;
 
   const handleOpenSettings = () => {
     setIsOpen(true);
@@ -98,7 +100,10 @@ export default function DashboardSettings({
     setHasUnsavedChanges(false);
   };
 
-  const showNotification = (message: string, severity: 'success' | 'error' | 'warning' | 'info') => {
+  const showNotification = (
+    message: string,
+    severity: 'success' | 'error' | 'warning' | 'info'
+  ) => {
     setNotification({
       open: true,
       message,
@@ -118,9 +123,11 @@ export default function DashboardSettings({
       },
     });
     setHasUnsavedChanges(true);
-    
+
     const action = !settings.visibleMetrics[metric] ? 'enabled' : 'disabled';
-    const metricName = metric.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
+    const metricName = metric
+      .replace(/([A-Z])/g, ' $1')
+      .replace(/^./, str => str.toUpperCase());
     showNotification(`${metricName} ${action}`, 'info');
   };
 
@@ -135,8 +142,10 @@ export default function DashboardSettings({
       },
     });
     setHasUnsavedChanges(true);
-    
-    const chartName = chart.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
+
+    const chartName = chart
+      .replace(/([A-Z])/g, ' $1')
+      .replace(/^./, str => str.toUpperCase());
     showNotification(`${chartName} chart type updated`, 'info');
   };
 
@@ -145,8 +154,10 @@ export default function DashboardSettings({
       refreshInterval: Number(event.target.value),
     });
     setHasUnsavedChanges(true);
-    
-    const intervalLabel = REFRESH_INTERVALS.find(i => i.value === Number(event.target.value))?.label;
+
+    const intervalLabel = REFRESH_INTERVALS.find(
+      i => i.value === Number(event.target.value)
+    )?.label;
     showNotification(`Refresh interval set to ${intervalLabel}`, 'success');
   };
 
@@ -161,26 +172,35 @@ export default function DashboardSettings({
       },
     });
     setHasUnsavedChanges(true);
-    
-    const thresholdName = threshold.toString().split(/(?=[A-Z])/).join(' ');
+
+    const thresholdName = threshold
+      .toString()
+      .split(/(?=[A-Z])/)
+      .join(' ');
     showNotification(`${thresholdName} threshold updated`, 'info');
   };
 
   const enableAllMetrics = () => {
-    const allEnabled = Object.keys(settings.visibleMetrics).reduce((acc, key) => ({
-      ...acc,
-      [key]: true,
-    }), {} as typeof settings.visibleMetrics);
+    const allEnabled = Object.keys(settings.visibleMetrics).reduce(
+      (acc, key) => ({
+        ...acc,
+        [key]: true,
+      }),
+      {} as typeof settings.visibleMetrics
+    );
     onSettingsChange({ visibleMetrics: allEnabled });
     setHasUnsavedChanges(true);
     showNotification('All metrics enabled', 'success');
   };
 
   const disableAllMetrics = () => {
-    const allDisabled = Object.keys(settings.visibleMetrics).reduce((acc, key) => ({
-      ...acc,
-      [key]: false,
-    }), {} as typeof settings.visibleMetrics);
+    const allDisabled = Object.keys(settings.visibleMetrics).reduce(
+      (acc, key) => ({
+        ...acc,
+        [key]: false,
+      }),
+      {} as typeof settings.visibleMetrics
+    );
     onSettingsChange({ visibleMetrics: allDisabled });
     setHasUnsavedChanges(true);
     showNotification('All metrics disabled', 'success');
@@ -195,24 +215,24 @@ export default function DashboardSettings({
         appointments: true,
         retentionRate: true,
         averageTicket: true,
-        
+
         // Payment analytics
         paymentMethods: true,
         splitPayments: true,
         paymentTrends: false,
-        
+
         // Operational analytics
         peakHours: true,
         appointmentStatus: true,
         serviceCategories: true,
         monthlyComparison: false,
-        
+
         // Customer analytics
         customerBehavior: true,
         customerRetention: true,
         customerLifetimeValue: false,
         visitFrequency: false,
-        
+
         // Advanced analytics
         revenueBreakdown: true,
         operationalInsights: true,
@@ -257,7 +277,9 @@ export default function DashboardSettings({
     }
   };
 
-  const getAvailableChartTypes = (chartKey: keyof typeof settings.chartTypes) => {
+  const getAvailableChartTypes = (
+    chartKey: keyof typeof settings.chartTypes
+  ) => {
     switch (chartKey) {
       case 'salesTrend':
         return ['line', 'bar'];
@@ -282,24 +304,24 @@ export default function DashboardSettings({
   return (
     <>
       {/* Settings Toggle Button */}
-      <Tooltip title="Dashboard Settings" placement="left">
+      <Tooltip title='Dashboard Settings' placement='left'>
         <Box
-        sx={{
-          position: 'fixed',
+          sx={{
+            position: 'fixed',
             bottom: 24,
             right: 24,
             zIndex: 1200,
           }}
         >
-          <Badge 
-            badgeContent={enabledMetricsCount} 
-            color="secondary"
+          <Badge
+            badgeContent={enabledMetricsCount}
+            color='secondary'
             sx={{
               '& .MuiBadge-badge': {
                 fontSize: '0.75rem',
                 minWidth: '20px',
                 height: '20px',
-              }
+              },
             }}
           >
             <IconButton
@@ -311,25 +333,25 @@ export default function DashboardSettings({
                 height: 56,
                 boxShadow: 3,
                 transition: 'all 0.3s ease',
-          '&:hover': {
+                '&:hover': {
                   backgroundColor: 'primary.dark',
                   boxShadow: 6,
                   transform: 'scale(1.05)',
-          },
-        }}
-      >
-        <SettingsIcon />
-      </IconButton>
+                },
+              }}
+            >
+              <SettingsIcon />
+            </IconButton>
           </Badge>
         </Box>
       </Tooltip>
 
       {/* Settings Drawer */}
       <Drawer
-        anchor="right"
+        anchor='right'
         open={isOpen}
         onClose={handleCloseSettings}
-        variant="temporary"
+        variant='temporary'
         sx={{
           '& .MuiDrawer-paper': {
             width: 450,
@@ -352,40 +374,42 @@ export default function DashboardSettings({
             }}
           >
             <Box>
-              <Typography variant="h6" sx={{ fontWeight: 600 }}>
+              <Typography variant='h6' sx={{ fontWeight: 600 }}>
                 Dashboard Settings
               </Typography>
-              <Typography variant="caption" sx={{ opacity: 0.8 }}>
+              <Typography variant='caption' sx={{ opacity: 0.8 }}>
                 {enabledMetricsCount} metrics enabled
               </Typography>
             </Box>
             <Box>
-              <Tooltip title="Refresh Dashboard">
+              <Tooltip title='Refresh Dashboard'>
                 <IconButton
                   onClick={handleRefresh}
                   disabled={isRefreshing}
                   sx={{ color: 'white', mr: 1 }}
-                  size="small"
+                  size='small'
                 >
-                  <RefreshIcon 
-                    sx={{ 
-                      animation: isRefreshing ? 'spin 1s linear infinite' : 'none',
+                  <RefreshIcon
+                    sx={{
+                      animation: isRefreshing
+                        ? 'spin 1s linear infinite'
+                        : 'none',
                       '@keyframes spin': {
                         '0%': { transform: 'rotate(0deg)' },
                         '100%': { transform: 'rotate(360deg)' },
-                      }
-                    }} 
+                      },
+                    }}
                   />
                 </IconButton>
               </Tooltip>
-              <Tooltip title="Close Settings">
-              <IconButton 
+              <Tooltip title='Close Settings'>
+                <IconButton
                   onClick={handleCloseSettings}
                   sx={{ color: 'white' }}
-                  size="small"
-              >
-                <CloseIcon />
-              </IconButton>
+                  size='small'
+                >
+                  <CloseIcon />
+                </IconButton>
               </Tooltip>
             </Box>
           </Box>
@@ -394,29 +418,33 @@ export default function DashboardSettings({
           <Box sx={{ flex: 1, overflowY: 'auto', p: 2 }}>
             {/* Global Controls */}
             <Box mb={3}>
-              <Typography variant="subtitle1" gutterBottom sx={{ fontWeight: 600 }}>
+              <Typography
+                variant='subtitle1'
+                gutterBottom
+                sx={{ fontWeight: 600 }}
+              >
                 Global Controls
               </Typography>
               <Stack spacing={2}>
-                <FormControl fullWidth size="small">
+                <FormControl fullWidth size='small'>
                   <InputLabel>Refresh Interval</InputLabel>
                   <Select
                     value={settings.refreshInterval}
-                    label="Refresh Interval"
+                    label='Refresh Interval'
                     onChange={handleRefreshIntervalChange}
                   >
-                    {REFRESH_INTERVALS.map((interval) => (
+                    {REFRESH_INTERVALS.map(interval => (
                       <MenuItem key={interval.value} value={interval.value}>
                         {interval.label}
                       </MenuItem>
                     ))}
                   </Select>
                 </FormControl>
-                
-                <Stack direction="row" spacing={1}>
+
+                <Stack direction='row' spacing={1}>
                   <Button
-                    variant="outlined"
-                    size="small"
+                    variant='outlined'
+                    size='small'
                     onClick={enableAllMetrics}
                     startIcon={<CheckIcon />}
                     fullWidth
@@ -424,22 +452,22 @@ export default function DashboardSettings({
                     Enable All
                   </Button>
                   <Button
-                    variant="outlined"
-                    size="small"
+                    variant='outlined'
+                    size='small'
                     onClick={disableAllMetrics}
-                    color="warning"
+                    color='warning'
                     fullWidth
                   >
                     Disable All
                   </Button>
                 </Stack>
-                
+
                 <Button
-                  variant="outlined"
-                  size="small"
+                  variant='outlined'
+                  size='small'
                   onClick={resetToDefaults}
                   startIcon={<RestoreIcon />}
-                  color="secondary"
+                  color='secondary'
                   fullWidth
                 >
                   Reset to Defaults
@@ -454,7 +482,7 @@ export default function DashboardSettings({
               <AccordionSummary expandIcon={<ExpandMoreIcon />}>
                 <Box sx={{ display: 'flex', alignItems: 'center' }}>
                   <WarningIcon sx={{ mr: 1, color: 'warning.main' }} />
-                  <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                  <Typography variant='subtitle1' sx={{ fontWeight: 600 }}>
                     Alert Thresholds
                   </Typography>
                 </Box>
@@ -464,25 +492,37 @@ export default function DashboardSettings({
                   <Box>
                     <Typography gutterBottom>Low Revenue Alert (₹)</Typography>
                     <TextField
-                      type="number"
-                      size="small"
+                      type='number'
+                      size='small'
                       fullWidth
                       value={settings.alertThresholds.lowRevenue}
-                      onChange={(e) => handleThresholdChange('lowRevenue', Number(e.target.value))}
+                      onChange={e =>
+                        handleThresholdChange(
+                          'lowRevenue',
+                          Number(e.target.value)
+                        )
+                      }
                       inputProps={{ min: 0 }}
-                      helperText="Alert when daily revenue falls below this amount"
+                      helperText='Alert when daily revenue falls below this amount'
                     />
                   </Box>
                   <Box>
-                    <Typography gutterBottom>High Cancellation Rate (%)</Typography>
+                    <Typography gutterBottom>
+                      High Cancellation Rate (%)
+                    </Typography>
                     <TextField
-                      type="number"
-                      size="small"
+                      type='number'
+                      size='small'
                       fullWidth
                       value={settings.alertThresholds.highCancellation}
-                      onChange={(e) => handleThresholdChange('highCancellation', Number(e.target.value))}
+                      onChange={e =>
+                        handleThresholdChange(
+                          'highCancellation',
+                          Number(e.target.value)
+                        )
+                      }
                       inputProps={{ min: 0, max: 100 }}
-                      helperText="Alert when cancellation rate exceeds this percentage"
+                      helperText='Alert when cancellation rate exceeds this percentage'
                     />
                   </Box>
                 </Stack>
@@ -494,7 +534,7 @@ export default function DashboardSettings({
               <AccordionSummary expandIcon={<ExpandMoreIcon />}>
                 <Box sx={{ display: 'flex', alignItems: 'center' }}>
                   <AssessmentIcon sx={{ mr: 1, color: 'primary.main' }} />
-                  <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                  <Typography variant='subtitle1' sx={{ fontWeight: 600 }}>
                     Core Business Metrics
                   </Typography>
                 </Box>
@@ -508,7 +548,7 @@ export default function DashboardSettings({
                         onChange={() => handleMetricToggle('dailySales')}
                       />
                     }
-                    label="Daily Sales"
+                    label='Daily Sales'
                   />
                   <FormControlLabel
                     control={
@@ -517,7 +557,7 @@ export default function DashboardSettings({
                         onChange={() => handleMetricToggle('topServices')}
                       />
                     }
-                    label="Top Services"
+                    label='Top Services'
                   />
                   <FormControlLabel
                     control={
@@ -526,7 +566,7 @@ export default function DashboardSettings({
                         onChange={() => handleMetricToggle('appointments')}
                       />
                     }
-                    label="Appointments"
+                    label='Appointments'
                   />
                   <FormControlLabel
                     control={
@@ -535,7 +575,7 @@ export default function DashboardSettings({
                         onChange={() => handleMetricToggle('averageTicket')}
                       />
                     }
-                    label="Average Ticket"
+                    label='Average Ticket'
                   />
                   <FormControlLabel
                     control={
@@ -544,7 +584,7 @@ export default function DashboardSettings({
                         onChange={() => handleMetricToggle('retentionRate')}
                       />
                     }
-                    label="Customer Retention"
+                    label='Customer Retention'
                   />
                   <FormControlLabel
                     control={
@@ -553,7 +593,7 @@ export default function DashboardSettings({
                         onChange={() => handleMetricToggle('revenueBreakdown')}
                       />
                     }
-                    label="Revenue Breakdown"
+                    label='Revenue Breakdown'
                   />
                   <FormControlLabel
                     control={
@@ -571,7 +611,7 @@ export default function DashboardSettings({
                         onChange={() => handleMetricToggle('realTimeMetrics')}
                       />
                     }
-                    label="Real-time Metrics"
+                    label='Real-time Metrics'
                   />
                 </FormGroup>
               </AccordionDetails>
@@ -582,7 +622,7 @@ export default function DashboardSettings({
               <AccordionSummary expandIcon={<ExpandMoreIcon />}>
                 <Box sx={{ display: 'flex', alignItems: 'center' }}>
                   <PaymentIcon sx={{ mr: 1, color: 'info.main' }} />
-                  <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                  <Typography variant='subtitle1' sx={{ fontWeight: 600 }}>
                     Payment Analytics
                   </Typography>
                 </Box>
@@ -596,7 +636,7 @@ export default function DashboardSettings({
                         onChange={() => handleMetricToggle('paymentMethods')}
                       />
                     }
-                    label="Payment Methods Breakdown"
+                    label='Payment Methods Breakdown'
                   />
                   <FormControlLabel
                     control={
@@ -605,7 +645,7 @@ export default function DashboardSettings({
                         onChange={() => handleMetricToggle('splitPayments')}
                       />
                     }
-                    label="Split Payment Details"
+                    label='Split Payment Details'
                   />
                   <FormControlLabel
                     control={
@@ -614,7 +654,7 @@ export default function DashboardSettings({
                         onChange={() => handleMetricToggle('paymentTrends')}
                       />
                     }
-                    label="Payment Trends"
+                    label='Payment Trends'
                   />
                 </FormGroup>
               </AccordionDetails>
@@ -625,7 +665,7 @@ export default function DashboardSettings({
               <AccordionSummary expandIcon={<ExpandMoreIcon />}>
                 <Box sx={{ display: 'flex', alignItems: 'center' }}>
                   <InfoIcon sx={{ mr: 1, color: 'success.main' }} />
-                  <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                  <Typography variant='subtitle1' sx={{ fontWeight: 600 }}>
                     Customer Analytics
                   </Typography>
                 </Box>
@@ -639,25 +679,27 @@ export default function DashboardSettings({
                         onChange={() => handleMetricToggle('customerBehavior')}
                       />
                     }
-                    label="Customer Behavior"
+                    label='Customer Behavior'
                   />
                   <FormControlLabel
                     control={
                       <Switch
                         checked={settings.visibleMetrics.customerRetention}
                         onChange={() => handleMetricToggle('customerRetention')}
-                  />
-                }
-                label="Customer Retention"
-              />
-              <FormControlLabel
-                control={
-                  <Switch
-                        checked={settings.visibleMetrics.customerLifetimeValue}
-                        onChange={() => handleMetricToggle('customerLifetimeValue')}
                       />
                     }
-                    label="Customer Lifetime Value"
+                    label='Customer Retention'
+                  />
+                  <FormControlLabel
+                    control={
+                      <Switch
+                        checked={settings.visibleMetrics.customerLifetimeValue}
+                        onChange={() =>
+                          handleMetricToggle('customerLifetimeValue')
+                        }
+                      />
+                    }
+                    label='Customer Lifetime Value'
                   />
                   <FormControlLabel
                     control={
@@ -666,7 +708,7 @@ export default function DashboardSettings({
                         onChange={() => handleMetricToggle('visitFrequency')}
                       />
                     }
-                    label="Visit Frequency"
+                    label='Visit Frequency'
                   />
                 </FormGroup>
               </AccordionDetails>
@@ -677,7 +719,7 @@ export default function DashboardSettings({
               <AccordionSummary expandIcon={<ExpandMoreIcon />}>
                 <Box sx={{ display: 'flex', alignItems: 'center' }}>
                   <TimelineIcon sx={{ mr: 1, color: 'error.main' }} />
-                  <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                  <Typography variant='subtitle1' sx={{ fontWeight: 600 }}>
                     Operational Analytics
                   </Typography>
                 </Box>
@@ -691,7 +733,7 @@ export default function DashboardSettings({
                         onChange={() => handleMetricToggle('peakHours')}
                       />
                     }
-                    label="Peak Hours"
+                    label='Peak Hours'
                   />
                   <FormControlLabel
                     control={
@@ -700,7 +742,7 @@ export default function DashboardSettings({
                         onChange={() => handleMetricToggle('appointmentStatus')}
                       />
                     }
-                    label="Appointment Status"
+                    label='Appointment Status'
                   />
                   <FormControlLabel
                     control={
@@ -709,7 +751,7 @@ export default function DashboardSettings({
                         onChange={() => handleMetricToggle('serviceCategories')}
                       />
                     }
-                    label="Service Categories"
+                    label='Service Categories'
                   />
                   <FormControlLabel
                     control={
@@ -718,16 +760,18 @@ export default function DashboardSettings({
                         onChange={() => handleMetricToggle('monthlyComparison')}
                       />
                     }
-                    label="Monthly Comparison"
+                    label='Monthly Comparison'
                   />
                   <FormControlLabel
                     control={
                       <Switch
                         checked={settings.visibleMetrics.operationalInsights}
-                        onChange={() => handleMetricToggle('operationalInsights')}
+                        onChange={() =>
+                          handleMetricToggle('operationalInsights')
+                        }
                       />
                     }
-                    label="Operational Insights"
+                    label='Operational Insights'
                   />
                 </FormGroup>
               </AccordionDetails>
@@ -738,7 +782,7 @@ export default function DashboardSettings({
               <AccordionSummary expandIcon={<ExpandMoreIcon />}>
                 <Box sx={{ display: 'flex', alignItems: 'center' }}>
                   <InfoIcon sx={{ mr: 1, color: 'info.main' }} />
-                  <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                  <Typography variant='subtitle1' sx={{ fontWeight: 600 }}>
                     Enhanced Features
                   </Typography>
                 </Box>
@@ -749,10 +793,12 @@ export default function DashboardSettings({
                     control={
                       <Switch
                         checked={settings.visibleMetrics.upcomingAppointments}
-                        onChange={() => handleMetricToggle('upcomingAppointments')}
+                        onChange={() =>
+                          handleMetricToggle('upcomingAppointments')
+                        }
                       />
                     }
-                    label="Upcoming Appointments"
+                    label='Upcoming Appointments'
                   />
                   <FormControlLabel
                     control={
@@ -761,16 +807,18 @@ export default function DashboardSettings({
                         onChange={() => handleMetricToggle('criticalAlerts')}
                       />
                     }
-                    label="Critical Alerts"
+                    label='Critical Alerts'
                   />
                   <FormControlLabel
                     control={
                       <Switch
                         checked={settings.visibleMetrics.appointmentReminders}
-                        onChange={() => handleMetricToggle('appointmentReminders')}
+                        onChange={() =>
+                          handleMetricToggle('appointmentReminders')
+                        }
                       />
                     }
-                    label="Appointment Reminders"
+                    label='Appointment Reminders'
                   />
                 </FormGroup>
               </AccordionDetails>
@@ -781,81 +829,116 @@ export default function DashboardSettings({
               <AccordionSummary expandIcon={<ExpandMoreIcon />}>
                 <Box sx={{ display: 'flex', alignItems: 'center' }}>
                   <InfoIcon sx={{ mr: 1, color: 'text.secondary' }} />
-                  <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                  <Typography variant='subtitle1' sx={{ fontWeight: 600 }}>
                     Chart Types
                   </Typography>
                 </Box>
               </AccordionSummary>
               <AccordionDetails>
                 <Stack spacing={2}>
-                  {Object.entries(settings.chartTypes).map(([chartKey, chartValue]) => (
-                    <FormControl key={chartKey} fullWidth size="small">
-                      <InputLabel>
-                        {chartKey.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}
-                      </InputLabel>
-                      <Select
-                        value={chartValue}
-                        label={chartKey.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}
-                        onChange={(e) => handleChartTypeChange(chartKey as keyof typeof settings.chartTypes, e)}
-                      >
-                        {getAvailableChartTypes(chartKey as keyof typeof settings.chartTypes).map((option) => (
-                          <MenuItem key={option} value={option}>
-                            {option}
-                          </MenuItem>
-                        ))}
-                      </Select>
-                    </FormControl>
-                  ))}
-            </Stack>
+                  {Object.entries(settings.chartTypes).map(
+                    ([chartKey, chartValue]) => (
+                      <FormControl key={chartKey} fullWidth size='small'>
+                        <InputLabel>
+                          {chartKey
+                            .replace(/([A-Z])/g, ' $1')
+                            .replace(/^./, str => str.toUpperCase())}
+                        </InputLabel>
+                        <Select
+                          value={chartValue}
+                          label={chartKey
+                            .replace(/([A-Z])/g, ' $1')
+                            .replace(/^./, str => str.toUpperCase())}
+                          onChange={e =>
+                            handleChartTypeChange(
+                              chartKey as keyof typeof settings.chartTypes,
+                              e
+                            )
+                          }
+                        >
+                          {getAvailableChartTypes(
+                            chartKey as keyof typeof settings.chartTypes
+                          ).map(option => (
+                            <MenuItem key={option} value={option}>
+                              {option}
+                            </MenuItem>
+                          ))}
+                        </Select>
+                      </FormControl>
+                    )
+                  )}
+                </Stack>
               </AccordionDetails>
             </Accordion>
 
             {/* Info */}
             <Box mt={3}>
-              <Alert severity="info" sx={{ fontSize: '0.875rem' }}>
-                <Typography variant="body2">
-                  Dashboard updates automatically every {settings.refreshInterval / 1000} seconds. 
-                  All data is real-time and reflects actual business operations.
+              <Alert severity='info' sx={{ fontSize: '0.875rem' }}>
+                <Typography variant='body2'>
+                  Dashboard updates automatically every{' '}
+                  {settings.refreshInterval / 1000} seconds. All data is
+                  real-time and reflects actual business operations.
                 </Typography>
               </Alert>
-              
+
               {hasUnsavedChanges && (
-                <Alert severity="warning" sx={{ fontSize: '0.875rem', mt: 2 }}>
-                  <Typography variant="body2">
-                    Settings will be saved automatically when you close this panel.
+                <Alert severity='warning' sx={{ fontSize: '0.875rem', mt: 2 }}>
+                  <Typography variant='body2'>
+                    Settings will be saved automatically when you close this
+                    panel.
                   </Typography>
                 </Alert>
               )}
 
               {/* Status Section */}
-              <Box mt={2} p={2} border={1} borderColor="divider" borderRadius={1}>
-                <Typography variant="subtitle2" gutterBottom>
+              <Box
+                mt={2}
+                p={2}
+                border={1}
+                borderColor='divider'
+                borderRadius={1}
+              >
+                <Typography variant='subtitle2' gutterBottom>
                   System Status
                 </Typography>
-                <Box display="flex" justifyContent="space-between" alignItems="center" mb={1}>
-                  <Typography variant="caption" color="text.secondary">
+                <Box
+                  display='flex'
+                  justifyContent='space-between'
+                  alignItems='center'
+                  mb={1}
+                >
+                  <Typography variant='caption' color='text.secondary'>
                     Last Updated:
                   </Typography>
-                  <Typography variant="caption">
+                  <Typography variant='caption'>
                     {new Date().toLocaleTimeString()}
                   </Typography>
                 </Box>
-                <Box display="flex" justifyContent="space-between" alignItems="center" mb={1}>
-                  <Typography variant="caption" color="text.secondary">
+                <Box
+                  display='flex'
+                  justifyContent='space-between'
+                  alignItems='center'
+                  mb={1}
+                >
+                  <Typography variant='caption' color='text.secondary'>
                     Status:
                   </Typography>
-                  <Chip 
-                    label={isRefreshing ? "Updating..." : "Active"} 
-                    size="small" 
-                    color={isRefreshing ? "warning" : "success"}
+                  <Chip
+                    label={isRefreshing ? 'Updating...' : 'Active'}
+                    size='small'
+                    color={isRefreshing ? 'warning' : 'success'}
                     sx={{ height: 20, fontSize: '0.7rem' }}
                   />
                 </Box>
-                <Box display="flex" justifyContent="space-between" alignItems="center">
-                  <Typography variant="caption" color="text.secondary">
+                <Box
+                  display='flex'
+                  justifyContent='space-between'
+                  alignItems='center'
+                >
+                  <Typography variant='caption' color='text.secondary'>
                     Next Refresh:
                   </Typography>
-                  <Typography variant="caption">
+                  <Typography variant='caption'>
                     {Math.round(settings.refreshInterval / 1000)}s
                   </Typography>
                 </Box>
@@ -872,10 +955,10 @@ export default function DashboardSettings({
         onClose={handleCloseNotification}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
       >
-        <Alert 
-          onClose={handleCloseNotification} 
+        <Alert
+          onClose={handleCloseNotification}
           severity={notification.severity}
-          variant="filled"
+          variant='filled'
           sx={{ width: '100%' }}
         >
           {notification.message}
@@ -883,4 +966,4 @@ export default function DashboardSettings({
       </Snackbar>
     </>
   );
-} 
+}

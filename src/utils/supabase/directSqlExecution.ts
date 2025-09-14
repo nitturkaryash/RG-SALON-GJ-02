@@ -14,54 +14,57 @@ interface SqlResult {
 export async function executeSql(sql: string): Promise<SqlResult> {
   try {
     console.log('Executing SQL:', sql);
-    
+
     // Get environment variables instead of accessing protected properties
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
     // Use service role key only in secure server-side context; in browser block entirely
     if (typeof window !== 'undefined') {
-      return { success: false, error: 'Direct SQL execution is not allowed from the browser' };
-    }
-    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-    
-    if (!supabaseUrl || !supabaseKey) {
-      console.error('Missing Supabase URL or Key');
-      return { 
-        success: false, 
-        error: 'Missing Supabase URL or Key' 
+      return {
+        success: false,
+        error: 'Direct SQL execution is not allowed from the browser',
       };
     }
-    
+    const supabaseKey = import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY;
+
+    if (!supabaseUrl || !supabaseKey) {
+      console.error('Missing Supabase URL or Key');
+      return {
+        success: false,
+        error: 'Missing Supabase URL or Key',
+      };
+    }
+
     // Use REST API to execute SQL
     const response = await fetch(`${supabaseUrl}/rest/v1/rpc/execute_sql`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'apikey': supabaseKey,
-        'Authorization': `Bearer ${supabaseKey}`,
-        'Prefer': 'return=representation'
+        apikey: supabaseKey,
+        Authorization: `Bearer ${supabaseKey}`,
+        Prefer: 'return=representation',
       },
-      body: JSON.stringify({ sql_query: sql })
+      body: JSON.stringify({ sql_query: sql }),
     });
-    
+
     if (!response.ok) {
       const errorText = await response.text();
       console.error('SQL execution failed:', errorText);
-      return { 
-        success: false, 
-        error: errorText 
+      return {
+        success: false,
+        error: errorText,
       };
     }
-    
+
     const data = await response.json();
-    return { 
-      success: true, 
-      data 
+    return {
+      success: true,
+      data,
     };
   } catch (error) {
     console.error('Error executing SQL:', error);
-    return { 
-      success: false, 
-      error 
+    return {
+      success: false,
+      error,
     };
   }
 }
@@ -74,19 +77,19 @@ export async function ensureUuidExtension(): Promise<SqlResult> {
     const result = await executeSql(
       `CREATE EXTENSION IF NOT EXISTS "uuid-ossp";`
     );
-    
+
     if (!result.success) {
       console.error('Failed to create UUID extension:', result.error);
       return result;
     }
-    
+
     console.log('UUID extension ensured');
     return result;
   } catch (error) {
     console.error('Error ensuring UUID extension:', error);
-    return { 
-      success: false, 
-      error 
+    return {
+      success: false,
+      error,
     };
   }
 }
@@ -118,19 +121,19 @@ export async function createExecSqlFunction(): Promise<SqlResult> {
       END;
       $$;
     `);
-    
+
     if (!result.success) {
       console.error('Failed to create execute_sql function:', result.error);
       return result;
     }
-    
+
     console.log('SQL execution function created');
     return result;
   } catch (error) {
     console.error('Error creating execute_sql function:', error);
-    return { 
-      success: false, 
-      error 
+    return {
+      success: false,
+      error,
     };
   }
 }
@@ -147,10 +150,10 @@ export const createTestTable = async (): Promise<boolean> => {
         created_at TIMESTAMP DEFAULT NOW()
       );
     `);
-    
+
     return result.success;
   } catch (error) {
     console.error('Failed to create test table:', error);
     return false;
   }
-}; 
+};

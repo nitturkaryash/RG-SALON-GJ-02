@@ -73,7 +73,7 @@
 }
 
 .appointment-time {
-  font-weight: bold !important; 
+  font-weight: bold !important;
   background-color: rgba(255, 255, 255, 0.25) !important;
   border-radius: 4px !important;
   padding: 1px 4px !important;
@@ -172,7 +172,7 @@
 }
 
 /* Global style for appointment times */
-[class*="MuiBox-root"] [class*="MuiTypography-root"]:last-child {
+[class*='MuiBox-root'] [class*='MuiTypography-root']:last-child {
   font-weight: bold !important;
   background-color: rgba(255, 255, 255, 0.25) !important;
   border-radius: 4px !important;
@@ -225,7 +225,7 @@
 }
 
 /* Prevent scroll issues during drag operations */
-.appointment-card[draggable="true"] {
+.appointment-card[draggable='true'] {
   user-select: none;
   -webkit-user-select: none;
   -moz-user-select: none;
@@ -247,7 +247,10 @@
 
 /* Smooth transitions that don't affect scroll */
 .appointment-card {
-  transition: background-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+  transition:
+    background-color 0.2s ease,
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
 }
 
 /* Context menu animation without scroll interference */
@@ -267,4 +270,4 @@
   contain: layout;
   position: relative;
   overflow: hidden;
-} 
+}

@@ -11,7 +11,7 @@ export const checkSupabaseTables = async (): Promise<{
 }> => {
   try {
     console.log('Checking Supabase tables...');
-    
+
     // List of tables to check
     const tablesToCheck = [
       'product_collections',
@@ -19,11 +19,11 @@ export const checkSupabaseTables = async (): Promise<{
       'inventory_purchases',
       'inventory_sales',
       'inventory_consumption',
-      'inventory_balance_stock'
+      'inventory_balance_stock',
     ];
-    
+
     const tableStatus: Record<string, boolean> = {};
-    
+
     // Check each table
     for (const table of tablesToCheck) {
       try {
@@ -31,7 +31,7 @@ export const checkSupabaseTables = async (): Promise<{
         const { error } = await supabase
           .from(table)
           .select('*', { head: true });
-        
+
         if (error) {
           console.error(`Error checking table ${table}:`, error);
           tableStatus[table] = false;
@@ -44,17 +44,17 @@ export const checkSupabaseTables = async (): Promise<{
         tableStatus[table] = false;
       }
     }
-    
+
     return {
       success: Object.values(tableStatus).some(exists => exists),
-      tables: tableStatus
+      tables: tableStatus,
     };
   } catch (e) {
     console.error('Error checking Supabase tables:', e);
     return {
       success: false,
       tables: {},
-      error: e instanceof Error ? e.message : 'Unknown error'
+      error: e instanceof Error ? e.message : 'Unknown error',
     };
   }
 };
@@ -73,30 +73,30 @@ export const getSampleData = async (): Promise<{
       .from('product_collections')
       .select('*')
       .limit(5);
-    
+
     if (collectionsError) {
       console.error('Error fetching collections:', collectionsError);
     }
-    
+
     // Get sample data from products
     const { data: products, error: productsError } = await supabase
       .from('products')
       .select('*')
       .limit(5);
-    
+
     if (productsError) {
       console.error('Error fetching products:', productsError);
     }
-    
+
     return {
       collections: collections || [],
       products: products || [],
-      error: collectionsError?.message || productsError?.message
+      error: collectionsError?.message || productsError?.message,
     };
   } catch (e) {
     console.error('Error getting sample data:', e);
     return {
-      error: e instanceof Error ? e.message : 'Unknown error'
+      error: e instanceof Error ? e.message : 'Unknown error',
     };
   }
 };
@@ -108,7 +108,7 @@ export async function checkInventoryTablesExist(): Promise<boolean> {
   try {
     // Convert TABLES object values to array
     const tables = Object.values(TABLES);
-    
+
     // Check each table
     for (const table of tables) {
       try {
@@ -116,23 +116,23 @@ export async function checkInventoryTablesExist(): Promise<boolean> {
         const { error } = await supabase
           .from(table)
           .select('*', { head: true });
-        
+
         if (error) {
           console.error(`Error checking table ${table}:`, error);
           return false;
         }
-        
+
         console.log(`Table ${table} exists`);
       } catch (err) {
         console.error(`Error checking table ${table}:`, err);
         return false;
       }
     }
-    
+
     // All tables exist if we got here
     return true;
   } catch (error) {
     console.error('Error checking inventory tables:', error);
     return false;
   }
-} 
+}

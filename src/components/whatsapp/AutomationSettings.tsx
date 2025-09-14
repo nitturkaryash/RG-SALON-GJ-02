@@ -18,14 +18,14 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
-  TextField
+  TextField,
 } from '@mui/material';
 import {
   WhatsApp as WhatsAppIcon,
   Settings as SettingsIcon,
   Save as SaveIcon,
   Refresh as RefreshIcon,
-  TestTube as TestIcon
+  TestTube as TestIcon,
 } from '@mui/icons-material';
 import { toast } from 'react-toastify';
 
@@ -60,7 +60,7 @@ const AutomationSettings: React.FC = () => {
       // Use relative URL - Vite proxy will forward to backend server
       const response = await fetch('/api/whatsapp/config');
       const data = await response.json();
-      
+
       if (data.success) {
         setConfig(data.config);
       } else {
@@ -94,7 +94,7 @@ const AutomationSettings: React.FC = () => {
       });
 
       const data = await response.json();
-      
+
       if (data.success) {
         toast.success('Configuration saved successfully');
         setConfig(data.config);
@@ -119,7 +119,7 @@ const AutomationSettings: React.FC = () => {
       });
 
       const data = await response.json();
-      
+
       if (data.success) {
         toast.success('Configuration reset to defaults');
         setConfig(data.config);
@@ -155,12 +155,12 @@ const AutomationSettings: React.FC = () => {
           appointmentDate: new Date().toISOString(),
           services: [{ name: 'Test Service', price: 100, duration: 30 }],
           stylist: 'Test Stylist',
-          messageType: 'confirmation'
+          messageType: 'confirmation',
         }),
       });
 
       const data = await response.json();
-      
+
       if (data.success) {
         toast.success('Test message sent successfully');
         setTestDialogOpen(false);
@@ -182,14 +182,16 @@ const AutomationSettings: React.FC = () => {
     setConfig({ ...config, enabled: !config.enabled });
   };
 
-  const handleToggleMessageType = (messageType: keyof typeof config.messageTypes) => {
+  const handleToggleMessageType = (
+    messageType: keyof typeof config.messageTypes
+  ) => {
     if (!config) return;
     setConfig({
       ...config,
       messageTypes: {
         ...config.messageTypes,
-        [messageType]: !config.messageTypes[messageType]
-      }
+        [messageType]: !config.messageTypes[messageType],
+      },
     });
   };
 
@@ -203,7 +205,7 @@ const AutomationSettings: React.FC = () => {
       appointmentCancelled: 'Appointment Cancelled',
       inventoryLow: 'Low Stock Alerts',
       clientWelcome: 'Client Welcome',
-      paymentReceived: 'Payment Received'
+      paymentReceived: 'Payment Received',
     };
     return labels[key] || key;
   };
@@ -218,14 +220,19 @@ const AutomationSettings: React.FC = () => {
       appointmentCancelled: 'Send cancellation notice for appointments',
       inventoryLow: 'Alert managers when inventory runs low',
       clientWelcome: 'Welcome new clients to the salon',
-      paymentReceived: 'Confirm successful payments'
+      paymentReceived: 'Confirm successful payments',
     };
     return descriptions[key] || '';
   };
 
   if (loading) {
     return (
-      <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
+      <Box
+        display='flex'
+        justifyContent='center'
+        alignItems='center'
+        minHeight='400px'
+      >
         <CircularProgress />
       </Box>
     );
@@ -233,31 +240,33 @@ const AutomationSettings: React.FC = () => {
 
   if (!config) {
     return (
-      <Alert severity="error">
+      <Alert severity='error'>
         Failed to load configuration. Please refresh the page.
       </Alert>
     );
   }
 
-  const enabledCount = Object.values(config.messageTypes).filter(Boolean).length;
+  const enabledCount = Object.values(config.messageTypes).filter(
+    Boolean
+  ).length;
   const totalCount = Object.keys(config.messageTypes).length;
 
   return (
     <Box>
       <Card>
         <CardHeader
-          avatar={<WhatsAppIcon color="primary" />}
-          title="WhatsApp Automation Settings"
-          subheader="Configure automatic messaging for CRUD operations"
+          avatar={<WhatsAppIcon color='primary' />}
+          title='WhatsApp Automation Settings'
+          subheader='Configure automatic messaging for CRUD operations'
           action={
-            <Chip 
-              label={config.enabled ? 'Enabled' : 'Disabled'} 
+            <Chip
+              label={config.enabled ? 'Enabled' : 'Disabled'}
               color={config.enabled ? 'success' : 'default'}
-              variant="outlined"
+              variant='outlined'
             />
           }
         />
-        
+
         <CardContent>
           {/* Master Toggle */}
           <Box mb={3}>
@@ -266,16 +275,17 @@ const AutomationSettings: React.FC = () => {
                 <Switch
                   checked={config.enabled}
                   onChange={handleToggleEnabled}
-                  color="primary"
+                  color='primary'
                 />
               }
               label={
                 <Box>
-                  <Typography variant="subtitle1" component="div">
+                  <Typography variant='subtitle1' component='div'>
                     Enable WhatsApp Automation
                   </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    Master switch to enable/disable all automated WhatsApp messaging
+                  <Typography variant='body2' color='text.secondary'>
+                    Master switch to enable/disable all automated WhatsApp
+                    messaging
                   </Typography>
                 </Box>
               }
@@ -286,30 +296,34 @@ const AutomationSettings: React.FC = () => {
 
           {/* Message Type Settings */}
           <Box mt={3} mb={3}>
-            <Typography variant="h6" gutterBottom>
+            <Typography variant='h6' gutterBottom>
               Message Types ({enabledCount}/{totalCount} enabled)
             </Typography>
-            
+
             <Grid container spacing={2}>
               {Object.entries(config.messageTypes).map(([key, enabled]) => (
                 <Grid item xs={12} md={6} key={key}>
-                  <Card variant="outlined" sx={{ height: '100%' }}>
+                  <Card variant='outlined' sx={{ height: '100%' }}>
                     <CardContent>
                       <FormControlLabel
                         control={
                           <Switch
                             checked={enabled}
-                            onChange={() => handleToggleMessageType(key as keyof typeof config.messageTypes)}
+                            onChange={() =>
+                              handleToggleMessageType(
+                                key as keyof typeof config.messageTypes
+                              )
+                            }
                             disabled={!config.enabled}
-                            color="primary"
+                            color='primary'
                           />
                         }
                         label={
                           <Box>
-                            <Typography variant="subtitle2" component="div">
+                            <Typography variant='subtitle2' component='div'>
                               {getMessageTypeLabel(key)}
                             </Typography>
-                            <Typography variant="body2" color="text.secondary">
+                            <Typography variant='body2' color='text.secondary'>
                               {getMessageTypeDescription(key)}
                             </Typography>
                           </Box>
@@ -325,27 +339,27 @@ const AutomationSettings: React.FC = () => {
           <Divider />
 
           {/* Action Buttons */}
-          <Box mt={3} display="flex" gap={2} flexWrap="wrap">
+          <Box mt={3} display='flex' gap={2} flexWrap='wrap'>
             <Button
-              variant="contained"
+              variant='contained'
               startIcon={saving ? <CircularProgress size={20} /> : <SaveIcon />}
               onClick={saveConfig}
               disabled={saving}
             >
               Save Configuration
             </Button>
-            
+
             <Button
-              variant="outlined"
+              variant='outlined'
               startIcon={<RefreshIcon />}
               onClick={resetToDefaults}
               disabled={saving}
             >
               Reset to Defaults
             </Button>
-            
+
             <Button
-              variant="outlined"
+              variant='outlined'
               startIcon={<TestIcon />}
               onClick={() => setTestDialogOpen(true)}
               disabled={!config.enabled}
@@ -357,46 +371,49 @@ const AutomationSettings: React.FC = () => {
           {/* Status Information */}
           <Box mt={3}>
             <Alert severity={config.enabled ? 'success' : 'warning'}>
-              {config.enabled 
+              {config.enabled
                 ? `Automation is active. ${enabledCount} message types are enabled.`
-                : 'Automation is disabled. No automatic messages will be sent.'
-              }
+                : 'Automation is disabled. No automatic messages will be sent.'}
             </Alert>
           </Box>
         </CardContent>
       </Card>
 
       {/* Test Message Dialog */}
-      <Dialog open={testDialogOpen} onClose={() => setTestDialogOpen(false)} maxWidth="sm" fullWidth>
+      <Dialog
+        open={testDialogOpen}
+        onClose={() => setTestDialogOpen(false)}
+        maxWidth='sm'
+        fullWidth
+      >
         <DialogTitle>Send Test WhatsApp Message</DialogTitle>
         <DialogContent>
-          <Box display="flex" flexDirection="column" gap={2} mt={1}>
+          <Box display='flex' flexDirection='column' gap={2} mt={1}>
             <TextField
-              label="Phone Number"
+              label='Phone Number'
               value={testPhoneNumber}
-              onChange={(e) => setTestPhoneNumber(e.target.value)}
-              placeholder="+919876543210"
+              onChange={e => setTestPhoneNumber(e.target.value)}
+              placeholder='+919876543210'
               fullWidth
             />
             <TextField
-              label="Client Name"
+              label='Client Name'
               value={testClientName}
-              onChange={(e) => setTestClientName(e.target.value)}
-              placeholder="John Doe"
+              onChange={e => setTestClientName(e.target.value)}
+              placeholder='John Doe'
               fullWidth
             />
-            <Alert severity="info">
-              This will send a test appointment confirmation message to verify your WhatsApp setup.
+            <Alert severity='info'>
+              This will send a test appointment confirmation message to verify
+              your WhatsApp setup.
             </Alert>
           </Box>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setTestDialogOpen(false)}>
-            Cancel
-          </Button>
+          <Button onClick={() => setTestDialogOpen(false)}>Cancel</Button>
           <Button
             onClick={sendTestMessage}
-            variant="contained"
+            variant='contained'
             disabled={sendingTest || !testPhoneNumber || !testClientName}
           >
             {sendingTest ? <CircularProgress size={20} /> : 'Send Test'}
@@ -407,4 +424,4 @@ const AutomationSettings: React.FC = () => {
   );
 };
 
-export default AutomationSettings; 
+export default AutomationSettings;

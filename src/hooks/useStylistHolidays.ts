@@ -1,26 +1,26 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { toast } from 'react-toastify'
-import { v4 as uuidv4 } from 'uuid'
-import { supabase } from '../utils/supabase/supabaseClient.js'
-import { format } from 'date-fns'
-import React from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { v4 as uuidv4 } from 'uuid';
+import { supabase } from '../lib/supabase';
+import { format } from 'date-fns';
+import React from 'react';
+import { toast } from 'react-toastify';
 
 export interface StylistHoliday {
   id: string;
   stylist_id: string;
   holiday_date: string; // ISO date string (just the date part)
-  reason?: string;   // Reason for holiday
+  reason?: string; // Reason for holiday
 }
 
 export function useStylistHolidays() {
-  const queryClient = useQueryClient()
+  const queryClient = useQueryClient();
 
   // Create the stylist_holidays table if it doesn't exist
   const createTableIfNotExists = async () => {
     try {
       // Using Supabase SQL to create the table
       const { error } = await supabase.rpc('create_stylist_holidays_table');
-      
+
       if (error) {
         console.error('Error creating stylist_holidays table:', error);
       } else if (import.meta.env.DEV) {
@@ -42,7 +42,7 @@ export function useStylistHolidays() {
         if (import.meta.env.DEV) {
           console.log('Fetching stylist holidays from database...');
         }
-        
+
         // Fetch holidays from Supabase
         const { data: holidaysData, error } = await supabase
           .from('stylist_holidays')
@@ -56,7 +56,10 @@ export function useStylistHolidays() {
 
         if (holidaysData && holidaysData.length > 0) {
           if (import.meta.env.DEV) {
-            console.log('Stylist holidays data fetched successfully:', holidaysData.length);
+            console.log(
+              'Stylist holidays data fetched successfully:',
+              holidaysData.length
+            );
           }
           return holidaysData as StylistHoliday[];
         } else {
@@ -95,47 +98,48 @@ export function useStylistHolidays() {
 
   // Add a new holiday for a stylist
   const addHoliday = useMutation({
-    mutationFn: async ({ 
-      stylistId, 
-      holidayDate, 
-      reason 
-    }: { 
-      stylistId: string; 
-      holidayDate: Date | string; 
+    mutationFn: async ({
+      stylistId,
+      holidayDate,
+      reason,
+    }: {
+      stylistId: string;
+      holidayDate: Date | string;
       reason?: string;
     }) => {
       try {
         // Format the date to YYYY-MM-DD format
-        const formattedDate = typeof holidayDate === 'string' 
-          ? holidayDate 
-          : format(holidayDate, 'yyyy-MM-dd');
-        
+        const formattedDate =
+          typeof holidayDate === 'string'
+            ? holidayDate
+            : format(holidayDate, 'yyyy-MM-dd');
+
         // Create the holiday entry
         const holidayId = uuidv4();
         const holidayEntry = {
           id: holidayId,
           stylist_id: stylistId,
           holiday_date: formattedDate,
-          reason: reason || ''
+          reason: reason || '',
         };
-        
+
         // Insert the holiday
         const { data, error } = await supabase
           .from('stylist_holidays')
           .insert(holidayEntry)
           .select();
-          
+
         if (error) {
           console.error('Error adding stylist holiday:', error);
           throw error;
         }
-        
+
         // Update stylist availability if the holiday is for today
         const today = format(new Date(), 'yyyy-MM-dd');
         if (formattedDate === today) {
           await updateStylistAvailability();
         }
-        
+
         return data ? data[0] : holidayEntry;
       } catch (error) {
         console.error('Error in addHoliday:', error);
@@ -147,7 +151,7 @@ export function useStylistHolidays() {
       queryClient.invalidateQueries({ queryKey: ['stylists'] });
       toast.success('Holiday added successfully');
     },
-    onError: (error) => {
+    onError: error => {
       toast.error('Failed to add holiday');
       console.error('Error adding holiday:', error);
     },
@@ -169,17 +173,21 @@ export function useStylistHolidays() {
           .from('stylist_holidays')
           .delete()
           .eq('id', holidayId);
-          
+
         if (error) {
           console.error('Error deleting stylist holiday:', error);
           throw error;
         }
-        
+
         // Update stylist availability if the holiday was for today
-        if (holidayData && format(new Date(holidayData.holiday_date), 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd')) {
+        if (
+          holidayData &&
+          format(new Date(holidayData.holiday_date), 'yyyy-MM-dd') ===
+            format(new Date(), 'yyyy-MM-dd')
+        ) {
           await updateStylistAvailability();
         }
-        
+
         return { success: true };
       } catch (error) {
         console.error('Error in deleteHoliday:', error);
@@ -191,7 +199,7 @@ export function useStylistHolidays() {
       queryClient.invalidateQueries({ queryKey: ['stylists'] });
       toast.success('Holiday removed successfully');
     },
-    onError: (error) => {
+    onError: error => {
       toast.error('Failed to remove holiday');
       console.error('Error removing holiday:', error);
     },
@@ -199,13 +207,13 @@ export function useStylistHolidays() {
 
   // Update a holiday
   const updateHoliday = useMutation({
-    mutationFn: async ({ 
-      holidayId, 
-      holidayDate, 
-      reason 
-    }: { 
-      holidayId: string; 
-      holidayDate?: Date | string; 
+    mutationFn: async ({
+      holidayId,
+      holidayDate,
+      reason,
+    }: {
+      holidayId: string;
+      holidayDate?: Date | string;
       reason?: string;
     }) => {
       try {
@@ -215,40 +223,44 @@ export function useStylistHolidays() {
           .select('holiday_date')
           .eq('id', holidayId)
           .single();
-        
+
         const oldDate = oldHolidayData?.holiday_date;
-        
+
         // Prepare updates
         const updates: { holiday_date?: string; reason?: string } = {};
-        
+
         if (holidayDate) {
-          updates.holiday_date = typeof holidayDate === 'string' 
-            ? holidayDate 
-            : format(holidayDate, 'yyyy-MM-dd');
+          updates.holiday_date =
+            typeof holidayDate === 'string'
+              ? holidayDate
+              : format(holidayDate, 'yyyy-MM-dd');
         }
-        
+
         if (reason !== undefined) {
           updates.reason = reason;
         }
-        
+
         // Update the holiday
         const { data, error } = await supabase
           .from('stylist_holidays')
           .update(updates)
           .eq('id', holidayId)
           .select();
-          
+
         if (error) {
           console.error('Error updating stylist holiday:', error);
           throw error;
         }
-        
+
         // Update availability if needed
         const today = format(new Date(), 'yyyy-MM-dd');
-        if (oldDate === today || (updates.holiday_date && updates.holiday_date === today)) {
+        if (
+          oldDate === today ||
+          (updates.holiday_date && updates.holiday_date === today)
+        ) {
           await updateStylistAvailability();
         }
-        
+
         return data ? data[0] : { id: holidayId, ...updates };
       } catch (error) {
         console.error('Error in updateHoliday:', error);
@@ -260,7 +272,7 @@ export function useStylistHolidays() {
       queryClient.invalidateQueries({ queryKey: ['stylists'] });
       toast.success('Holiday updated successfully');
     },
-    onError: (error) => {
+    onError: error => {
       toast.error('Failed to update holiday');
       console.error('Error updating holiday:', error);
     },
@@ -271,19 +283,26 @@ export function useStylistHolidays() {
     try {
       // Get today's date in YYYY-MM-DD format
       const today = format(new Date(), 'yyyy-MM-dd');
-      
+
       // Update stylists who have holidays today to be unavailable
-      const { error: errorUnavailable } = await supabase.rpc('update_stylists_on_holiday');
+      const { error: errorUnavailable } = await supabase.rpc(
+        'update_stylists_on_holiday'
+      );
       if (errorUnavailable) {
         console.error('Error updating stylists on holiday:', errorUnavailable);
       }
-      
+
       // Reset stylists who don't have holidays today back to available
-      const { error: errorAvailable } = await supabase.rpc('reset_stylists_not_on_holiday');
+      const { error: errorAvailable } = await supabase.rpc(
+        'reset_stylists_not_on_holiday'
+      );
       if (errorAvailable) {
-        console.error('Error resetting stylists not on holiday:', errorAvailable);
+        console.error(
+          'Error resetting stylists not on holiday:',
+          errorAvailable
+        );
       }
-      
+
       // Refresh stylists data
       queryClient.invalidateQueries({ queryKey: ['stylists'] });
     } catch (error) {
@@ -300,19 +319,21 @@ export function useStylistHolidays() {
   // Check if a stylist is on holiday for a specific date
   const isStylistOnHoliday = async (stylistId: string, date?: Date) => {
     try {
-      const checkDate = date ? format(date, 'yyyy-MM-dd') : format(new Date(), 'yyyy-MM-dd');
-      
+      const checkDate = date
+        ? format(date, 'yyyy-MM-dd')
+        : format(new Date(), 'yyyy-MM-dd');
+
       const { data, error } = await supabase
         .from('stylist_holidays')
         .select('id')
         .eq('stylist_id', stylistId)
         .eq('holiday_date', checkDate);
-        
+
       if (error) {
         console.error('Error checking if stylist is on holiday:', error);
         return false;
       }
-      
+
       return data && data.length > 0;
     } catch (error) {
       console.error('Error in isStylistOnHoliday:', error);
@@ -328,6 +349,17 @@ export function useStylistHolidays() {
     updateHoliday,
     deleteHoliday,
     updateStylistAvailability,
-    isStylistOnHoliday
+    isStylistOnHoliday,
   };
-} 
+}
+function onError(
+  error: Error,
+  variables: {
+    stylistId: string;
+    holidayDate: string | Date;
+    reason?: string | undefined;
+  },
+  context: unknown
+): unknown {
+  throw new Error('Function not implemented.');
+}

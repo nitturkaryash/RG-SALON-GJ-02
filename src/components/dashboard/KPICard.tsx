@@ -7,13 +7,13 @@ import {
   CircularProgress,
   IconButton,
 } from '@mui/material';
-import { 
+import {
   TrendingUp as TrendingUpIcon,
   TrendingDown as TrendingDownIcon,
   TrendingFlat as TrendingFlatIcon,
   Info as InfoIcon,
 } from '@mui/icons-material';
-import { formatCurrency } from '../../utils/format';
+import { formatCurrency } from '../../utils/formatting/format';
 
 interface KPICardProps {
   title: string;
@@ -42,23 +42,26 @@ export default function KPICard({
   tooltipText,
   height = 180,
   color = 'primary',
-  trend = 'flat'
+  trend = 'flat',
 }: KPICardProps) {
   // Format value based on type
   let formattedValue: string;
   if (isCurrency) {
-    formattedValue = formatCurrency(value !== undefined && value !== null ? Number(value) : 0);
+    formattedValue = formatCurrency(
+      value !== undefined && value !== null ? Number(value) : 0
+    );
   } else if (isPercentage) {
     formattedValue = `${value !== undefined && value !== null ? Number(value).toFixed(1) : '0.0'}%`;
   } else {
-    formattedValue = value !== undefined && value !== null ? value.toString() : '-';
+    formattedValue =
+      value !== undefined && value !== null ? value.toString() : '-';
   }
-  
+
   // Determine trend icon and color
   let TrendIcon = TrendingFlatIcon;
   let trendColor = 'text.secondary';
   let chipColor = 'default';
-  
+
   if (changeValue !== undefined && changeValue !== null && changeValue !== 0) {
     if (changeValue > 0) {
       TrendIcon = TrendingUpIcon;
@@ -70,19 +73,20 @@ export default function KPICard({
       chipColor = 'error';
     }
   }
-  
+
   // Format change value as percentage with sign
-  const formattedChange = changeValue !== undefined && changeValue !== null
-    ? `${changeValue > 0 ? '+' : ''}${changeValue.toFixed(1)}%` 
-    : '0%';
-  
+  const formattedChange =
+    changeValue !== undefined && changeValue !== null
+      ? `${changeValue > 0 ? '+' : ''}${changeValue.toFixed(1)}%`
+      : '0%';
+
   return (
-    <Paper 
+    <Paper
       elevation={0}
-      sx={{ 
-        p: 3, 
-        height, 
-        display: 'flex', 
+      sx={{
+        p: 3,
+        height,
+        display: 'flex',
         flexDirection: 'column',
         position: 'relative',
         borderRadius: 2,
@@ -95,23 +99,28 @@ export default function KPICard({
         },
       }}
     >
-      <Box display="flex" justifyContent="space-between" alignItems="flex-start" mb={2}>
-        <Typography 
-          variant="subtitle1" 
-          color="text.secondary"
+      <Box
+        display='flex'
+        justifyContent='space-between'
+        alignItems='flex-start'
+        mb={2}
+      >
+        <Typography
+          variant='subtitle1'
+          color='text.secondary'
           sx={{ fontWeight: 500 }}
         >
           {title}
         </Typography>
-        
+
         {tooltipText && (
-          <Tooltip title={tooltipText} arrow placement="top">
-            <IconButton size="small" sx={{ mr: -1, mt: -1 }}>
-              <InfoIcon fontSize="small" color="action" />
+          <Tooltip title={tooltipText} arrow placement='top'>
+            <IconButton size='small' sx={{ mr: -1, mt: -1 }}>
+              <InfoIcon fontSize='small' color='action' />
             </IconButton>
           </Tooltip>
         )}
-        
+
         {icon && (
           <Box
             sx={{
@@ -128,48 +137,58 @@ export default function KPICard({
           </Box>
         )}
       </Box>
-      
-      <Box flex={1} display="flex" flexDirection="column" justifyContent="center">
+
+      <Box
+        flex={1}
+        display='flex'
+        flexDirection='column'
+        justifyContent='center'
+      >
         {isLoading ? (
-          <Box display="flex" justifyContent="center" alignItems="center" height="100%">
+          <Box
+            display='flex'
+            justifyContent='center'
+            alignItems='center'
+            height='100%'
+          >
             <CircularProgress size={28} />
           </Box>
         ) : (
           <>
-            <Typography variant="h3" component="div" fontWeight="bold" mb={0.5}>
+            <Typography variant='h3' component='div' fontWeight='bold' mb={0.5}>
               {formattedValue}
             </Typography>
-            
+
             {subtitle && (
-              <Typography variant="body2" color="text.secondary">
+              <Typography variant='body2' color='text.secondary'>
                 {subtitle}
               </Typography>
             )}
           </>
         )}
       </Box>
-      
+
       {changeValue !== undefined && !isLoading && (
         <Box sx={{ mt: 'auto', display: 'flex', alignItems: 'center' }}>
           <Chip
             label={formattedChange}
-            size="small"
+            size='small'
             color={chipColor as any}
             icon={<TrendIcon />}
-            sx={{ 
-              height: 24, 
-              '& .MuiChip-icon': { 
+            sx={{
+              height: 24,
+              '& .MuiChip-icon': {
                 fontSize: '1rem',
-                ml: 0.5
+                ml: 0.5,
               },
-              fontWeight: 500
+              fontWeight: 500,
             }}
           />
-          <Typography variant="caption" color="text.secondary" sx={{ ml: 1 }}>
+          <Typography variant='caption' color='text.secondary' sx={{ ml: 1 }}>
             vs previous period
           </Typography>
         </Box>
       )}
     </Paper>
   );
-} 
+}

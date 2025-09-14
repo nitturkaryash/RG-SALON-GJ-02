@@ -12,19 +12,19 @@ interface WhatsAppMessage {
 }
 
 const WHATSAPP_API_VERSION = 'v17.0';
-const PHONE_NUMBER_ID = process.env.WHATSAPP_PHONE_NUMBER_ID;
-const ACCESS_TOKEN = process.env.WHATSAPP_ACCESS_TOKEN;
+const PHONE_NUMBER_ID = import.meta.env.VITE_WHATSAPP_PHONE_NUMBER_ID;
+const ACCESS_TOKEN = import.meta.env.VITE_WHATSAPP_ACCESS_TOKEN;
 
 export class WhatsAppService {
   private static formatPhoneNumber(phoneNumber: string): string {
     // Remove any non-digit characters
     const cleaned = phoneNumber.replace(/\D/g, '');
-    
+
     // If number doesn't start with country code (91), add it
     if (!cleaned.startsWith('91')) {
       return `91${cleaned}`;
     }
-    
+
     return cleaned;
   }
 
@@ -33,7 +33,7 @@ export class WhatsAppService {
       style: 'currency',
       currency: 'INR',
       minimumFractionDigits: 0,
-      maximumFractionDigits: 0
+      maximumFractionDigits: 0,
     }).format(amount);
   }
 
@@ -42,16 +42,18 @@ export class WhatsAppService {
       weekday: 'long',
       year: 'numeric',
       month: 'long',
-      day: 'numeric'
+      day: 'numeric',
     });
   }
 
   private static formatTime(date: Date): string {
-    return date.toLocaleTimeString('en-IN', {
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: true
-    }).toUpperCase();
+    return date
+      .toLocaleTimeString('en-IN', {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true,
+      })
+      .toUpperCase();
   }
 
   private static formatDateTime(date: Date): string {
@@ -62,25 +64,28 @@ export class WhatsAppService {
     try {
       // Format the phone number before sending
       message.to = this.formatPhoneNumber(message.to);
-      
+
       const payload = {
-        messaging_product: "whatsapp",
-        recipient_type: "individual",
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
         to: message.to,
-        type: "template",
-        template: message.template
+        type: 'template',
+        template: message.template,
       };
 
-      console.log('Sending WhatsApp message with payload:', JSON.stringify(payload, null, 2));
-      
+      console.log(
+        'Sending WhatsApp message with payload:',
+        JSON.stringify(payload, null, 2)
+      );
+
       const response = await axios.post(
-        `https://graph.facebook.com/v19.0/${process.env.WHATSAPP_PHONE_NUMBER_ID}/messages`,
+        `https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`,
         payload,
         {
           headers: {
-            'Authorization': `Bearer ${process.env.WHATSAPP_ACCESS_TOKEN}`,
+            Authorization: `Bearer ${ACCESS_TOKEN}`,
             'Content-Type': 'application/json',
-          }
+          },
         }
       );
 
@@ -89,19 +94,27 @@ export class WhatsAppService {
       if (axios.isAxiosError(error)) {
         const errorCode = error.response?.data?.error?.code;
         const errorMessage = error.response?.data?.error?.message;
-        
+
         // Handle specific WhatsApp API errors
         switch (errorCode) {
           case 132000:
-            throw new Error(`WhatsApp opt-in required: The recipient (${message.to}) needs to message the business first. Please ask the client to send a message to our WhatsApp business number.`);
+            throw new Error(
+              `WhatsApp opt-in required: The recipient (${message.to}) needs to message the business first. Please ask the client to send a message to our WhatsApp business number.`
+            );
           case 131047:
-            throw new Error(`Template error: ${errorMessage}. Please check if the template parameters are correct.`);
+            throw new Error(
+              `Template error: ${errorMessage}. Please check if the template parameters are correct.`
+            );
           case 130429:
             throw new Error('Rate limit exceeded. Please try again later.');
           case 100:
-            throw new Error(`Invalid parameter: ${errorMessage}. Please check the phone number format and other parameters.`);
+            throw new Error(
+              `Invalid parameter: ${errorMessage}. Please check the phone number format and other parameters.`
+            );
           default:
-            throw new Error(`WhatsApp API error (${errorCode}): ${errorMessage}`);
+            throw new Error(
+              `WhatsApp API error (${errorCode}): ${errorMessage}`
+            );
         }
       }
       throw error;
@@ -128,11 +141,11 @@ export class WhatsAppService {
               { type: 'text', text: this.formatDateTime(appointmentDate) },
               { type: 'text', text: services[0].name },
               { type: 'text', text: stylist },
-              { type: 'text', text: this.formatCurrency(services[0].price) }
-            ]
-          }
-        ]
-      }
+              { type: 'text', text: this.formatCurrency(services[0].price) },
+            ],
+          },
+        ],
+      },
     };
 
     return this.sendMessage(message);
@@ -155,11 +168,11 @@ export class WhatsAppService {
             parameters: [
               { type: 'text', text: clientName },
               { type: 'text', text: offerDetails },
-              { type: 'text', text: this.formatDate(validUntil) }
-            ]
-          }
-        ]
-      }
+              { type: 'text', text: this.formatDate(validUntil) },
+            ],
+          },
+        ],
+      },
     };
 
     return this.sendMessage(message);
@@ -185,15 +198,21 @@ export class WhatsAppService {
             type: 'body',
             parameters: [
               { type: 'text', text: clientName },
-              { type: 'text', text: `${this.formatDate(oldDate)} at ${this.formatTime(oldDate)}` },
-              { type: 'text', text: `${this.formatDate(newDate)} at ${this.formatTime(newDate)}` },
+              {
+                type: 'text',
+                text: `${this.formatDate(oldDate)} at ${this.formatTime(oldDate)}`,
+              },
+              {
+                type: 'text',
+                text: `${this.formatDate(newDate)} at ${this.formatTime(newDate)}`,
+              },
               { type: 'text', text: serviceText },
               { type: 'text', text: stylist },
-              { type: 'text', text: this.formatCurrency(services[0].price) }
-            ]
-          }
-        ]
-      }
+              { type: 'text', text: this.formatCurrency(services[0].price) },
+            ],
+          },
+        ],
+      },
     };
 
     return this.sendMessage(message);
@@ -217,11 +236,11 @@ export class WhatsAppService {
               { type: 'text', text: clientName },
               { type: 'text', text: this.formatDateTime(appointmentDate) },
               { type: 'text', text: services[0].name },
-              { type: 'text', text: this.formatCurrency(services[0].price) }
-            ]
-          }
-        ]
-      }
+              { type: 'text', text: this.formatCurrency(services[0].price) },
+            ],
+          },
+        ],
+      },
     };
 
     return this.sendMessage(message);
@@ -243,13 +262,13 @@ export class WhatsAppService {
             parameters: [
               { type: 'text', text: clientName },
               { type: 'text', text: this.formatDateTime(appointmentDate) },
-              { type: 'text', text: 'We apologize for any inconvenience.' }
-            ]
-          }
-        ]
-      }
+              { type: 'text', text: 'We apologize for any inconvenience.' },
+            ],
+          },
+        ],
+      },
     };
 
     return this.sendMessage(message);
   }
-} 
+}

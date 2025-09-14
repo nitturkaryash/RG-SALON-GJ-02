@@ -14,12 +14,12 @@ import {
   Chip,
   Stack,
   IconButton,
-  Tooltip
+  Tooltip,
 } from '@mui/material';
 import FilterListIcon from '@mui/icons-material/FilterList';
 import RefreshIcon from '@mui/icons-material/Refresh';
-import { formatCurrency } from '../../utils/format';
-import DeleteButton from '../DeleteButton';
+import { formatCurrency } from '../../utils/formatting/format';
+import DeleteButton from '../common/DeleteButton';
 
 // Define column configuration type
 interface ColumnConfig {
@@ -68,7 +68,7 @@ const InventoryTable: React.FC<InventoryTableProps> = ({
   showDelete = true,
   renderFooter,
   totalQuantityLabel,
-  totalQuantityValue
+  totalQuantityValue,
 }) => {
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
@@ -79,30 +79,39 @@ const InventoryTable: React.FC<InventoryTableProps> = ({
   };
 
   // Handle rows per page change
-  const handleChangeRowsPerPage = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleChangeRowsPerPage = (
+    event: React.ChangeEvent<HTMLInputElement>
+  ) => {
     setRowsPerPage(parseInt(event.target.value, 10));
     setPage(0);
   };
 
   // Calculate the rows to display for current page
-  const paginatedData = data.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
+  const paginatedData = data.slice(
+    page * rowsPerPage,
+    page * rowsPerPage + rowsPerPage
+  );
 
   // Loading skeleton for rows
   const loadingRows = Array.from({ length: 5 }).map((_, index) => (
     <TableRow key={`skeleton-${index}`}>
       {columns.map((column, colIndex) => (
         <TableCell key={`skeleton-cell-${colIndex}`}>
-          <Skeleton animation="wave" />
+          <Skeleton animation='wave' />
         </TableCell>
       ))}
-      {!noDeleteColumn && <TableCell><Skeleton animation="wave" width={40} /></TableCell>}
+      {!noDeleteColumn && (
+        <TableCell>
+          <Skeleton animation='wave' width={40} />
+        </TableCell>
+      )}
     </TableRow>
   ));
 
   return (
-    <Paper 
-      elevation={0} 
-      sx={{ 
+    <Paper
+      elevation={0}
+      sx={{
         p: 2,
         borderRadius: 2,
         border: '1px solid',
@@ -111,32 +120,25 @@ const InventoryTable: React.FC<InventoryTableProps> = ({
     >
       {/* Header with title and actions */}
       {title && (
-        <Box sx={{ 
-          display: 'flex', 
-          justifyContent: 'space-between', 
-          alignItems: 'center',
-          mb: 2
-        }}>
-          <Typography variant="h6">
-            {title}
-          </Typography>
-          <Stack direction="row" spacing={1}>
+        <Box
+          sx={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            mb: 2,
+          }}
+        >
+          <Typography variant='h6'>{title}</Typography>
+          <Stack direction='row' spacing={1}>
             {onRefresh && (
-              <Tooltip title="Refresh data">
-                <IconButton
-                  onClick={onRefresh}
-                  size="small"
-                  color="primary"
-                >
+              <Tooltip title='Refresh data'>
+                <IconButton onClick={onRefresh} size='small' color='primary'>
                   <RefreshIcon />
                 </IconButton>
               </Tooltip>
             )}
-            <Tooltip title="Filter">
-              <IconButton
-                size="small"
-                color="primary"
-              >
+            <Tooltip title='Filter'>
+              <IconButton size='small' color='primary'>
                 <FilterListIcon />
               </IconButton>
             </Tooltip>
@@ -146,24 +148,28 @@ const InventoryTable: React.FC<InventoryTableProps> = ({
 
       {/* Main table */}
       <TableContainer sx={{ maxHeight: 440 }}>
-        <Table stickyHeader aria-label={`inventory-${itemType}-table`} size="small">
+        <Table
+          stickyHeader
+          aria-label={`inventory-${itemType}-table`}
+          size='small'
+        >
           <TableHead>
             <TableRow>
-              {columns.map((column) => (
+              {columns.map(column => (
                 <TableCell
                   key={column.id}
                   align={column.align || 'left'}
-                  style={{ 
+                  style={{
                     minWidth: column.minWidth,
                     width: column.width,
-                    fontWeight: 600
+                    fontWeight: 600,
                   }}
                 >
                   {column.label}
                 </TableCell>
               ))}
               {!noDeleteColumn && onDelete && showDelete && (
-                <TableCell align="center" style={{ width: 60 }}>
+                <TableCell align='center' style={{ width: 60 }}>
                   Actions
                 </TableCell>
               )}
@@ -174,12 +180,12 @@ const InventoryTable: React.FC<InventoryTableProps> = ({
               loadingRows
             ) : paginatedData.length === 0 ? (
               <TableRow>
-                <TableCell 
-                  colSpan={columns.length + (noDeleteColumn ? 0 : 1)} 
-                  align="center"
+                <TableCell
+                  colSpan={columns.length + (noDeleteColumn ? 0 : 1)}
+                  align='center'
                   sx={{ py: 6 }}
                 >
-                  <Typography variant="body2" color="text.secondary">
+                  <Typography variant='body2' color='text.secondary'>
                     {emptyMessage}
                   </Typography>
                 </TableCell>
@@ -187,39 +193,68 @@ const InventoryTable: React.FC<InventoryTableProps> = ({
             ) : (
               paginatedData.map((row, rowIndex) => {
                 return (
-                  <TableRow hover tabIndex={-1} key={row[deleteIdField] || `row-${rowIndex}`}>
-                    {columns.map((column) => {
+                  <TableRow
+                    hover
+                    tabIndex={-1}
+                    key={row[deleteIdField] || `row-${rowIndex}`}
+                  >
+                    {columns.map(column => {
                       // Skip serial number computation for consumption tables
-                      if (column.id === 'serial_no' && itemType === 'consumption') {
+                      if (
+                        column.id === 'serial_no' &&
+                        itemType === 'consumption'
+                      ) {
                         return (
-                          <TableCell key={`serial-${rowIndex}`} align={column.align}>
+                          <TableCell
+                            key={`serial-${rowIndex}`}
+                            align={column.align}
+                          >
                             {row[column.id]}
                           </TableCell>
                         );
                       }
                       // Dynamically compute serial number for other tables
                       if (column.id === 'serial_no') {
-                        const serial = data.length - (page * rowsPerPage + rowIndex);
+                        const serial =
+                          data.length - (page * rowsPerPage + rowIndex);
                         return (
-                          <TableCell key={`serial-${rowIndex}`} align={column.align}>
+                          <TableCell
+                            key={`serial-${rowIndex}`}
+                            align={column.align}
+                          >
                             {serial}
                           </TableCell>
                         );
                       }
                       const value = row[column.id];
                       return (
-                        <TableCell key={`${row[deleteIdField]}-${column.id}`} align={column.align}>
+                        <TableCell
+                          key={`${row[deleteIdField]}-${column.id}`}
+                          align={column.align}
+                        >
                           {column.format ? column.format(value) : value}
                         </TableCell>
                       );
                     })}
                     {!noDeleteColumn && onDelete && showDelete && (
-                      <TableCell align="center">
+                      <TableCell align='center'>
                         <DeleteButton
-                          onDelete={() => onDelete(row.id || row.consumption_id || row.sale_id || row.purchase_id || row[deleteIdField])}
-                          itemName={getItemName ? getItemName(row) : row.name || row.product_name}
+                          onDelete={() =>
+                            onDelete(
+                              row.id ||
+                                row.consumption_id ||
+                                row.sale_id ||
+                                row.purchase_id ||
+                                row[deleteIdField]
+                            )
+                          }
+                          itemName={
+                            getItemName
+                              ? getItemName(row)
+                              : row.name || row.product_name
+                          }
                           itemType={itemType}
-                          size="small"
+                          size='small'
                         />
                       </TableCell>
                     )}
@@ -235,7 +270,7 @@ const InventoryTable: React.FC<InventoryTableProps> = ({
       {/* Pagination */}
       <TablePagination
         rowsPerPageOptions={[5, 10, 25, 50, 100]}
-        component="div"
+        component='div'
         count={data.length}
         rowsPerPage={rowsPerPage}
         page={page}
@@ -244,13 +279,14 @@ const InventoryTable: React.FC<InventoryTableProps> = ({
         labelDisplayedRows={({ from, to, count }) => {
           const standardLabel = `${from}–${to} of ${count !== -1 ? count : `more than ${to}`}`;
           if (totalQuantityLabel && totalQuantityValue !== undefined) {
-            const formattedValue = typeof totalQuantityValue === 'number'
-              ? totalQuantityValue.toLocaleString()
-              : totalQuantityValue;
+            const formattedValue =
+              typeof totalQuantityValue === 'number'
+                ? totalQuantityValue.toLocaleString()
+                : totalQuantityValue;
             return (
               <>
                 {`${standardLabel} | ${totalQuantityLabel} `}
-                <Box component="span" sx={{ fontWeight: 'bold' }}>
+                <Box component='span' sx={{ fontWeight: 'bold' }}>
                   {formattedValue}
                 </Box>
               </>
@@ -263,4 +299,4 @@ const InventoryTable: React.FC<InventoryTableProps> = ({
   );
 };
 
-export default InventoryTable; 
+export default InventoryTable;

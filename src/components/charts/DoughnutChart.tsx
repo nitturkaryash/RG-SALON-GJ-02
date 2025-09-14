@@ -27,12 +27,12 @@ interface DoughnutChartProps {
   centerSubText?: string;
 }
 
-export default function DoughnutChart({ 
-  data, 
-  height = 300, 
+export default function DoughnutChart({
+  data,
+  height = 300,
   showLegend = true,
   centerText,
-  centerSubText
+  centerSubText,
 }: DoughnutChartProps) {
   const options: ChartOptions<'doughnut'> = {
     responsive: true,
@@ -51,12 +51,13 @@ export default function DoughnutChart({
       },
       tooltip: {
         callbacks: {
-          label: (context) => {
+          label: context => {
             const label = context.label || '';
             const value = context.parsed;
             const dataset = context.dataset.data;
             const total = dataset.reduce((sum, val) => sum + val, 0);
-            const percentage = total > 0 ? ((value / total) * 100).toFixed(1) : '0.0';
+            const percentage =
+              total > 0 ? ((value / total) * 100).toFixed(1) : '0.0';
             return `${label}: ${value.toLocaleString()} (${percentage}%)`;
           },
         },
@@ -75,38 +76,38 @@ export default function DoughnutChart({
     id: 'centerText',
     beforeDraw: (chart: any) => {
       if (!centerText) return;
-      
+
       const { ctx, width, height } = chart;
       const centerX = width / 2;
       const centerY = height / 2;
-      
+
       ctx.save();
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      
+
       // Main center text
       ctx.font = 'bold 20px Arial';
       ctx.fillStyle = '#333';
       ctx.fillText(centerText, centerX, centerY - 10);
-      
+
       // Sub text
       if (centerSubText) {
         ctx.font = '14px Arial';
         ctx.fillStyle = '#666';
         ctx.fillText(centerSubText, centerX, centerY + 15);
       }
-      
+
       ctx.restore();
     },
   };
 
   return (
     <div style={{ height: `${height}px` }}>
-      <Doughnut 
-        data={data} 
+      <Doughnut
+        data={data}
         options={options}
         plugins={centerText ? [centerTextPlugin] : []}
       />
     </div>
   );
-} 
+}

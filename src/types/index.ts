@@ -79,4 +79,4 @@ export interface Appointment {
   booker_email?: string;
   booking_id?: string | null;
   checked_in?: boolean;
-} 
+}

@@ -1,13 +1,18 @@
 import { toast } from 'react-toastify';
 
 // WhatsApp notification utility function
-export const sendWhatsAppNotification = async (clientPhone: string, message: string) => {
+export const sendWhatsAppNotification = async (
+  clientPhone: string,
+  message: string
+) => {
   console.log(`📱 Attempting to send WhatsApp notification to ${clientPhone}`);
-  
+
   try {
     // Format phone number if needed (ensure it has country code)
-    const formattedPhone = clientPhone.startsWith('+') ? clientPhone : `+91${clientPhone}`;
-    
+    const formattedPhone = clientPhone.startsWith('+')
+      ? clientPhone
+      : `+91${clientPhone}`;
+
     // Construct the request to Twilio API
     const response = await fetch('/api/send-whatsapp', {
       method: 'POST',
@@ -16,16 +21,16 @@ export const sendWhatsAppNotification = async (clientPhone: string, message: str
       },
       body: JSON.stringify({
         to: formattedPhone,
-        message: message
+        message: message,
       }),
     });
 
     const data = await response.json();
-    
+
     if (!response.ok) {
       throw new Error(data.error || 'Failed to send WhatsApp notification');
     }
-    
+
     console.log('📱 WhatsApp notification sent successfully', data);
     return true;
   } catch (error) {
@@ -37,11 +42,11 @@ export const sendWhatsAppNotification = async (clientPhone: string, message: str
 // Function to test WhatsApp integration
 export const testWhatsAppNotification = async (phone: string) => {
   console.log(`🧪 Testing WhatsApp notification to ${phone}`);
-  
+
   const message = `🔔 TEST MESSAGE from Salon POS\n\nThis is a test notification to verify WhatsApp integration.\n\nTime: ${new Date().toLocaleString()}`;
-  
+
   const result = await sendWhatsAppNotification(phone, message);
-  
+
   if (result) {
     console.log('🧪 Test notification sent successfully!');
     toast.success('WhatsApp test message sent successfully!');
@@ -73,4 +78,4 @@ Your appointment has been confirmed at RG Salon:
 
 We look forward to seeing you!
 `;
-}; 
+};

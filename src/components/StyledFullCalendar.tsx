@@ -20,11 +20,11 @@ export const StyledFullCalendar = styled(FullCalendar)(({ theme }) => ({
     '--fc-border-color': theme.palette.divider,
     '--fc-neutral-bg-color': theme.palette.background.paper,
     '--fc-list-event-hover-bg-color': theme.palette.action.hover,
-    
+
     // Text colors
     '--fc-neutral-text-color': theme.palette.text.primary,
     '--fc-small-font-size': '0.85em',
-    
+
     // Event colors
     '--fc-event-bg-color': theme.palette.primary.main,
     '--fc-event-border-color': theme.palette.primary.main,
@@ -33,7 +33,7 @@ export const StyledFullCalendar = styled(FullCalendar)(({ theme }) => ({
 
     // Today colors
     '--fc-today-bg-color': 'rgba(9, 137, 247, 0.08)',
-    
+
     // Non-business hours
     '--fc-non-business-color': 'rgba(0, 0, 0, 0.2)',
 
@@ -45,7 +45,7 @@ export const StyledFullCalendar = styled(FullCalendar)(({ theme }) => ({
     '--fc-button-hover-border-color': theme.palette.primary.dark,
     '--fc-button-active-bg-color': theme.palette.primary.dark,
     '--fc-button-active-border-color': theme.palette.primary.dark,
-    
+
     // Make the calendar take the full available space
     width: '100%',
     height: '100%',
@@ -152,11 +152,11 @@ export const StyledFullCalendar = styled(FullCalendar)(({ theme }) => ({
     gap: '8px',
     padding: '4px',
     justifyContent: 'space-between',
-    
+
     '@media (max-width: 600px)': {
       flexDirection: 'column',
       alignItems: 'flex-start',
-    }
+    },
   },
 
   // Ensure the day header row stays visible even when scrolling
@@ -174,10 +174,11 @@ export const StyledFullCalendar = styled(FullCalendar)(({ theme }) => ({
     },
   },
 
-  '& .fc-button-primary:not(:disabled):active, & .fc-button-primary:not(:disabled).fc-button-active': {
-    backgroundColor: theme.palette.primary.dark,
-    borderColor: theme.palette.primary.dark,
-  },
+  '& .fc-button-primary:not(:disabled):active, & .fc-button-primary:not(:disabled).fc-button-active':
+    {
+      backgroundColor: theme.palette.primary.dark,
+      borderColor: theme.palette.primary.dark,
+    },
 
   '& .fc-timegrid-col-events': {
     margin: '0 1px', // Reduced margin
@@ -226,4 +227,4 @@ export const StyledFullCalendar = styled(FullCalendar)(({ theme }) => ({
     margin: '1px 0',
     padding: '1px',
   },
-})); 
+}));
