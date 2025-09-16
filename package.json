@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "type": "module",
   "engines": {
-    "node": ">=18.0.0"
+    "node": "20.x"
   },
   "scripts": {
     "dev": "vite",
@@ -24,6 +24,7 @@
     "migrate:salon-consumption": "node --loader ts-node/esm src/utils/supabase/directTableCreation.js"
   },
   "dependencies": {
+    "@rollup/rollup-linux-x64-gnu": "^4.24.0",
     "@ai-sdk/vercel": "0.0.1",
     "@emotion/react": "11.10.6",
     "@emotion/styled": "11.10.6",
@@ -88,6 +89,7 @@
     "xlsx": "0.18.5"
   },
   "devDependencies": {
+    "rollup": "^4.24.0",
     "@emotion/babel-plugin": "^11.11.0",
     "@jridgewell/trace-mapping": "0.3.25",
     "@mantine/hooks": "7.17.8",
