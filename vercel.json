@@ -3,11 +3,6 @@
   "buildCommand": "npm ci && npm run build",
   "outputDirectory": "dist",
   "installCommand": "npm ci --omit=optional",
-  "functions": {
-    "src/api/**/*.js": {
-      "runtime": "nodejs18.x"
-    }
-  },
   "env": {
     "NODE_OPTIONS": "--max-old-space-size=4096"
   },
