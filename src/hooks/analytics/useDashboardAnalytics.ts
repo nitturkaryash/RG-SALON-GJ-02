@@ -636,7 +636,7 @@ export function useDashboardAnalytics({
             const { data: inventoryWithMaster, error: masterError } =
               await supabase.from('inventory_balance_stock').select(`
               *,
-              product_master!left(
+              product_master(
                 id,
                 name,
                 description,

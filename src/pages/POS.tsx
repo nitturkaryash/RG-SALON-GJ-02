@@ -575,6 +575,10 @@ export default function POS() {
     'pos_customerName',
     ''
   );
+  const [invoiceNumber, setInvoiceNumber] = useLocalStorage<string>(
+    'pos_invoiceNumber',
+    ''
+  );
   // Persist selectedClient across navigations
   const [selectedClient, setSelectedClient] = useLocalStorage<Client | null>(
     'pos_selectedClient',
@@ -835,10 +839,9 @@ export default function POS() {
               .from('membership_tiers')
               .select('id')
               .eq('name', service.name)
-              .single();
+              .maybeSingle();
 
-            if (error && error.code !== 'PGRST116') {
-              // PGRST116 is "not found" error
+            if (error) {
               console.error('Error checking membership tiers:', error);
               return false;
             }
@@ -2568,6 +2571,29 @@ export default function POS() {
     setProcessing(true);
 
     try {
+      // Get current authenticated user and their profile
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError || !user) {
+        throw new Error('Please log in to create orders');
+      }
+
+      // Get the profile ID for the current user
+      const { data: profileData, error: profileError } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('auth_user_id', user.id)
+        .single();
+
+      if (profileError || !profileData) {
+        throw new Error('Profile not found. Please contact administrator.');
+      }
+
+      const currentUserId = profileData.id;
+
       let clientIdToUse = selectedClient?.id;
       let clientNameToUse = selectedClient?.full_name || customerName.trim();
       let isNewClient = false;
@@ -2935,10 +2961,12 @@ export default function POS() {
         }
 
         // Create or update order based on edit mode
+        console.log('🔍 DEBUG: Invoice number being passed:', invoiceNumber, 'Trimmed:', invoiceNumber.trim());
         const orderData: CreateOrderData = {
           order_id: isEditMode ? editingOrderId! : uuidv4(),
           client_id: clientIdToUse || '',
           client_name: clientNameToUse,
+          invoice_number: invoiceNumber.trim() || undefined,
           stylist_id: expertsToProcess[0]?.id || '', // Primary expert
           stylist_name: expertsToProcess
             .map(e => e?.name)
@@ -3099,6 +3127,7 @@ export default function POS() {
           order_id: isEditMode ? editingOrderId! : uuidv4(),
           client_id: clientIdToUse || '',
           client_name: clientNameToUse,
+          invoice_number: invoiceNumber.trim() || undefined,
           stylist_id: expert?.id || '',
           stylist_name:
             expert?.name ||
@@ -3333,12 +3362,18 @@ export default function POS() {
       );
       for (const item of membershipItemsForProcessing) {
         // Check if membership already exists for this client
-        const { data: existingMembership } = await supabase
+        const { data: existingMembership, error: membershipQueryError } = await supabase
           .from('members')
           .select('id')
           .eq('client_id', clientIdToUse)
           .eq('tier_id', item.item_id)
-          .single();
+          .maybeSingle();
+
+        if (membershipQueryError) {
+          console.error('Error checking existing membership:', membershipQueryError);
+          showToast.error('Failed to check existing membership');
+          continue;
+        }
 
         if (existingMembership) {
           // Update existing membership
@@ -3375,6 +3410,7 @@ export default function POS() {
             current_balance: item.price + (item.benefitAmount || 0),
             total_membership_amount: item.price,
             benefit_amount: item.benefitAmount || 0,
+            user_id: currentUserId,
           });
 
           if (insertError) {
@@ -3432,6 +3468,7 @@ export default function POS() {
     // Remove activeStep reset since we don't use steps anymore
     // setActiveStep(0);
     setCustomerName('');
+    setInvoiceNumber('');
     setSelectedClient(null);
     setSelectedStylist(null);
     setAppointmentDate(new Date());
@@ -3563,6 +3600,29 @@ export default function POS() {
         ? orderDate.toISOString()
         : currentDate;
 
+      // Get current authenticated user and their profile
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError || !user) {
+        throw new Error('Please log in to record salon consumption');
+      }
+
+      // Get the profile ID for the current user
+      const { data: profileData, error: profileError } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('auth_user_id', user.id)
+        .single();
+
+      if (profileError || !profileData) {
+        throw new Error('Profile not found. Please contact administrator.');
+      }
+
+      const currentUserId = profileData.id;
+
       // Record results for each product
       const processResults = [];
 
@@ -3648,6 +3708,7 @@ export default function POS() {
             'Purchase CGST (Rs.)': parseFloat(cgst.toFixed(2)),
             'Purchase SGST (Rs.)': parseFloat(sgst.toFixed(2)),
             'Total Purchase Cost (Rs.)': parseFloat(totalTax.toFixed(2)),
+            user_id: currentUserId, // Add user_id for foreign key constraint
           };
 
           const { error: consumptionError } = await supabase
@@ -3704,20 +3765,6 @@ export default function POS() {
           pos_order_id: orderId,
         }));
 
-        // Get the current user for user_id
-        const {
-          data: { user },
-          error: userError,
-        } = await supabase.auth.getUser();
-        const currentUserId =
-          user?.id || 'f1ab5143-1129-4557-a694-63a010292c14'; // Fallback to known user ID
-
-        if (userError) {
-          console.warn(
-            '⚠️ Could not get current user, using fallback:',
-            userError.message
-          );
-        }
 
         // Create order record with fields exactly matching the pos_orders table schema
         const orderData: any = {
@@ -5932,6 +5979,21 @@ export default function POS() {
                           : ''
                     }
                     size='small'
+                  />
+                </Grid>
+                {/* Invoice Number Input */}
+                <Grid item xs={12} sm={4}>
+                  <TextField
+                    fullWidth
+                    label='Invoice Number (Optional)'
+                    variant='outlined'
+                    value={invoiceNumber}
+                    onChange={e => {
+                      console.log('🔍 DEBUG: Invoice number input changed:', e.target.value);
+                      setInvoiceNumber(e.target.value);
+                    }}
+                    size='small'
+                    placeholder='Enter invoice number'
                   />
                 </Grid>
                 {/* New Client Phone and Email - Conditionally Rendered */}

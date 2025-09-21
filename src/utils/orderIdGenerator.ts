@@ -3,9 +3,10 @@ import { supabase } from '../lib/supabase';
 
 // Function to generate the next sequential order ID
 export const generateNextOrderId = async (
-  isSalonOrder: boolean = false
+  isSalonOrder: boolean = false,
+  isMembershipOrder: boolean = false
 ): Promise<string> => {
-  return await getNextOrderId(isSalonOrder);
+  return await getNextOrderId(isSalonOrder, isMembershipOrder);
 };
 
 // Function to update existing orders with formatted order IDs (for migration)

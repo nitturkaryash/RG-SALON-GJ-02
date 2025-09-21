@@ -99,6 +99,7 @@ export interface Order {
 export interface CreateOrderData {
   client_id: string;
   client_name: string;
+  invoice_number?: string; // Optional invoice number
   stylist_id: string;
   stylist_name?: string; // Optional stylist name
   items: CreateOrderItemData[]; // Use specific type for items
@@ -123,6 +124,7 @@ export interface CreateOrderData {
   pending_amount?: number;
   appointment_time?: string;
   payments?: PaymentDetail[];
+  order_id?: string; // Add order_id field
 }
 
 // Type for items within CreateOrderData
@@ -221,6 +223,7 @@ interface PosOrder {
   tenant_id?: string;
   source?: string;
   invoice_no?: string | null;
+  order_id?: string;
   serial_number?: string | null;
   client_id?: string | null;
   notes?: string | null;
@@ -612,8 +615,30 @@ export async function createWalkInOrder(
       );
     }
 
+    // Check if this is a membership-only order
+    const isMembershipOnly = orderServices.length > 0 && orderServices.every(service => {
+      // Check explicit type/category
+      if (service.type === 'membership' || service.category === 'membership') {
+        return true;
+      }
+
+      // Check for membership fields
+      if (service.duration_months || service.benefit_amount || service.benefitAmount) {
+        return true;
+      }
+
+      // Check name patterns
+      const serviceName = (service.item_name || service.service_name || service.name || '').toLowerCase();
+      const membershipPatterns = [
+        'silver', 'gold', 'platinum', 'diamond', 'membership', 'member', 
+        'tier', 'package', 'subscription', 'plan'
+      ];
+
+      return membershipPatterns.some(pattern => serviceName.includes(pattern));
+    });
+
     // Generate formatted order ID
-    const formattedOrderId = await generateNextOrderId(isSalonConsumption);
+    const formattedOrderId = await generateNextOrderId(isSalonConsumption, isMembershipOnly);
 
     // Prepare order data without invoice_number if not supported
     const orderInsertData: any = {
@@ -656,7 +681,8 @@ export async function createWalkInOrder(
       tenant_id: 'default',
       source: 'pos',
       invoice_no: null,
-      invoice_number: null,
+      invoice_number: formattedOrderId,
+      order_id: formattedOrderId,
       serial_number: null,
       client_id: '',
       notes: null,
@@ -745,7 +771,8 @@ export async function createWalkInOrder(
           customerName,
           orderResult.total || subtotal + tax,
           paymentMethod,
-          orderResult.created_at || new Date().toISOString()
+          orderResult.created_at || new Date().toISOString(),
+          orderServices
         );
       } catch (clientError) {
         console.error(
@@ -776,9 +803,23 @@ async function updateClientFinancials(
   clientName: string,
   orderTotal: number,
   paymentMethod: string,
-  orderDate: string
+  orderDate: string,
+  orderServices?: any[]
 ): Promise<void> {
   try {
+    // Calculate total including membership amounts
+    let totalIncludingMemberships = orderTotal;
+    if (orderServices && orderServices.length > 0) {
+      const membershipAmount = orderServices
+        .filter((service: any) => service.type === 'membership' || service.category === 'membership')
+        .reduce((sum: number, service: any) => {
+          const gstPercentage = service.gst_percentage || 18;
+          const gstMultiplier = 1 + gstPercentage / 100;
+          return sum + (service.price * service.quantity * gstMultiplier);
+        }, 0);
+      totalIncludingMemberships += membershipAmount;
+    }
+
     // Find client by name (case insensitive)
     const { data: existingClients, error: findError } = await supabase
       .from('clients')
@@ -798,10 +839,10 @@ async function updateClientFinancials(
         total_spent:
           paymentMethod === 'bnpl'
             ? client.total_spent || 0
-            : (client.total_spent || 0) + orderTotal,
+            : (client.total_spent || 0) + totalIncludingMemberships,
         pending_payment:
           paymentMethod === 'bnpl'
-            ? (client.pending_payment || 0) + orderTotal
+            ? (client.pending_payment || 0) + totalIncludingMemberships
             : client.pending_payment || 0,
         updated_at: new Date().toISOString(),
       };
@@ -832,8 +873,8 @@ async function updateClientFinancials(
         phone: '',
         email: '',
         notes: 'Created from order',
-        total_spent: paymentMethod === 'bnpl' ? 0 : orderTotal,
-        pending_payment: paymentMethod === 'bnpl' ? orderTotal : 0,
+        total_spent: paymentMethod === 'bnpl' ? 0 : totalIncludingMemberships,
+        pending_payment: paymentMethod === 'bnpl' ? totalIncludingMemberships : 0,
         last_visit: orderDate,
         appointment_count: 1, // Initialize lifetime visit count to 1 for new clients from orders
       };
@@ -1426,6 +1467,8 @@ export function usePOS() {
         data.is_salon_consumption || false
       );
 
+      console.log('🔍 DEBUG usePOS: Received invoice_number:', data.invoice_number, 'formattedOrderId:', formattedOrderId);
+
       const order: PosOrder = {
         id: uuidv4(),
         created_at: data.order_date || new Date().toISOString(),
@@ -1465,7 +1508,8 @@ export function usePOS() {
         tenant_id: 'default',
         source: 'pos',
         invoice_no: null,
-        invoice_number: formattedOrderId,
+        invoice_number: data.invoice_number || formattedOrderId,
+        order_id: formattedOrderId,
         serial_number: null,
         client_id: data.client_id || null,
         notes: data.notes || null,
@@ -1584,6 +1628,8 @@ export function usePOS() {
             };
           }
 
+          console.log('🔍 DEBUG: Order created successfully with invoice_number:', insertedOrder?.invoice_number, 'order_id:', insertedOrder?.order_id);
+
           console.log('✅ usePOS - Order created successfully:', insertedOrder);
 
           // Insert membership records for sold membership tiers (only items with category='membership')
@@ -1625,6 +1671,7 @@ export function usePOS() {
                       tier_id: tier.id,
                       purchase_date: purchaseDate,
                       expires_at: expiresAt,
+                      user_id: resolvedUserId,
                     });
                   if (membersError) {
                     console.error(
@@ -2089,7 +2136,8 @@ export function usePOS() {
             tenant_id: '',
             user_id: (await supabase.auth.getUser()).data.user?.id || '',
             source: 'pos',
-            invoice_number: formattedOrderId,
+            invoice_number: orderData.invoice_number || formattedOrderId,
+            order_id: formattedOrderId,
           };
 
           const { data: createdOrder, error: createError } = await supabase

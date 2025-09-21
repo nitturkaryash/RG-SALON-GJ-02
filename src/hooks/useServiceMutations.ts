@@ -26,12 +26,34 @@ export function useServiceMutations() {
     mutationFn: async (
       newService: Omit<Service, 'id' | 'created_at' | 'updated_at'>
     ) => {
+      // Get current authenticated user and their profile
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError || !user) {
+        throw new Error('Please log in to create services');
+      }
+
+      // Get the profile ID for the current user
+      const { data: profileData, error: profileError } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('auth_user_id', user.id)
+        .single();
+
+      if (profileError || !profileData) {
+        throw new Error('Profile not found. Please contact administrator.');
+      }
+
       const serviceId = uuidv4();
       const service = {
         id: serviceId,
         ...newService,
         active: newService.active ?? true,
         membership_eligible: newService.membership_eligible ?? true,
+        user_id: profileData.id,
       };
 
       const { data, error } = await supabase

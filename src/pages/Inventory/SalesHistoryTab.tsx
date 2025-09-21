@@ -78,6 +78,8 @@ interface SalesItem {
   current_stock_total_value?: number;
   taxable_after_discount?: number;
   purchase_cost_per_unit_ex_gst: number;
+  invoice_number?: string;
+  invoice_no?: string;
 }
 
 // New interface for grouped sales by order
@@ -97,6 +99,8 @@ interface GroupedSalesItem {
   combined_hsn_codes: string;
   combined_product_types: string; // Add product types field
   gst_percentage: number; // Most common GST percentage in the order
+  invoice_number?: string; // Invoice number field
+  invoice_no?: string; // Alternative invoice number field
 }
 
 // Custom styled components
@@ -330,6 +334,8 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
             remaining_stock: 0, // Not available from this view
             current_stock: 0, // Not available from this view
             purchase_cost_per_unit_ex_gst: 0, // Not available from this view
+            invoice_number: item.invoice_number,
+            invoice_no: item.invoice_no,
           };
         }
       );
@@ -369,6 +375,8 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
             combined_hsn_codes: '',
             combined_product_types: '',
             gst_percentage: 0,
+            invoice_number: item.invoice_number,
+            invoice_no: item.invoice_no,
           });
         }
 
@@ -769,12 +777,13 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
                 {renderSortableHeader('total_sgst_amount', 'SGST')}
                 {renderSortableHeader('total_invoice_value', 'Total Value')}
                 {renderSortableHeader('order_id', 'Order ID')}
+                {renderSortableHeader('invoice_number', 'Invoice Number')}
               </TableRow>
             </TableHead>
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={15} align='center' sx={{ py: 3 }}>
+                  <TableCell colSpan={16} align='center' sx={{ py: 3 }}>
                     <CircularProgress />
                     <Typography variant='body2' sx={{ mt: 1 }}>
                       Loading sales data...
@@ -843,11 +852,22 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
                           </Typography>
                         </Tooltip>
                       </TableCell>
+                      <TableCell align='center'>
+                        <Typography
+                          variant='body2'
+                          sx={{
+                            color: 'text.secondary',
+                            fontSize: '0.75rem',
+                          }}
+                        >
+                          {row.invoice_number || row.invoice_no || '-'}
+                        </Typography>
+                      </TableCell>
                     </TableRow>
                   ))
               ) : (
                 <TableRow>
-                  <TableCell colSpan={15} align='center' sx={{ py: 3 }}>
+                  <TableCell colSpan={16} align='center' sx={{ py: 3 }}>
                     <Typography variant='body1'>No sales data found</Typography>
                     <Typography
                       variant='body2'

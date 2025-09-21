@@ -217,9 +217,42 @@ export const renumberOrdersAfterDeletion = async (
   }
 };
 
+// Function to detect if an order is membership-only
+export const isMembershipOnlyOrder = (order: any): boolean => {
+  if (!order) return false;
+
+  // Check if order has services array
+  const services = order.services || [];
+  
+  // Check if all services are memberships
+  const hasOnlyMemberships = services.length > 0 && services.every((service: any) => {
+    // Check explicit type/category
+    if (service.type === 'membership' || service.category === 'membership') {
+      return true;
+    }
+
+    // Check for membership fields
+    if (service.duration_months || service.benefit_amount || service.benefitAmount) {
+      return true;
+    }
+
+    // Check name patterns
+    const serviceName = (service.item_name || service.service_name || service.name || '').toLowerCase();
+    const membershipPatterns = [
+      'silver', 'gold', 'platinum', 'diamond', 'membership', 'member', 
+      'tier', 'package', 'subscription', 'plan'
+    ];
+
+    return membershipPatterns.some(pattern => serviceName.includes(pattern));
+  });
+
+  return hasOnlyMemberships;
+};
+
 // Function to get the next order ID for a specific type
 export const getNextOrderId = async (
-  isSalonOrder: boolean = false
+  isSalonOrder: boolean = false,
+  isMembershipOrder: boolean = false
 ): Promise<string> => {
   try {
     // Get all orders of the specified type
@@ -246,9 +279,14 @@ export const getNextOrderId = async (
     }
 
     // Filter orders by type
-    const sameTypeOrders = orders.filter(
-      order => isSalonConsumptionOrder(order) === isSalonOrder
-    );
+    let sameTypeOrders;
+    if (isMembershipOrder) {
+      sameTypeOrders = orders.filter(order => isMembershipOnlyOrder(order));
+    } else {
+      sameTypeOrders = orders.filter(
+        order => isSalonConsumptionOrder(order) === isSalonOrder && !isMembershipOnlyOrder(order)
+      );
+    }
 
     // Get the next order number
     const orderNumber = sameTypeOrders.length + 1;
@@ -262,9 +300,13 @@ export const getNextOrderId = async (
         : `${year.toString().slice(-2)}${Math.floor(year / 100)}`;
 
     // Return the formatted ID based on order type
-    return isSalonOrder
-      ? `SC${formattedNumber}/${yearFormat}`
-      : `RNG${formattedNumber}/${yearFormat}`;
+    if (isMembershipOrder) {
+      return `MEM${formattedNumber}/${yearFormat}`;
+    } else if (isSalonOrder) {
+      return `SC${formattedNumber}/${yearFormat}`;
+    } else {
+      return `RNG${formattedNumber}/${yearFormat}`;
+    }
   } catch (error) {
     console.error('Error generating next order ID:', error);
     // Fallback to timestamp-based ID
@@ -274,8 +316,13 @@ export const getNextOrderId = async (
       year >= 2025
         ? '2526'
         : `${year.toString().slice(-2)}${Math.floor(year / 100)}`;
-    return isSalonOrder
-      ? `SC${timestamp}/${yearFormat}`
-      : `RNG${timestamp}/${yearFormat}`;
+    
+    if (isMembershipOrder) {
+      return `MEM${timestamp}/${yearFormat}`;
+    } else if (isSalonOrder) {
+      return `SC${timestamp}/${yearFormat}`;
+    } else {
+      return `RNG${timestamp}/${yearFormat}`;
+    }
   }
 };

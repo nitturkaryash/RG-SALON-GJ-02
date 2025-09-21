@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { resolve } from 'path';
+import { apiPlugin } from './vite-plugin-api.js';
 
 // https://vitejs.dev/config/
 export default defineConfig({
@@ -10,18 +11,17 @@ export default defineConfig({
       babel: {
         plugins: ['@emotion/babel-plugin'],
       },
+      // Fix esbuild JSX issues
+      esbuild: {
+        jsx: 'automatic',
+        jsxDev: false,
+      },
     }),
+    apiPlugin(),
   ],
   server: {
     port: 5173,
     open: true,
-    proxy: {
-      '/api': {
-        target: 'http://localhost:3001',
-        changeOrigin: true,
-        secure: false,
-      },
-    },
   },
   build: {
     outDir: 'dist',

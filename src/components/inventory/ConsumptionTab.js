@@ -206,14 +206,17 @@ const ConsumptionTab = ({ consumption = [], isLoading, error }) => {
                           children: [
                             _jsx(TableHead, {
                               children: _jsxs(TableRow, {
-                                children: [
-                                  _jsx(StyledTableCell, { children: 'Date' }),
-                                  _jsx(StyledTableCell, {
-                                    children: 'Requisition #',
-                                  }),
-                                  _jsx(StyledTableCell, {
-                                    children: 'Product Name',
-                                  }),
+                              children: [
+                                _jsx(StyledTableCell, { children: 'Date' }),
+                                _jsx(StyledTableCell, {
+                                  children: 'Requisition #',
+                                }),
+                                _jsx(StyledTableCell, {
+                                  children: 'Invoice Number',
+                                }),
+                                _jsx(StyledTableCell, {
+                                  children: 'Product Name',
+                                }),
                                   _jsx(StyledTableCell, {
                                     children: 'HSN Code',
                                   }),
@@ -266,6 +269,9 @@ const ConsumptionTab = ({ consumption = [], isLoading, error }) => {
                                         children:
                                           item.requisition_voucher_no ||
                                           item.order_id,
+                                      }),
+                                      _jsx(TableCell, {
+                                        children: item.invoice_number || item.invoice_no || '-',
                                       }),
                                       _jsx(TableCell, {
                                         children: item.product_name,

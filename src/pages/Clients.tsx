@@ -850,8 +850,13 @@ export default function Clients() {
         return;
       }
 
+      // Sort clients in ascending order (oldest first) for export
+      const sortedClients = [...clientsToExport].sort((a, b) => 
+        new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+      );
+
       // Prepare data for Excel export
-      const exportData = clientsToExport.map((client, index) => {
+      const exportData = sortedClients.map((client, index) => {
         // Calculate lifetime visits for each client
         const lifetimeVisits =
           orders?.filter(
@@ -1544,10 +1549,10 @@ export default function Clients() {
                     </TableCell>
                     {!isSmallScreen && (
                       <TableCell>
-                        {client.pending_payment_received_date ? (
+                        {client.pending_payment_receiving_date ? (
                           <MuiTooltip
                             title={new Date(
-                              client.pending_payment_received_date
+                              client.pending_payment_receiving_date
                             ).toLocaleDateString()}
                             arrow
                           >
@@ -1557,7 +1562,7 @@ export default function Clients() {
                               sx={{ fontSize: 12 }}
                             >
                               {new Date(
-                                client.pending_payment_received_date
+                                client.pending_payment_receiving_date
                               ).toLocaleDateString()}
                             </Typography>
                           </MuiTooltip>

@@ -4,10 +4,12 @@
   "version": "1.0.0",
   "type": "module",
   "engines": {
-    "node": "20.x"
+    "node": ">=20.x"
   },
   "scripts": {
     "dev": "vite",
+    "dev:server": "node server.js",
+    "dev:full": "concurrently \"npm run dev:server\" \"npm run dev\"",
     "build": "vite build",
     "vercel-build": "vite build",
     "preview": "vite preview",
@@ -89,7 +91,6 @@
     "xlsx": "0.18.5"
   },
   "devDependencies": {
-    "rollup": "^4.24.0",
     "@emotion/babel-plugin": "^11.11.0",
     "@jridgewell/trace-mapping": "0.3.25",
     "@mantine/hooks": "7.17.8",
@@ -109,6 +110,7 @@
     "@vercel/node": "^5.2.0",
     "@vitejs/plugin-react": "^4.2.1",
     "autoprefixer": "^10.4.21",
+    "concurrently": "^9.2.1",
     "dayjs": "1.11.13",
     "eslint": "^8.55.0",
     "eslint-plugin-react-hooks": "^4.6.0",
@@ -116,6 +118,7 @@
     "jsdom": "^26.1.0",
     "postcss": "^8.5.3",
     "prettier": "^3.2.5",
+    "rollup": "^4.24.0",
     "tailwindcss": "^3.4.4",
     "terser": "^5.41.0",
     "ts-node": "10.9.2",

@@ -46,6 +46,37 @@ export const isSalonConsumptionOrder = (order: OrderForFormatting): boolean => {
 };
 
 /**
+ * Determines if an order is a membership-only order
+ */
+export const isMembershipOnlyOrder = (order: OrderForFormatting): boolean => {
+  if (!order || !order.services || order.services.length === 0) {
+    return false;
+  }
+
+  // Check if all services are memberships
+  return order.services.every((service: any) => {
+    // Check explicit type/category
+    if (service.type === 'membership' || service.category === 'membership') {
+      return true;
+    }
+
+    // Check for membership fields
+    if (service.duration_months || service.benefit_amount || service.benefitAmount) {
+      return true;
+    }
+
+    // Check name patterns
+    const serviceName = (service.item_name || service.service_name || service.name || '').toLowerCase();
+    const membershipPatterns = [
+      'silver', 'gold', 'platinum', 'diamond', 'membership', 'member', 
+      'tier', 'package', 'subscription', 'plan'
+    ];
+
+    return membershipPatterns.some(pattern => serviceName.includes(pattern));
+  });
+};
+
+/**
  * Generates a consistent display order ID (e.g., RNG0001/2526, SC0001/2526)
  * @param orderToFormat - The order to format
  * @param allOrdersForContext - All orders to determine sequential numbering
@@ -86,10 +117,19 @@ export const generateDisplayOrderId = (
     return orderToFormat.id.substring(0, 8);
   }
 
-  // Get all orders of the same type (salon or sales) that come before this one
+  // Check if this is a membership-only order
+  const isMembershipOrder = isMembershipOnlyOrder(normalizedOrder);
+
+  // Get all orders of the same type (membership, salon, or sales) that come before this one
   const sameTypeOrders = sortedOrders
     .slice(0, orderIndex + 1)
-    .filter(o => isSalonConsumptionOrder(o) === isSalonOrder);
+    .filter(o => {
+      if (isMembershipOrder) {
+        return isMembershipOnlyOrder(o);
+      } else {
+        return isSalonConsumptionOrder(o) === isSalonOrder && !isMembershipOnlyOrder(o);
+      }
+    });
 
   // Get the position of this order among orders of the same type
   const orderNumber = sameTypeOrders.length;
@@ -108,9 +148,13 @@ export const generateDisplayOrderId = (
       : `${year.toString().slice(-2)}${Math.floor(year / 100)}`;
 
   // Return the formatted ID based on order type
-  return isSalonOrder
-    ? `SC${formattedNumber}/${yearFormat}`
-    : `RNG${formattedNumber}/${yearFormat}`;
+  if (isMembershipOrder) {
+    return `MEM${formattedNumber}/${yearFormat}`;
+  } else if (isSalonOrder) {
+    return `SC${formattedNumber}/${yearFormat}`;
+  } else {
+    return `RNG${formattedNumber}/${yearFormat}`;
+  }
 };
 
 /**
@@ -156,10 +200,13 @@ export const formatOrderIdForDisplay = (
   // If order already has a formatted order_id, use it
   if (
     order.order_id &&
-    (order.order_id.startsWith('RNG') || order.order_id.startsWith('SC'))
+    (order.order_id.startsWith('RNG') || order.order_id.startsWith('SC') || order.order_id.startsWith('MEM'))
   ) {
     return order.order_id;
   }
+
+  // Check if this is a membership-only order
+  const isMembershipOrder = isMembershipOnlyOrder(order);
 
   // Check if this is a salon consumption order
   const isSalonOrder =
@@ -187,15 +234,19 @@ export const formatOrderIdForDisplay = (
     return order.id.substring(0, 8);
   }
 
-  // Get all orders of the same type (salon or sales) that come before this one
+  // Get all orders of the same type (membership, salon, or sales) that come before this one
   const sameTypeOrders = sortedOrders.slice(0, orderIndex + 1).filter(o => {
-    const isOtherSalon =
-      o.is_salon_consumption === true ||
-      o.type === 'salon_consumption' ||
-      o.type === 'salon-consumption' ||
-      o.consumption_purpose ||
-      o.client_name === 'Salon Consumption';
-    return isOtherSalon === isSalonOrder;
+    if (isMembershipOrder) {
+      return isMembershipOnlyOrder(o);
+    } else {
+      const isOtherSalon =
+        o.is_salon_consumption === true ||
+        o.type === 'salon_consumption' ||
+        o.type === 'salon-consumption' ||
+        o.consumption_purpose ||
+        o.client_name === 'Salon Consumption';
+      return isOtherSalon === isSalonOrder && !isMembershipOnlyOrder(o);
+    }
   });
 
   // Get the position of this order among orders of the same type
@@ -215,9 +266,13 @@ export const formatOrderIdForDisplay = (
       : `${year.toString().slice(-2)}${Math.floor(year / 100)}`;
 
   // Return the formatted ID based on order type
-  return isSalonOrder
-    ? `SC${formattedNumber}/${yearFormat}`
-    : `RNG${formattedNumber}/${yearFormat}`;
+  if (isMembershipOrder) {
+    return `MEM${formattedNumber}/${yearFormat}`;
+  } else if (isSalonOrder) {
+    return `SC${formattedNumber}/${yearFormat}`;
+  } else {
+    return `RNG${formattedNumber}/${yearFormat}`;
+  }
 };
 
 /**
@@ -232,7 +287,7 @@ export const formatOrderIdSimple = (
   if (!orderId) return 'Unknown';
 
   // If already formatted, return as is
-  if (orderId.startsWith('RNG') || orderId.startsWith('SC')) {
+  if (orderId.startsWith('RNG') || orderId.startsWith('SC') || orderId.startsWith('MEM')) {
     return orderId;
   }
 
@@ -247,6 +302,9 @@ export const formatOrderIdSimple = (
     ) % 10000;
 
   const formattedNumber = String(hashNumber).padStart(4, '0');
+
+  // Check if it's a membership-only order
+  const isMembershipOrder = orderData ? isMembershipOnlyOrder(orderData) : false;
 
   // Determine if it's salon consumption based on available data
   const isSalonOrder =
@@ -268,9 +326,12 @@ export const formatOrderIdSimple = (
       ? '2526'
       : `${year.toString().slice(-2)}${Math.floor(year / 100)}`;
 
-  // For now, default to 'RNG' if we can't determine the type
-  // In a future update, this could query the database to get the actual order type
-  return isSalonOrder
-    ? `SC${formattedNumber}/${yearFormat}`
-    : `RNG${formattedNumber}/${yearFormat}`;
+  // Return the formatted ID based on order type
+  if (isMembershipOrder) {
+    return `MEM${formattedNumber}/${yearFormat}`;
+  } else if (isSalonOrder) {
+    return `SC${formattedNumber}/${yearFormat}`;
+  } else {
+    return `RNG${formattedNumber}/${yearFormat}`;
+  }
 };

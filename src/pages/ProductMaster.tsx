@@ -256,41 +256,6 @@ export default function ProductMaster() {
     setError(null);
 
     try {
-      // Prevent duplicate product name / HSN
-      const { data: existing, error: checkError } = await supabase
-        .from('product_master')
-        .select('id, name, hsn_code')
-        .or(
-          `name.ilike.${formData.name},hsn_code.eq.${formData.hsn_code || ''}`
-        );
-      if (checkError) throw handleSupabaseError(checkError);
-      if (!isEditing && existing && existing.length > 0) {
-        const nameClash = existing.find(
-          p =>
-            (p.name || '').toLowerCase() === (formData.name || '').toLowerCase()
-        );
-        if (nameClash) {
-          setSnackbar({
-            open: true,
-            message: `A product named "${formData.name}" already exists`,
-            severity: 'error',
-          });
-          setIsLoading(false);
-          return;
-        }
-        const hsnClash = existing.find(
-          p => (p.hsn_code || '') === (formData.hsn_code || '')
-        );
-        if (hsnClash && formData.hsn_code) {
-          setSnackbar({
-            open: true,
-            message: `HSN "${formData.hsn_code}" already exists for ${hsnClash.name}`,
-            severity: 'error',
-          });
-          setIsLoading(false);
-          return;
-        }
-      }
       // Get current authenticated user
       const {
         data: { user },
@@ -594,11 +559,11 @@ export default function ProductMaster() {
     // Check for duplicate product name (only when adding a new product)
     if (
       !isEditing &&
-      products.some(p => p.name.toLowerCase() === formData.name.toLowerCase())
+      products.some(p => p.name.toLowerCase().trim() === formData.name.toLowerCase().trim())
     ) {
       setSnackbar({
         open: true,
-        message: 'A product with this name already exists',
+        message: `A product named "${formData.name}" already exists. Please use a different name, edit the existing product, or delete it first.`,
         severity: 'error',
       });
       return false;
@@ -618,6 +583,11 @@ export default function ProductMaster() {
 
   // Submit the form to add/update a product
   const handleSubmit = async () => {
+    // Refresh products list before validation to ensure we have latest data
+    if (!isEditing) {
+      await fetchProducts();
+    }
+    
     if (!validateForm()) return;
 
     setIsLoading(true);
@@ -667,23 +637,15 @@ export default function ProductMaster() {
       let result;
 
       if (isEditing && formData.id) {
-        // Update existing product via API
-        const response = await fetch('/api/products', {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            id: formData.id,
-            ...productData,
-          }),
-        });
+        // Update existing product directly via Supabase
+        const { data: updatedProduct, error: updateError } = await supabase
+          .from('product_master')
+          .update(productData)
+          .eq('id', formData.id)
+          .select()
+          .single();
 
-        const result = await response.json();
-
-        if (!result.success) {
-          throw new Error(result.error || 'Failed to update product');
-        }
+        if (updateError) throw handleSupabaseError(updateError);
 
         setSnackbar({
           open: true,
@@ -691,23 +653,45 @@ export default function ProductMaster() {
           severity: 'success',
         });
       } else {
-        // Add new product via API
-        const response = await fetch('/api/products', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            ...productData,
-            stock_quantity: 0, // Initialize stock to 0 for new products
-          }),
+        // Check for duplicate product name in database before inserting
+        console.log('Checking for duplicate product:', {
+          name: formData.name.trim(),
+          profileId: profileId,
+          trimmedName: formData.name.trim()
         });
 
-        const result = await response.json();
+        const { data: existingProduct, error: checkError } = await supabase
+          .from('product_master')
+          .select('id, name, user_id')
+          .eq('name', formData.name.trim())
+          .eq('user_id', profileId)
+          .maybeSingle();
 
-        if (!result.success) {
-          throw new Error(result.error || 'Failed to create product');
+        if (checkError) {
+          console.error('Error checking for duplicate product:', checkError);
+          throw handleSupabaseError(checkError);
         }
+
+        console.log('Duplicate check result:', {
+          existingProduct,
+          found: !!existingProduct
+        });
+
+        if (existingProduct) {
+          throw new Error(`A product named "${formData.name}" already exists. Please use a different name, edit the existing product, or delete it first.`);
+        }
+
+        // Add new product directly via Supabase
+        const { data: newProduct, error: insertError } = await supabase
+          .from('product_master')
+          .insert({
+            ...productData,
+            stock_quantity: 0, // Initialize stock to 0 for new products
+          })
+          .select()
+          .single();
+
+        if (insertError) throw handleSupabaseError(insertError);
 
         setSnackbar({
           open: true,
@@ -717,13 +701,27 @@ export default function ProductMaster() {
       }
 
       // Refresh product list and close dialog
+      console.log('Product created successfully, refreshing list...');
       await fetchProducts();
+      console.log('Product list refreshed, closing dialog...');
       handleClose();
     } catch (err) {
       console.error('Error saving product:', err);
+      
+      // Enhanced error handling for duplicate products
+      let errorMessage = 'Failed to save product';
+      if (err instanceof Error) {
+        errorMessage = err.message;
+        
+        // Check if it's a database constraint error (not our validation error)
+        if (err.message.includes('duplicate key value violates unique constraint')) {
+          errorMessage = `A product named "${formData.name}" already exists. Please use a different name.`;
+        }
+      }
+      
       setSnackbar({
         open: true,
-        message: `Error: ${err instanceof Error ? err.message : 'Failed to save product'}`,
+        message: `Error: ${errorMessage}`,
         severity: 'error',
       });
     } finally {
@@ -827,8 +825,15 @@ export default function ProductMaster() {
   const handleExportProducts = async () => {
     setIsExporting(true);
     try {
-      // Prepare data for export (use filteredProducts for current view)
-      const exportData = filteredProducts.map(product => ({
+      // Sort products by creation date in ascending order (oldest first) for export
+      const sortedProducts = [...filteredProducts].sort((a, b) => {
+        const dateA = new Date(a.created_at || '').getTime();
+        const dateB = new Date(b.created_at || '').getTime();
+        return dateA - dateB;
+      });
+
+      // Prepare data for export
+      const exportData = sortedProducts.map(product => ({
         Name: product.name,
         Category: product.category || '-',
         'HSN Code': product.hsn_code || '-',
@@ -1608,9 +1613,17 @@ export default function ProductMaster() {
                 />
               ) : (
                 <Autocomplete
-                  options={purchases}
+                  options={purchases.map(purchase => ({
+                    ...purchase,
+                    uniqueKey: `${purchase.product_name}-${purchase.purchase_id}`
+                  }))}
                   getOptionLabel={option =>
                     typeof option === 'string' ? option : option.product_name
+                  }
+                  isOptionEqualToValue={(option, value) =>
+                    typeof option === 'string' 
+                      ? option === value 
+                      : option.purchase_id === value.purchase_id
                   }
                   renderInput={params => (
                     <TextField
@@ -1632,21 +1645,6 @@ export default function ProductMaster() {
                   onChange={(event, newValue) =>
                     handleProductFromPurchaseHistorySelect(newValue)
                   }
-                  isOptionEqualToValue={(option, value) => {
-                    if (
-                      typeof option === 'string' &&
-                      typeof value === 'string'
-                    ) {
-                      return option === value;
-                    }
-                    if (
-                      typeof option === 'object' &&
-                      typeof value === 'object'
-                    ) {
-                      return option.product_name === value.product_name;
-                    }
-                    return false;
-                  }}
                   loading={isLoadingPurchases}
                   freeSolo
                 />

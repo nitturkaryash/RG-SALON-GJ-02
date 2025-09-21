@@ -51,17 +51,18 @@ const RefreshInventoryButton: React.FC<RefreshInventoryButtonProps> = ({
 
   return (
     <Tooltip title={tooltip}>
-      <Box sx={{ position: 'relative', display: 'inline-flex' }}>
-        <Button
-          onClick={handleRefresh}
-          disabled={isRefreshing}
-          startIcon={showIcon ? <RefreshIcon /> : undefined}
-          size={size}
-          color={color}
-          variant={variant}
-        >
-          {buttonText}
-        </Button>
+      <span>
+        <Box sx={{ position: 'relative', display: 'inline-flex' }}>
+          <Button
+            onClick={handleRefresh}
+            disabled={isRefreshing}
+            startIcon={showIcon ? <RefreshIcon /> : undefined}
+            size={size}
+            color={color}
+            variant={variant}
+          >
+            {buttonText}
+          </Button>
         {isRefreshing && (
           <CircularProgress
             size={24}
@@ -74,7 +75,8 @@ const RefreshInventoryButton: React.FC<RefreshInventoryButtonProps> = ({
             }}
           />
         )}
-      </Box>
+        </Box>
+      </span>
     </Tooltip>
   );
 };

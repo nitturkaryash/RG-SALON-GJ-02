@@ -119,8 +119,7 @@ export function useClientPaymentHistory(clientId: string | null) {
             amount: payment.amount_paid,
             payment_method: payment.payment_method,
             details: 'Pending payment cleared',
-            payment_received_date:
-              payment.payment_received_date || payment.created_at, // Use payment_received_date if available, fallback to created_at
+            payment_received_date: payment.created_at, // Use created_at as payment received date
             pending_payment_receiving_date:
               clientData?.pending_payment_receiving_date,
           });

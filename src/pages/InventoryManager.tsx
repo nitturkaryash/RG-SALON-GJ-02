@@ -150,6 +150,8 @@ interface SalesHistoryItem {
   stock_cgst: number; // Changed from cgst_current_stock
   stock_sgst: number; // Changed from sgst_current_stock
   stock_total_value: number; // Changed from total_value_current_stock
+  invoice_number?: string;
+  invoice_no?: string;
 }
 
 // Define interface for salon consumption items
@@ -173,6 +175,8 @@ interface SalonConsumptionItem {
   current_stock: number;
   created_at?: string;
   serial_no?: string; // Add this field
+  invoice_number?: string;
+  invoice_no?: string;
 }
 
 // Define interface for balance stock items
@@ -219,6 +223,8 @@ interface ExtendedProductFormData extends ProductFormData {
   mrp_per_unit_excl_gst: number;
   unit_type: string;
   purchase_cost_per_unit_ex_gst: number;
+  invoice_number?: string;
+  invoice_no?: string;
 }
 
 // Update the extendedInitialFormData with all required fields
@@ -236,7 +242,6 @@ const extendedInitialFormData: ExtendedProductFormData = {
   hsn_code: '',
   units: '',
   unit_type: '',
-  invoice_number: '',
   purchase_invoice_number: '',
   purchase_qty: 0,
   purchase_incl_gst: 0,
@@ -1539,8 +1544,15 @@ export default function InventoryManager() {
         }
       };
 
+      // Sort purchases in ascending order (oldest first) for export
+      const sortedPurchasesForExport = [...sortedPurchases].sort((a, b) => {
+        const dateA = new Date(a.date).getTime();
+        const dateB = new Date(b.date).getTime();
+        return dateA - dateB;
+      });
+
       // Purchase History sheet - All columns as in frontend with validation
-      const purchaseData = sortedPurchases.map((purchase, index) => {
+      const purchaseData = sortedPurchasesForExport.map((purchase, index) => {
         // Use the stock_after_purchase directly from the purchase record
         const stockAfterPurchaseDisplay =
           typeof purchase.stock_after_purchase === 'number'
@@ -1585,7 +1597,7 @@ export default function InventoryManager() {
           purchase.transaction_type !== 'opening_balance'
         ) {
           // Get only regular purchases for counting
-          const regularPurchases = sortedPurchases.filter(
+          const regularPurchases = sortedPurchasesForExport.filter(
             p =>
               p.transaction_type !== 'stock_increment' &&
               p.transaction_type !== 'opening_balance'
@@ -1687,7 +1699,7 @@ export default function InventoryManager() {
 
         // Apply yellow highlighting to inventory update rows
         const inventoryUpdateRows: number[] = [];
-        sortedPurchases.forEach((purchase, index) => {
+        sortedPurchasesForExport.forEach((purchase, index) => {
           if (
             purchase.transaction_type === 'stock_increment' ||
             purchase.transaction_type === 'opening_balance'
@@ -1723,8 +1735,15 @@ export default function InventoryManager() {
         XLSX.utils.book_append_sheet(workbook, ws, 'Purchase History');
       }
 
+      // Sort sales history in ascending order (oldest first) for export
+      const sortedSalesHistoryForExport = [...sortedSalesHistory].sort((a, b) => {
+        const dateA = new Date(a.date).getTime();
+        const dateB = new Date(b.date).getTime();
+        return dateA - dateB;
+      });
+
       // Sales History sheet - All columns as in frontend with validation
-      const salesData = sortedSalesHistory.map((sale, index) => {
+      const salesData = sortedSalesHistoryForExport.map((sale, index) => {
         const unitPriceInclGst =
           sale.unit_price_incl_gst ||
           sale.unit_price_ex_gst * (1 + sale.gst_percentage / 100);
@@ -1791,8 +1810,15 @@ export default function InventoryManager() {
         XLSX.utils.book_append_sheet(workbook, ws, 'Sales History');
       }
 
+      // Sort salon consumption in ascending order (oldest first) for export
+      const sortedSalonConsumptionForExport = [...sortedSalonConsumption].sort((a, b) => {
+        const dateA = new Date(a.date).getTime();
+        const dateB = new Date(b.date).getTime();
+        return dateA - dateB;
+      });
+
       // Salon Consumption sheet - All columns as in frontend with validation
-      const salonData = sortedSalonConsumption.map((item, index) => {
+      const salonData = sortedSalonConsumptionForExport.map((item, index) => {
         const taxableValueCurrentStock =
           Number(item.current_stock) *
           Number(item.purchase_cost_per_unit_ex_gst || 0);
@@ -1816,7 +1842,7 @@ export default function InventoryManager() {
         const rowData = {
           'Serial No': safeString(
             (item as any).serial_no ||
-              `SALON-${sortedSalonConsumption.length - index}`
+              `SALON-${sortedSalonConsumptionForExport.length - index}`
           ),
           Date: safeDate(item.date),
           'Voucher No': safeString(item.requisition_voucher_no),
@@ -1861,11 +1887,18 @@ export default function InventoryManager() {
         XLSX.utils.book_append_sheet(workbook, ws, 'Salon Consumption');
       }
 
+      // Sort balance stock in ascending order (oldest first) for export
+      const sortedBalanceStockForExport = [...sortedBalanceStock].sort((a, b) => {
+        const dateA = new Date(a.date).getTime();
+        const dateB = new Date(b.date).getTime();
+        return dateA - dateB;
+      });
+
       // Balance Stock sheet - All columns as in frontend with validation
-      const balanceData = sortedBalanceStock.map((item, index) => {
+      const balanceData = sortedBalanceStockForExport.map((item, index) => {
         const rowData = {
           'Serial No': safeString(
-            item.serial_no || `STOCK-${sortedBalanceStock.length - index}`
+            item.serial_no || `STOCK-${sortedBalanceStockForExport.length - index}`
           ),
           Date: safeDate(item.date),
           'Product Name': safeString(item.product_name),
@@ -2044,7 +2077,6 @@ export default function InventoryManager() {
       units: purchase.units || '',
       unit_type: purchase.units || '',
       purchase_invoice_number: purchase.purchase_invoice_number || '',
-      invoice_number: purchase.purchase_invoice_number || '',
       purchase_qty: purchase.purchase_qty || 0,
       mrp_incl_gst: purchase.mrp_incl_gst || 0,
       mrp_excl_gst: purchase.mrp_excl_gst || 0,
@@ -4418,12 +4450,13 @@ export default function InventoryManager() {
                     align='right'
                   />
                   <SortableTableCell label='Order ID' property='order_id' />
+                  <SortableTableCell label='Invoice Number' property='invoice_number' />
                 </TableRow>
               </TableHead>
               <TableBody>
                 {isLoadingSalesHistory ? (
                   <TableRow>
-                    <TableCell colSpan={26} align='center' sx={{ py: 3 }}>
+                    <TableCell colSpan={27} align='center' sx={{ py: 3 }}>
                       <CircularProgress size={40} />
                     </TableCell>
                   </TableRow>
@@ -4535,6 +4568,7 @@ export default function InventoryManager() {
                               ₹{Number(stockTotalValue).toFixed(2)}
                             </TableCell>
                             <TableCell>{sale.order_id}</TableCell>
+                            <TableCell>{sale.invoice_number || sale.invoice_no || '-'}</TableCell>
                           </TableRow>
                         );
                       })
@@ -4794,6 +4828,10 @@ export default function InventoryManager() {
                     property='order_id'
                   />
                   <SortableSalonTableCell
+                    label='Invoice Number'
+                    property='invoice_number'
+                  />
+                  <SortableSalonTableCell
                     label='Product Name'
                     property='product_name'
                   />
@@ -4875,7 +4913,7 @@ export default function InventoryManager() {
               <TableBody>
                 {isLoadingSalonConsumption ? (
                   <TableRow>
-                    <TableCell colSpan={24} align='center' sx={{ py: 3 }}>
+                    <TableCell colSpan={25} align='center' sx={{ py: 3 }}>
                       <CircularProgress size={40} />
                     </TableCell>
                   </TableRow>
@@ -4931,6 +4969,7 @@ export default function InventoryManager() {
                             </TableCell>
                             <TableCell>{item.requisition_voucher_no}</TableCell>
                             <TableCell>{item.order_id}</TableCell>
+                            <TableCell>{item.invoice_number || item.invoice_no || '-'}</TableCell>
                             <TableCell>{item.product_name}</TableCell>
                             <TableCell>{item.hsn_code || '-'}</TableCell>
                             <TableCell>{item.product_type || '-'}</TableCell>

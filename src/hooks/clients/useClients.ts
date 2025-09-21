@@ -567,12 +567,10 @@ export function useClients(
 
       // 2. Insert into pending_payment_history
       const paymentRecord = {
+        id: crypto.randomUUID(),
         client_id: clientId,
         amount_paid: amount,
         payment_method: paymentMethod,
-        payment_received_date: paymentDate
-          ? new Date(paymentDate).toISOString()
-          : new Date().toISOString(),
         ...(paymentDate && { created_at: new Date(paymentDate).toISOString() }),
       };
 
@@ -585,7 +583,7 @@ export function useClients(
       const updatedClientPayload = {
         pending_payment: (client.pending_payment || 0) - amount,
         total_spent: (client.total_spent || 0) + amount,
-        pending_payment_received_date: paymentDate
+        pending_payment_receiving_date: paymentDate
           ? new Date(paymentDate).toISOString()
           : new Date().toISOString(),
       };

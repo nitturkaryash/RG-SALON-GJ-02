@@ -1036,7 +1036,7 @@ export default function Orders() {
     if (!orderToDelete) return;
 
     try {
-      const orderId = orderToDelete.order_id || orderToDelete.id;
+      const orderId = orderToDelete.id || orderToDelete.order_id;
 
       if (!orderId) {
         toast.error('Order ID not found');
@@ -1185,9 +1185,17 @@ export default function Orders() {
   const handleExportCSV = () => {
     if (!aggregatedOrders || aggregatedOrders.length === 0) return;
 
-    // Use exactly what's displayed on frontend
-    const formattedOrders = filteredOrders.map(order => ({
+    // Sort orders in ascending order (oldest first) for export
+    const sortedOrders = [...filteredOrders].sort((a, b) => {
+      const dateA = new Date(a.created_at || '').getTime();
+      const dateB = new Date(b.created_at || '').getTime();
+      return dateA - dateB;
+    });
+
+    // Use sorted orders for export
+    const formattedOrders = sortedOrders.map(order => ({
       'Order ID': formatOrderId(order),
+      'Invoice Number': order.invoice_number || order.invoice_no || '-',
       Date: order.created_at
         ? new Date(order.created_at).toLocaleString()
         : 'Unknown date',
@@ -1514,7 +1522,7 @@ export default function Orders() {
 
     // Update the type export logic for CSV
     formattedOrders.forEach((order, index) => {
-      const originalOrder = filteredOrders[index];
+      const originalOrder = sortedOrders[index];
       const type = getPurchaseType(originalOrder);
 
       switch (type) {
@@ -1548,6 +1556,7 @@ export default function Orders() {
     // Create headers mapping for CSV export
     const headers = {
       'Order ID': 'Order ID',
+      'Invoice Number': 'Invoice Number',
       Date: 'Date & Time',
       Customer: 'Customer',
       Stylist: 'Stylist',
@@ -1569,9 +1578,17 @@ export default function Orders() {
   const handleExportPDF = () => {
     if (!aggregatedOrders || aggregatedOrders.length === 0) return;
 
-    // Use exactly the same format as CSV export
-    const formattedOrdersPDF = filteredOrders.map(order => ({
+    // Sort orders in ascending order (oldest first) for export
+    const sortedOrders = [...filteredOrders].sort((a, b) => {
+      const dateA = new Date(a.created_at || '').getTime();
+      const dateB = new Date(b.created_at || '').getTime();
+      return dateA - dateB;
+    });
+
+    // Use sorted orders for export
+    const formattedOrdersPDF = sortedOrders.map(order => ({
       'Order ID': formatOrderId(order),
+      'Invoice Number': order.invoice_number || order.invoice_no || '-',
       Date: order.created_at
         ? new Date(order.created_at).toLocaleString()
         : 'Unknown date',
@@ -1899,6 +1916,7 @@ export default function Orders() {
     // Create headers mapping for PDF export - same as CSV
     const headers = {
       'Order ID': 'Order ID',
+      'Invoice Number': 'Invoice Number',
       Date: 'Date & Time',
       Customer: 'Customer',
       Stylist: 'Stylist',
@@ -1916,7 +1934,7 @@ export default function Orders() {
 
     // Update the type export logic for PDF
     formattedOrdersPDF.forEach((order, index) => {
-      const originalOrder = filteredOrders[index];
+      const originalOrder = sortedOrders[index];
       const type = getPurchaseType(originalOrder);
 
       switch (type) {
@@ -2252,8 +2270,23 @@ export default function Orders() {
   const formatOrderId = (order: ExtendedOrder) => {
     if (!order.id) return 'Unknown';
 
+    // If order already has a formatted order_id, use it
+    if (order.order_id && (
+      order.order_id.startsWith('RNG') || 
+      order.order_id.startsWith('SC') || 
+      order.order_id.startsWith('MEM')
+    )) {
+      return order.order_id;
+    }
+
     // Check if this is a salon consumption order
     const isSalonOrder = isSalonConsumptionOrder(order);
+
+    // Check if this is a membership-only order
+    const isMembershipOrder = order.services && order.services.length > 0 && 
+      order.services.every((service: any) => 
+        service.type === 'membership' || service.category === 'membership'
+      );
 
     if (!aggregatedOrders) return order.id;
 
@@ -2267,10 +2300,25 @@ export default function Orders() {
     // Find the index of the current order in the sorted list
     const orderIndex = sortedOrders.findIndex(o => o.id === order.id);
 
-    // Get all orders of the same type (salon or sales) that come before this one
+    // Get all orders of the same type (salon, sales, or membership) that come before this one
     const sameTypeOrders = sortedOrders
       .slice(0, orderIndex + 1)
-      .filter(o => isSalonConsumptionOrder(normalizeOrder(o)) === isSalonOrder);
+      .filter(o => {
+        const normalizedOrder = normalizeOrder(o);
+        const orderIsSalon = isSalonConsumptionOrder(normalizedOrder);
+        const orderIsMembership = normalizedOrder.services && normalizedOrder.services.length > 0 && 
+          normalizedOrder.services.every((service: any) => 
+            service.type === 'membership' || service.category === 'membership'
+          );
+        
+        if (isMembershipOrder) {
+          return orderIsMembership;
+        } else if (isSalonOrder) {
+          return orderIsSalon && !orderIsMembership;
+        } else {
+          return !orderIsSalon && !orderIsMembership;
+        }
+      });
 
     // Get the position of this order among orders of the same type
     const orderNumber = sameTypeOrders.length;
@@ -2289,9 +2337,13 @@ export default function Orders() {
         : `${year.toString().slice(-2)}${Math.floor(year / 100)}`;
 
     // Return the formatted ID based on order type
-    return isSalonOrder
-      ? `SC${formattedNumber}/${yearFormat}`
-      : `RNG${formattedNumber}/${yearFormat}`;
+    if (isMembershipOrder) {
+      return `MEM${formattedNumber}/${yearFormat}`;
+    } else if (isSalonOrder) {
+      return `SC${formattedNumber}/${yearFormat}`;
+    } else {
+      return `RNG${formattedNumber}/${yearFormat}`;
+    }
   };
 
   // Add this function before the return statement
@@ -2953,6 +3005,7 @@ export default function Orders() {
                       </TableCell>
                     )}
                     <TableCell>Order ID</TableCell>
+                    <TableCell>Invoice Number</TableCell>
                     <TableCell>Date & Time</TableCell>
                     <TableCell>Customer</TableCell>
                     <TableCell>Stylist</TableCell>
@@ -3020,6 +3073,11 @@ export default function Orders() {
                                 sx={{ ml: 1, fontSize: '0.7rem' }}
                               />
                             )}
+                          </Typography>
+                        </TableCell>
+                        <TableCell>
+                          <Typography variant='body2' fontFamily='monospace'>
+                            {order.invoice_number || order.invoice_no || '-'}
                           </Typography>
                         </TableCell>
                         <TableCell>
@@ -3458,6 +3516,9 @@ export default function Orders() {
                         sx={{ ml: 1 }}
                       />
                     )}
+                  </Typography>
+                  <Typography variant='body2'>
+                    <strong>Invoice Number:</strong> {selectedOrder.invoice_number || selectedOrder.invoice_no || 'Not available'}
                   </Typography>
                   <Typography variant='body2'>
                     <strong>Date:</strong>{' '}

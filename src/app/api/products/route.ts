@@ -99,15 +99,21 @@ export async function POST(req: Request) {
     if (existingProducts && existingProducts.length > 0) {
       // Check for exact name match first (case-insensitive)
       const nameMatch = existingProducts.find(
-        product => product.name.toLowerCase() === name.toLowerCase()
+        product => product.name.toLowerCase().trim() === name.toLowerCase().trim()
       );
 
       if (nameMatch) {
         return NextResponse.json(
           {
             success: false,
-            error: `A product with the name "${name}" already exists`,
+            error: `A product named "${name}" already exists`,
             existing_product: nameMatch,
+            debug_info: {
+              searched_name: name,
+              found_name: nameMatch.name,
+              searched_lower: name.toLowerCase().trim(),
+              found_lower: nameMatch.name.toLowerCase().trim()
+            }
           },
           { status: 409 }
         );

@@ -445,6 +445,7 @@ const SalesTab: React.FC<SalesTabProps> = ({ sales, isLoading, error }) => {
             <TableHead>
               <StyledTableHeaderRow>
                 <StyledTableCell>Invoice No.</StyledTableCell>
+                <StyledTableCell>Invoice Number</StyledTableCell>
                 <StyledTableCell align='right'>Sales Qty.</StyledTableCell>
                 <StyledTableCell align='right'>
                   Purchase Cost per Unit (Ex.GST) (Rs.)
@@ -483,6 +484,7 @@ const SalesTab: React.FC<SalesTabProps> = ({ sales, isLoading, error }) => {
                       }
                     >
                       <TableCell>{invoiceId}</TableCell>
+                      <TableCell>{item.invoice_number || item.invoice_no || '-'}</TableCell>
                       <TableCell align='right'>
                         {item.quantity || item.sales_qty || 0}
                       </TableCell>
@@ -520,6 +522,7 @@ const SalesTab: React.FC<SalesTabProps> = ({ sales, isLoading, error }) => {
                 }}
               >
                 <TableCell>Total</TableCell>
+                <TableCell>-</TableCell>
                 <TableCell align='right'>
                   {customerSales
                     .reduce(
