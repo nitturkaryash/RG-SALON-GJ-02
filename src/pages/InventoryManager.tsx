@@ -616,7 +616,7 @@ export default function InventoryManager() {
       const { data: allOrders, error: allOrdersError } = await supabase
         .from('pos_orders')
         .select(
-          'id, created_at, is_salon_consumption, consumption_purpose, type, client_name, order_id'
+          'id, created_at, is_salon_consumption, consumption_purpose, type, client_name'
         )
         .order('created_at', { ascending: false });
 
