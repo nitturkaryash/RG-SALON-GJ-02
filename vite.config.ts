@@ -4,7 +4,14 @@ import { resolve } from 'path';
 
 // https://vitejs.dev/config/
 export default defineConfig({
-  plugins: [react()],
+  plugins: [
+    react({
+      jsxImportSource: '@emotion/react',
+      babel: {
+        plugins: ['@emotion/babel-plugin'],
+      },
+    }),
+  ],
   server: {
     hmr: {
       // Force WebSocket protocol for HMR
@@ -65,6 +72,13 @@ export default defineConfig({
     rollupOptions: {
       input: {
         main: resolve(__dirname, 'index.html'),
+      },
+      external: (id) => {
+        // Don't externalize emotion packages to avoid insertion effect issues
+        if (id.includes('@emotion')) {
+          return false;
+        }
+        return false;
       },
       output: {
         // Configure manual chunks to split the bundle
@@ -143,6 +157,12 @@ export default defineConfig({
     include: [
       '@emotion/react',
       '@emotion/styled',
+      '@emotion/cache',
+      '@emotion/sheet',
+      '@emotion/utils',
+      '@emotion/weak-memoize',
+      '@emotion/is-prop-valid',
+      '@emotion/use-insertion-effect-with-fallbacks',
       '@mui/material/Tooltip',
       '@mui/material',
       '@mui/icons-material',
