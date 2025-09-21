@@ -75,7 +75,7 @@ const PurchaseTab: React.FC<PurchaseTabProps> = ({
   isLoading,
   error,
 }) => {
-  const { createPurchase, isCreatingPurchase, deletePurchase } = useInventory();
+  const { purchasesQuery } = useInventory();
   const { fetchProducts, addProduct } = useProducts();
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
@@ -108,6 +108,8 @@ const PurchaseTab: React.FC<PurchaseTabProps> = ({
     Partial<Record<keyof PurchaseFormState, string>>
   >({});
   const [exportingCSV, setExportingCSV] = useState(false);
+  const [products, setProducts] = useState<any[]>([]);
+  const [isCreatingPurchase, setIsCreatingPurchase] = useState(false);
 
   useEffect(() => {
     const loadInitialData = async () => {
@@ -397,6 +399,7 @@ const PurchaseTab: React.FC<PurchaseTabProps> = ({
 
     if (!validateForm()) return;
 
+    setIsCreatingPurchase(true);
     try {
       // Calculate taxable value and Purchase Cost/Unit (Ex.GST) first
       const taxableValue =
@@ -535,12 +538,19 @@ const PurchaseTab: React.FC<PurchaseTabProps> = ({
 
       console.log('Creating purchase record with data:', updatedFormState);
 
-      await createPurchase(updatedFormState);
+      // Insert into purchase_history_with_stock table
+      const { error: insertError } = await supabase
+        .from('purchase_history_with_stock')
+        .insert([updatedFormState]);
+
+      if (insertError) {
+        throw new Error(`Failed to create purchase: ${insertError.message}`);
+      }
 
       toast.success('Purchase added successfully');
 
       // Refresh the purchases data
-      await fetchPurchases();
+      await purchasesQuery.refetch();
 
       setFormState({
         date: new Date().toISOString().split('T')[0],
@@ -565,6 +575,8 @@ const PurchaseTab: React.FC<PurchaseTabProps> = ({
     } catch (error) {
       console.error('Error creating purchase:', error);
       toast.error('Failed to add purchase. Please try again.');
+    } finally {
+      setIsCreatingPurchase(false);
     }
   };
 
@@ -665,6 +677,11 @@ const PurchaseTab: React.FC<PurchaseTabProps> = ({
     try {
       setExportingCSV(true);
 
+      if (!purchases || purchases.length === 0) {
+        toast.error('No purchase data to export');
+        return;
+      }
+
       const csvData = purchases.map(purchase => ({
         Date: formatDateKolkata(purchase.date, false),
         'Product Name': purchase.product_name || '',
@@ -681,9 +698,13 @@ const PurchaseTab: React.FC<PurchaseTabProps> = ({
         Vendor: purchase.vendor_name || '',
       }));
 
-      const csvString = convertToCSV(csvData);
-      downloadCSV(
-        csvString,
+      const csvString = csvData.map(row =>
+        Object.values(row).map(val => `"${val}"`).join(',')
+      ).join('\n');
+      const headers = Object.keys(csvData[0]).map(key => `"${key}"`).join(',');
+      const finalCsv = headers + '\n' + csvString;
+      downloadCsv(
+        finalCsv,
         `Purchases_${new Date().toISOString().split('T')[0]}.csv`
       );
     } catch (error) {
@@ -897,23 +918,23 @@ const PurchaseTab: React.FC<PurchaseTabProps> = ({
         return;
       }
 
-      await deletePurchase(id);
+      const { error } = await supabase
+        .from('purchase_history_with_stock')
+        .delete()
+        .eq('id', id);
+
+      if (error) {
+        throw new Error(`Failed to delete purchase: ${error.message}`);
+      }
       toast.success('Purchase record deleted successfully');
 
-      fetchPurchases();
+      await purchasesQuery.refetch();
     } catch (error) {
       console.error('Error deleting purchase:', error);
       toast.error('Failed to delete purchase record');
     }
   };
 
-  const fetchPurchases = async () => {
-    try {
-      await purchasesQuery.refetch();
-    } catch (error) {
-      console.error('Error fetching purchases:', error);
-    }
-  };
 
   const testDatabaseConnection = async () => {
     try {
@@ -1273,7 +1294,7 @@ const PurchaseTab: React.FC<PurchaseTabProps> = ({
                 type='submit'
                 variant='contained'
                 color='primary'
-                disabled={isCreatingPurchase}
+                disabled={isCreatingPurchase || isLoading}
                 startIcon={
                   isCreatingPurchase ? (
                     <CircularProgress size={20} />

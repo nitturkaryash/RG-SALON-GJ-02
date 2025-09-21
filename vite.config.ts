@@ -27,6 +27,15 @@ export default defineConfig({
     outDir: 'dist',
     sourcemap: true,
     minify: 'terser',
+    terserOptions: {
+      compress: {
+        drop_console: true, // Remove console logs in production
+        drop_debugger: true,
+      },
+      output: {
+        comments: false,
+      },
+    },
     target: 'es2020',
     rollupOptions: {
       output: {
