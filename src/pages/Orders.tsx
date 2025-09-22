@@ -3103,6 +3103,11 @@ export default function Orders() {
                               }}
                             />
                           )}
+                          {isSalonOrder && order.consumption_purpose && (
+                            <Typography variant='caption' color='text.secondary' component='div'>
+                              Purpose: {order.consumption_purpose}
+                            </Typography>
+                          )}
                         </TableCell>
                         <TableCell>
                           {(() => {
@@ -3535,6 +3540,12 @@ export default function Orders() {
                       />
                     )}
                   </Typography>
+                  {isSalonConsumptionOrder(selectedOrder) &&
+                    selectedOrder.consumption_purpose && (
+                      <Typography variant='body2' sx={{ mt: 0.5 }}>
+                        <strong>Purpose:</strong> {selectedOrder.consumption_purpose}
+                      </Typography>
+                    )}
                   <Typography variant='body2'>
                     <strong>
                       Stylist

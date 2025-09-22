@@ -140,8 +140,8 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
     column: keyof GroupedSalesItem | null;
     direction: 'asc' | 'desc';
   }>({
-    column: 'date',
-    direction: 'asc',
+    column: 'serial_no',
+    direction: 'desc',
   });
   const [dateRange, setDateRange] = useState({
     startDate: new Date(new Date().getFullYear(), new Date().getMonth(), 1)
@@ -181,6 +181,13 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
         const dateA = new Date(aValue as string).getTime();
         const dateB = new Date(bValue as string).getTime();
         return sortBy.direction === 'asc' ? dateA - dateB : dateB - dateA;
+      } else if (sortBy.column === 'serial_no') {
+        // Handle serial number sorting (SALES-001, SALES-002, etc.)
+        const serialA = String(aValue || '').replace('SALES-', '');
+        const serialB = String(bValue || '').replace('SALES-', '');
+        const numA = parseInt(serialA) || 0;
+        const numB = parseInt(serialB) || 0;
+        return sortBy.direction === 'asc' ? numA - numB : numB - numA;
       } else if (typeof aValue === 'number' && typeof bValue === 'number') {
         return sortBy.direction === 'asc' ? aValue - bValue : bValue - aValue;
       } else {
@@ -194,7 +201,7 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
 
     // Then assign serial numbers and calculate tax breakdowns
     return sortedData.map((item, index) => {
-      // For grouped data, we calculate aggregated current stock values
+      // For grouped data, we calculate aggregated current stock values using remaining stock
       const totalCurrentStockTaxable = item.products.reduce((sum, product) => {
         const qty = product.remaining_stock ?? 0;
         const unitExcl = Number(product.purchase_cost_per_unit_ex_gst) || 0;
@@ -331,9 +338,9 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
             invoice_value: totalAmount,
             igst_amount: 0, // Using CGST/SGST instead
             initial_stock: 0, // Not available from this view
-            remaining_stock: 0, // Not available from this view
-            current_stock: 0, // Not available from this view
-            purchase_cost_per_unit_ex_gst: 0, // Not available from this view
+            remaining_stock: Number(item.stock) || 0, // Use stock from the view
+            current_stock: Number(item.stock) || 0, // Use stock from the view
+            purchase_cost_per_unit_ex_gst: Number(item.unit_price_ex_gst) || 0, // Use unit price from the view
             invoice_number: item.invoice_number,
             invoice_no: item.invoice_no,
           };
@@ -497,11 +504,13 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
 
     // Apply the search filter
     if (searchValue.trim() === '') {
-      // Apply initial sorting by date (newest first)
+      // Apply initial sorting by serial number (newest first)
       const sortedData = [...groupedSalesData].sort((a, b) => {
-        const dateA = new Date(a.date).getTime();
-        const dateB = new Date(b.date).getTime();
-        return dateB - dateA; // Newest first
+        const serialA = String(a.serial_no || '').replace('SALES-', '');
+        const serialB = String(b.serial_no || '').replace('SALES-', '');
+        const numA = parseInt(serialA) || 0;
+        const numB = parseInt(serialB) || 0;
+        return numB - numA; // Newest first (higher serial numbers)
       });
       setFilteredData(sortedData);
     } else {
@@ -513,11 +522,13 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
           item.order_id.toLowerCase().includes(searchValue)
       );
 
-      // Sort filtered results by date (newest first)
+      // Sort filtered results by serial number (newest first)
       const sortedFiltered = filtered.sort((a, b) => {
-        const dateA = new Date(a.date).getTime();
-        const dateB = new Date(b.date).getTime();
-        return dateB - dateA; // Newest first
+        const serialA = String(a.serial_no || '').replace('SALES-', '');
+        const serialB = String(b.serial_no || '').replace('SALES-', '');
+        const numA = parseInt(serialA) || 0;
+        const numB = parseInt(serialB) || 0;
+        return numB - numA; // Newest first (higher serial numbers)
       });
 
       setFilteredData(sortedFiltered);

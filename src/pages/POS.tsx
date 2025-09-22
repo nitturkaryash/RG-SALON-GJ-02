@@ -3773,6 +3773,7 @@ export default function POS() {
           created_at: orderDateToUse,
           client_name: 'Salon Consumption',
           customer_name: 'Salon Consumption', // Add for consistency
+        invoice_number: (invoiceNumber || '').trim() || null,
           consumption_purpose: consumptionPurpose,
           consumption_notes: consumptionNotes,
           total: orderTotal,
@@ -4250,7 +4251,7 @@ export default function POS() {
         <Grid container spacing={2}>
           {' '}
           {/* Add Grid container here */}
-          <Grid item xs={12} sm={6}>
+          <Grid item xs={12} sm={4}>
             <TextField
               fullWidth
               label='Consumption Purpose'
@@ -4268,7 +4269,7 @@ export default function POS() {
               }}
             />
           </Grid>
-          <Grid item xs={12} sm={6}>
+          <Grid item xs={12} sm={4}>
             <LocalizationProvider dateAdapter={AdapterDateFns}>
               <DatePicker
                 label='Consumption Date'
@@ -4288,6 +4289,23 @@ export default function POS() {
                 }}
               />
             </LocalizationProvider>
+          </Grid>
+          <Grid item xs={12} sm={4}>
+            <TextField
+              fullWidth
+              label='Invoice Number (Optional)'
+              variant='outlined'
+              value={invoiceNumber}
+              onChange={e => {
+                setInvoiceNumber(e.target.value);
+              }}
+              size='small'
+              placeholder='Enter invoice number'
+              sx={{
+                mb: 3,
+                '& .MuiOutlinedInput-root': { borderRadius: '8px' },
+              }}
+            />
           </Grid>
         </Grid>{' '}
         {/* Close Grid container */}

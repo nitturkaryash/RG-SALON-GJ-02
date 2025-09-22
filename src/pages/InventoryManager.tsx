@@ -515,9 +515,10 @@ export default function InventoryManager() {
             recalculatedSgst +
             recalculatedIgst;
 
-          // Current stock calculations (unchanged)
+          // Current stock calculations using remaining stock from database
+          const remainingStock = item.stock || 0; // Use stock field from sales_history_final view
           const taxableValueCurrentStock =
-            item.current_stock * item.unit_price_ex_gst;
+            remainingStock * item.unit_price_ex_gst;
           const cgstCurrentStock =
             taxableValueCurrentStock * (item.gst_percentage / 200);
           const sgstCurrentStock =
@@ -573,11 +574,13 @@ export default function InventoryManager() {
           return processedItem;
         });
 
-        // Sort back by date descending (newest first) for display
+        // Sort back by serial number descending (newest first) for display
         const finalSortedData = dataWithSerialNumbers.sort((a, b) => {
-          const dateA = new Date(a.date).getTime();
-          const dateB = new Date(b.date).getTime();
-          return dateB - dateA; // Descending order (newest first)
+          const serialA = String(a.serial_no || '').replace('SALES-', '');
+          const serialB = String(b.serial_no || '').replace('SALES-', '');
+          const numA = parseInt(serialA) || 0;
+          const numB = parseInt(serialB) || 0;
+          return numB - numA; // Descending order (newest first - higher serial numbers)
         });
 
         setSalesHistory(finalSortedData);
@@ -1451,20 +1454,21 @@ export default function InventoryManager() {
   const salonConsumptionTotals = useMemo(() => {
     return filteredSalonConsumption.reduce(
       (totals, item) => {
-        // Calculate current stock values
+        // Calculate current stock values using remaining stock from database
+        const currentStock = Number(item.Current_Stock || 0); // Use Current_Stock from salon_consumption_new view
         const taxableValueCurrentStock =
-          Number(item.current_stock) *
-          Number(item.purchase_cost_per_unit_ex_gst || 0);
+          currentStock *
+          Number(item.Purchase_Cost_per_Unit_Ex_GST_Rs || 0);
         const cgstCurrentStock =
           taxableValueCurrentStock *
-          (Number(item.purchase_gst_percentage || 0) / 200);
+          (Number(item.Purchase_GST_Percentage || 0) / 200);
         const sgstCurrentStock =
           taxableValueCurrentStock *
-          (Number(item.purchase_gst_percentage || 0) / 200);
+          (Number(item.Purchase_GST_Percentage || 0) / 200);
         const igstCurrentStock =
-          item.purchase_igst > 0
+          item.Purchase_IGST_Rs > 0
             ? taxableValueCurrentStock *
-              (Number(item.purchase_gst_percentage || 0) / 100)
+              (Number(item.Purchase_GST_Percentage || 0) / 100)
             : 0;
         const totalValueCurrentStock =
           taxableValueCurrentStock +
