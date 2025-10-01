@@ -16,7 +16,6 @@ import {
   Typography,
   Alert,
   TablePagination,
-  Tooltip,
   Autocomplete,
   Dialog,
   DialogTitle,
@@ -46,17 +45,18 @@ import {
   PurchaseFormState,
   Product,
 } from '../../models/inventoryTypes';
-import { useInventory } from '../../hooks/useInventory';
-import { useProducts } from '../../hooks/useProducts';
+import { useInventory } from '../../hooks/inventory/useInventory';
+import { usePurchaseHistory } from '../../hooks/inventory/usePurchaseHistory';
+import { useProducts } from '../../hooks/products/useProducts';
 import { toast } from 'react-toastify';
 import {
   formatCurrency,
   formatDateKolkata,
-  formatAsiaKolkataTime,
 } from '../../utils/formatting/formatters';
-import { downloadCsv } from '../../utils/csvExporter';
+import { downloadCsv } from '../../utils/export/csvExporter';
 import { fetchProductsWithStock } from '../../utils/inventoryHelpers';
 import { supabase, handleSupabaseError } from '../../lib/supabase';
+import { recalculatePurchaseHistoryStock } from '../../utils/inventoryUtils';
 
 interface PurchaseTabProps {
   purchases: Purchase[];
@@ -110,6 +110,8 @@ const PurchaseTab: React.FC<PurchaseTabProps> = ({
   const [exportingCSV, setExportingCSV] = useState(false);
   const [products, setProducts] = useState<any[]>([]);
   const [isCreatingPurchase, setIsCreatingPurchase] = useState(false);
+  const [isRecalculating, setIsRecalculating] = useState(false);
+  const { addPurchaseTransactionEnhanced } = usePurchaseHistory();
 
   useEffect(() => {
     const loadInitialData = async () => {
@@ -401,150 +403,33 @@ const PurchaseTab: React.FC<PurchaseTabProps> = ({
 
     setIsCreatingPurchase(true);
     try {
-      // Calculate taxable value and Purchase Cost/Unit (Ex.GST) first
-      const taxableValue =
-        ((formState.mrp_incl_gst * formState.purchase_qty) /
-          (1 + formState.gst_percentage / 100)) *
-        (1 - formState.discount_on_purchase_percentage / 100);
+      // Build payload for enhanced add flow which updates product_master stock
+      const payload = {
+        date: formState.date,
+        product_name: formState.product_name,
+        hsn_code: formState.hsn_code,
+        unit_type: formState.unit_type,
+        purchase_invoice_number: formState.purchase_invoice_number,
+        invoice_number: formState.purchase_invoice_number,
+        purchase_qty: formState.purchase_qty,
+        mrp_incl_gst: formState.mrp_incl_gst,
+        mrp_excl_gst: formState.mrp_excl_gst,
+        mrp_per_unit_excl_gst: formState.mrp_excl_gst,
+        discount_on_purchase_percentage:
+          formState.discount_on_purchase_percentage,
+        gst_percentage: formState.gst_percentage,
+        purchase_cost_taxable_value: formState.purchase_cost_taxable_value,
+        purchase_igst: formState.purchase_igst,
+        purchase_cgst: formState.purchase_cgst,
+        purchase_sgst: formState.purchase_sgst,
+        purchase_invoice_value: formState.purchase_invoice_value,
+        vendor: formState.vendor,
+        is_interstate: !!formState.is_interstate,
+      } as any;
 
-      const purchaseCostPerUnitExGst =
-        formState.purchase_qty > 0 ? taxableValue / formState.purchase_qty : 0;
-
-      let existingProduct = existingProducts.find(
-        p => p.name.toLowerCase() === formState.product_name.toLowerCase()
-      );
-
-      if (!existingProduct) {
-        console.log(
-          'Product does not exist, adding to catalog:',
-          formState.product_name
-        );
-
-        let addSuccess = false;
-        try {
-          addSuccess = await addProductToCatalog({
-            name: formState.product_name,
-            hsn_code: formState.hsn_code,
-            units: formState.unit_type,
-            price: formState.mrp_incl_gst,
-          });
-        } catch (error) {
-          console.error('Error adding product to catalog:', error);
-          addSuccess = false;
-        }
-
-        if (!addSuccess) {
-          console.log('Failed to add to catalog, creating manually');
-          existingProduct = await createProductManually();
-          if (!existingProduct) {
-            toast.error('Failed to create product. Please try again.');
-            return;
-          }
-        }
-      } else {
-        console.log(
-          'Product already exists in catalog:',
-          formState.product_name
-        );
-
-        try {
-          const { data, error } = await supabase
-            .from('inventory_products')
-            .select('product_id, stock_quantity')
-            .eq('product_name', formState.product_name)
-            .single();
-
-          if (!error && data) {
-            console.log(
-              'Updating product stock:',
-              data.product_id,
-              'Current stock:',
-              data.stock_quantity
-            );
-
-            const newStockQty =
-              (data.stock_quantity || 0) + formState.purchase_qty;
-
-            // Update inventory products
-            const { error: updateError } = await supabase
-              .from('inventory_products')
-              .update({
-                stock_quantity: newStockQty,
-                updated_at: new Date().toISOString(),
-              })
-              .eq('product_id', data.product_id);
-
-            if (updateError) {
-              console.error('Error updating product stock:', updateError);
-            } else {
-              console.log('Product stock updated to:', newStockQty);
-
-              // Update purchase history with stock
-              const { error: historyUpdateError } = await supabase
-                .from('purchase_history_with_stock')
-                .update({
-                  purchase_qty: formState.purchase_qty,
-                  mrp_incl_gst: formState.mrp_incl_gst,
-                  mrp_excl_gst: formState.mrp_excl_gst,
-                  discount_on_purchase_percentage:
-                    formState.discount_on_purchase_percentage,
-                  gst_percentage: formState.gst_percentage,
-                  purchase_taxable_value: formState.purchase_cost_taxable_value,
-                  purchase_igst: formState.purchase_igst,
-                  purchase_cgst: formState.purchase_cgst,
-                  purchase_sgst: formState.purchase_sgst,
-                  purchase_invoice_value_rs: formState.purchase_invoice_value,
-                  tax_inlcuding_disc: parseFloat(
-                    purchaseCostPerUnitExGst.toFixed(2)
-                  ),
-                  updated_at: new Date().toISOString(),
-                })
-                .eq('product_id', data.product_id)
-                .eq(
-                  'purchase_invoice_number',
-                  formState.purchase_invoice_number
-                );
-
-              if (historyUpdateError) {
-                console.error(
-                  'Error updating purchase history:',
-                  historyUpdateError
-                );
-              } else {
-                console.log('Purchase history updated successfully');
-              }
-            }
-          }
-        } catch (err) {
-          console.error('Error checking/updating product stock:', err);
-        }
-      }
-
-      const totalGstAmount = taxableValue * (formState.gst_percentage / 100);
-      const cgstAmount = totalGstAmount / 2;
-      const sgstAmount = totalGstAmount / 2;
-
-      const updatedFormState = {
-        ...formState,
-        purchase_cost_taxable_value: parseFloat(taxableValue.toFixed(2)),
-        purchase_cgst: parseFloat(cgstAmount.toFixed(2)),
-        purchase_sgst: parseFloat(sgstAmount.toFixed(2)),
-        purchase_invoice_value: parseFloat(
-          (taxableValue + totalGstAmount).toFixed(2)
-        ),
-        tax_inlcuding_disc: parseFloat(purchaseCostPerUnitExGst.toFixed(2)),
-        invoice_no: formState.purchase_invoice_number,
-      };
-
-      console.log('Creating purchase record with data:', updatedFormState);
-
-      // Insert into purchase_history_with_stock table
-      const { error: insertError } = await supabase
-        .from('purchase_history_with_stock')
-        .insert([updatedFormState]);
-
-      if (insertError) {
-        throw new Error(`Failed to create purchase: ${insertError.message}`);
+      const result = await addPurchaseTransactionEnhanced(payload);
+      if (!result.success) {
+        throw new Error(result.error?.message || 'Failed to add purchase');
       }
 
       toast.success('Purchase added successfully');
@@ -712,6 +597,25 @@ const PurchaseTab: React.FC<PurchaseTabProps> = ({
       alert('Failed to export purchases to CSV');
     } finally {
       setExportingCSV(false);
+    }
+  };
+
+  const handleRecalculateStock = async () => {
+    setIsRecalculating(true);
+    try {
+      const result = await recalculatePurchaseHistoryStock();
+      if (result.success) {
+        toast.success('Purchase history stock recalculated successfully!');
+        // Refresh the purchase data
+        await purchasesQuery.refetch();
+      } else {
+        toast.error(`Failed to recalculate stock: ${result.error}`);
+      }
+    } catch (error) {
+      console.error('Error recalculating stock:', error);
+      toast.error('Failed to recalculate purchase history stock');
+    } finally {
+      setIsRecalculating(false);
     }
   };
 
@@ -1011,6 +915,21 @@ const PurchaseTab: React.FC<PurchaseTabProps> = ({
             disabled={isLoading || exportingCSV || purchases.length === 0}
           >
             Export CSV
+          </Button>
+          <Button
+            variant='outlined'
+            startIcon={
+              isRecalculating ? (
+                <CircularProgress size={20} color='inherit' />
+              ) : (
+                <RefreshIcon />
+              )
+            }
+            onClick={handleRecalculateStock}
+            disabled={isLoading || isRecalculating}
+            color='secondary'
+          >
+            {isRecalculating ? 'Recalculating...' : 'Fix Stock Display'}
           </Button>
         </Box>
       </Box>
