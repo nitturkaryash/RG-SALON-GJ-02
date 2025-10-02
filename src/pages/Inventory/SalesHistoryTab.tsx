@@ -341,16 +341,65 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
             invoice_value: totalAmount,
             igst_amount: 0, // Using CGST/SGST instead
             initial_stock: 0, // Not available from this view
-            remaining_stock: Number(item.stock) || 0, // Use stock from the view
-            current_stock: Number(item.stock) || 0, // Use stock from the view
+            remaining_stock: Number(item.stock) || 0, // Use stock from the view (will be updated)
+            current_stock: Number(item.stock) || 0, // Use stock from the view (will be updated)
             purchase_cost_per_unit_ex_gst: Number(item.unit_price_ex_gst) || 0, // Use unit price from the view
             invoice_number: item.invoice_number,
             invoice_no: item.invoice_no,
+            product_id: item.product_id, // Store product ID for fresh stock lookup
           };
         }
       );
 
       console.log(`Processed ${flattenedSales.length} individual sales items.`);
+
+      // CRITICAL FIX: Get historical stock from pos_orders stock_snapshot for each sale
+      console.log('🔄 Fetching historical stock data from pos_orders stock_snapshot...');
+      const orderIds = [...new Set(flattenedSales.map(item => item.order_id).filter(Boolean))];
+      
+      if (orderIds.length > 0) {
+        const { data: orderStockData, error: stockError } = await supabase
+          .from('pos_orders')
+          .select('id, stock_snapshot, current_stock')
+          .in('id', orderIds);
+
+        if (stockError) {
+          console.warn('Failed to fetch order stock snapshots:', stockError);
+        } else if (orderStockData) {
+          console.log(`✅ Fetched stock snapshots for ${orderStockData.length} orders`);
+          
+          // Create a map of order_id to stock snapshot
+          const stockSnapshotMap = new Map();
+          
+          orderStockData.forEach(order => {
+            if (order.stock_snapshot) {
+              try {
+                const stockSnapshot = JSON.parse(order.stock_snapshot);
+                stockSnapshotMap.set(order.id, stockSnapshot);
+              } catch (e) {
+                console.warn(`Failed to parse stock snapshot for order ${order.id}:`, e);
+              }
+            }
+          });
+          
+          // Update sales data with historical stock from snapshots
+          flattenedSales.forEach(sale => {
+            if (sale.order_id && stockSnapshotMap.has(sale.order_id)) {
+              const stockSnapshot = stockSnapshotMap.get(sale.order_id);
+              
+              // Get stock for this specific product at time of sale
+              if (sale.product_id && stockSnapshot[sale.product_id] !== undefined) {
+                const stockAtTimeOfSale = stockSnapshot[sale.product_id];
+                sale.current_stock = stockAtTimeOfSale;
+                sale.remaining_stock = stockAtTimeOfSale;
+                console.log(`📦 ${sale.product_name}: Stock at time of sale = ${stockAtTimeOfSale}`);
+              }
+            }
+          });
+          
+          console.log('✅ Updated sales data with historical stock at time of each sale');
+        }
+      }
 
       // Log product type distribution for debugging
       const typeDistribution = flattenedSales.reduce(

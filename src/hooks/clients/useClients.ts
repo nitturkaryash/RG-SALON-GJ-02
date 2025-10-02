@@ -3,7 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { showToast, handleError, withToast } from '../../utils/toastUtils';
 import { supabase } from '../../lib/supabase';
 import { useAuthContext } from '../../contexts/AuthContext';
-import { createWalkInOrder, PaymentMethod } from '../orders/usePOS';
+import { PaymentMethod } from '../orders/usePOS';
 
 export interface Client {
   id: string;

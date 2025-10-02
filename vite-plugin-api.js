@@ -6,15 +6,25 @@ import rateLimit from 'express-rate-limit';
 import { createClient } from '@supabase/supabase-js';
 import { v4 as uuidv4 } from 'uuid';
 
-// Initialize Supabase client
-const supabaseUrl = 'https://mtyudylsozncvilibxda.supabase.co';
-const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im10eXVkeWxzb3puY3ZpbGlieGRhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDk4OTE0MTIsImV4cCI6MjA2NTQ2NzQxMn0.KJP6Pu3jaheEj8wTPioZsRUNRnkKH88hcRgvS97FOZA';
-const supabase = createClient(supabaseUrl, supabaseKey);
-
 export function apiPlugin() {
   return {
     name: 'api-plugin',
     configureServer(server) {
+      // Get environment variables from process.env (loaded by vite.config.ts)
+      const supabaseUrl = process.env.VITE_SUPABASE_URL;
+      const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY;
+
+      if (!supabaseUrl || !supabaseKey) {
+        console.error('❌ Missing Supabase environment variables');
+        console.error('VITE_SUPABASE_URL:', supabaseUrl ? 'Present' : 'Missing');
+        console.error('VITE_SUPABASE_ANON_KEY:', supabaseKey ? 'Present' : 'Missing');
+        throw new Error(
+          'Missing Supabase environment variables (VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY)'
+        );
+      }
+
+      const supabase = createClient(supabaseUrl, supabaseKey);
+      
       // Create Express app
       const app = express();
 

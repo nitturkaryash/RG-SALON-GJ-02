@@ -271,6 +271,8 @@ interface ProductStockUpdate {
 
 // Function to update product stock quantities
 async function updateProductStockQuantities(updates: ProductStockUpdate[]) {
+  // Stock reduction function - reduces stock in product_master table
+  
   try {
     const validUpdates = updates.filter((update: ProductStockUpdate) => {
       return (
@@ -288,17 +290,48 @@ async function updateProductStockQuantities(updates: ProductStockUpdate[]) {
 
     const results = await Promise.all(
       validUpdates.map(async (update: ProductStockUpdate) => {
-        const { data, error } = await supabase.rpc('decrement_product_stock', {
-          product_id: update.productId,
-          decrement_quantity: update.quantity,
-        });
+        try {
+          // First get current stock from product_master
+          const { data: currentProduct, error: fetchError } = await supabase
+            .from('product_master')
+            .select('stock_quantity')
+            .eq('id', update.productId)
+            .single();
 
+          if (fetchError || !currentProduct) {
         return {
           productId: update.productId,
-          success: !error,
-          result: data,
+              success: false,
+              error: fetchError || new Error('Product not found'),
+            };
+          }
+
+          const newStock = Math.max(0, currentProduct.stock_quantity - update.quantity);
+          
+          // Update stock: currentProduct.stock_quantity → newStock
+          
+          // Update stock in product_master
+          const { error: updateError } = await supabase
+            .from('product_master')
+            .update({ 
+              stock_quantity: newStock,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', update.productId);
+
+          return {
+            productId: update.productId,
+            success: !updateError,
+            result: { previous_stock: currentProduct.stock_quantity, new_stock: newStock },
+            error: updateError,
+          };
+        } catch (error) {
+          return {
+            productId: update.productId,
+            success: false,
           error,
         };
+        }
       })
     );
 
@@ -704,7 +737,7 @@ export async function createWalkInOrder(
         for (const product of products) {
           try {
             const { data: productData } = await supabase
-              .from('products')
+              .from('product_master')
               .select('stock_quantity')
               .eq('id', product.id)
               .single();
@@ -728,16 +761,9 @@ export async function createWalkInOrder(
         orderInsertData.current_stock =
           currentStock > 0 ? String(currentStock) : undefined;
 
-        // Note: Stock reduction is handled automatically by database trigger 'trg_reduce_stock_on_insert'
-        // when the order is inserted. No need to manually reduce stock here.
-
-        const stockUpdates = products.map(product => ({
-          productId: product.id,
-          quantity: product.quantity,
-        }));
-
-        // REMOVED: await updateProductStockQuantities(stockUpdates);
-        // Database trigger will handle stock reduction automatically
+        // REMOVED: Stock reduction from standalone function to prevent double reduction
+        // Stock reduction is handled by the usePOS mutation version
+        console.log('📝 Stock snapshot recorded - stock reduction handled by usePOS mutation');
       } catch (stockError) {
         console.warn(
           'Warning: Failed to update some product stock quantities:',
@@ -1584,20 +1610,21 @@ export function usePOS() {
                 }
               }
 
-              // Note: Stock reduction is handled automatically by database trigger 'trg_reduce_stock_on_insert'
-              // when the order is inserted. No need to manually reduce stock here.
-
+              // Ensure stock reduction happens for all POS orders with products
               const stockUpdates = productItems.map(item => ({
                 productId: item.service_id,
                 quantity: item.quantity || 1,
               }));
 
-              // REMOVED: Manual stock update to prevent double reduction
-              // const updateResult = await updateProductStockQuantities(stockUpdates);
-              // Database trigger will handle stock reduction automatically
-              console.log(
-                '🔍 usePOS - Stock reduction will be handled by database trigger'
-              );
+              // CRITICAL: Manual stock reduction (no database trigger exists)
+              const updateResult = await updateProductStockQuantities(stockUpdates);
+              
+              if (!updateResult.success) {
+                console.warn('Stock update failed for service items:', updateResult);
+                // Continue with order creation but log the issue
+              } else {
+                console.log('✅ Stock successfully reduced for POS order products');
+              }
             }
 
             // Add stock snapshot as JSON

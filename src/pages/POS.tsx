@@ -430,39 +430,8 @@ const debugStockQuantity = async (productId: string) => {
   }
 };
 
-// Update the directUpdateStockQuantity function
-const directUpdateStockQuantity = async (
-  productId: string,
-  decrementAmount: number
-) => {
-  try {
-    console.log(
-      `🛠️ DIRECT UPDATE: Updating stock for product ID ${productId} by ${decrementAmount}`
-    );
-
-    const result = await updateProductStock(
-      productId,
-      -decrementAmount,
-      'pos_sale'
-    );
-
-    if (!result.success) {
-      console.error(
-        `🛠️ DIRECT UPDATE: Error updating stock for ${productId}:`,
-        result.error
-      );
-      return false;
-    }
-
-    console.log(
-      `🛠️ DIRECT UPDATE: Successfully updated stock to ${result.newStock}`
-    );
-    return true;
-  } catch (err) {
-    console.error('🛠️ DIRECT UPDATE: Error updating stock quantity:', err);
-    return false;
-  }
-};
+// REMOVED: directUpdateStockQuantity function - no longer needed
+// Stock reduction is now handled consistently in usePOS.ts
 
 interface HistoryItem {
   id: string;
@@ -1989,47 +1958,10 @@ export default function POS() {
 
       console.log(`Found ${data.length} products with stock information`);
 
-      // If data is available, update the stock quantities for products
-      if (data && data.length > 0) {
-        console.log('Updating product stock quantities...');
-
-        // Make a copy of the current products state to update - using the callback form
-        // to avoid dependency on allProducts
-        setAllProducts(prevProducts => {
-          // Map through existing products and update their stock quantities
-          const updatedProducts = [...prevProducts].map(product => {
-            // Find matching product in the fetched data
-            const stockItem = data.find(
-              item =>
-                item.id === product.id ||
-                item.name.trim().toLowerCase() ===
-                  product.name.trim().toLowerCase()
-            );
-
-            // If matching product found, update stock quantity
-            if (stockItem && stockItem.stock_quantity !== undefined) {
-              if (
-                product.stock_quantity !== stockItem.stock_quantity ||
-                product.active !== stockItem.active
-              ) {
-                console.log(
-                  `Updating product ${product.name} - Stock: ${product.stock_quantity} → ${stockItem.stock_quantity}, Active: ${product.active} → ${stockItem.active}`
-                );
-                return {
-                  ...product,
-                  stock_quantity: stockItem.stock_quantity,
-                  active: stockItem.active,
-                };
-              }
-            }
-
-            // If no update needed, return the product unchanged
-            return product;
-          });
-
-          return updatedProducts;
-        });
-      }
+      // REMOVED: Stock quantity updating logic that was overriding correct database values
+      // The stock quantities are already correctly managed by the database and usePOS.ts
+      // This function should only fetch data for display, not modify stock levels
+      console.log('✅ Stock data fetched successfully (display only - no stock updates)');
 
       return data || [];
     } catch (error) {
@@ -3276,60 +3208,16 @@ export default function POS() {
           '🔍 DEBUG: Order created successfully, checking product stock quantities...'
         );
 
-        // Replace the existing timeout block with this one
-        setTimeout(async () => {
-          let stockUpdateNeeded = false;
-
-          for (const product of formattedProducts) {
-            if (product.id) {
-              const stockQty = await debugStockQuantity(product.id);
-              console.log(
-                `🔍 DEBUG: After order - Product ${product.name} (${product.id}) stock quantity: ${stockQty}`
-              );
-
-              // Check if the quantity has actually changed
-              if (stockQty === null || typeof stockQty === 'number') {
-                const initialStockQty = allProducts.find(
-                  p => p.id === product.id
-                )?.stock_quantity;
-                console.log(
-                  `🔍 DEBUG: Initial stock was: ${initialStockQty}, current is: ${stockQty}`
-                );
-
-                if (
-                  initialStockQty &&
-                  stockQty !== null &&
-                  stockQty >= initialStockQty
-                ) {
-                  console.log(
-                    `🔍 DEBUG: Stock not reduced for ${product.name}, applying direct update fallback`
-                  );
-                  stockUpdateNeeded = true;
-
-                  // Apply direct stock update
-                  await directUpdateStockQuantity(
-                    product.id,
-                    product.quantity || 1
-                  );
-
-                  // Verify after direct update
-                  const updatedStock = await debugStockQuantity(product.id);
-                  console.log(
-                    `🔍 DEBUG: After direct update - Product ${product.name} stock: ${updatedStock}`
-                  );
-                }
-              }
-            }
-          }
-
-          if (stockUpdateNeeded) {
-            console.log(
-              '🔍 DEBUG: Direct stock updates applied. Refreshing UI...'
-            );
-            // Trigger inventory refresh
+        // REMOVED: Fallback stock reduction logic that was causing double/triple stock reduction
+        // Stock is now properly reduced once in usePOS.ts updateProductStockQuantities()
+        console.log('✅ POS Order created - stock reduction handled by usePOS.ts');
+        
+        // Just refresh the UI to show updated stock levels
+        setTimeout(() => {
+          console.log('🔄 Refreshing products after POS order');
+          fetchAllProducts();
             window.dispatchEvent(new CustomEvent('inventory-updated'));
             fetchBalanceStockData();
-          }
         }, 1000);
       }
 
@@ -3455,7 +3343,6 @@ export default function POS() {
     calculateTotalAmount,
     allProducts,
     fetchBalanceStockData,
-    directUpdateStockQuantity,
     createClientAsync,
     newClientPhone,
     newClientEmail,
