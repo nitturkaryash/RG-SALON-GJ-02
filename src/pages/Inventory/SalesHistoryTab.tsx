@@ -50,6 +50,7 @@ interface SalesItem {
   order_id: string;
   order_item_id: string;
   date: string;
+  created_at: string; // Timestamp for proper ordering
   product_name: string;
   quantity: number;
   unit_price_ex_gst: number;
@@ -88,6 +89,7 @@ interface GroupedSalesItem {
   serial_no: string | number;
   order_id: string;
   date: string;
+  created_at?: string; // Timestamp for proper ordering
   products: SalesItem[]; // Array of products in this order
   total_quantity: number;
   total_taxable_value: number;
@@ -140,8 +142,8 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
     column: keyof GroupedSalesItem | null;
     direction: 'asc' | 'desc';
   }>({
-    column: 'serial_no',
-    direction: 'desc',
+    column: 'created_at', // Sort by timestamp instead of serial number
+    direction: 'desc', // Latest first
   });
   const [dateRange, setDateRange] = useState({
     startDate: new Date(new Date().getFullYear(), new Date().getMonth(), 1)
@@ -177,7 +179,7 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
       const bValue = b[sortBy.column];
 
       // Handle different data types
-      if (sortBy.column === 'date') {
+      if (sortBy.column === 'date' || sortBy.column === 'created_at') {
         const dateA = new Date(aValue as string).getTime();
         const dateB = new Date(bValue as string).getTime();
         return sortBy.direction === 'asc' ? dateA - dateB : dateB - dateA;
@@ -268,7 +270,7 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
         .select('*')
         .gte('date', `${dateRange.startDate}T00:00:00`)
         .lte('date', `${dateRange.endDate}T23:59:59`)
-        .order('date', { ascending: false });
+        .order('created_at', { ascending: false }); // Order by timestamp (latest first)
 
       if (error) {
         console.error('Error fetching sales history:', error);
@@ -319,6 +321,7 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
             order_id: item.serial_no, // Use the formatted serial_no as order_id
             order_item_id: item.order_item_id,
             date: item.date,
+            created_at: item.created_at, // Include timestamp for proper ordering
             product_name: item.product_name,
             quantity: quantity,
             unit_price_ex_gst: unitPrice,
@@ -371,6 +374,7 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
             serial_no: item.serial_no,
             order_id: item.order_id,
             date: item.date,
+            created_at: item.created_at, // Include timestamp for proper ordering
             products: [],
             total_quantity: 0,
             total_taxable_value: 0,
@@ -504,13 +508,11 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
 
     // Apply the search filter
     if (searchValue.trim() === '') {
-      // Apply initial sorting by serial number (newest first)
+      // Apply initial sorting by created_at timestamp (newest first)
       const sortedData = [...groupedSalesData].sort((a, b) => {
-        const serialA = String(a.serial_no || '').replace('SALES-', '');
-        const serialB = String(b.serial_no || '').replace('SALES-', '');
-        const numA = parseInt(serialA) || 0;
-        const numB = parseInt(serialB) || 0;
-        return numB - numA; // Newest first (higher serial numbers)
+        const dateA = new Date(a.created_at || a.date).getTime();
+        const dateB = new Date(b.created_at || b.date).getTime();
+        return dateB - dateA; // Newest first (latest timestamp)
       });
       setFilteredData(sortedData);
     } else {
@@ -522,13 +524,11 @@ const SalesHistoryTab: React.FC<SalesHistoryTabProps> = ({ onDataUpdate }) => {
           item.order_id.toLowerCase().includes(searchValue)
       );
 
-      // Sort filtered results by serial number (newest first)
+      // Sort filtered results by created_at timestamp (newest first)
       const sortedFiltered = filtered.sort((a, b) => {
-        const serialA = String(a.serial_no || '').replace('SALES-', '');
-        const serialB = String(b.serial_no || '').replace('SALES-', '');
-        const numA = parseInt(serialA) || 0;
-        const numB = parseInt(serialB) || 0;
-        return numB - numA; // Newest first (higher serial numbers)
+        const dateA = new Date(a.created_at || a.date).getTime();
+        const dateB = new Date(b.created_at || b.date).getTime();
+        return dateB - dateA; // Newest first (latest timestamp)
       });
 
       setFilteredData(sortedFiltered);

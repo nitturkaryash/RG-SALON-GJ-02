@@ -525,7 +525,7 @@ export const addPurchaseTransaction = async (
       date: purchaseData.date || timestamp,
       // previous_qty for stock_history is the product's stock before this transaction's effect.
       previous_qty: currentProductStock,
-      current_qty: currentProductStock,
+      current_qty: newOverallProductStock, // ✅ FIXED: Should be stock AFTER, not before
       change_qty: quantityChange, // For new purchase, this is always positive
       stock_after: newOverallProductStock,
       change_type: 'addition',

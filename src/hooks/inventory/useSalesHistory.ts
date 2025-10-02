@@ -28,7 +28,8 @@ interface SalesHistoryItem {
 interface SalesHistoryFinal {
   serial_no: string;
   order_id: string;
-  date: string; // Changed back to date as that's the actual column name
+  date: string; // Sale date
+  created_at: string; // Timestamp for proper ordering
   product_name: string;
   quantity: number;
   unit_price_ex_gst: number;
@@ -85,7 +86,7 @@ export const useSalesHistory = () => {
         await supabase
           .from('sales_history_final')
           .select('*')
-          .order('date', { ascending: false }); // Changed to use correct column name
+          .order('created_at', { ascending: false }); // Order by timestamp (DESC: latest first)
 
       if (salesProductError) {
         console.error(
@@ -124,9 +125,9 @@ export const useSalesHistory = () => {
         '[useSalesHistory] Using product_type and hsn_code from sales_history_final view'
       );
 
-      // Sort data by date (newest first) before processing to ensure proper serial number assignment
+      // Sort data by created_at timestamp (newest first) to ensure proper order
       const sortedData = salesProductData.sort((a, b) => {
-        return new Date(b.date).getTime() - new Date(a.date).getTime();
+        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
       });
 
       // Process data and assign sequential serial numbers starting from 1
