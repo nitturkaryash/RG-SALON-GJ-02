@@ -1131,7 +1131,7 @@ export default function Orders() {
 
       // Delete all orders at once using batch delete
       console.log('🗑️ Bulk deleting orders:', selectedOrders);
-      
+
       // First, delete all order items for selected orders in one query
       const { error: itemsError } = await supabase
         .from('pos_order_items')
@@ -1164,15 +1164,15 @@ export default function Orders() {
       toast.dismiss(loadingToast);
 
       toast.success(`Successfully deleted ${selectedOrders.length} orders`);
-      
+
       // Clear selection and close dialog
       setSelectedOrders([]);
       setBulkDeleteConfirmOpen(false);
       setIsBulkDeleteMode(false);
-      
+
       // Reset to first page
       setPage(0);
-      
+
       // Refresh orders to show updated list
       refreshOrders();
     } catch (error) {
@@ -2292,11 +2292,12 @@ export default function Orders() {
     if (!order.id) return 'Unknown';
 
     // If order already has a formatted order_id, use it
-    if (order.order_id && (
-      order.order_id.startsWith('RNG') || 
-      order.order_id.startsWith('SC') || 
-      order.order_id.startsWith('MEM')
-    )) {
+    if (
+      order.order_id &&
+      (order.order_id.startsWith('RNG') ||
+        order.order_id.startsWith('SC') ||
+        order.order_id.startsWith('MEM'))
+    ) {
       return order.order_id;
     }
 
@@ -2304,9 +2305,12 @@ export default function Orders() {
     const isSalonOrder = isSalonConsumptionOrder(order);
 
     // Check if this is a membership-only order
-    const isMembershipOrder = order.services && order.services.length > 0 && 
-      order.services.every((service: any) => 
-        service.type === 'membership' || service.category === 'membership'
+    const isMembershipOrder =
+      order.services &&
+      order.services.length > 0 &&
+      order.services.every(
+        (service: any) =>
+          service.type === 'membership' || service.category === 'membership'
       );
 
     if (!aggregatedOrders) return order.id;
@@ -2322,24 +2326,25 @@ export default function Orders() {
     const orderIndex = sortedOrders.findIndex(o => o.id === order.id);
 
     // Get all orders of the same type (salon, sales, or membership) that come before this one
-    const sameTypeOrders = sortedOrders
-      .slice(0, orderIndex + 1)
-      .filter(o => {
-        const normalizedOrder = normalizeOrder(o);
-        const orderIsSalon = isSalonConsumptionOrder(normalizedOrder);
-        const orderIsMembership = normalizedOrder.services && normalizedOrder.services.length > 0 && 
-          normalizedOrder.services.every((service: any) => 
+    const sameTypeOrders = sortedOrders.slice(0, orderIndex + 1).filter(o => {
+      const normalizedOrder = normalizeOrder(o);
+      const orderIsSalon = isSalonConsumptionOrder(normalizedOrder);
+      const orderIsMembership =
+        normalizedOrder.services &&
+        normalizedOrder.services.length > 0 &&
+        normalizedOrder.services.every(
+          (service: any) =>
             service.type === 'membership' || service.category === 'membership'
-          );
-        
-        if (isMembershipOrder) {
-          return orderIsMembership;
-        } else if (isSalonOrder) {
-          return orderIsSalon && !orderIsMembership;
-        } else {
-          return !orderIsSalon && !orderIsMembership;
-        }
-      });
+        );
+
+      if (isMembershipOrder) {
+        return orderIsMembership;
+      } else if (isSalonOrder) {
+        return orderIsSalon && !orderIsMembership;
+      } else {
+        return !orderIsSalon && !orderIsMembership;
+      }
+    });
 
     // Get the position of this order among orders of the same type
     const orderNumber = sameTypeOrders.length;
@@ -2472,8 +2477,25 @@ export default function Orders() {
   }
 
   return (
-    <Box sx={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', bgcolor: '#f5f7fa', overflow: 'hidden' }}>
-      <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'auto', p: 1 }}>
+    <Box
+      sx={{
+        width: '100%',
+        height: '100%',
+        display: 'flex',
+        flexDirection: 'column',
+        bgcolor: '#f5f7fa',
+        overflow: 'hidden',
+      }}
+    >
+      <Box
+        sx={{
+          flex: 1,
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'auto',
+          p: 1,
+        }}
+      >
         <Box
           sx={{
             display: 'flex',
@@ -2484,17 +2506,21 @@ export default function Orders() {
           }}
         >
           <Box>
-            <Typography 
-              variant='h5' 
-              sx={{ 
-                fontWeight: 700, 
+            <Typography
+              variant='h5'
+              sx={{
+                fontWeight: 700,
                 fontSize: '1.5rem',
-                color: '#2d3748'
+                color: '#2d3748',
               }}
             >
               Orders
             </Typography>
-            <Typography variant='body2' color='text.secondary' sx={{ mt: 0.2, fontSize: '0.8rem' }}>
+            <Typography
+              variant='body2'
+              color='text.secondary'
+              sx={{ mt: 0.2, fontSize: '0.8rem' }}
+            >
               {(() => {
                 if (!startDate) {
                   return `All time • ${filteredOrders.length} orders`;
@@ -2557,10 +2583,10 @@ export default function Orders() {
         <Grid container spacing={1.5} sx={{ mb: 1.5, flexShrink: 0 }}>
           {/* Total Orders */}
           <Grid item xs={12} sm={6} md={3}>
-            <Card 
-              raised={false} 
-              variant='outlined' 
-              sx={{ 
+            <Card
+              raised={false}
+              variant='outlined'
+              sx={{
                 p: 1.5,
                 transition: 'all 0.2s ease',
                 '&:hover': {
@@ -2573,17 +2599,22 @@ export default function Orders() {
                 <Typography
                   color='text.secondary'
                   variant='caption'
-                  sx={{ fontWeight: 600, fontSize: '0.75rem', display: 'block', mb: 0.5 }}
+                  sx={{
+                    fontWeight: 600,
+                    fontSize: '0.75rem',
+                    display: 'block',
+                    mb: 0.5,
+                  }}
                 >
                   Total Orders
                 </Typography>
-                <Typography 
-                  variant='h5' 
-                  sx={{ 
-                    mb: 1, 
+                <Typography
+                  variant='h5'
+                  sx={{
+                    mb: 1,
                     fontWeight: 700,
                     color: '#2d3748',
-                    fontSize: '1.5rem'
+                    fontSize: '1.5rem',
                   }}
                 >
                   {orderStats.total}
@@ -2591,15 +2622,15 @@ export default function Orders() {
                 <LinearProgress
                   variant='determinate'
                   value={100}
-                  sx={{ 
-                    height: 4, 
+                  sx={{
+                    height: 4,
                     borderRadius: 2,
                     bgcolor: '#e0e0e0',
                     '& .MuiLinearProgress-bar': {
                       bgcolor: '#8baf3f',
                     },
                   }}
-                  aria-label="Total orders progress"
+                  aria-label='Total orders progress'
                 />
               </CardContent>
             </Card>
@@ -2611,22 +2642,42 @@ export default function Orders() {
               <CardContent sx={{ p: 0 }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', mb: 0.5 }}>
                   <InventoryIcon sx={{ mr: 0.5, fontSize: '1rem' }} />
-                  <Typography color='text.secondary' variant='caption' sx={{ fontWeight: 600, fontSize: '0.75rem' }}>
+                  <Typography
+                    color='text.secondary'
+                    variant='caption'
+                    sx={{ fontWeight: 600, fontSize: '0.75rem' }}
+                  >
                     Salon Consumption
                   </Typography>
                 </Box>
-                <Typography variant='h5' sx={{ mb: 1, fontWeight: 700, fontSize: '1.5rem' }}>
+                <Typography
+                  variant='h5'
+                  sx={{ mb: 1, fontWeight: 700, fontSize: '1.5rem' }}
+                >
                   {orderStats.salonPurchases}
                 </Typography>
                 <Box sx={{ display: 'flex', alignItems: 'center' }}>
                   <LinearProgress
                     variant='determinate'
-                    value={orderStats.total ? (orderStats.salonPurchases / orderStats.total) * 100 : 0}
+                    value={
+                      orderStats.total
+                        ? (orderStats.salonPurchases / orderStats.total) * 100
+                        : 0
+                    }
                     color='info'
                     sx={{ height: 4, borderRadius: 2, flexGrow: 1 }}
                   />
-                  <Typography variant='caption' sx={{ ml: 0.5, fontSize: '0.7rem' }} color='text.secondary'>
-                    {orderStats.total ? Math.round((orderStats.salonPurchases / orderStats.total) * 100) : 0}%
+                  <Typography
+                    variant='caption'
+                    sx={{ ml: 0.5, fontSize: '0.7rem' }}
+                    color='text.secondary'
+                  >
+                    {orderStats.total
+                      ? Math.round(
+                          (orderStats.salonPurchases / orderStats.total) * 100
+                        )
+                      : 0}
+                    %
                   </Typography>
                 </Box>
               </CardContent>
@@ -2637,21 +2688,46 @@ export default function Orders() {
           <Grid item xs={12} sm={6} md={3}>
             <Card raised={false} variant='outlined' sx={{ p: 1.5 }}>
               <CardContent sx={{ p: 0 }}>
-                <Typography color='text.secondary' variant='caption' sx={{ fontWeight: 600, fontSize: '0.75rem', display: 'block', mb: 0.5 }}>
+                <Typography
+                  color='text.secondary'
+                  variant='caption'
+                  sx={{
+                    fontWeight: 600,
+                    fontSize: '0.75rem',
+                    display: 'block',
+                    mb: 0.5,
+                  }}
+                >
                   Completed
                 </Typography>
-                <Typography variant='h5' sx={{ mb: 1, fontWeight: 700, fontSize: '1.5rem' }}>
+                <Typography
+                  variant='h5'
+                  sx={{ mb: 1, fontWeight: 700, fontSize: '1.5rem' }}
+                >
                   {orderStats.completed}
                 </Typography>
                 <Box sx={{ display: 'flex', alignItems: 'center' }}>
                   <LinearProgress
                     variant='determinate'
-                    value={orderStats.total ? (orderStats.completed / orderStats.total) * 100 : 0}
+                    value={
+                      orderStats.total
+                        ? (orderStats.completed / orderStats.total) * 100
+                        : 0
+                    }
                     color='success'
                     sx={{ height: 4, borderRadius: 2, flexGrow: 1 }}
                   />
-                  <Typography variant='caption' sx={{ ml: 0.5, fontSize: '0.7rem' }} color='text.secondary'>
-                    {orderStats.total ? Math.round((orderStats.completed / orderStats.total) * 100) : 0}%
+                  <Typography
+                    variant='caption'
+                    sx={{ ml: 0.5, fontSize: '0.7rem' }}
+                    color='text.secondary'
+                  >
+                    {orderStats.total
+                      ? Math.round(
+                          (orderStats.completed / orderStats.total) * 100
+                        )
+                      : 0}
+                    %
                   </Typography>
                 </Box>
               </CardContent>
@@ -2662,20 +2738,39 @@ export default function Orders() {
           <Grid item xs={12} sm={6} md={3}>
             <Card raised={false} variant='outlined' sx={{ p: 1.5 }}>
               <CardContent sx={{ p: 0 }}>
-                <Typography color='text.secondary' variant='caption' sx={{ fontWeight: 600, fontSize: '0.75rem', display: 'block', mb: 0.5 }}>
+                <Typography
+                  color='text.secondary'
+                  variant='caption'
+                  sx={{
+                    fontWeight: 600,
+                    fontSize: '0.75rem',
+                    display: 'block',
+                    mb: 0.5,
+                  }}
+                >
                   Total Revenue
                 </Typography>
-                <Typography variant='h5' sx={{ mb: 1, fontWeight: 700, fontSize: '1.5rem' }}>
+                <Typography
+                  variant='h5'
+                  sx={{ mb: 1, fontWeight: 700, fontSize: '1.5rem' }}
+                >
                   {formatAmount(orderStats.totalRevenue)}
                 </Typography>
-                <LinearProgress variant='determinate' value={100} color='primary' sx={{ height: 4, borderRadius: 2 }} />
+                <LinearProgress
+                  variant='determinate'
+                  value={100}
+                  color='primary'
+                  sx={{ height: 4, borderRadius: 2 }}
+                />
               </CardContent>
             </Card>
           </Grid>
         </Grid>
 
         {/* Order Tabs */}
-        <Paper sx={{ borderBottom: 1, borderColor: 'divider', mb: 1, flexShrink: 0 }}>
+        <Paper
+          sx={{ borderBottom: 1, borderColor: 'divider', mb: 1, flexShrink: 0 }}
+        >
           <Tabs
             value={activeTab}
             onChange={handleTabChange}
@@ -2760,15 +2855,15 @@ export default function Orders() {
                       bgcolor: 'white',
                     },
                   }}
-                  aria-label="Search orders"
+                  aria-label='Search orders'
                 />
               </Grid>
 
               <Grid item xs={12} md={8}>
                 <Grid container spacing={2}>
                   <Grid item xs={12} sm={6} md={4}>
-                    <FormControl 
-                      fullWidth 
+                    <FormControl
+                      fullWidth
                       size='small'
                       sx={{
                         '& .MuiOutlinedInput-root': {
@@ -2785,7 +2880,7 @@ export default function Orders() {
                         value={paymentFilter}
                         onChange={e => setPaymentFilter(e.target.value)}
                         label='Payment Method'
-                        aria-label="Filter by payment method"
+                        aria-label='Filter by payment method'
                       >
                         <MenuItem value='all'>All Payment Methods</MenuItem>
                         {PAYMENT_METHODS.map(method => (
@@ -2798,8 +2893,8 @@ export default function Orders() {
                   </Grid>
 
                   <Grid item xs={12} sm={6} md={4}>
-                    <FormControl 
-                      fullWidth 
+                    <FormControl
+                      fullWidth
                       size='small'
                       sx={{
                         '& .MuiOutlinedInput-root': {
@@ -2816,7 +2911,7 @@ export default function Orders() {
                         value={purchaseTypeFilter}
                         onChange={e => setPurchaseTypeFilter(e.target.value)}
                         label='Purchase Type'
-                        aria-label="Filter by purchase type"
+                        aria-label='Filter by purchase type'
                       >
                         <MenuItem value='all'>All Types</MenuItem>
                         <MenuItem value='service'>Services Only</MenuItem>
@@ -2886,8 +2981,20 @@ export default function Orders() {
 
               {/* Date Range, Bulk Selection, and Info - All in One Compact Row */}
               <Grid item xs={12}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap', py: 0.5 }}>
-                  <Typography variant='caption' color='text.secondary' sx={{ fontWeight: 600, minWidth: 'fit-content' }}>
+                <Box
+                  sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 1.5,
+                    flexWrap: 'wrap',
+                    py: 0.5,
+                  }}
+                >
+                  <Typography
+                    variant='caption'
+                    color='text.secondary'
+                    sx={{ fontWeight: 600, minWidth: 'fit-content' }}
+                  >
                     Select Date Range:
                   </Typography>
                   <DateRangePicker
@@ -2912,8 +3019,8 @@ export default function Orders() {
                       setEndDate(newEndDate);
                       setPage(0);
                     }}
-                    sx={{ 
-                      textTransform: 'none', 
+                    sx={{
+                      textTransform: 'none',
                       fontSize: '0.7rem',
                       py: 0.4,
                       px: 1.2,
@@ -2936,9 +3043,9 @@ export default function Orders() {
                         setIsBulkDeleteMode(true);
                       }
                     }}
-                    startIcon={<DeleteOutlineIcon fontSize="small" />}
-                    sx={{ 
-                      textTransform: 'none', 
+                    startIcon={<DeleteOutlineIcon fontSize='small' />}
+                    sx={{
+                      textTransform: 'none',
                       fontSize: '0.7rem',
                       py: 0.4,
                       px: 1.2,
@@ -2946,7 +3053,9 @@ export default function Orders() {
                       minWidth: 'fit-content',
                     }}
                   >
-                    {isBulkDeleteMode ? 'Cancel Bulk Mode' : 'Enable Bulk Selection'}
+                    {isBulkDeleteMode
+                      ? 'Cancel Bulk Mode'
+                      : 'Enable Bulk Selection'}
                   </Button>
 
                   {isBulkDeleteMode && selectedOrders.length > 0 && (
@@ -2955,9 +3064,9 @@ export default function Orders() {
                       color='error'
                       size='small'
                       onClick={handleBulkDelete}
-                      startIcon={<DeleteIcon fontSize="small" />}
-                      sx={{ 
-                        textTransform: 'none', 
+                      startIcon={<DeleteIcon fontSize='small' />}
+                      sx={{
+                        textTransform: 'none',
                         fontSize: '0.7rem',
                         py: 0.4,
                         px: 1.2,
@@ -2974,7 +3083,8 @@ export default function Orders() {
                       color='text.secondary'
                       sx={{ fontWeight: 500, fontSize: '0.75rem', ml: 'auto' }}
                     >
-                      Loaded {orders.length} total | Showing {filteredOrders.length} orders
+                      Loaded {orders.length} total | Showing{' '}
+                      {filteredOrders.length} orders
                     </Typography>
                   )}
 
@@ -2983,9 +3093,12 @@ export default function Orders() {
                     const filters = [];
                     if (purchaseTypeFilter !== 'all') {
                       let label = '';
-                      if (purchaseTypeFilter === 'service') label = 'Services Only';
-                      else if (purchaseTypeFilter === 'product') label = 'Products Only';
-                      else if (purchaseTypeFilter === 'both') label = 'Services & Products';
+                      if (purchaseTypeFilter === 'service')
+                        label = 'Services Only';
+                      else if (purchaseTypeFilter === 'product')
+                        label = 'Products Only';
+                      else if (purchaseTypeFilter === 'both')
+                        label = 'Services & Products';
                       else if (purchaseTypeFilter.startsWith('product:')) {
                         const category = purchaseTypeFilter.split(':')[1];
                         label = `${category.charAt(0).toUpperCase() + category.slice(1)}`;
@@ -3018,7 +3131,11 @@ export default function Orders() {
                     }
                     return filters.length > 0 ? (
                       <>
-                        <Typography variant='caption' color='text.secondary' sx={{ fontSize: '0.7rem', fontWeight: 600 }}>
+                        <Typography
+                          variant='caption'
+                          color='text.secondary'
+                          sx={{ fontSize: '0.7rem', fontWeight: 600 }}
+                        >
                           Filters:
                         </Typography>
                         {filters}
@@ -3033,7 +3150,7 @@ export default function Orders() {
 
         {filteredOrders.length > 0 ? (
           <>
-            <Paper 
+            <Paper
               sx={{
                 flex: 1,
                 display: 'flex',
@@ -3042,270 +3159,306 @@ export default function Orders() {
                 mt: 1,
               }}
             >
-              <TableContainer 
+              <TableContainer
                 sx={{
                   flex: 1,
                   overflow: 'auto',
                 }}
               >
-                <Table stickyHeader size="small">
-                <TableHead>
-                  <TableRow>
-                    {isBulkDeleteMode && (
-                      <TableCell padding='checkbox'>
-                        <input
-                          ref={input => {
-                            if (input) {
-                              input.indeterminate =
-                                selectedOrders.length > 0 &&
-                                selectedOrders.length < paginatedOrders.length;
-                            }
-                          }}
-                          type='checkbox'
-                          checked={
-                            selectedOrders.length === paginatedOrders.length &&
-                            paginatedOrders.length > 0
-                          }
-                          onChange={e =>
-                            handleSelectAllOrders(e.target.checked)
-                          }
-                        />
-                      </TableCell>
-                    )}
-                    <TableCell>Order ID</TableCell>
-                    <TableCell>Invoice Number</TableCell>
-                    <TableCell>Date & Time</TableCell>
-                    <TableCell>Customer</TableCell>
-                    <TableCell>Stylist</TableCell>
-                    <TableCell>Items</TableCell>
-                    <TableCell>Type</TableCell>
-                    <TableCell>Payment</TableCell>
-                    <TableCell>Status</TableCell>
-                    <TableCell>Total Amount</TableCell>
-                    <TableCell align='right'>Actions</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {paginatedOrders.map(order => {
-                    // Check if this is a salon consumption order
-                    const isSalonOrder = isSalonConsumptionOrder(order);
-                    // Check if this is an aggregated multi-expert order
-                    const isAggregatedOrder = (order as any)
-                      .aggregated_multi_expert;
-
-                    return (
-                      <TableRow
-                        key={order.id}
-                        sx={{
-                          backgroundColor: isSalonOrder
-                            ? 'rgba(237, 108, 2, 0.05)'
-                            : isAggregatedOrder
-                              ? 'rgba(156, 39, 176, 0.05)'
-                              : 'inherit',
-                          '&:hover': {
-                            backgroundColor: isSalonOrder
-                              ? 'rgba(237, 108, 2, 0.12)'
-                              : isAggregatedOrder
-                                ? 'rgba(156, 39, 176, 0.12)'
-                                : 'rgba(0, 0, 0, 0.04)',
-                          },
-                          borderLeft: isAggregatedOrder
-                            ? '3px solid #9c27b0'
-                            : 'none',
-                        }}
-                      >
-                        {isBulkDeleteMode && (
-                          <TableCell padding='checkbox'>
-                            <input
-                              type='checkbox'
-                              checked={selectedOrders.includes(
-                                order.id
-                              )}
-                              onChange={e =>
-                                handleSelectOrder(
-                                  order.id,
-                                  e.target.checked
-                                )
+                <Table stickyHeader size='small'>
+                  <TableHead>
+                    <TableRow>
+                      {isBulkDeleteMode && (
+                        <TableCell padding='checkbox'>
+                          <input
+                            ref={input => {
+                              if (input) {
+                                input.indeterminate =
+                                  selectedOrders.length > 0 &&
+                                  selectedOrders.length <
+                                    paginatedOrders.length;
                               }
-                            />
+                            }}
+                            type='checkbox'
+                            checked={
+                              selectedOrders.length ===
+                                paginatedOrders.length &&
+                              paginatedOrders.length > 0
+                            }
+                            onChange={e =>
+                              handleSelectAllOrders(e.target.checked)
+                            }
+                          />
+                        </TableCell>
+                      )}
+                      <TableCell>Order ID</TableCell>
+                      <TableCell>Invoice Number</TableCell>
+                      <TableCell>Date & Time</TableCell>
+                      <TableCell>Customer</TableCell>
+                      <TableCell>Stylist</TableCell>
+                      <TableCell>Items</TableCell>
+                      <TableCell>Type</TableCell>
+                      <TableCell>Payment</TableCell>
+                      <TableCell>Status</TableCell>
+                      <TableCell>Total Amount</TableCell>
+                      <TableCell align='right'>Actions</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {paginatedOrders.map(order => {
+                      // Check if this is a salon consumption order
+                      const isSalonOrder = isSalonConsumptionOrder(order);
+                      // Check if this is an aggregated multi-expert order
+                      const isAggregatedOrder = (order as any)
+                        .aggregated_multi_expert;
+
+                      return (
+                        <TableRow
+                          key={order.id}
+                          sx={{
+                            backgroundColor: isSalonOrder
+                              ? 'rgba(237, 108, 2, 0.05)'
+                              : isAggregatedOrder
+                                ? 'rgba(156, 39, 176, 0.05)'
+                                : 'inherit',
+                            '&:hover': {
+                              backgroundColor: isSalonOrder
+                                ? 'rgba(237, 108, 2, 0.12)'
+                                : isAggregatedOrder
+                                  ? 'rgba(156, 39, 176, 0.12)'
+                                  : 'rgba(0, 0, 0, 0.04)',
+                            },
+                            borderLeft: isAggregatedOrder
+                              ? '3px solid #9c27b0'
+                              : 'none',
+                          }}
+                        >
+                          {isBulkDeleteMode && (
+                            <TableCell padding='checkbox'>
+                              <input
+                                type='checkbox'
+                                checked={selectedOrders.includes(order.id)}
+                                onChange={e =>
+                                  handleSelectOrder(order.id, e.target.checked)
+                                }
+                              />
+                            </TableCell>
+                          )}
+                          <TableCell>
+                            <Typography variant='body2' fontFamily='monospace'>
+                              {formatOrderId(order)}
+                              {isAggregatedOrder && (
+                                <Chip
+                                  size='small'
+                                  label='Multi-Expert'
+                                  color='secondary'
+                                  sx={{ ml: 1, fontSize: '0.7rem' }}
+                                />
+                              )}
+                            </Typography>
                           </TableCell>
-                        )}
-                        <TableCell>
-                          <Typography variant='body2' fontFamily='monospace'>
-                            {formatOrderId(order)}
-                            {isAggregatedOrder && (
+                          <TableCell>
+                            <Typography variant='body2' fontFamily='monospace'>
+                              {order.invoice_number || order.invoice_no || '-'}
+                            </Typography>
+                          </TableCell>
+                          <TableCell>
+                            {order.created_at ? (
+                              <Typography variant='body2' fontWeight='medium'>
+                                {new Date(
+                                  order.created_at
+                                ).toLocaleDateString()}
+                              </Typography>
+                            ) : (
+                              'Unknown date'
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {order.client_name || 'Unknown client'}
+                            {isSalonOrder && (
                               <Chip
                                 size='small'
-                                label='Multi-Expert'
-                                color='secondary'
-                                sx={{ ml: 1, fontSize: '0.7rem' }}
+                                label='Salon Use'
+                                color='warning'
+                                sx={{
+                                  ml: 1,
+                                  backgroundColor: '#FF6B00',
+                                  color: 'white',
+                                }}
                               />
                             )}
-                          </Typography>
-                        </TableCell>
-                        <TableCell>
-                          <Typography variant='body2' fontFamily='monospace'>
-                            {order.invoice_number || order.invoice_no || '-'}
-                          </Typography>
-                        </TableCell>
-                        <TableCell>
-                          {order.created_at ? (
-                            <Typography variant='body2' fontWeight='medium'>
-                              {new Date(order.created_at).toLocaleDateString()}
-                            </Typography>
-                          ) : (
-                            'Unknown date'
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          {order.client_name || 'Unknown client'}
-                          {isSalonOrder && (
-                            <Chip
-                              size='small'
-                              label='Salon Use'
-                              color='warning'
-                              sx={{
-                                ml: 1,
-                                backgroundColor: '#FF6B00',
-                                color: 'white',
-                              }}
-                            />
-                          )}
-                          {isSalonOrder && order.consumption_purpose && (
-                            <Typography variant='caption' color='text.secondary' component='div'>
-                              Purpose: {order.consumption_purpose}
-                            </Typography>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          {(() => {
-                            // Check if this is a multi-expert order by looking at services
-                            const allStylistsFromServices = new Set<string>();
-                            (order.services || []).forEach((service: any) => {
-                              // Add from legacy stylist_name field
-                              if (service.stylist_name) {
-                                allStylistsFromServices.add(
-                                  service.stylist_name
-                                );
-                              }
-                              // Add from experts array
-                              if (
-                                service.experts &&
-                                Array.isArray(service.experts)
-                              ) {
-                                service.experts.forEach((expert: any) => {
-                                  if (expert && expert.name) {
-                                    allStylistsFromServices.add(expert.name);
-                                  }
-                                });
-                              }
-                            });
-
-                            // Combine with order-level stylist info
-                            if (order.stylist_name) {
-                              // Split comma-separated names and add each
-                              order.stylist_name
-                                .split(',')
-                                .forEach((name: string) => {
-                                  const trimmedName = name.trim();
-                                  if (trimmedName) {
-                                    allStylistsFromServices.add(trimmedName);
-                                  }
-                                });
-                            }
-
-                            const allStylists = Array.from(
-                              allStylistsFromServices
-                            );
-
-                            if (allStylists.length === 0) {
-                              return 'No stylist';
-                            } else if (allStylists.length === 1) {
-                              return allStylists[0];
-                            } else {
-                              // Multi-expert scenario
-                              return (
-                                <Box>
-                                  <Typography variant='body2' component='div'>
-                                    {allStylists.join(', ')}
-                                  </Typography>
-                                  <Typography
-                                    variant='caption'
-                                    color='text.secondary'
-                                    component='div'
-                                  >
-                                    Multi-expert
-                                  </Typography>
-                                </Box>
-                              );
-                            }
-                          })()}
-                        </TableCell>
-                        <TableCell>
-                          {(() => {
-                            // Debug logging to understand the data structure
-                            console.log('🔍 Order services debug:', {
-                              orderId: order.id,
-                              services: order.services,
-                              servicesType: typeof order.services,
-                              servicesLength: order.services?.length,
-                              isArray: Array.isArray(order.services),
-                              firstService: order.services?.[0],
-                              serviceNames: order.services?.map(
-                                (s: any) =>
-                                  s.name || s.service_name || s.item_name
-                              ),
-                            });
-
-                            if (!order.services || order.services.length === 0)
-                              return '0 items';
-
-                            // For multi-expert orders, aggregate services by name to get correct counts
-                            if ((order as any).aggregated_multi_expert) {
-                              const serviceAggregation: Record<
-                                string,
-                                { quantity: number; count: number }
-                              > = {};
-
-                              order.services.forEach((service: any) => {
-                                // Handle both old and new service field names
-                                const serviceName =
-                                  service.name ||
-                                  service.service_name ||
-                                  service.item_name;
-                                const quantity = service.quantity || 1;
-
-                                if (!serviceAggregation[serviceName]) {
-                                  serviceAggregation[serviceName] = {
-                                    quantity: 0,
-                                    count: 0,
-                                  };
+                            {isSalonOrder && order.consumption_purpose && (
+                              <Typography
+                                variant='caption'
+                                color='text.secondary'
+                                component='div'
+                              >
+                                Purpose: {order.consumption_purpose}
+                              </Typography>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {(() => {
+                              // Check if this is a multi-expert order by looking at services
+                              const allStylistsFromServices = new Set<string>();
+                              (order.services || []).forEach((service: any) => {
+                                // Add from legacy stylist_name field
+                                if (service.stylist_name) {
+                                  allStylistsFromServices.add(
+                                    service.stylist_name
+                                  );
                                 }
-
-                                // Only count the service once, not per expert
+                                // Add from experts array
                                 if (
-                                  serviceAggregation[serviceName].count === 0
+                                  service.experts &&
+                                  Array.isArray(service.experts)
                                 ) {
-                                  serviceAggregation[serviceName].quantity =
-                                    quantity;
+                                  service.experts.forEach((expert: any) => {
+                                    if (expert && expert.name) {
+                                      allStylistsFromServices.add(expert.name);
+                                    }
+                                  });
                                 }
-                                serviceAggregation[serviceName].count = 1; // Mark as counted
                               });
 
-                              const uniqueServiceTypes =
-                                Object.keys(serviceAggregation).length;
-                              const totalQuantity = Object.values(
-                                serviceAggregation
-                              ).reduce((sum, item) => sum + item.quantity, 0);
-
-                              if (uniqueServiceTypes === 1) {
-                                return `${totalQuantity} item${totalQuantity > 1 ? 's' : ''}`;
+                              // Combine with order-level stylist info
+                              if (order.stylist_name) {
+                                // Split comma-separated names and add each
+                                order.stylist_name
+                                  .split(',')
+                                  .forEach((name: string) => {
+                                    const trimmedName = name.trim();
+                                    if (trimmedName) {
+                                      allStylistsFromServices.add(trimmedName);
+                                    }
+                                  });
                               }
+
+                              const allStylists = Array.from(
+                                allStylistsFromServices
+                              );
+
+                              if (allStylists.length === 0) {
+                                return 'No stylist';
+                              } else if (allStylists.length === 1) {
+                                return allStylists[0];
+                              } else {
+                                // Multi-expert scenario
+                                return (
+                                  <Box>
+                                    <Typography variant='body2' component='div'>
+                                      {allStylists.join(', ')}
+                                    </Typography>
+                                    <Typography
+                                      variant='caption'
+                                      color='text.secondary'
+                                      component='div'
+                                    >
+                                      Multi-expert
+                                    </Typography>
+                                  </Box>
+                                );
+                              }
+                            })()}
+                          </TableCell>
+                          <TableCell>
+                            {(() => {
+                              // Debug logging to understand the data structure
+                              console.log('🔍 Order services debug:', {
+                                orderId: order.id,
+                                services: order.services,
+                                servicesType: typeof order.services,
+                                servicesLength: order.services?.length,
+                                isArray: Array.isArray(order.services),
+                                firstService: order.services?.[0],
+                                serviceNames: order.services?.map(
+                                  (s: any) =>
+                                    s.name || s.service_name || s.item_name
+                                ),
+                              });
+
+                              if (
+                                !order.services ||
+                                order.services.length === 0
+                              )
+                                return '0 items';
+
+                              // For multi-expert orders, aggregate services by name to get correct counts
+                              if ((order as any).aggregated_multi_expert) {
+                                const serviceAggregation: Record<
+                                  string,
+                                  { quantity: number; count: number }
+                                > = {};
+
+                                order.services.forEach((service: any) => {
+                                  // Handle both old and new service field names
+                                  const serviceName =
+                                    service.name ||
+                                    service.service_name ||
+                                    service.item_name;
+                                  const quantity = service.quantity || 1;
+
+                                  if (!serviceAggregation[serviceName]) {
+                                    serviceAggregation[serviceName] = {
+                                      quantity: 0,
+                                      count: 0,
+                                    };
+                                  }
+
+                                  // Only count the service once, not per expert
+                                  if (
+                                    serviceAggregation[serviceName].count === 0
+                                  ) {
+                                    serviceAggregation[serviceName].quantity =
+                                      quantity;
+                                  }
+                                  serviceAggregation[serviceName].count = 1; // Mark as counted
+                                });
+
+                                const uniqueServiceTypes =
+                                  Object.keys(serviceAggregation).length;
+                                const totalQuantity = Object.values(
+                                  serviceAggregation
+                                ).reduce((sum, item) => sum + item.quantity, 0);
+
+                                if (uniqueServiceTypes === 1) {
+                                  return `${totalQuantity} item${totalQuantity > 1 ? 's' : ''}`;
+                                }
+
+                                return (
+                                  <Box>
+                                    <Typography variant='body2' component='div'>
+                                      {uniqueServiceTypes} types
+                                    </Typography>
+                                    <Typography
+                                      variant='caption'
+                                      color='text.secondary'
+                                      component='div'
+                                    >
+                                      {totalQuantity} total qty
+                                    </Typography>
+                                  </Box>
+                                );
+                              }
+
+                              // For regular orders, use the existing logic
+                              const itemCount = order.services.length;
+                              const totalQuantity = order.services.reduce(
+                                (sum: number, service: any) => {
+                                  // Handle both old and new service field names
+                                  return sum + (service.quantity || 1);
+                                },
+                                0
+                              );
+
+                              if (itemCount === 0) return '0 items';
+                              if (itemCount === 1)
+                                return `${totalQuantity} item${totalQuantity > 1 ? 's' : ''}`;
 
                               return (
                                 <Box>
                                   <Typography variant='body2' component='div'>
-                                    {uniqueServiceTypes} types
+                                    {itemCount} types
                                   </Typography>
                                   <Typography
                                     variant='caption'
@@ -3316,223 +3469,220 @@ export default function Orders() {
                                   </Typography>
                                 </Box>
                               );
-                            }
-
-                            // For regular orders, use the existing logic
-                            const itemCount = order.services.length;
-                            const totalQuantity = order.services.reduce(
-                              (sum: number, service: any) => {
-                                // Handle both old and new service field names
-                                return sum + (service.quantity || 1);
-                              },
-                              0
-                            );
-
-                            if (itemCount === 0) return '0 items';
-                            if (itemCount === 1)
-                              return `${totalQuantity} item${totalQuantity > 1 ? 's' : ''}`;
-
-                            return (
-                              <Box>
-                                <Typography variant='body2' component='div'>
-                                  {itemCount} types
-                                </Typography>
-                                <Typography
-                                  variant='caption'
-                                  color='text.secondary'
-                                  component='div'
-                                >
-                                  {totalQuantity} total qty
-                                </Typography>
-                              </Box>
-                            );
-                          })()}
-                        </TableCell>
-                        <TableCell>
-                          <Tooltip
-                            title={
-                              <Box sx={{ p: 1 }}>
-                                <Typography variant="caption" sx={{ fontWeight: 600, display: 'block', mb: 0.5 }}>
-                                  Order Details:
-                                </Typography>
-                                {order.services && order.services.length > 0 ? (
-                                  order.services.map((service: any, idx: number) => (
-                                    <Typography key={idx} variant="caption" sx={{ display: 'block', mb: 0.3 }}>
-                                      • {service.name || service.service_name || service.product_name || 'Unknown'} 
-                                      {service.quantity > 1 && ` (×${service.quantity})`}
+                            })()}
+                          </TableCell>
+                          <TableCell>
+                            <Tooltip
+                              title={
+                                <Box sx={{ p: 1 }}>
+                                  <Typography
+                                    variant='caption'
+                                    sx={{
+                                      fontWeight: 600,
+                                      display: 'block',
+                                      mb: 0.5,
+                                    }}
+                                  >
+                                    Order Details:
+                                  </Typography>
+                                  {order.services &&
+                                  order.services.length > 0 ? (
+                                    order.services.map(
+                                      (service: any, idx: number) => (
+                                        <Typography
+                                          key={idx}
+                                          variant='caption'
+                                          sx={{ display: 'block', mb: 0.3 }}
+                                        >
+                                          •{' '}
+                                          {service.name ||
+                                            service.service_name ||
+                                            service.product_name ||
+                                            'Unknown'}
+                                          {service.quantity > 1 &&
+                                            ` (×${service.quantity})`}
+                                        </Typography>
+                                      )
+                                    )
+                                  ) : (
+                                    <Typography variant='caption'>
+                                      No items
                                     </Typography>
-                                  ))
-                                ) : (
-                                  <Typography variant="caption">No items</Typography>
+                                  )}
+                                </Box>
+                              }
+                              arrow
+                              placement='left'
+                            >
+                              <Box sx={{ cursor: 'pointer' }}>
+                                {renderPurchaseTypeChip(
+                                  getPurchaseType(order),
+                                  order
                                 )}
                               </Box>
-                            }
-                            arrow
-                            placement="left"
-                          >
-                            <Box sx={{ cursor: 'pointer' }}>
-                              {renderPurchaseTypeChip(
-                                getPurchaseType(order),
-                                order
-                              )}
-                            </Box>
-                          </Tooltip>
-                        </TableCell>
-                        <TableCell>{renderPaymentMethods(order)}</TableCell>
-                        <TableCell>
-                          <Chip
-                            size='small'
-                            label={order.status || 'unknown'}
-                            color={
-                              order.status === 'completed'
-                                ? 'success'
-                                : order.status === 'pending'
-                                  ? 'warning'
-                                  : 'default'
-                            }
-                          />
-                        </TableCell>
-                        <TableCell>
-                          {(() => {
-                            // Check if this is an aggregated multi-expert order
-                            const isAggregatedOrder = (order as any)
-                              .aggregated_multi_expert;
-
-                            // Calculate total from actual payments for accuracy
-                            let displayTotal =
-                              order.total_amount || order.total || 0;
-
-                            if (isAggregatedOrder) {
-                              // For multi-expert orders, calculate the correct total from services
-                              if (order.services && order.services.length > 0) {
-                                const serviceAggregation: Record<
-                                  string,
-                                  { total_price: number }
-                                > = {};
-
-                                order.services.forEach((service: any) => {
-                                  const serviceName =
-                                    service.service_name ||
-                                    service.item_name ||
-                                    service.name;
-                                  const quantity = service.quantity || 1;
-                                  const price = service.price || 0;
-
-                                  if (!serviceAggregation[serviceName]) {
-                                    serviceAggregation[serviceName] = {
-                                      total_price: 0,
-                                    };
-                                  }
-                                  serviceAggregation[serviceName].total_price +=
-                                    price * quantity;
-                                });
-
-                                const correctSubtotal = Object.values(
-                                  serviceAggregation
-                                ).reduce(
-                                  (sum, item) => sum + item.total_price,
-                                  0
-                                );
-                                const correctTax = correctSubtotal * 0.18;
-                                displayTotal =
-                                  correctSubtotal +
-                                  correctTax -
-                                  (order.discount || 0);
+                            </Tooltip>
+                          </TableCell>
+                          <TableCell>{renderPaymentMethods(order)}</TableCell>
+                          <TableCell>
+                            <Chip
+                              size='small'
+                              label={order.status || 'unknown'}
+                              color={
+                                order.status === 'completed'
+                                  ? 'success'
+                                  : order.status === 'pending'
+                                    ? 'warning'
+                                    : 'default'
                               }
-                            } else if (
-                              order.payments &&
-                              order.payments.length > 0
-                            ) {
-                              // For regular orders, calculate total payments excluding membership payments
-                              const regularPaymentTotal = order.payments
-                                .filter(
-                                  (payment: any) =>
-                                    payment.payment_method !== 'membership'
-                                )
-                                .reduce(
-                                  (sum: number, payment: any) =>
-                                    sum + (payment.amount || 0),
-                                  0
-                                );
+                            />
+                          </TableCell>
+                          <TableCell>
+                            {(() => {
+                              // Check if this is an aggregated multi-expert order
+                              const isAggregatedOrder = (order as any)
+                                .aggregated_multi_expert;
 
-                              // If there are any regular payments, use that as the display total
-                              // Otherwise, fall back to the original total amount
-                              if (regularPaymentTotal > 0) {
-                                displayTotal = regularPaymentTotal;
-                              }
-                            }
+                              // Calculate total from actual payments for accuracy
+                              let displayTotal =
+                                order.total_amount || order.total || 0;
 
-                            return (
-                              <Typography
-                                fontWeight='medium'
-                                color={
-                                  isSalonOrder ? '#FF6B00' : 'text.primary'
+                              if (isAggregatedOrder) {
+                                // For multi-expert orders, calculate the correct total from services
+                                if (
+                                  order.services &&
+                                  order.services.length > 0
+                                ) {
+                                  const serviceAggregation: Record<
+                                    string,
+                                    { total_price: number }
+                                  > = {};
+
+                                  order.services.forEach((service: any) => {
+                                    const serviceName =
+                                      service.service_name ||
+                                      service.item_name ||
+                                      service.name;
+                                    const quantity = service.quantity || 1;
+                                    const price = service.price || 0;
+
+                                    if (!serviceAggregation[serviceName]) {
+                                      serviceAggregation[serviceName] = {
+                                        total_price: 0,
+                                      };
+                                    }
+                                    serviceAggregation[
+                                      serviceName
+                                    ].total_price += price * quantity;
+                                  });
+
+                                  const correctSubtotal = Object.values(
+                                    serviceAggregation
+                                  ).reduce(
+                                    (sum, item) => sum + item.total_price,
+                                    0
+                                  );
+                                  const correctTax = correctSubtotal * 0.18;
+                                  displayTotal =
+                                    correctSubtotal +
+                                    correctTax -
+                                    (order.discount || 0);
                                 }
-                              >
-                                {formatAmount(displayTotal)}
-                              </Typography>
-                            );
-                          })()}
-                        </TableCell>
-                        <TableCell align='right'>
-                          <ButtonGroup 
-                            size='small' 
-                            variant='outlined'
-                            sx={{
-                              '& .MuiButton-root': {
-                                borderRadius: '6px',
-                                textTransform: 'none',
-                                fontWeight: 600,
-                                fontSize: '0.8rem',
-                                px: 1.5,
-                                py: 0.5,
-                              },
-                            }}
-                          >
-                            <Tooltip title='View order details' arrow>
-                              <Button
-                                color='primary'
-                                onClick={() => handleViewDetails(order)}
-                                startIcon={<VisibilityIcon fontSize="small" />}
-                                aria-label="View order details"
-                              >
-                                View
-                              </Button>
-                            </Tooltip>
-                            <Tooltip title='Edit Order'>
-                              <Button
-                                color='info'
-                                onClick={() => handleEditOrder(order)}
-                                startIcon={<EditIcon />}
-                              >
-                                Edit
-                              </Button>
-                            </Tooltip>
-                            <Tooltip title='Print Bill'>
-                              <Button
-                                color='secondary'
-                                onClick={() => handlePrintBill(order)}
-                                startIcon={<PrintIcon />}
-                              >
-                                Print
-                              </Button>
-                            </Tooltip>
-                            <Tooltip title='Delete Order'>
-                              <Button
-                                color='error'
-                                onClick={() => handleDeleteOrder(order)}
-                                startIcon={<DeleteIcon />}
-                              >
-                                Delete
-                              </Button>
-                            </Tooltip>
-                          </ButtonGroup>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
+                              } else if (
+                                order.payments &&
+                                order.payments.length > 0
+                              ) {
+                                // For regular orders, calculate total payments excluding membership payments
+                                const regularPaymentTotal = order.payments
+                                  .filter(
+                                    (payment: any) =>
+                                      payment.payment_method !== 'membership'
+                                  )
+                                  .reduce(
+                                    (sum: number, payment: any) =>
+                                      sum + (payment.amount || 0),
+                                    0
+                                  );
+
+                                // If there are any regular payments, use that as the display total
+                                // Otherwise, fall back to the original total amount
+                                if (regularPaymentTotal > 0) {
+                                  displayTotal = regularPaymentTotal;
+                                }
+                              }
+
+                              return (
+                                <Typography
+                                  fontWeight='medium'
+                                  color={
+                                    isSalonOrder ? '#FF6B00' : 'text.primary'
+                                  }
+                                >
+                                  {formatAmount(displayTotal)}
+                                </Typography>
+                              );
+                            })()}
+                          </TableCell>
+                          <TableCell align='right'>
+                            <ButtonGroup
+                              size='small'
+                              variant='outlined'
+                              sx={{
+                                '& .MuiButton-root': {
+                                  borderRadius: '6px',
+                                  textTransform: 'none',
+                                  fontWeight: 600,
+                                  fontSize: '0.8rem',
+                                  px: 1.5,
+                                  py: 0.5,
+                                },
+                              }}
+                            >
+                              <Tooltip title='View order details' arrow>
+                                <Button
+                                  color='primary'
+                                  onClick={() => handleViewDetails(order)}
+                                  startIcon={
+                                    <VisibilityIcon fontSize='small' />
+                                  }
+                                  aria-label='View order details'
+                                >
+                                  View
+                                </Button>
+                              </Tooltip>
+                              <Tooltip title='Edit Order'>
+                                <Button
+                                  color='info'
+                                  onClick={() => handleEditOrder(order)}
+                                  startIcon={<EditIcon />}
+                                >
+                                  Edit
+                                </Button>
+                              </Tooltip>
+                              <Tooltip title='Print Bill'>
+                                <Button
+                                  color='secondary'
+                                  onClick={() => handlePrintBill(order)}
+                                  startIcon={<PrintIcon />}
+                                >
+                                  Print
+                                </Button>
+                              </Tooltip>
+                              <Tooltip title='Delete Order'>
+                                <Button
+                                  color='error'
+                                  onClick={() => handleDeleteOrder(order)}
+                                  startIcon={<DeleteIcon />}
+                                >
+                                  Delete
+                                </Button>
+                              </Tooltip>
+                            </ButtonGroup>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
               </TableContainer>
 
               {/* Pagination */}
@@ -3546,25 +3696,25 @@ export default function Orders() {
                   flexShrink: 0,
                 }}
               >
-              <TablePagination
-                component='div'
-                count={filteredOrders.length}
-                page={page}
-                onPageChange={handleChangePage}
-                rowsPerPage={rowsPerPage}
-                onRowsPerPageChange={handleChangeRowsPerPage}
-                rowsPerPageOptions={[
-                  5,
-                  10,
-                  25,
-                  50,
-                  100,
-                  250,
-                  500,
-                  1000,
-                  { label: 'All', value: -1 },
-                ]}
-              />
+                <TablePagination
+                  component='div'
+                  count={filteredOrders.length}
+                  page={page}
+                  onPageChange={handleChangePage}
+                  rowsPerPage={rowsPerPage}
+                  onRowsPerPageChange={handleChangeRowsPerPage}
+                  rowsPerPageOptions={[
+                    5,
+                    10,
+                    25,
+                    50,
+                    100,
+                    250,
+                    500,
+                    1000,
+                    { label: 'All', value: -1 },
+                  ]}
+                />
               </Box>
             </Paper>
           </>
@@ -3632,7 +3782,10 @@ export default function Orders() {
                     )}
                   </Typography>
                   <Typography variant='body2'>
-                    <strong>Invoice Number:</strong> {selectedOrder.invoice_number || selectedOrder.invoice_no || 'Not available'}
+                    <strong>Invoice Number:</strong>{' '}
+                    {selectedOrder.invoice_number ||
+                      selectedOrder.invoice_no ||
+                      'Not available'}
                   </Typography>
                   <Typography variant='body2'>
                     <strong>Date:</strong>{' '}
@@ -3652,7 +3805,8 @@ export default function Orders() {
                   {isSalonConsumptionOrder(selectedOrder) &&
                     selectedOrder.consumption_purpose && (
                       <Typography variant='body2' sx={{ mt: 0.5 }}>
-                        <strong>Purpose:</strong> {selectedOrder.consumption_purpose}
+                        <strong>Purpose:</strong>{' '}
+                        {selectedOrder.consumption_purpose}
                       </Typography>
                     )}
                   <Typography variant='body2'>

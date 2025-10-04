@@ -174,17 +174,16 @@ ON stock_transaction_log (product_id, timestamp);
     }
 
     console.log('✅ Atomic stock update function deployed successfully!');
-    
+
     // Test the function to make sure it works
     const testResult = await testAtomicStockUpdateFunction();
-    
+
     return {
       success: true,
-      message: testResult.success 
+      message: testResult.success
         ? 'Atomic stock update function deployed and tested successfully'
         : `Function deployed but test failed: ${testResult.error}`,
     };
-
   } catch (error) {
     console.error('❌ Error deploying atomic stock update function:', error);
     return {
@@ -221,7 +220,9 @@ const testAtomicStockUpdateFunction = async (): Promise<{
       };
     }
 
-    console.log(`📦 Testing with product: ${testProduct.name} (ID: ${testProduct.id})`);
+    console.log(
+      `📦 Testing with product: ${testProduct.name} (ID: ${testProduct.id})`
+    );
 
     // Test the atomic function
     const { data: result, error } = await supabase.rpc(
@@ -261,7 +262,6 @@ const testAtomicStockUpdateFunction = async (): Promise<{
       success: true,
       message: `Function test passed in ${result.duration_microseconds} microseconds`,
     };
-
   } catch (error) {
     return {
       success: false,
@@ -306,7 +306,6 @@ export const getStockTransactionLogs = async (
       success: true,
       data: data || [],
     };
-
   } catch (error) {
     return {
       success: false,
@@ -314,4 +313,3 @@ export const getStockTransactionLogs = async (
     };
   }
 };
-

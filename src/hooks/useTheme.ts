@@ -1,6 +1,6 @@
 /**
  * Custom hook to access centralized theme configuration
- * 
+ *
  * Usage:
  * const theme = useAppTheme();
  * sx={{ bgcolor: theme.colors.primary.main }}
@@ -13,4 +13,3 @@ export const useAppTheme = () => {
 };
 
 export default useAppTheme;
-

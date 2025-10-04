@@ -41,12 +41,14 @@ export const addPurchaseTransaction = async (
 
     // --- Step 0: Validate input data ---
     const validation = await validatePurchaseData(purchaseData);
-    
+
     // Handle critical errors
     if (validation.criticalErrors.length > 0) {
-      throw new Error(`Validation failed: ${validation.criticalErrors.join(', ')}`);
+      throw new Error(
+        `Validation failed: ${validation.criticalErrors.join(', ')}`
+      );
     }
-    
+
     // Log warnings but continue
     if (validation.warnings.length > 0) {
       console.warn('Purchase validation warnings:', validation.warnings);
@@ -124,7 +126,7 @@ export const addPurchaseTransaction = async (
     // RACE CONDITION FIX: Use atomic transaction with microsecond precision
     // This ensures we get the most current stock and update it atomically
     const quantityChange = purchaseData.purchase_qty || 0;
-    
+
     console.log(
       `[ATOMIC STOCK UPDATE] Starting atomic transaction for ${purchaseData.product_name} | Purchase Qty: ${quantityChange} | Timestamp: ${new Date().toISOString()}`
     );
@@ -138,7 +140,9 @@ export const addPurchaseTransaction = async (
       .single();
 
     if (preCheckError || !preCheckStock) {
-      throw new Error(`Failed to read current stock before purchase: ${preCheckError?.message || 'Product not found'}`);
+      throw new Error(
+        `Failed to read current stock before purchase: ${preCheckError?.message || 'Product not found'}`
+      );
     }
 
     console.log(
@@ -150,32 +154,43 @@ export const addPurchaseTransaction = async (
     // Using direct method ensures we ALWAYS use the freshest stock value
     let currentProductStock: number;
     let newOverallProductStock: number;
-    
-    console.log(`[DIRECT STOCK UPDATE] Using pre-checked stock value for ${purchaseData.product_name}`);
-    
+
+    console.log(
+      `[DIRECT STOCK UPDATE] Using pre-checked stock value for ${purchaseData.product_name}`
+    );
+
     // CRITICAL: Use the pre-checked stock value (freshly fetched)
     // This ensures we use the EXACT stock value that exists RIGHT NOW
     currentProductStock = preCheckStock.stock_quantity;
-    
+
     // DATE AND TIMESTAMP BASED LOGIC: Determine if this is a historical or current purchase
     const purchaseDate = new Date(purchaseData.date || new Date());
     const currentTimestamp = new Date();
-    
+
     // Normalize dates to compare only date parts (ignore time)
-    const purchaseDateOnly = new Date(purchaseDate.getFullYear(), purchaseDate.getMonth(), purchaseDate.getDate());
-    const todayDateOnly = new Date(currentTimestamp.getFullYear(), currentTimestamp.getMonth(), currentTimestamp.getDate());
-    
+    const purchaseDateOnly = new Date(
+      purchaseDate.getFullYear(),
+      purchaseDate.getMonth(),
+      purchaseDate.getDate()
+    );
+    const todayDateOnly = new Date(
+      currentTimestamp.getFullYear(),
+      currentTimestamp.getMonth(),
+      currentTimestamp.getDate()
+    );
+
     // Calculate difference in days (can be negative for future dates)
-    const timeDifferenceMs = currentTimestamp.getTime() - purchaseDate.getTime();
+    const timeDifferenceMs =
+      currentTimestamp.getTime() - purchaseDate.getTime();
     const daysDifference = Math.floor(timeDifferenceMs / (1000 * 60 * 60 * 24));
     const isHistoricalEntry = daysDifference > 1; // More than 1 day old
     const isFutureEntry = daysDifference < 0; // Future date
     const isCurrentEntry = !isHistoricalEntry && !isFutureEntry; // Today or yesterday
-    
+
     // Determine stock update behavior based on timestamp analysis
     let shouldUpdateCurrentStock = false;
     let stockUpdateReason = '';
-    
+
     if (isFutureEntry) {
       // Future entries should not affect current stock
       shouldUpdateCurrentStock = false;
@@ -189,12 +204,12 @@ export const addPurchaseTransaction = async (
       shouldUpdateCurrentStock = true;
       stockUpdateReason = `CURRENT ENTRY (${daysDifference} days ago)`;
     }
-    
+
     // Apply stock update logic based on timestamp analysis
     if (shouldUpdateCurrentStock) {
       // Recent/current purchase - update current stock normally
       newOverallProductStock = currentProductStock + quantityChange;
-    console.log(
+      console.log(
         `[${stockUpdateReason}] Date: ${purchaseDate.toISOString()}, Updating current stock: ${currentProductStock} + ${quantityChange} = ${newOverallProductStock}`
       );
     } else {
@@ -204,24 +219,24 @@ export const addPurchaseTransaction = async (
         `[${stockUpdateReason}] Date: ${purchaseDate.toISOString()}, NOT updating current stock. Stock remains: ${currentProductStock}`
       );
     }
-    
+
     console.log(
       `[PRE-UPDATE] Captured stock BEFORE update - Previous: ${currentProductStock}, Will add: ${quantityChange}, New will be: ${newOverallProductStock}`
     );
-    
+
     // Update stock immediately to minimize race condition window
     const { error: updateError } = await supabase
       .from('product_master')
-      .update({ 
+      .update({
         stock_quantity: newOverallProductStock,
-        updated_at: new Date().toISOString()
+        updated_at: new Date().toISOString(),
       })
       .eq('id', productId);
 
     if (updateError) {
       throw new Error(`Failed to update stock: ${updateError.message}`);
     }
-    
+
     // CRITICAL FIX: Re-read the stock AFTER update to confirm the actual value
     // This handles race conditions where stock was changed between pre-check and update
     const { data: postUpdateStock, error: postUpdateError } = await supabase
@@ -229,9 +244,11 @@ export const addPurchaseTransaction = async (
       .select('stock_quantity')
       .eq('id', productId)
       .single();
-    
+
     if (postUpdateError || !postUpdateStock) {
-      console.warn('Could not verify stock after update, using calculated value');
+      console.warn(
+        'Could not verify stock after update, using calculated value'
+      );
     } else if (postUpdateStock.stock_quantity !== newOverallProductStock) {
       console.warn(
         `[STOCK DRIFT DETECTED] Expected ${newOverallProductStock} but found ${postUpdateStock.stock_quantity} after update. Adjusting to actual value.`
@@ -240,21 +257,25 @@ export const addPurchaseTransaction = async (
       newOverallProductStock = postUpdateStock.stock_quantity;
       currentProductStock = newOverallProductStock - quantityChange;
     }
-    
+
     console.log(
       `[DIRECT STOCK UPDATE] SUCCESS | Product: ${purchaseData.product_name} | Previous Stock: ${currentProductStock} | Purchase Qty: ${quantityChange} | New Stock: ${newOverallProductStock}`
     );
-    
+
     // Validate the calculation based on entry type
     if (shouldUpdateCurrentStock) {
       // For current entries, new stock should equal current + change
-    if (newOverallProductStock !== (currentProductStock + quantityChange)) {
-        throw new Error(`Stock calculation error for current entry: Expected ${currentProductStock + quantityChange}, got ${newOverallProductStock}`);
+      if (newOverallProductStock !== currentProductStock + quantityChange) {
+        throw new Error(
+          `Stock calculation error for current entry: Expected ${currentProductStock + quantityChange}, got ${newOverallProductStock}`
+        );
       }
     } else {
       // For historical entries, new stock should remain unchanged
       if (newOverallProductStock !== currentProductStock) {
-        throw new Error(`Stock calculation error for historical entry: Expected ${currentProductStock} (unchanged), got ${newOverallProductStock}`);
+        throw new Error(
+          `Stock calculation error for historical entry: Expected ${currentProductStock} (unchanged), got ${newOverallProductStock}`
+        );
       }
     }
 
@@ -262,11 +283,13 @@ export const addPurchaseTransaction = async (
     // For historical entries, we need to calculate what the stock was at that specific date
     // by looking at all purchases BEFORE this date and starting from 0
     let historicalStockAtPurchase = 0;
-    
+
     if (!shouldUpdateCurrentStock) {
       // This is a historical entry - calculate stock at that specific date
-      console.log(`[CHRONOLOGICAL CALCULATION] Calculating historical stock for date: ${purchaseDate.toISOString()}`);
-      
+      console.log(
+        `[CHRONOLOGICAL CALCULATION] Calculating historical stock for date: ${purchaseDate.toISOString()}`
+      );
+
       // Get all purchases for this product BEFORE this purchase date (excluding this one)
       const { data: previousPurchases, error: historyError } = await supabase
         .from('purchase_history_with_stock')
@@ -274,30 +297,45 @@ export const addPurchaseTransaction = async (
         .eq('product_id', productId)
         .lt('date', purchaseDate.toISOString())
         .order('date', { ascending: true });
-      
+
       if (historyError) {
-        console.error('[CHRONOLOGICAL CALCULATION] Error fetching previous purchases:', historyError);
+        console.error(
+          '[CHRONOLOGICAL CALCULATION] Error fetching previous purchases:',
+          historyError
+        );
         // Fallback to current stock if we can't get history
         historicalStockAtPurchase = currentProductStock + quantityChange;
       } else {
         // Calculate stock at that historical date by summing all previous purchases
-        const totalPreviousPurchases = previousPurchases?.reduce((sum, p) => sum + (p.purchase_qty || 0), 0) || 0;
-        
+        const totalPreviousPurchases =
+          previousPurchases?.reduce(
+            (sum, p) => sum + (p.purchase_qty || 0),
+            0
+          ) || 0;
+
         // Historical stock = sum of all previous purchases + this purchase
         historicalStockAtPurchase = totalPreviousPurchases + quantityChange;
-        
-        console.log(`[CHRONOLOGICAL CALCULATION] Found ${previousPurchases?.length || 0} previous purchases`);
-        console.log(`[CHRONOLOGICAL CALCULATION] Previous purchases total: ${totalPreviousPurchases}`);
-        console.log(`[CHRONOLOGICAL CALCULATION] This purchase: ${quantityChange}`);
-        console.log(`[CHRONOLOGICAL CALCULATION] Historical stock at ${purchaseDate.toISOString()}: ${historicalStockAtPurchase}`);
+
+        console.log(
+          `[CHRONOLOGICAL CALCULATION] Found ${previousPurchases?.length || 0} previous purchases`
+        );
+        console.log(
+          `[CHRONOLOGICAL CALCULATION] Previous purchases total: ${totalPreviousPurchases}`
+        );
+        console.log(
+          `[CHRONOLOGICAL CALCULATION] This purchase: ${quantityChange}`
+        );
+        console.log(
+          `[CHRONOLOGICAL CALCULATION] Historical stock at ${purchaseDate.toISOString()}: ${historicalStockAtPurchase}`
+        );
       }
     }
-    
+
     // Determine the correct stock value for purchase history record
-    const purchaseHistoryStock = shouldUpdateCurrentStock 
-      ? newOverallProductStock  // Current entries: use actual current stock
-      : historicalStockAtPurchase;  // Historical entries: use calculated historical stock
-    
+    const purchaseHistoryStock = shouldUpdateCurrentStock
+      ? newOverallProductStock // Current entries: use actual current stock
+      : historicalStockAtPurchase; // Historical entries: use calculated historical stock
+
     console.log(
       `[PURCHASE HISTORY] ${stockUpdateReason} - Using stock value: ${purchaseHistoryStock} for purchase history record`
     );
@@ -392,7 +430,7 @@ export const addPurchaseTransaction = async (
     // --- AUTO-ADJUST MECHANISM ---
     // Always recalculate ALL purchase history entries to maintain chronological consistency
     console.log(`[AUTO-ADJUST] Starting complete chronological recalculation`);
-    
+
     // Get ALL purchases for this product in chronological order
     const { data: allPurchases, error: purchasesError } = await supabase
       .from('purchase_history_with_stock')
@@ -400,94 +438,124 @@ export const addPurchaseTransaction = async (
       .eq('product_id', productId)
       .order('date', { ascending: true })
       .order('created_at', { ascending: true });
-    
+
     if (purchasesError) {
       console.error('[AUTO-ADJUST] Error fetching purchases:', purchasesError);
-      throw new Error(`Failed to fetch purchases for recalculation: ${purchasesError.message}`);
+      throw new Error(
+        `Failed to fetch purchases for recalculation: ${purchasesError.message}`
+      );
     }
 
     if (allPurchases && allPurchases.length > 0) {
-      console.log(`[AUTO-ADJUST] Found ${allPurchases.length} entries to recalculate`);
-      
+      console.log(
+        `[AUTO-ADJUST] Found ${allPurchases.length} entries to recalculate`
+      );
+
       // Recalculate stock for ALL entries chronologically
       let runningStock = 0;
       const updates: Array<{ id: string; stock: number }> = [];
-      
+
       for (const purchase of allPurchases) {
         // Add this purchase's quantity to the running stock
         runningStock += purchase.purchase_qty || 0;
         updates.push({ id: purchase.purchase_id, stock: runningStock });
-        
+
         console.log(
           `[AUTO-ADJUST] Purchase ${purchase.purchase_id} on ${purchase.date}: +${purchase.purchase_qty} = ${runningStock}`
         );
       }
-      
+
       // Update all purchases with their correct chronological stock values
       for (const update of updates) {
         const { error: updateError } = await supabase
           .from('purchase_history_with_stock')
           .update({
             current_stock_at_purchase: update.stock,
-            updated_at: new Date().toISOString()
+            updated_at: new Date().toISOString(),
           })
           .eq('purchase_id', update.id);
-        
+
         if (updateError) {
-          console.error(`[AUTO-ADJUST] Error updating purchase ${update.id}:`, updateError);
+          console.error(
+            `[AUTO-ADJUST] Error updating purchase ${update.id}:`,
+            updateError
+          );
         } else {
-          console.log(`[AUTO-ADJUST] ✅ Updated purchase ${update.id} to stock: ${update.stock}`);
+          console.log(
+            `[AUTO-ADJUST] ✅ Updated purchase ${update.id} to stock: ${update.stock}`
+          );
         }
       }
-      
+
       // Update product_master with the final stock value
       const finalStock = runningStock;
       const { error: masterUpdateError } = await supabase
         .from('product_master')
         .update({
           stock_quantity: finalStock,
-          updated_at: new Date().toISOString()
+          updated_at: new Date().toISOString(),
         })
         .eq('id', productId);
-      
+
       if (masterUpdateError) {
-        console.error('[AUTO-ADJUST] Error updating product_master:', masterUpdateError);
+        console.error(
+          '[AUTO-ADJUST] Error updating product_master:',
+          masterUpdateError
+        );
       } else {
-        console.log(`[AUTO-ADJUST] ✅ Updated product_master stock to: ${finalStock}`);
+        console.log(
+          `[AUTO-ADJUST] ✅ Updated product_master stock to: ${finalStock}`
+        );
       }
-      
-      console.log(`[AUTO-ADJUST] ✅ Completed chronological recalculation of ${allPurchases.length} entries`);
+
+      console.log(
+        `[AUTO-ADJUST] ✅ Completed chronological recalculation of ${allPurchases.length} entries`
+      );
     } else {
       console.log(`[AUTO-ADJUST] No entries found - no adjustment needed`);
     }
 
     // --- Step 5: CRITICAL - Always sync product_master with latest purchase history stock ---
     // This MUST run after any purchase operation to ensure PM reflects PH
-    console.log(`[STOCK SYNC] Starting product_master sync for ${purchaseData.product_name} (ID: ${productId})`);
-    
+    console.log(
+      `[STOCK SYNC] Starting product_master sync for ${purchaseData.product_name} (ID: ${productId})`
+    );
+
     // Get the latest stock value from purchase history using product_id for accuracy
     // CRITICAL FIX: Use a transaction to ensure atomicity
-    const { data: syncResult, error: syncError } = await supabase.rpc('sync_product_master_stock', {
-      product_id_param: productId,
-      transaction_type_param: 'purchase',
-      transaction_id_param: purchaseRecord.purchase_id,
-      transaction_date_param: purchaseData.date || new Date().toISOString()
-    });
+    const { data: syncResult, error: syncError } = await supabase.rpc(
+      'sync_product_master_stock',
+      {
+        product_id_param: productId,
+        transaction_type_param: 'purchase',
+        transaction_id_param: purchaseRecord.purchase_id,
+        transaction_date_param: purchaseData.date || new Date().toISOString(),
+      }
+    );
 
     if (syncError) {
-      console.error('[STOCK SYNC] ❌ Failed to sync product_master:', syncError);
+      console.error(
+        '[STOCK SYNC] ❌ Failed to sync product_master:',
+        syncError
+      );
       throw new Error(`Critical sync error: ${syncError.message}`);
     }
 
     if (!syncResult || !syncResult.success) {
-      console.error('[STOCK SYNC] ❌ Sync failed:', syncResult?.message || 'Unknown error');
-      throw new Error('Failed to sync product_master: ' + (syncResult?.message || 'Unknown error'));
+      console.error(
+        '[STOCK SYNC] ❌ Sync failed:',
+        syncResult?.message || 'Unknown error'
+      );
+      throw new Error(
+        'Failed to sync product_master: ' +
+          (syncResult?.message || 'Unknown error')
+      );
     }
 
     console.log(
       `[STOCK SYNC] ✅ Product_master successfully synced. Previous: ${syncResult.previous_stock}, New: ${syncResult.new_stock}`
     );
-    
+
     // Record the sync in product_master_sync_log
     const syncLogRecord = {
       product_id: productId,
@@ -497,7 +565,7 @@ export const addPurchaseTransaction = async (
       new_stock: syncResult.new_stock,
       sync_timestamp: new Date().toISOString(),
       transaction_date: purchaseData.date || new Date().toISOString(),
-      sync_source: 'purchase_history_with_stock'
+      sync_source: 'purchase_history_with_stock',
     };
 
     const { error: logError } = await supabase
@@ -512,9 +580,9 @@ export const addPurchaseTransaction = async (
     }
 
     // Stock update complete
-      console.log(
+    console.log(
       `[STOCK UPDATE COMPLETE] Product ${purchaseData.product_name} stock is now ${newOverallProductStock} ✅`
-      );
+    );
 
     // --- Step 6: Record the transaction in stock_history ---
     const stockHistoryRecord = {
@@ -812,11 +880,14 @@ export const editPurchaseTransaction = async (
     };
 
     // --- Step 4: CRITICAL - Recalculate stock for this entry if qty or date changed ---
-    const qtyChanged = originalPurchase.purchase_qty !== updatedData.purchase_qty;
+    const qtyChanged =
+      originalPurchase.purchase_qty !== updatedData.purchase_qty;
     const dateChanged = originalPurchase.date !== updatedData.date;
     const needsRecalculation = qtyChanged || dateChanged;
 
-    console.log(`[UPDATE] Purchase ${purchaseId} - Qty changed: ${qtyChanged}, Date changed: ${dateChanged}`);
+    console.log(
+      `[UPDATE] Purchase ${purchaseId} - Qty changed: ${qtyChanged}, Date changed: ${dateChanged}`
+    );
 
     // First update the purchase record
     const { error: updatePurchaseError } = await supabase
@@ -834,7 +905,9 @@ export const editPurchaseTransaction = async (
 
     // --- Step 5: Recalculate stock if needed ---
     if (needsRecalculation) {
-      console.log(`[UPDATE RECALC] Starting chronological recalculation for product ${updatedData.product_name}`);
+      console.log(
+        `[UPDATE RECALC] Starting chronological recalculation for product ${updatedData.product_name}`
+      );
 
       // Get ALL purchases for this product in chronological order
       const { data: allPurchases, error: fetchAllError } = await supabase
@@ -845,8 +918,13 @@ export const editPurchaseTransaction = async (
         .order('created_at', { ascending: true });
 
       if (fetchAllError) {
-        console.error('[UPDATE RECALC] Error fetching purchases:', fetchAllError);
-        throw new Error(`Failed to recalculate stock: ${fetchAllError.message}`);
+        console.error(
+          '[UPDATE RECALC] Error fetching purchases:',
+          fetchAllError
+        );
+        throw new Error(
+          `Failed to recalculate stock: ${fetchAllError.message}`
+        );
       }
 
       // Recalculate stock for ALL entries chronologically
@@ -858,7 +936,9 @@ export const editPurchaseTransaction = async (
         updates.push({ id: purchase.purchase_id, stock: runningStock });
       }
 
-      console.log(`[UPDATE RECALC] Recalculating ${updates.length} purchase entries`);
+      console.log(
+        `[UPDATE RECALC] Recalculating ${updates.length} purchase entries`
+      );
 
       // Update each purchase with the correct chronological stock
       for (const update of updates) {
@@ -866,14 +946,19 @@ export const editPurchaseTransaction = async (
           .from('purchase_history_with_stock')
           .update({
             current_stock_at_purchase: update.stock,
-            updated_at: transactionTimestamp
+            updated_at: transactionTimestamp,
           })
           .eq('purchase_id', update.id);
 
         if (stockUpdateError) {
-          console.error(`[UPDATE RECALC] Error updating purchase ${update.id}:`, stockUpdateError);
+          console.error(
+            `[UPDATE RECALC] Error updating purchase ${update.id}:`,
+            stockUpdateError
+          );
         } else {
-          console.log(`[UPDATE RECALC] ✅ Updated purchase ${update.id} to stock: ${update.stock}`);
+          console.log(
+            `[UPDATE RECALC] ✅ Updated purchase ${update.id} to stock: ${update.stock}`
+          );
         }
       }
 
@@ -892,25 +977,34 @@ export const editPurchaseTransaction = async (
 
     if (!latestError && latestPurchase) {
       const latestStock = latestPurchase.current_stock_at_purchase;
-      
-      console.log(`[UPDATE SYNC] Syncing product_master to latest stock: ${latestStock}`);
-      
+
+      console.log(
+        `[UPDATE SYNC] Syncing product_master to latest stock: ${latestStock}`
+      );
+
       const { error: syncError } = await supabase
         .from('product_master')
         .update({
           stock_quantity: latestStock,
-          updated_at: transactionTimestamp
+          updated_at: transactionTimestamp,
         })
         .eq('id', productId);
 
       if (syncError) {
-        console.error('[UPDATE SYNC] Failed to sync product_master:', syncError);
+        console.error(
+          '[UPDATE SYNC] Failed to sync product_master:',
+          syncError
+        );
       } else {
-        console.log(`[UPDATE SYNC] ✅ Product_master synced successfully to ${latestStock}`);
+        console.log(
+          `[UPDATE SYNC] ✅ Product_master synced successfully to ${latestStock}`
+        );
       }
     }
 
-    console.log(`[UPDATE] ✅ Purchase update complete with ${needsRecalculation ? 'chronological recalculation' : 'no recalculation needed'}`);
+    console.log(
+      `[UPDATE] ✅ Purchase update complete with ${needsRecalculation ? 'chronological recalculation' : 'no recalculation needed'}`
+    );
 
     return { success: true };
   } catch (error) {
@@ -940,11 +1034,15 @@ export const deletePurchaseTransaction = async (purchaseId: string) => {
       .single();
 
     if (fetchError || !purchaseToDelete) {
-      throw new Error(`Failed to fetch purchase details: ${fetchError?.message || 'Purchase not found'}`);
+      throw new Error(
+        `Failed to fetch purchase details: ${fetchError?.message || 'Purchase not found'}`
+      );
     }
 
     const productId = purchaseToDelete.product_id;
-    console.log(`[DELETE] Found purchase for product ${purchaseToDelete.product_name} (ID: ${productId})`);
+    console.log(
+      `[DELETE] Found purchase for product ${purchaseToDelete.product_name} (ID: ${productId})`
+    );
 
     // Delete the purchase record first
     const { error: deleteError } = await supabase
@@ -967,20 +1065,24 @@ export const deletePurchaseTransaction = async (purchaseId: string) => {
       .order('created_at', { ascending: true });
 
     if (purchasesError) {
-      throw new Error(`Failed to fetch remaining purchases: ${purchasesError.message}`);
+      throw new Error(
+        `Failed to fetch remaining purchases: ${purchasesError.message}`
+      );
     }
 
     // Recalculate stock for all remaining entries
     let runningStock = 0;
     const updates: Array<{ id: string; stock: number }> = [];
 
-    console.log(`[DELETE] Recalculating stock for ${remainingPurchases?.length || 0} remaining purchases`);
+    console.log(
+      `[DELETE] Recalculating stock for ${remainingPurchases?.length || 0} remaining purchases`
+    );
 
     // Calculate new running stock values
     for (const purchase of remainingPurchases || []) {
       runningStock += purchase.purchase_qty || 0;
       updates.push({ id: purchase.purchase_id, stock: runningStock });
-      
+
       console.log(
         `[DELETE RECALC] Purchase ${purchase.purchase_id} on ${purchase.date}: +${purchase.purchase_qty} = ${runningStock}`
       );
@@ -992,14 +1094,19 @@ export const deletePurchaseTransaction = async (purchaseId: string) => {
         .from('purchase_history_with_stock')
         .update({
           current_stock_at_purchase: update.stock,
-          updated_at: new Date().toISOString()
+          updated_at: new Date().toISOString(),
         })
         .eq('purchase_id', update.id);
 
       if (updateError) {
-        console.error(`[DELETE RECALC] Error updating purchase ${update.id}:`, updateError);
+        console.error(
+          `[DELETE RECALC] Error updating purchase ${update.id}:`,
+          updateError
+        );
       } else {
-        console.log(`[DELETE RECALC] ✅ Updated purchase ${update.id} to stock: ${update.stock}`);
+        console.log(
+          `[DELETE RECALC] ✅ Updated purchase ${update.id} to stock: ${update.stock}`
+        );
       }
     }
 
@@ -1009,15 +1116,19 @@ export const deletePurchaseTransaction = async (purchaseId: string) => {
       .from('product_master')
       .update({
         stock_quantity: finalStock,
-        updated_at: new Date().toISOString()
+        updated_at: new Date().toISOString(),
       })
       .eq('id', productId);
 
     if (masterUpdateError) {
-      throw new Error(`Failed to update product master: ${masterUpdateError.message}`);
+      throw new Error(
+        `Failed to update product master: ${masterUpdateError.message}`
+      );
     }
 
-    console.log(`[DELETE] ✅ Successfully updated product_master stock to ${finalStock}`);
+    console.log(
+      `[DELETE] ✅ Successfully updated product_master stock to ${finalStock}`
+    );
 
     // Record the deletion in stock_history
     const stockHistoryRecord = {
@@ -1030,7 +1141,7 @@ export const deletePurchaseTransaction = async (purchaseId: string) => {
       change_type: 'deletion',
       reference_id: purchaseId,
       source: 'Purchase deletion',
-      created_at: new Date().toISOString()
+      created_at: new Date().toISOString(),
     };
 
     const { error: historyError } = await supabase
@@ -1038,7 +1149,9 @@ export const deletePurchaseTransaction = async (purchaseId: string) => {
       .insert(stockHistoryRecord);
 
     if (historyError) {
-      console.warn(`[DELETE] Warning: Failed to record stock history: ${historyError.message}`);
+      console.warn(
+        `[DELETE] Warning: Failed to record stock history: ${historyError.message}`
+      );
     }
 
     return {
@@ -1049,14 +1162,15 @@ export const deletePurchaseTransaction = async (purchaseId: string) => {
         deletedQuantity: purchaseToDelete.purchase_qty,
         previousStock: finalStock + purchaseToDelete.purchase_qty,
         newStock: finalStock,
-        remainingPurchases: remainingPurchases?.length || 0
-      }
+        remainingPurchases: remainingPurchases?.length || 0,
+      },
     };
   } catch (error) {
     console.error('[DELETE] Error in deletePurchaseTransaction:', error);
     return {
       success: false,
-      error: error instanceof Error ? error : new Error('Failed to delete purchase')
+      error:
+        error instanceof Error ? error : new Error('Failed to delete purchase'),
     };
   }
 };
@@ -1317,7 +1431,10 @@ export const validatePurchaseData = async (purchaseData: PurchaseFormData) => {
         .from('purchase_history_with_stock')
         .select('purchase_id')
         .eq('product_id', existingProduct.id)
-        .eq('purchase_invoice_number', purchaseData.invoice_number || purchaseData.purchase_invoice_number)
+        .eq(
+          'purchase_invoice_number',
+          purchaseData.invoice_number || purchaseData.purchase_invoice_number
+        )
         .maybeSingle();
 
       if (invoiceError) {
@@ -1329,7 +1446,9 @@ export const validatePurchaseData = async (purchaseData: PurchaseFormData) => {
       // Check for suspicious stock changes (e.g., unusually large quantities)
       const suspiciousQtyThreshold = 1000; // Adjust based on your business rules
       if (purchaseData.purchase_qty > suspiciousQtyThreshold) {
-        errors.push(`Warning: Purchase quantity (${purchaseData.purchase_qty}) is unusually high`);
+        errors.push(
+          `Warning: Purchase quantity (${purchaseData.purchase_qty}) is unusually high`
+        );
       }
 
       // Check for stock consistency
@@ -1342,8 +1461,13 @@ export const validatePurchaseData = async (purchaseData: PurchaseFormData) => {
         .single();
 
       if (!historyError && latestPurchase) {
-        if (latestPurchase.current_stock_at_purchase !== existingProduct.stock_quantity) {
-          errors.push('Warning: Stock mismatch detected between product_master and purchase_history');
+        if (
+          latestPurchase.current_stock_at_purchase !==
+          existingProduct.stock_quantity
+        ) {
+          errors.push(
+            'Warning: Stock mismatch detected between product_master and purchase_history'
+          );
         }
       }
     }
@@ -1351,9 +1475,13 @@ export const validatePurchaseData = async (purchaseData: PurchaseFormData) => {
 
   // Price validation
   if (purchaseData.mrp_excl_gst && purchaseData.mrp_incl_gst) {
-    const calculatedMrpInclGst = purchaseData.mrp_excl_gst * (1 + (purchaseData.gst_percentage || 18) / 100);
+    const calculatedMrpInclGst =
+      purchaseData.mrp_excl_gst *
+      (1 + (purchaseData.gst_percentage || 18) / 100);
     const tolerance = 0.01; // 1% tolerance for rounding differences
-    const difference = Math.abs(calculatedMrpInclGst - purchaseData.mrp_incl_gst);
+    const difference = Math.abs(
+      calculatedMrpInclGst - purchaseData.mrp_incl_gst
+    );
     if (difference > purchaseData.mrp_incl_gst * tolerance) {
       errors.push('MRP including GST does not match the calculated value');
     }
@@ -1374,7 +1502,7 @@ export const validatePurchaseData = async (purchaseData: PurchaseFormData) => {
 export const recalculatePurchaseHistoryStock = async () => {
   try {
     console.log('Starting purchase history stock recalculation...');
-    
+
     // Get all unique products from purchase history
     const { data: products, error: productsError } = await supabase
       .from('purchase_history_with_stock')
@@ -1388,12 +1516,13 @@ export const recalculatePurchaseHistoryStock = async () => {
     console.log(`Found ${products?.length || 0} products to recalculate`);
 
     // Get unique products by grouping them
-    const uniqueProducts = products?.reduce((acc: any[], product: any) => {
-      if (!acc.find(p => p.product_id === product.product_id)) {
-        acc.push(product);
-      }
-      return acc;
-    }, []) || [];
+    const uniqueProducts =
+      products?.reduce((acc: any[], product: any) => {
+        if (!acc.find(p => p.product_id === product.product_id)) {
+          acc.push(product);
+        }
+        return acc;
+      }, []) || [];
 
     for (const product of uniqueProducts) {
       // Get current stock from product_master
@@ -1404,40 +1533,53 @@ export const recalculatePurchaseHistoryStock = async () => {
         .single();
 
       if (masterError) {
-        console.error(`Error fetching product master for ${product.product_name}:`, masterError);
+        console.error(
+          `Error fetching product master for ${product.product_name}:`,
+          masterError
+        );
         continue;
       }
 
       const currentStock = productMaster?.stock_quantity || 0;
       const price = productMaster?.price || 0;
-      console.log(`Updating ${product.product_name} to current stock: ${currentStock}`);
+      console.log(
+        `Updating ${product.product_name} to current stock: ${currentStock}`
+      );
 
       // Update all purchase history records for this product
       const { error: updateError } = await supabase
         .from('purchase_history_with_stock')
-        .update({ 
+        .update({
           current_stock_at_purchase: currentStock,
           computed_stock_taxable_value: currentStock * price,
           computed_stock_cgst: currentStock * price * 0.09, // Assuming 18% GST
           computed_stock_sgst: currentStock * price * 0.09,
-          computed_stock_total_value: currentStock * price * 1.18
+          computed_stock_total_value: currentStock * price * 1.18,
         })
         .eq('product_id', product.product_id);
 
       if (updateError) {
-        console.error(`Error updating purchase history for ${product.product_name}:`, updateError);
+        console.error(
+          `Error updating purchase history for ${product.product_name}:`,
+          updateError
+        );
       } else {
-        console.log(`Successfully updated purchase history for ${product.product_name}`);
+        console.log(
+          `Successfully updated purchase history for ${product.product_name}`
+        );
       }
     }
 
     console.log('Purchase history stock recalculation completed');
-    return { success: true, message: 'Purchase history stock recalculated successfully' };
+    return {
+      success: true,
+      message: 'Purchase history stock recalculated successfully',
+    };
   } catch (error) {
     console.error('Error in recalculatePurchaseHistoryStock:', error);
-    return { 
-      success: false, 
-      error: error instanceof Error ? error.message : 'Unknown error occurred' 
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error occurred',
     };
   }
 };
@@ -1503,10 +1645,16 @@ export const calculatePurchaseValues = (purchaseData: PurchaseFormData) => {
  * @param updateCallback - Callback function to update each sale item with stock data
  * @returns Promise<void>
  */
-export async function enrichSalesWithHistoricalStock<T extends { order_id: string; product_name: string }>(
+export async function enrichSalesWithHistoricalStock<
+  T extends { order_id: string; product_name: string },
+>(
   orderIds: string[],
   salesItems: T[],
-  updateCallback: (item: T, stockAtTimeOfSale: number, productId: string) => void
+  updateCallback: (
+    item: T,
+    stockAtTimeOfSale: number,
+    productId: string
+  ) => void
 ): Promise<void> {
   if (orderIds.length === 0) return;
 
@@ -1559,13 +1707,9 @@ export async function enrichSalesWithHistoricalStock<T extends { order_id: strin
             : JSON.parse(order.services);
 
           services.forEach((service: any) => {
-            if (
-              service.type === 'product' ||
-              service.category === 'product'
-            ) {
+            if (service.type === 'product' || service.category === 'product') {
               const productId = service.product_id || service.service_id;
-              const productName =
-                service.product_name || service.service_name;
+              const productName = service.product_name || service.service_name;
               if (productId && productName) {
                 productInfoMap.set(productName, productId);
               }

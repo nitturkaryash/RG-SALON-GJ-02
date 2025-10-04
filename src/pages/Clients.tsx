@@ -851,8 +851,9 @@ export default function Clients() {
       }
 
       // Sort clients in ascending order (oldest first) for export
-      const sortedClients = [...clientsToExport].sort((a, b) => 
-        new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+      const sortedClients = [...clientsToExport].sort(
+        (a, b) =>
+          new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
       );
 
       // Prepare data for Excel export

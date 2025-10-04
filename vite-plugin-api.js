@@ -20,8 +20,14 @@ export function apiPlugin() {
 
       if (!supabaseUrl || !supabaseKey) {
         console.error('❌ Missing Supabase environment variables');
-        console.error('VITE_SUPABASE_URL:', supabaseUrl ? 'Present' : 'Missing');
-        console.error('VITE_SUPABASE_ANON_KEY:', supabaseKey ? 'Present' : 'Missing');
+        console.error(
+          'VITE_SUPABASE_URL:',
+          supabaseUrl ? 'Present' : 'Missing'
+        );
+        console.error(
+          'VITE_SUPABASE_ANON_KEY:',
+          supabaseKey ? 'Present' : 'Missing'
+        );
         throw new Error(
           'Missing Supabase environment variables (VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY)'
         );
@@ -29,21 +35,23 @@ export function apiPlugin() {
 
       supabase = createClient(supabaseUrl, supabaseKey);
       console.log('✅ Vite API Plugin: Supabase client initialized');
-      
+
       // Create Express app
       const app = express();
 
       // Security middleware
       app.use(helmet());
-      app.use(cors({
-        origin: ['http://localhost:5173', 'http://localhost:5174'],
-        credentials: true
-      }));
+      app.use(
+        cors({
+          origin: ['http://localhost:5173', 'http://localhost:5174'],
+          credentials: true,
+        })
+      );
 
       // Rate limiting
       const limiter = rateLimit({
         windowMs: 15 * 60 * 1000, // 15 minutes
-        max: 100 // limit each IP to 100 requests per windowMs
+        max: 100, // limit each IP to 100 requests per windowMs
       });
       app.use('/api', limiter);
 
@@ -64,7 +72,11 @@ export function apiPlugin() {
       // Test endpoint
       app.post('/api/test', (req, res) => {
         console.log('🧪 Test endpoint called with body:', req.body);
-        res.json({ success: true, message: 'Test endpoint working', body: req.body });
+        res.json({
+          success: true,
+          message: 'Test endpoint working',
+          body: req.body,
+        });
       });
 
       // Supabase test endpoint
@@ -75,14 +87,20 @@ export function apiPlugin() {
             .from('product_master')
             .select('count')
             .limit(1);
-          
+
           if (error) {
             console.log('❌ Supabase error:', error);
-            return res.status(500).json({ success: false, error: error.message });
+            return res
+              .status(500)
+              .json({ success: false, error: error.message });
           }
-          
+
           console.log('✅ Supabase connection working');
-          res.json({ success: true, message: 'Supabase connection working', data });
+          res.json({
+            success: true,
+            message: 'Supabase connection working',
+            data,
+          });
         } catch (err) {
           console.log('❌ Supabase test error:', err);
           res.status(500).json({ success: false, error: err.message });
@@ -93,7 +111,7 @@ export function apiPlugin() {
       app.post('/api/test-product-insert', async (req, res) => {
         try {
           console.log('🧪 Testing simple product insert...');
-          
+
           // Test 1: Just try to insert minimal data
           console.log('🧪 Test 1: Minimal insert...');
           const { data: test1, error: error1 } = await supabase
@@ -103,14 +121,20 @@ export function apiPlugin() {
               hsn_code: '999999',
             })
             .select();
-          
+
           if (error1) {
             console.log('❌ Test 1 error:', error1);
-            return res.status(500).json({ success: false, error: error1.message });
+            return res
+              .status(500)
+              .json({ success: false, error: error1.message });
           }
-          
+
           console.log('✅ Test 1 successful:', test1);
-          res.json({ success: true, message: 'Minimal insert test successful', data: test1 });
+          res.json({
+            success: true,
+            message: 'Minimal insert test successful',
+            data: test1,
+          });
         } catch (err) {
           console.log('❌ Insert test error:', err);
           res.status(500).json({ success: false, error: err.message });
@@ -130,14 +154,19 @@ export function apiPlugin() {
           res.json({ success: true, products });
         } catch (error) {
           console.error('Error fetching products:', error);
-          res.status(500).json({ success: false, error: 'Failed to fetch products' });
+          res
+            .status(500)
+            .json({ success: false, error: 'Failed to fetch products' });
         }
       });
 
       app.post('/api/products', async (req, res) => {
         try {
-          console.log('📝 POST /api/products - Request body:', JSON.stringify(req.body, null, 2));
-          
+          console.log(
+            '📝 POST /api/products - Request body:',
+            JSON.stringify(req.body, null, 2)
+          );
+
           const {
             name,
             hsn_code,
@@ -153,21 +182,30 @@ export function apiPlugin() {
             user_id,
           } = req.body;
 
-          console.log('📝 Parsed data:', { name, hsn_code, gst_percentage, user_id });
+          console.log('📝 Parsed data:', {
+            name,
+            hsn_code,
+            gst_percentage,
+            user_id,
+          });
 
           if (!name) {
             console.log('❌ Validation failed: Product name is required');
-            return res.status(400).json({ success: false, error: 'Product name is required' });
+            return res
+              .status(400)
+              .json({ success: false, error: 'Product name is required' });
           }
 
           if (!hsn_code) {
             console.log('❌ Validation failed: HSN code is required');
-            return res.status(400).json({ success: false, error: 'HSN code is required' });
+            return res
+              .status(400)
+              .json({ success: false, error: 'HSN code is required' });
           }
 
           const productId = uuidv4();
           const now = new Date().toISOString();
-          
+
           console.log('🆔 Generated product ID:', productId);
           console.log('⏰ Current timestamp:', now);
 
@@ -182,8 +220,11 @@ export function apiPlugin() {
             console.log('❌ Error checking existing products:', checkError);
             throw checkError;
           }
-          
-          console.log('🔍 Existing products found:', existingProducts?.length || 0);
+
+          console.log(
+            '🔍 Existing products found:',
+            existingProducts?.length || 0
+          );
 
           if (existingProducts && existingProducts.length > 0) {
             // Check for exact name match first (case-insensitive)
@@ -231,7 +272,7 @@ export function apiPlugin() {
             created_at: now,
             updated_at: now,
           });
-          
+
           const { data: product, error: productError } = await supabase
             .from('product_master')
             .insert({
@@ -258,7 +299,7 @@ export function apiPlugin() {
             console.log('❌ Error creating product:', productError);
             throw productError;
           }
-          
+
           console.log('✅ Product created successfully:', product);
 
           res.json({
@@ -269,10 +310,10 @@ export function apiPlugin() {
         } catch (error) {
           console.error('❌ Error creating product:', error);
           console.error('❌ Error details:', JSON.stringify(error, null, 2));
-          res.status(500).json({ 
-            success: false, 
+          res.status(500).json({
+            success: false,
             error: 'Failed to create product',
-            details: error.message || 'Unknown error'
+            details: error.message || 'Unknown error',
           });
         }
       });
@@ -290,7 +331,9 @@ export function apiPlugin() {
           res.json({ success: true, clients });
         } catch (error) {
           console.error('Error fetching clients:', error);
-          res.status(500).json({ success: false, error: 'Failed to fetch clients' });
+          res
+            .status(500)
+            .json({ success: false, error: 'Failed to fetch clients' });
         }
       });
 
@@ -307,11 +350,15 @@ export function apiPlugin() {
           } = req.body;
 
           if (!name) {
-            return res.status(400).json({ success: false, error: 'Client name is required' });
+            return res
+              .status(400)
+              .json({ success: false, error: 'Client name is required' });
           }
 
           if (!phone) {
-            return res.status(400).json({ success: false, error: 'Client phone is required' });
+            return res
+              .status(400)
+              .json({ success: false, error: 'Client phone is required' });
           }
 
           const clientId = uuidv4();
@@ -360,7 +407,9 @@ export function apiPlugin() {
           });
         } catch (error) {
           console.error('Error creating client:', error);
-          res.status(500).json({ success: false, error: 'Failed to create client' });
+          res
+            .status(500)
+            .json({ success: false, error: 'Failed to create client' });
         }
       });
 
@@ -369,10 +418,12 @@ export function apiPlugin() {
         try {
           const { data: orders, error } = await supabase
             .from('pos_orders')
-            .select(`
+            .select(
+              `
               *,
               pos_order_items (*)
-            `)
+            `
+            )
             .order('created_at', { ascending: false });
 
           if (error) throw error;
@@ -380,7 +431,9 @@ export function apiPlugin() {
           res.json({ success: true, orders });
         } catch (error) {
           console.error('Error fetching orders:', error);
-          res.status(500).json({ success: false, error: 'Failed to fetch orders' });
+          res
+            .status(500)
+            .json({ success: false, error: 'Failed to fetch orders' });
         }
       });
 
@@ -399,7 +452,12 @@ export function apiPlugin() {
             is_salon_consumption = false,
           } = req.body;
 
-          if (!client_name || !items || !Array.isArray(items) || items.length === 0) {
+          if (
+            !client_name ||
+            !items ||
+            !Array.isArray(items) ||
+            items.length === 0
+          ) {
             return res.status(400).json({
               success: false,
               error: 'Missing required fields: client_name, items',
@@ -430,7 +488,7 @@ export function apiPlugin() {
           if (orderError) throw orderError;
 
           // Create order items
-          const orderItems = items.map((item) => ({
+          const orderItems = items.map(item => ({
             id: uuidv4(),
             pos_order_id: orderId,
             service_id: item.service_id || item.id,
@@ -456,14 +514,18 @@ export function apiPlugin() {
           });
         } catch (error) {
           console.error('Error creating order:', error);
-          res.status(500).json({ success: false, error: 'Failed to create order' });
+          res
+            .status(500)
+            .json({ success: false, error: 'Failed to create order' });
         }
       });
 
       // Error handling middleware
       app.use((error, req, res, next) => {
         console.error('Unhandled error:', error);
-        res.status(500).json({ success: false, error: 'Internal server error' });
+        res
+          .status(500)
+          .json({ success: false, error: 'Internal server error' });
       });
 
       // 404 handler for API routes only

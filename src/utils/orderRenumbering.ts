@@ -65,9 +65,7 @@ export const renumberAllOrders = async (): Promise<void> => {
       if (updateError) {
         console.error(`Error updating sales order ${order.id}:`, updateError);
       } else {
-        console.log(
-          `Renumbered sales order ${order.id}: -> ${newOrderId}`
-        );
+        console.log(`Renumbered sales order ${order.id}: -> ${newOrderId}`);
       }
     }
 
@@ -90,9 +88,7 @@ export const renumberAllOrders = async (): Promise<void> => {
       if (updateError) {
         console.error(`Error updating salon order ${order.id}:`, updateError);
       } else {
-        console.log(
-          `Renumbered salon order ${order.id}: -> ${newOrderId}`
-        );
+        console.log(`Renumbered salon order ${order.id}: -> ${newOrderId}`);
       }
     }
 
@@ -125,7 +121,9 @@ export const renumberOrdersAfterDeletion = async (
     }
 
     if (!deletedOrder) {
-      console.log('Deleted order not found (already deleted), skipping renumbering');
+      console.log(
+        'Deleted order not found (already deleted), skipping renumbering'
+      );
       return;
     }
 
@@ -204,9 +202,7 @@ export const renumberOrdersAfterDeletion = async (
       if (updateError) {
         console.error(`Error updating order ${order.id}:`, updateError);
       } else {
-        console.log(
-          `Renumbered order ${order.id}: -> ${newOrderId}`
-        );
+        console.log(`Renumbered order ${order.id}: -> ${newOrderId}`);
       }
     }
 
@@ -223,28 +219,47 @@ export const isMembershipOnlyOrder = (order: any): boolean => {
 
   // Check if order has services array
   const services = order.services || [];
-  
+
   // Check if all services are memberships
-  const hasOnlyMemberships = services.length > 0 && services.every((service: any) => {
-    // Check explicit type/category
-    if (service.type === 'membership' || service.category === 'membership') {
-      return true;
-    }
+  const hasOnlyMemberships =
+    services.length > 0 &&
+    services.every((service: any) => {
+      // Check explicit type/category
+      if (service.type === 'membership' || service.category === 'membership') {
+        return true;
+      }
 
-    // Check for membership fields
-    if (service.duration_months || service.benefit_amount || service.benefitAmount) {
-      return true;
-    }
+      // Check for membership fields
+      if (
+        service.duration_months ||
+        service.benefit_amount ||
+        service.benefitAmount
+      ) {
+        return true;
+      }
 
-    // Check name patterns
-    const serviceName = (service.item_name || service.service_name || service.name || '').toLowerCase();
-    const membershipPatterns = [
-      'silver', 'gold', 'platinum', 'diamond', 'membership', 'member', 
-      'tier', 'package', 'subscription', 'plan'
-    ];
+      // Check name patterns
+      const serviceName = (
+        service.item_name ||
+        service.service_name ||
+        service.name ||
+        ''
+      ).toLowerCase();
+      const membershipPatterns = [
+        'silver',
+        'gold',
+        'platinum',
+        'diamond',
+        'membership',
+        'member',
+        'tier',
+        'package',
+        'subscription',
+        'plan',
+      ];
 
-    return membershipPatterns.some(pattern => serviceName.includes(pattern));
-  });
+      return membershipPatterns.some(pattern => serviceName.includes(pattern));
+    });
 
   return hasOnlyMemberships;
 };
@@ -284,7 +299,9 @@ export const getNextOrderId = async (
       sameTypeOrders = orders.filter(order => isMembershipOnlyOrder(order));
     } else {
       sameTypeOrders = orders.filter(
-        order => isSalonConsumptionOrder(order) === isSalonOrder && !isMembershipOnlyOrder(order)
+        order =>
+          isSalonConsumptionOrder(order) === isSalonOrder &&
+          !isMembershipOnlyOrder(order)
       );
     }
 
@@ -316,7 +333,7 @@ export const getNextOrderId = async (
       year >= 2025
         ? '2526'
         : `${year.toString().slice(-2)}${Math.floor(year / 100)}`;
-    
+
     if (isMembershipOrder) {
       return `MEM${timestamp}/${yearFormat}`;
     } else if (isSalonOrder) {

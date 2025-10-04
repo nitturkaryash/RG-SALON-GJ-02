@@ -22,17 +22,19 @@ export const formatNumber = (value: any): string => {
 /**
  * Format date to Kolkata timezone for display
  */
-export const formatDateKolkata = (dateString: string | null | undefined): string => {
+export const formatDateKolkata = (
+  dateString: string | null | undefined
+): string => {
   if (!dateString) return '';
-  
+
   try {
     const date = new Date(dateString);
-    
+
     // Convert to IST (UTC+5:30)
     const istOffset = 5.5 * 60; // IST is UTC+5:30
-    const utcTime = date.getTime() + (date.getTimezoneOffset() * 60000);
-    const istTime = new Date(utcTime + (istOffset * 60000));
-    
+    const utcTime = date.getTime() + date.getTimezoneOffset() * 60000;
+    const istTime = new Date(utcTime + istOffset * 60000);
+
     return istTime.toLocaleDateString('en-IN', {
       year: 'numeric',
       month: '2-digit',
@@ -51,15 +53,15 @@ export const formatDateTimeForDisplay = (
   dateTimeString: string | null | undefined
 ): string => {
   if (!dateTimeString) return '';
-  
+
   try {
     const date = new Date(dateTimeString);
-    
+
     // Convert to IST (UTC+5:30)
     const istOffset = 5.5 * 60; // IST is UTC+5:30
-    const utcTime = date.getTime() + (date.getTimezoneOffset() * 60000);
-    const istTime = new Date(utcTime + (istOffset * 60000));
-    
+    const utcTime = date.getTime() + date.getTimezoneOffset() * 60000;
+    const istTime = new Date(utcTime + istOffset * 60000);
+
     return istTime.toLocaleString('en-IN', {
       year: 'numeric',
       month: '2-digit',
@@ -84,7 +86,7 @@ export const parseNumericInput = (
   if (value === null || value === undefined || value === '') {
     return 0;
   }
-  
+
   const parsed = typeof value === 'string' ? parseFloat(value) : value;
   return isNaN(parsed) ? 0 : parsed;
 };

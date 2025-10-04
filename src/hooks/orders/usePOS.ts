@@ -616,29 +616,56 @@ export async function createWalkInOrder(
     }
 
     // Check if this is a membership-only order
-    const isMembershipOnly = orderServices.length > 0 && orderServices.every(service => {
-      // Check explicit type/category
-      if (service.type === 'membership' || service.category === 'membership') {
-        return true;
-      }
+    const isMembershipOnly =
+      orderServices.length > 0 &&
+      orderServices.every(service => {
+        // Check explicit type/category
+        if (
+          service.type === 'membership' ||
+          service.category === 'membership'
+        ) {
+          return true;
+        }
 
-      // Check for membership fields
-      if (service.duration_months || service.benefit_amount || service.benefitAmount) {
-        return true;
-      }
+        // Check for membership fields
+        if (
+          service.duration_months ||
+          service.benefit_amount ||
+          service.benefitAmount
+        ) {
+          return true;
+        }
 
-      // Check name patterns
-      const serviceName = (service.item_name || service.service_name || service.name || '').toLowerCase();
-      const membershipPatterns = [
-        'silver', 'gold', 'platinum', 'diamond', 'membership', 'member', 
-        'tier', 'package', 'subscription', 'plan'
-      ];
+        // Check name patterns
+        const serviceName = (
+          service.item_name ||
+          service.service_name ||
+          service.name ||
+          ''
+        ).toLowerCase();
+        const membershipPatterns = [
+          'silver',
+          'gold',
+          'platinum',
+          'diamond',
+          'membership',
+          'member',
+          'tier',
+          'package',
+          'subscription',
+          'plan',
+        ];
 
-      return membershipPatterns.some(pattern => serviceName.includes(pattern));
-    });
+        return membershipPatterns.some(pattern =>
+          serviceName.includes(pattern)
+        );
+      });
 
     // Generate formatted order ID
-    const formattedOrderId = await generateNextOrderId(isSalonConsumption, isMembershipOnly);
+    const formattedOrderId = await generateNextOrderId(
+      isSalonConsumption,
+      isMembershipOnly
+    );
 
     // Prepare order data without invoice_number if not supported
     const orderInsertData: any = {
@@ -802,11 +829,14 @@ async function updateClientFinancials(
     let totalIncludingMemberships = orderTotal;
     if (orderServices && orderServices.length > 0) {
       const membershipAmount = orderServices
-        .filter((service: any) => service.type === 'membership' || service.category === 'membership')
+        .filter(
+          (service: any) =>
+            service.type === 'membership' || service.category === 'membership'
+        )
         .reduce((sum: number, service: any) => {
           const gstPercentage = service.gst_percentage || 18;
           const gstMultiplier = 1 + gstPercentage / 100;
-          return sum + (service.price * service.quantity * gstMultiplier);
+          return sum + service.price * service.quantity * gstMultiplier;
         }, 0);
       totalIncludingMemberships += membershipAmount;
     }
@@ -865,7 +895,8 @@ async function updateClientFinancials(
         email: '',
         notes: 'Created from order',
         total_spent: paymentMethod === 'bnpl' ? 0 : totalIncludingMemberships,
-        pending_payment: paymentMethod === 'bnpl' ? totalIncludingMemberships : 0,
+        pending_payment:
+          paymentMethod === 'bnpl' ? totalIncludingMemberships : 0,
         last_visit: orderDate,
         appointment_count: 1, // Initialize lifetime visit count to 1 for new clients from orders
       };
@@ -1458,7 +1489,12 @@ export function usePOS() {
         data.is_salon_consumption || false
       );
 
-      console.log('🔍 DEBUG usePOS: Received invoice_number:', data.invoice_number, 'formattedOrderId:', formattedOrderId);
+      console.log(
+        '🔍 DEBUG usePOS: Received invoice_number:',
+        data.invoice_number,
+        'formattedOrderId:',
+        formattedOrderId
+      );
 
       const order: PosOrder = {
         id: uuidv4(),
@@ -1601,7 +1637,12 @@ export function usePOS() {
             };
           }
 
-          console.log('🔍 DEBUG: Order created successfully with invoice_number:', insertedOrder?.invoice_number, 'order_id:', insertedOrder?.order_id);
+          console.log(
+            '🔍 DEBUG: Order created successfully with invoice_number:',
+            insertedOrder?.invoice_number,
+            'order_id:',
+            insertedOrder?.order_id
+          );
 
           console.log('✅ usePOS - Order created successfully:', insertedOrder);
 
@@ -2075,8 +2116,10 @@ export function usePOS() {
 
         if (checkError && checkError.code === 'PGRST116') {
           // Order doesn't exist, create it instead
-          console.log('Order does not exist, creating new order instead of updating');
-          
+          console.log(
+            'Order does not exist, creating new order instead of updating'
+          );
+
           // Generate formatted order ID
           const formattedOrderId = await generateNextOrderId(
             orderData.is_salon_consumption || false
@@ -2121,7 +2164,11 @@ export function usePOS() {
           }
 
           // Create order items if services are provided
-          if (orderData.services && Array.isArray(orderData.services) && orderData.services.length > 0) {
+          if (
+            orderData.services &&
+            Array.isArray(orderData.services) &&
+            orderData.services.length > 0
+          ) {
             const orderItems = orderData.services.map((item: any) => ({
               id: uuidv4(),
               pos_order_id: orderId,
@@ -2141,7 +2188,9 @@ export function usePOS() {
 
             if (itemsError) {
               console.error('Error creating order items:', itemsError);
-              throw new Error(`Failed to create order items: ${itemsError.message}`);
+              throw new Error(
+                `Failed to create order items: ${itemsError.message}`
+              );
             }
           }
 
@@ -2154,7 +2203,9 @@ export function usePOS() {
 
         if (checkError) {
           console.error('Error checking if order exists:', checkError);
-          throw new Error(`Failed to check order existence: ${checkError.message}`);
+          throw new Error(
+            `Failed to check order existence: ${checkError.message}`
+          );
         }
 
         // Order exists, proceed with update
@@ -2162,19 +2213,28 @@ export function usePOS() {
 
         // Prepare update data, only including fields that are provided
         const updateFields: any = {};
-        
-        if (orderData.client_name) updateFields.client_name = orderData.client_name;
-        if (orderData.stylist_id) updateFields.stylist_id = orderData.stylist_id;
-        if (orderData.stylist_name) updateFields.stylist_name = orderData.stylist_name;
+
+        if (orderData.client_name)
+          updateFields.client_name = orderData.client_name;
+        if (orderData.stylist_id)
+          updateFields.stylist_id = orderData.stylist_id;
+        if (orderData.stylist_name)
+          updateFields.stylist_name = orderData.stylist_name;
         if (orderData.total !== undefined) updateFields.total = orderData.total;
-        if (orderData.subtotal !== undefined) updateFields.subtotal = orderData.subtotal;
+        if (orderData.subtotal !== undefined)
+          updateFields.subtotal = orderData.subtotal;
         if (orderData.tax !== undefined) updateFields.tax = orderData.tax;
-        if (orderData.discount !== undefined) updateFields.discount = orderData.discount;
-        if (orderData.payment_method) updateFields.payment_method = orderData.payment_method;
+        if (orderData.discount !== undefined)
+          updateFields.discount = orderData.discount;
+        if (orderData.payment_method)
+          updateFields.payment_method = orderData.payment_method;
         if (orderData.status) updateFields.status = orderData.status;
-        if (orderData.consumption_purpose) updateFields.consumption_purpose = orderData.consumption_purpose;
-        if (orderData.consumption_notes) updateFields.consumption_notes = orderData.consumption_notes;
-        if (orderData.is_salon_consumption !== undefined) updateFields.is_salon_consumption = orderData.is_salon_consumption;
+        if (orderData.consumption_purpose)
+          updateFields.consumption_purpose = orderData.consumption_purpose;
+        if (orderData.consumption_notes)
+          updateFields.consumption_notes = orderData.consumption_notes;
+        if (orderData.is_salon_consumption !== undefined)
+          updateFields.is_salon_consumption = orderData.is_salon_consumption;
 
         console.log('Update fields:', updateFields);
 
@@ -2192,7 +2252,11 @@ export function usePOS() {
         }
 
         // Update order items if services are provided
-        if (orderData.services && Array.isArray(orderData.services) && orderData.services.length > 0) {
+        if (
+          orderData.services &&
+          Array.isArray(orderData.services) &&
+          orderData.services.length > 0
+        ) {
           // Delete existing order items
           const { error: deleteItemsError } = await supabase
             .from('pos_order_items')
@@ -2200,8 +2264,13 @@ export function usePOS() {
             .eq('pos_order_id', orderId);
 
           if (deleteItemsError) {
-            console.error('Error deleting existing order items:', deleteItemsError);
-            throw new Error(`Failed to update order items: ${deleteItemsError.message}`);
+            console.error(
+              'Error deleting existing order items:',
+              deleteItemsError
+            );
+            throw new Error(
+              `Failed to update order items: ${deleteItemsError.message}`
+            );
           }
 
           // Create new order items
@@ -2225,7 +2294,9 @@ export function usePOS() {
 
           if (itemsError) {
             console.error('Error creating new order items:', itemsError);
-            throw new Error(`Failed to create order items: ${itemsError.message}`);
+            throw new Error(
+              `Failed to create order items: ${itemsError.message}`
+            );
           }
         }
 

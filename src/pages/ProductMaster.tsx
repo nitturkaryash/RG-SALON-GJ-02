@@ -559,7 +559,9 @@ export default function ProductMaster() {
     // Check for duplicate product name (only when adding a new product)
     if (
       !isEditing &&
-      products.some(p => p.name.toLowerCase().trim() === formData.name.toLowerCase().trim())
+      products.some(
+        p => p.name.toLowerCase().trim() === formData.name.toLowerCase().trim()
+      )
     ) {
       setSnackbar({
         open: true,
@@ -587,7 +589,7 @@ export default function ProductMaster() {
     if (!isEditing) {
       await fetchProducts();
     }
-    
+
     if (!validateForm()) return;
 
     setIsLoading(true);
@@ -657,7 +659,7 @@ export default function ProductMaster() {
         console.log('Checking for duplicate product:', {
           name: formData.name.trim(),
           profileId: profileId,
-          trimmedName: formData.name.trim()
+          trimmedName: formData.name.trim(),
         });
 
         const { data: existingProduct, error: checkError } = await supabase
@@ -674,11 +676,13 @@ export default function ProductMaster() {
 
         console.log('Duplicate check result:', {
           existingProduct,
-          found: !!existingProduct
+          found: !!existingProduct,
         });
 
         if (existingProduct) {
-          throw new Error(`A product named "${formData.name}" already exists. Please use a different name, edit the existing product, or delete it first.`);
+          throw new Error(
+            `A product named "${formData.name}" already exists. Please use a different name, edit the existing product, or delete it first.`
+          );
         }
 
         // Add new product directly via Supabase
@@ -707,18 +711,20 @@ export default function ProductMaster() {
       handleClose();
     } catch (err) {
       console.error('Error saving product:', err);
-      
+
       // Enhanced error handling for duplicate products
       let errorMessage = 'Failed to save product';
       if (err instanceof Error) {
         errorMessage = err.message;
-        
+
         // Check if it's a database constraint error (not our validation error)
-        if (err.message.includes('duplicate key value violates unique constraint')) {
+        if (
+          err.message.includes('duplicate key value violates unique constraint')
+        ) {
           errorMessage = `A product named "${formData.name}" already exists. Please use a different name.`;
         }
       }
-      
+
       setSnackbar({
         open: true,
         message: `Error: ${errorMessage}`,
@@ -1615,14 +1621,14 @@ export default function ProductMaster() {
                 <Autocomplete
                   options={purchases.map(purchase => ({
                     ...purchase,
-                    uniqueKey: `${purchase.product_name}-${purchase.purchase_id}`
+                    uniqueKey: `${purchase.product_name}-${purchase.purchase_id}`,
                   }))}
                   getOptionLabel={option =>
                     typeof option === 'string' ? option : option.product_name
                   }
                   isOptionEqualToValue={(option, value) =>
-                    typeof option === 'string' 
-                      ? option === value 
+                    typeof option === 'string'
+                      ? option === value
                       : option.purchase_id === value.purchase_id
                   }
                   renderInput={params => (

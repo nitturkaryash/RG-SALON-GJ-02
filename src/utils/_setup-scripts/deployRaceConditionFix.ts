@@ -1,4 +1,7 @@
-import { deployAtomicStockUpdateFunction, getStockTransactionLogs } from './supabase/deployAtomicStockUpdate';
+import {
+  deployAtomicStockUpdateFunction,
+  getStockTransactionLogs,
+} from './supabase/deployAtomicStockUpdate';
 
 /**
  * Deploy the complete race condition fix
@@ -14,7 +17,7 @@ export const deployRaceConditionFix = async (): Promise<{
 
     // Step 1: Deploy the atomic stock update function
     const deployResult = await deployAtomicStockUpdateFunction();
-    
+
     if (!deployResult.success) {
       return {
         success: false,
@@ -26,7 +29,7 @@ export const deployRaceConditionFix = async (): Promise<{
 
     // Step 2: Test the function with a real product
     const testResult = await testRaceConditionFix();
-    
+
     if (!testResult.success) {
       return {
         success: false,
@@ -39,13 +42,13 @@ export const deployRaceConditionFix = async (): Promise<{
 
     return {
       success: true,
-      message: 'Race condition fix deployed successfully with microsecond precision',
+      message:
+        'Race condition fix deployed successfully with microsecond precision',
       details: {
         deployment: deployResult,
         testing: testResult,
       },
     };
-
   } catch (error) {
     console.error('❌ Error deploying race condition fix:', error);
     return {
@@ -83,7 +86,9 @@ const testRaceConditionFix = async (): Promise<{
       };
     }
 
-    console.log(`📦 Testing with product: ${testProduct.name} | Current stock: ${testProduct.stock_quantity}`);
+    console.log(
+      `📦 Testing with product: ${testProduct.name} | Current stock: ${testProduct.stock_quantity}`
+    );
 
     // Test the atomic function with a small addition
     const testQuantity = 1;
@@ -125,7 +130,7 @@ const testRaceConditionFix = async (): Promise<{
     }
 
     const expectedStock = testProduct.stock_quantity + testQuantity;
-    
+
     if (updatedProduct.stock_quantity !== expectedStock) {
       return {
         success: false,
@@ -134,7 +139,9 @@ const testRaceConditionFix = async (): Promise<{
     }
 
     console.log('✅ Race condition fix test passed!');
-    console.log(`📊 Stock updated correctly: ${testProduct.stock_quantity} + ${testQuantity} = ${updatedProduct.stock_quantity}`);
+    console.log(
+      `📊 Stock updated correctly: ${testProduct.stock_quantity} + ${testQuantity} = ${updatedProduct.stock_quantity}`
+    );
 
     return {
       success: true,
@@ -146,7 +153,6 @@ const testRaceConditionFix = async (): Promise<{
         verified_stock: updatedProduct.stock_quantity,
       },
     };
-
   } catch (error) {
     return {
       success: false,
@@ -165,7 +171,7 @@ export const getStockPerformanceMetrics = async (): Promise<{
 }> => {
   try {
     const logsResult = await getStockTransactionLogs();
-    
+
     if (!logsResult.success) {
       return {
         success: false,
@@ -174,7 +180,7 @@ export const getStockPerformanceMetrics = async (): Promise<{
     }
 
     const logs = logsResult.data || [];
-    
+
     if (logs.length === 0) {
       return {
         success: true,
@@ -186,7 +192,9 @@ export const getStockPerformanceMetrics = async (): Promise<{
     }
 
     // Calculate performance metrics
-    const durations = logs.map(log => log.duration_microseconds).filter(d => d != null);
+    const durations = logs
+      .map(log => log.duration_microseconds)
+      .filter(d => d != null);
     const avgDuration = durations.reduce((a, b) => a + b, 0) / durations.length;
     const maxDuration = Math.max(...durations);
     const minDuration = Math.min(...durations);
@@ -201,7 +209,6 @@ export const getStockPerformanceMetrics = async (): Promise<{
         recent_transactions: logs.slice(0, 5),
       },
     };
-
   } catch (error) {
     return {
       success: false,
@@ -246,7 +253,8 @@ export const fixExistingTest5Record = async (): Promise<{
 
     // Calculate what the correct value should be
     // Current stock: 14, Last purchase: 5, So it should show: 14 + 5 = 19
-    const correctStockAfterPurchase = productData.stock_quantity + purchaseData.purchase_qty;
+    const correctStockAfterPurchase =
+      productData.stock_quantity + purchaseData.purchase_qty;
 
     if (purchaseData.current_stock_at_purchase === correctStockAfterPurchase) {
       return {
@@ -258,9 +266,9 @@ export const fixExistingTest5Record = async (): Promise<{
     // Update the incorrect record
     const { error: updateError } = await supabase
       .from('purchase_history_with_stock')
-      .update({ 
+      .update({
         current_stock_at_purchase: correctStockAfterPurchase,
-        updated_at: new Date().toISOString()
+        updated_at: new Date().toISOString(),
       })
       .eq('purchase_id', purchaseData.purchase_id);
 
@@ -275,7 +283,6 @@ export const fixExistingTest5Record = async (): Promise<{
       success: true,
       message: `Fixed test_5 purchase record: ${purchaseData.current_stock_at_purchase} → ${correctStockAfterPurchase}`,
     };
-
   } catch (error) {
     return {
       success: false,
@@ -283,4 +290,3 @@ export const fixExistingTest5Record = async (): Promise<{
     };
   }
 };
-

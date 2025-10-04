@@ -1460,8 +1460,7 @@ export default function InventoryManager() {
         // Calculate current stock values using remaining stock from database
         const currentStock = Number(item.Current_Stock || 0); // Use Current_Stock from salon_consumption_new view
         const taxableValueCurrentStock =
-          currentStock *
-          Number(item.Purchase_Cost_per_Unit_Ex_GST_Rs || 0);
+          currentStock * Number(item.Purchase_Cost_per_Unit_Ex_GST_Rs || 0);
         const cgstCurrentStock =
           taxableValueCurrentStock *
           (Number(item.Purchase_GST_Percentage || 0) / 200);
@@ -1743,11 +1742,13 @@ export default function InventoryManager() {
       }
 
       // Sort sales history in ascending order (oldest first) for export
-      const sortedSalesHistoryForExport = [...sortedSalesHistory].sort((a, b) => {
-        const dateA = new Date(a.date).getTime();
-        const dateB = new Date(b.date).getTime();
-        return dateA - dateB;
-      });
+      const sortedSalesHistoryForExport = [...sortedSalesHistory].sort(
+        (a, b) => {
+          const dateA = new Date(a.date).getTime();
+          const dateB = new Date(b.date).getTime();
+          return dateA - dateB;
+        }
+      );
 
       // Sales History sheet - All columns as in frontend with validation
       const salesData = sortedSalesHistoryForExport.map((sale, index) => {
@@ -1818,11 +1819,13 @@ export default function InventoryManager() {
       }
 
       // Sort salon consumption in ascending order (oldest first) for export
-      const sortedSalonConsumptionForExport = [...sortedSalonConsumption].sort((a, b) => {
-        const dateA = new Date(a.date).getTime();
-        const dateB = new Date(b.date).getTime();
-        return dateA - dateB;
-      });
+      const sortedSalonConsumptionForExport = [...sortedSalonConsumption].sort(
+        (a, b) => {
+          const dateA = new Date(a.date).getTime();
+          const dateB = new Date(b.date).getTime();
+          return dateA - dateB;
+        }
+      );
 
       // Salon Consumption sheet - All columns as in frontend with validation
       const salonData = sortedSalonConsumptionForExport.map((item, index) => {
@@ -1895,17 +1898,20 @@ export default function InventoryManager() {
       }
 
       // Sort balance stock in ascending order (oldest first) for export
-      const sortedBalanceStockForExport = [...sortedBalanceStock].sort((a, b) => {
-        const dateA = new Date(a.date).getTime();
-        const dateB = new Date(b.date).getTime();
-        return dateA - dateB;
-      });
+      const sortedBalanceStockForExport = [...sortedBalanceStock].sort(
+        (a, b) => {
+          const dateA = new Date(a.date).getTime();
+          const dateB = new Date(b.date).getTime();
+          return dateA - dateB;
+        }
+      );
 
       // Balance Stock sheet - All columns as in frontend with validation
       const balanceData = sortedBalanceStockForExport.map((item, index) => {
         const rowData = {
           'Serial No': safeString(
-            item.serial_no || `STOCK-${sortedBalanceStockForExport.length - index}`
+            item.serial_no ||
+              `STOCK-${sortedBalanceStockForExport.length - index}`
           ),
           Date: safeDate(item.date),
           'Product Name': safeString(item.product_name),
@@ -2105,7 +2111,9 @@ export default function InventoryManager() {
       purchase_price: purchase.purchase_cost_per_unit_ex_gst || 0,
       total_amount: purchase.purchase_invoice_value_rs || 0,
       supplier_name: purchase.supplier || '',
-      purchase_date: purchase.date ? new Date(purchase.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+      purchase_date: purchase.date
+        ? new Date(purchase.date).toISOString().split('T')[0]
+        : new Date().toISOString().split('T')[0],
       notes: '',
     };
 
@@ -4425,7 +4433,10 @@ export default function InventoryManager() {
                     align='right'
                   />
                   <SortableTableCell label='Order ID' property='order_id' />
-                  <SortableTableCell label='Invoice Number' property='invoice_number' />
+                  <SortableTableCell
+                    label='Invoice Number'
+                    property='invoice_number'
+                  />
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -4543,7 +4554,9 @@ export default function InventoryManager() {
                               ₹{Number(stockTotalValue).toFixed(2)}
                             </TableCell>
                             <TableCell>{sale.order_id}</TableCell>
-                            <TableCell>{sale.invoice_number || sale.invoice_no || '-'}</TableCell>
+                            <TableCell>
+                              {sale.invoice_number || sale.invoice_no || '-'}
+                            </TableCell>
                           </TableRow>
                         );
                       })
@@ -4944,7 +4957,9 @@ export default function InventoryManager() {
                             </TableCell>
                             <TableCell>{item.requisition_voucher_no}</TableCell>
                             <TableCell>{item.order_id}</TableCell>
-                            <TableCell>{item.invoice_number || item.invoice_no || '-'}</TableCell>
+                            <TableCell>
+                              {item.invoice_number || item.invoice_no || '-'}
+                            </TableCell>
                             <TableCell>{item.product_name}</TableCell>
                             <TableCell>{item.hsn_code || '-'}</TableCell>
                             <TableCell>{item.product_type || '-'}</TableCell>

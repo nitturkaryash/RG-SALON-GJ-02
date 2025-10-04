@@ -61,15 +61,32 @@ export const isMembershipOnlyOrder = (order: OrderForFormatting): boolean => {
     }
 
     // Check for membership fields
-    if (service.duration_months || service.benefit_amount || service.benefitAmount) {
+    if (
+      service.duration_months ||
+      service.benefit_amount ||
+      service.benefitAmount
+    ) {
       return true;
     }
 
     // Check name patterns
-    const serviceName = (service.item_name || service.service_name || service.name || '').toLowerCase();
+    const serviceName = (
+      service.item_name ||
+      service.service_name ||
+      service.name ||
+      ''
+    ).toLowerCase();
     const membershipPatterns = [
-      'silver', 'gold', 'platinum', 'diamond', 'membership', 'member', 
-      'tier', 'package', 'subscription', 'plan'
+      'silver',
+      'gold',
+      'platinum',
+      'diamond',
+      'membership',
+      'member',
+      'tier',
+      'package',
+      'subscription',
+      'plan',
     ];
 
     return membershipPatterns.some(pattern => serviceName.includes(pattern));
@@ -121,15 +138,15 @@ export const generateDisplayOrderId = (
   const isMembershipOrder = isMembershipOnlyOrder(normalizedOrder);
 
   // Get all orders of the same type (membership, salon, or sales) that come before this one
-  const sameTypeOrders = sortedOrders
-    .slice(0, orderIndex + 1)
-    .filter(o => {
-      if (isMembershipOrder) {
-        return isMembershipOnlyOrder(o);
-      } else {
-        return isSalonConsumptionOrder(o) === isSalonOrder && !isMembershipOnlyOrder(o);
-      }
-    });
+  const sameTypeOrders = sortedOrders.slice(0, orderIndex + 1).filter(o => {
+    if (isMembershipOrder) {
+      return isMembershipOnlyOrder(o);
+    } else {
+      return (
+        isSalonConsumptionOrder(o) === isSalonOrder && !isMembershipOnlyOrder(o)
+      );
+    }
+  });
 
   // Get the position of this order among orders of the same type
   const orderNumber = sameTypeOrders.length;
@@ -200,7 +217,9 @@ export const formatOrderIdForDisplay = (
   // If order already has a formatted order_id, use it
   if (
     order.order_id &&
-    (order.order_id.startsWith('RNG') || order.order_id.startsWith('SC') || order.order_id.startsWith('MEM'))
+    (order.order_id.startsWith('RNG') ||
+      order.order_id.startsWith('SC') ||
+      order.order_id.startsWith('MEM'))
   ) {
     return order.order_id;
   }
@@ -287,7 +306,11 @@ export const formatOrderIdSimple = (
   if (!orderId) return 'Unknown';
 
   // If already formatted, return as is
-  if (orderId.startsWith('RNG') || orderId.startsWith('SC') || orderId.startsWith('MEM')) {
+  if (
+    orderId.startsWith('RNG') ||
+    orderId.startsWith('SC') ||
+    orderId.startsWith('MEM')
+  ) {
     return orderId;
   }
 
@@ -304,7 +327,9 @@ export const formatOrderIdSimple = (
   const formattedNumber = String(hashNumber).padStart(4, '0');
 
   // Check if it's a membership-only order
-  const isMembershipOrder = orderData ? isMembershipOnlyOrder(orderData) : false;
+  const isMembershipOrder = orderData
+    ? isMembershipOnlyOrder(orderData)
+    : false;
 
   // Determine if it's salon consumption based on available data
   const isSalonOrder =

@@ -46,7 +46,7 @@ declare module '@mui/material/styles' {
 
 /**
  * MUI Theme - Powered by Centralized Theme Config
- * 
+ *
  * All colors and design tokens come from src/config/theme.config.ts
  * Change theme.config.ts to update the entire application's look and feel
  */

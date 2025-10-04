@@ -13,15 +13,17 @@ const PORT = process.env.PORT || 3001;
 
 // Security middleware
 app.use(helmet());
-app.use(cors({
-  origin: ['http://localhost:5173', 'http://localhost:5174'],
-  credentials: true
-}));
+app.use(
+  cors({
+    origin: ['http://localhost:5173', 'http://localhost:5174'],
+    credentials: true,
+  })
+);
 
 // Rate limiting
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100 // limit each IP to 100 requests per windowMs
+  max: 100, // limit each IP to 100 requests per windowMs
 });
 app.use('/api', limiter);
 
@@ -30,7 +32,8 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
 // Initialize Supabase client
-const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseUrl =
+  process.env.VITE_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 if (!supabaseUrl || !supabaseKey) {
@@ -50,7 +53,7 @@ function isAuthorized(req) {
   if (process.env.NODE_ENV !== 'production') {
     return true;
   }
-  
+
   const expected = process.env.INTERNAL_API_KEY || 'your-secure-api-key-here';
   const auth = req.headers.authorization || '';
   return Boolean(expected) && auth === `Bearer ${expected}`;
@@ -104,11 +107,15 @@ app.post('/api/products', async (req, res) => {
     } = req.body;
 
     if (!name) {
-      return res.status(400).json({ success: false, error: 'Product name is required' });
+      return res
+        .status(400)
+        .json({ success: false, error: 'Product name is required' });
     }
 
     if (!hsn_code) {
-      return res.status(400).json({ success: false, error: 'HSN code is required' });
+      return res
+        .status(400)
+        .json({ success: false, error: 'HSN code is required' });
     }
 
     const productId = uuidv4();
@@ -213,22 +220,19 @@ app.post('/api/clients', async (req, res) => {
       return res.status(401).json({ success: false, error: 'Unauthorized' });
     }
 
-    const {
-      name,
-      phone,
-      email,
-      address,
-      date_of_birth,
-      gender,
-      user_id,
-    } = req.body;
+    const { name, phone, email, address, date_of_birth, gender, user_id } =
+      req.body;
 
     if (!name) {
-      return res.status(400).json({ success: false, error: 'Client name is required' });
+      return res
+        .status(400)
+        .json({ success: false, error: 'Client name is required' });
     }
 
     if (!phone) {
-      return res.status(400).json({ success: false, error: 'Client phone is required' });
+      return res
+        .status(400)
+        .json({ success: false, error: 'Client phone is required' });
     }
 
     const clientId = uuidv4();
@@ -286,10 +290,12 @@ app.get('/api/orders', async (req, res) => {
   try {
     const { data: orders, error } = await supabase
       .from('pos_orders')
-      .select(`
+      .select(
+        `
         *,
         pos_order_items (*)
-      `)
+      `
+      )
       .order('created_at', { ascending: false });
 
     if (error) throw error;
@@ -347,7 +353,7 @@ app.post('/api/orders', async (req, res) => {
     if (orderError) throw orderError;
 
     // Create order items
-    const orderItems = items.map((item) => ({
+    const orderItems = items.map(item => ({
       id: uuidv4(),
       pos_order_id: orderId,
       service_id: item.service_id || item.id,

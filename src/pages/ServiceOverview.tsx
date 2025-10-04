@@ -633,103 +633,103 @@ export default function ServiceOverview() {
                   filteredServices
                     .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
                     .map((serv: ServiceItem, index: number) => (
-                    <TableRow
-                      key={serv.id}
-                      hover
-                      sx={{
-                        '&:last-child td, &:last-child th': { border: 0 },
-                        bgcolor:
-                          index % 2 !== 0
-                            ? theme.palette.action.hover
-                            : 'transparent',
-                      }}
-                    >
-                      <TableCell
-                        component='th'
-                        scope='row'
-                        sx={{ fontWeight: '500' }}
-                      >
-                        {serv.name}
-                      </TableCell>
-                      <TableCell
+                      <TableRow
+                        key={serv.id}
+                        hover
                         sx={{
-                          maxWidth: 250,
-                          whiteSpace: 'nowrap',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
+                          '&:last-child td, &:last-child th': { border: 0 },
+                          bgcolor:
+                            index % 2 !== 0
+                              ? theme.palette.action.hover
+                              : 'transparent',
                         }}
                       >
-                        <MuiTooltip title={serv.description} arrow>
-                          <Typography variant='body2' color='text.secondary'>
-                            {serv.description}
-                          </Typography>
-                        </MuiTooltip>
-                      </TableCell>
-                      <TableCell align='center'>
-                        <Chip
-                          label={`${serv.duration} min`}
-                          variant='outlined'
-                          size='small'
-                        />
-                      </TableCell>
-                      <TableCell align='right' sx={{ fontWeight: '500' }}>
-                        {formatCurrency(serv.price)}
-                      </TableCell>
-                      <TableCell align='center'>
-                        <Chip
-                          label={serv.active ? 'Active' : 'Inactive'}
-                          color={serv.active ? 'success' : 'default'}
-                          size='small'
-                        />
-                      </TableCell>
-                      <TableCell align='center'>
-                        <Chip
-                          label={
-                            serv.membership_eligible !== false
-                              ? 'Eligible'
-                              : 'Premium'
-                          }
-                          color={
-                            serv.membership_eligible !== false
-                              ? 'primary'
-                              : 'warning'
-                          }
-                          size='small'
-                        />
-                      </TableCell>
-                      <TableCell align='center'>
-                        <MuiTooltip title='Edit Service'>
-                          <IconButton
-                            onClick={() => handleServEdit(serv)}
+                        <TableCell
+                          component='th'
+                          scope='row'
+                          sx={{ fontWeight: '500' }}
+                        >
+                          {serv.name}
+                        </TableCell>
+                        <TableCell
+                          sx={{
+                            maxWidth: 250,
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                          }}
+                        >
+                          <MuiTooltip title={serv.description} arrow>
+                            <Typography variant='body2' color='text.secondary'>
+                              {serv.description}
+                            </Typography>
+                          </MuiTooltip>
+                        </TableCell>
+                        <TableCell align='center'>
+                          <Chip
+                            label={`${serv.duration} min`}
+                            variant='outlined'
                             size='small'
-                          >
-                            <EditIcon />
-                          </IconButton>
-                        </MuiTooltip>
-                        <MuiTooltip title='Delete Service'>
-                          <IconButton
-                            onClick={() => handleServDelete(serv.id)}
+                          />
+                        </TableCell>
+                        <TableCell align='right' sx={{ fontWeight: '500' }}>
+                          {formatCurrency(serv.price)}
+                        </TableCell>
+                        <TableCell align='center'>
+                          <Chip
+                            label={serv.active ? 'Active' : 'Inactive'}
+                            color={serv.active ? 'success' : 'default'}
                             size='small'
-                            color='error'
-                          >
-                            <DeleteIcon />
-                          </IconButton>
-                        </MuiTooltip>
-                      </TableCell>
-                    </TableRow>
-                  ))
+                          />
+                        </TableCell>
+                        <TableCell align='center'>
+                          <Chip
+                            label={
+                              serv.membership_eligible !== false
+                                ? 'Eligible'
+                                : 'Premium'
+                            }
+                            color={
+                              serv.membership_eligible !== false
+                                ? 'primary'
+                                : 'warning'
+                            }
+                            size='small'
+                          />
+                        </TableCell>
+                        <TableCell align='center'>
+                          <MuiTooltip title='Edit Service'>
+                            <IconButton
+                              onClick={() => handleServEdit(serv)}
+                              size='small'
+                            >
+                              <EditIcon />
+                            </IconButton>
+                          </MuiTooltip>
+                          <MuiTooltip title='Delete Service'>
+                            <IconButton
+                              onClick={() => handleServDelete(serv.id)}
+                              size='small'
+                              color='error'
+                            >
+                              <DeleteIcon />
+                            </IconButton>
+                          </MuiTooltip>
+                        </TableCell>
+                      </TableRow>
+                    ))
                 )}
               </TableBody>
             </Table>
           </TableContainer>
           <TablePagination
             rowsPerPageOptions={[10, 25, 50, 100]}
-            component="div"
+            component='div'
             count={filteredServices.length}
             rowsPerPage={rowsPerPage}
             page={page}
             onPageChange={(event, newPage) => setPage(newPage)}
-            onRowsPerPageChange={(event) => {
+            onRowsPerPageChange={event => {
               setRowsPerPage(parseInt(event.target.value, 10));
               setPage(0);
             }}

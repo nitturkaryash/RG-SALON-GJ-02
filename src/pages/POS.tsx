@@ -2960,7 +2960,12 @@ export default function POS() {
         }
 
         // Create or update order based on edit mode
-        console.log('🔍 DEBUG: Invoice number being passed:', invoiceNumber, 'Trimmed:', invoiceNumber.trim());
+        console.log(
+          '🔍 DEBUG: Invoice number being passed:',
+          invoiceNumber,
+          'Trimmed:',
+          invoiceNumber.trim()
+        );
         const orderData: CreateOrderData = {
           order_id: isEditMode ? editingOrderId! : uuidv4(),
           client_id: clientIdToUse || '',
@@ -3361,15 +3366,19 @@ export default function POS() {
       );
       for (const item of membershipItemsForProcessing) {
         // Check if membership already exists for this client
-        const { data: existingMembership, error: membershipQueryError } = await supabase
-          .from('members')
-          .select('id')
-          .eq('client_id', clientIdToUse)
-          .eq('tier_id', item.item_id)
-          .maybeSingle();
+        const { data: existingMembership, error: membershipQueryError } =
+          await supabase
+            .from('members')
+            .select('id')
+            .eq('client_id', clientIdToUse)
+            .eq('tier_id', item.item_id)
+            .maybeSingle();
 
         if (membershipQueryError) {
-          console.error('Error checking existing membership:', membershipQueryError);
+          console.error(
+            'Error checking existing membership:',
+            membershipQueryError
+          );
           showToast.error('Failed to check existing membership');
           continue;
         }
@@ -3764,7 +3773,6 @@ export default function POS() {
           pos_order_id: orderId,
         }));
 
-
         // Create order record with fields exactly matching the pos_orders table schema
         const orderData: any = {
           id: orderId,
@@ -3772,7 +3780,7 @@ export default function POS() {
           created_at: orderDateToUse,
           client_name: 'Salon Consumption',
           customer_name: 'Salon Consumption', // Add for consistency
-        invoice_number: (invoiceNumber || '').trim() || null,
+          invoice_number: (invoiceNumber || '').trim() || null,
           consumption_purpose: consumptionPurpose,
           consumption_notes: consumptionNotes,
           total: orderTotal,
@@ -5784,7 +5792,16 @@ export default function POS() {
   // 6. RENDER OUTPUT (JSX)
   // ====================================================
   return (
-    <Box sx={{ flexGrow: 1, width: '100%', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'auto' }}>
+    <Box
+      sx={{
+        flexGrow: 1,
+        width: '100%',
+        height: '100%',
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'auto',
+      }}
+    >
       {/* Compact Header */}
       <Box
         sx={{
@@ -5797,7 +5814,11 @@ export default function POS() {
           flexShrink: 0,
         }}
       >
-        <Typography variant='h5' component='h1' sx={{ fontWeight: 700, fontSize: '1.5rem', color: '#2d3748' }}>
+        <Typography
+          variant='h5'
+          component='h1'
+          sx={{ fontWeight: 700, fontSize: '1.5rem', color: '#2d3748' }}
+        >
           Point of Sale
         </Typography>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -5806,24 +5827,24 @@ export default function POS() {
               label='Order Date'
               value={orderDate}
               onChange={newDate => setOrderDate(newDate)}
-              slotProps={{ 
-                textField: { 
+              slotProps={{
+                textField: {
                   size: 'small',
                   sx: {
                     '& .MuiOutlinedInput-root': {
                       borderRadius: '8px',
                     },
                   },
-                } 
+                },
               }}
             />
           </LocalizationProvider>
-          <Tooltip title="View client history" arrow>
+          <Tooltip title='View client history' arrow>
             <IconButton
               color='primary'
               onClick={() => setHistoryDrawerOpen(true)}
               size='small'
-              aria-label="View client history"
+              aria-label='View client history'
             >
               <HistoryIcon />
             </IconButton>
@@ -5855,7 +5876,7 @@ export default function POS() {
                 Walk-in Order
               </Box>
             }
-            aria-label="Walk-in order tab"
+            aria-label='Walk-in order tab'
           />
           <Tab
             label={
@@ -5864,7 +5885,7 @@ export default function POS() {
                 Salon Consumption
               </Box>
             }
-            aria-label="Salon consumption tab"
+            aria-label='Salon consumption tab'
           />
         </Tabs>
       </Box>
@@ -6030,7 +6051,10 @@ export default function POS() {
                     variant='outlined'
                     value={invoiceNumber}
                     onChange={e => {
-                      console.log('🔍 DEBUG: Invoice number input changed:', e.target.value);
+                      console.log(
+                        '🔍 DEBUG: Invoice number input changed:',
+                        e.target.value
+                      );
                       setInvoiceNumber(e.target.value);
                     }}
                     size='small'

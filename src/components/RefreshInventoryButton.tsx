@@ -63,18 +63,18 @@ const RefreshInventoryButton: React.FC<RefreshInventoryButtonProps> = ({
           >
             {buttonText}
           </Button>
-        {isRefreshing && (
-          <CircularProgress
-            size={24}
-            sx={{
-              position: 'absolute',
-              top: '50%',
-              left: '50%',
-              marginTop: '-12px',
-              marginLeft: '-12px',
-            }}
-          />
-        )}
+          {isRefreshing && (
+            <CircularProgress
+              size={24}
+              sx={{
+                position: 'absolute',
+                top: '50%',
+                left: '50%',
+                marginTop: '-12px',
+                marginLeft: '-12px',
+              }}
+            />
+          )}
         </Box>
       </span>
     </Tooltip>

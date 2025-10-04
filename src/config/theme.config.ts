@@ -1,6 +1,6 @@
 /**
  * Centralized Theme Configuration
- * 
+ *
  * Change colors, fonts, spacing, and other design tokens from this single file.
  * All changes here will automatically apply across the entire application.
  */
@@ -12,15 +12,15 @@ export const themeConfig = {
   colors: {
     // Primary Brand Colors
     primary: {
-      main: '#667eea',      // Main purple
-      light: '#764ba2',     // Light purple
-      dark: '#5568d3',      // Dark purple
+      main: '#667eea', // Main purple
+      light: '#764ba2', // Light purple
+      dark: '#5568d3', // Dark purple
       gradient: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
     },
 
     // Secondary Colors
     secondary: {
-      main: '#8baf3f',      // Olive green
+      main: '#8baf3f', // Olive green
       light: '#9bc252',
       dark: '#7da237',
     },
@@ -115,15 +115,15 @@ export const themeConfig = {
     },
 
     fontSize: {
-      xs: '0.75rem',      // 12px
-      sm: '0.875rem',     // 14px
-      base: '1rem',       // 16px
-      lg: '1.125rem',     // 18px
-      xl: '1.25rem',      // 20px
-      '2xl': '1.5rem',    // 24px
-      '3xl': '1.875rem',  // 30px
-      '4xl': '2.25rem',   // 36px
-      '5xl': '3rem',      // 48px
+      xs: '0.75rem', // 12px
+      sm: '0.875rem', // 14px
+      base: '1rem', // 16px
+      lg: '1.125rem', // 18px
+      xl: '1.25rem', // 20px
+      '2xl': '1.5rem', // 24px
+      '3xl': '1.875rem', // 30px
+      '4xl': '2.25rem', // 36px
+      '5xl': '3rem', // 48px
     },
 
     fontWeight: {
@@ -153,13 +153,13 @@ export const themeConfig = {
   // SPACING
   // ============================================
   spacing: {
-    xs: '0.25rem',    // 4px
-    sm: '0.5rem',     // 8px
-    md: '1rem',       // 16px
-    lg: '1.5rem',     // 24px
-    xl: '2rem',       // 32px
-    '2xl': '3rem',    // 48px
-    '3xl': '4rem',    // 64px
+    xs: '0.25rem', // 4px
+    sm: '0.5rem', // 8px
+    md: '1rem', // 16px
+    lg: '1.5rem', // 24px
+    xl: '2rem', // 32px
+    '2xl': '3rem', // 48px
+    '3xl': '4rem', // 64px
   },
 
   // ============================================
@@ -328,15 +328,14 @@ export type ThemeConfig = typeof themeConfig;
 export const getThemeValue = (path: string): any => {
   const keys = path.split('.');
   let value: any = themeConfig;
-  
+
   for (const key of keys) {
     value = value?.[key];
     if (value === undefined) break;
   }
-  
+
   return value;
 };
 
 // Export default
 export default themeConfig;
-
