@@ -15,6 +15,7 @@ import {
   TableRow,
   TableCell,
   TableBody,
+  TablePagination,
   Switch,
   FormControlLabel,
   Chip,
@@ -118,6 +119,10 @@ export default function ServiceOverview() {
   const [servDialogOpen, setServDialogOpen] = useState(false);
   const [servFormData, setServFormData] = useState(initialServForm);
   const [servEditingId, setServEditingId] = useState<string | null>(null);
+
+  // Pagination state
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(25);
 
   // Default selections
   useEffect(() => {
@@ -625,7 +630,9 @@ export default function ServiceOverview() {
                     </TableCell>
                   </TableRow>
                 ) : (
-                  filteredServices.map((serv: ServiceItem, index: number) => (
+                  filteredServices
+                    .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
+                    .map((serv: ServiceItem, index: number) => (
                     <TableRow
                       key={serv.id}
                       hover
@@ -715,6 +722,19 @@ export default function ServiceOverview() {
               </TableBody>
             </Table>
           </TableContainer>
+          <TablePagination
+            rowsPerPageOptions={[10, 25, 50, 100]}
+            component="div"
+            count={filteredServices.length}
+            rowsPerPage={rowsPerPage}
+            page={page}
+            onPageChange={(event, newPage) => setPage(newPage)}
+            onRowsPerPageChange={(event) => {
+              setRowsPerPage(parseInt(event.target.value, 10));
+              setPage(0);
+            }}
+            sx={{ borderTop: '1px solid #e0e0e0' }}
+          />
         </Card>
       ) : (
         <Grid container spacing={3}>

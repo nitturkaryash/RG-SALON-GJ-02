@@ -1,10 +1,17 @@
-import { defineConfig } from 'vite';
+import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 import { resolve } from 'path';
 import { apiPlugin } from './vite-plugin-api.js';
 
 // https://vitejs.dev/config/
-export default defineConfig({
+export default defineConfig(({ mode }) => {
+  // Load env file based on mode
+  const env = loadEnv(mode, process.cwd(), '');
+  
+  // Make environment variables available to process.env
+  process.env = { ...process.env, ...env };
+  
+  return {
   plugins: [
     react({
       jsxImportSource: '@emotion/react',
@@ -21,7 +28,7 @@ export default defineConfig({
   ],
   server: {
     port: 5173,
-    open: true,
+    open: false,
   },
   build: {
     outDir: 'dist',
@@ -66,4 +73,5 @@ export default defineConfig({
       '@': resolve(__dirname, 'src'),
     },
   },
-});
+}});
+

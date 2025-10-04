@@ -1,4 +1,4 @@
-import { formatCurrency } from './format';
+import { formatCurrency } from './formatting/format';
 import { salonConfig } from '../config/salonConfig';
 
 // Define a helper function to format date objects
@@ -221,45 +221,47 @@ export const printBill = (bill: any) => {
           background: #fff;
         }
         .receipt {
-          padding: 10px;
+          padding: 8px;
         }
         .header {
           text-align: center;
-          margin-bottom: 20px;
+          margin-bottom: 12px;
           border-bottom: 2px solid #000;
-          padding-bottom: 15px;
+          padding-bottom: 10px;
         }
         .salon-name {
-          font-size: 22px;
+          font-size: 18px;
           font-weight: bold;
-          margin-bottom: 8px;
+          margin-bottom: 6px;
           color: #2c3e50;
         }
         .salon-details {
-          font-size: 11px;
-          margin: 2px 0;
+          font-size: 9px;
+          margin: 1px 0;
           color: #555;
+          line-height: 1.3;
         }
         .bill-title {
-          font-size: 18px;
+          font-size: 14px;
           font-weight: bold;
           text-align: center;
-          margin: 15px 0;
+          margin: 10px 0;
           color: #27ae60;
           text-transform: uppercase;
-          letter-spacing: 1px;
+          letter-spacing: 0.5px;
         }
         .customer-details {
-          margin-bottom: 20px;
-          font-size: 12px;
-          padding: 10px;
+          margin-bottom: 12px;
+          font-size: 10px;
+          padding: 8px;
           background: #f8f9fa;
-          border-radius: 5px;
+          border-radius: 4px;
         }
         .detail-row {
           display: flex;
           justify-content: space-between;
-          margin: 5px 0;
+          margin: 3px 0;
+          line-height: 1.4;
         }
         .detail-label {
           font-weight: 600;
@@ -267,22 +269,22 @@ export const printBill = (bill: any) => {
         }
         .section-title {
           font-weight: bold;
-          margin: 15px 0 8px 0;
-          font-size: 14px;
+          margin: 10px 0 6px 0;
+          font-size: 12px;
           text-transform: uppercase;
           color: #2c3e50;
           border-bottom: 1px solid #ddd;
-          padding-bottom: 3px;
+          padding-bottom: 2px;
         }
         .items-table {
           width: 100%;
           border-collapse: collapse;
-          font-size: 11px;
-          margin: 10px 0;
+          font-size: 10px;
+          margin: 8px 0;
         }
         .items-table th, .items-table td {
           text-align: left;
-          padding: 6px 4px;
+          padding: 4px 3px;
           border-bottom: 1px solid #eee;
         }
         .items-table th {
@@ -297,9 +299,10 @@ export const printBill = (bill: any) => {
         .amount-row {
           display: flex;
           justify-content: space-between;
-          margin: 5px 0;
-          font-size: 12px;
+          margin: 3px 0;
+          font-size: 10px;
           padding: 2px 0;
+          line-height: 1.4;
         }
         .amount-label {
           color: #555;
@@ -314,73 +317,87 @@ export const printBill = (bill: any) => {
         .membership-row {
           color: #3498db;
           background: #ecf0f1;
-          padding: 3px 5px;
+          padding: 2px 4px;
           border-radius: 3px;
-          margin: 3px 0;
+          margin: 2px 0;
         }
         .total-row {
           font-weight: bold;
-          font-size: 14px;
+          font-size: 12px;
           border-top: 2px solid #2c3e50;
           border-bottom: 2px solid #2c3e50;
-          padding: 8px 0;
-          margin: 10px 0;
+          padding: 6px 0;
+          margin: 8px 0;
           background: #f8f9fa;
           padding-left: 5px;
           padding-right: 5px;
         }
         .customer-paid-row {
           font-weight: bold;
-          font-size: 15px;
+          font-size: 13px;
           color: #27ae60;
           border: 2px solid #27ae60;
-          padding: 8px 5px;
-          margin: 8px 0;
-          border-radius: 5px;
+          padding: 6px 4px;
+          margin: 6px 0;
+          border-radius: 4px;
           background: #d5f4e6;
         }
         .payment-methods {
-          margin: 15px 0;
+          margin: 10px 0;
         }
         .payment-method-row {
           display: flex;
           justify-content: space-between;
-          margin: 5px 0;
-          font-size: 12px;
-          padding: 3px 5px;
+          margin: 3px 0;
+          font-size: 10px;
+          padding: 2px 4px;
           background: #f8f9fa;
           border-radius: 3px;
         }
         .footer {
           text-align: center;
-          margin-top: 20px;
-          font-size: 10px;
+          margin-top: 12px;
+          font-size: 8px;
           border-top: 1px dashed #bdc3c7;
-          padding-top: 15px;
+          padding-top: 10px;
           color: #7f8c8d;
+          line-height: 1.3;
         }
         .thank-you {
-          font-size: 16px;
+          font-size: 13px;
           font-weight: bold;
           color: #27ae60;
           text-align: center;
-          margin: 15px 0;
+          margin: 10px 0;
         }
         .next-visit {
-          font-size: 11px;
+          font-size: 9px;
           color: #3498db;
           text-align: center;
-          margin: 10px 0;
+          margin: 6px 0;
           font-style: italic;
         }
         @media print {
+          @page {
+            size: A4 portrait;
+            margin: 10mm;
+          }
           body {
-            width: 80mm;
+            width: 100%;
+            max-width: 210mm;
             margin: 0;
-            padding: 5px;
+            padding: 0;
           }
           .receipt {
             padding: 0;
+            page-break-inside: avoid;
+          }
+          .items-table {
+            page-break-inside: auto;
+          }
+          .items-table tr {
+            page-break-inside: avoid;
+            page-break-after: auto;
           }
         }
       </style>

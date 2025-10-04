@@ -369,7 +369,7 @@ export default function Layout({ children }: LayoutProps) {
   }, [currentDrawerWidth, collapsed]);
 
   return (
-    <Box sx={{ display: 'flex' }}>
+    <Box sx={{ display: 'flex', width: '100%', height: '100%' }}>
       <AppBar
         position='fixed'
         sx={{
@@ -465,12 +465,13 @@ export default function Layout({ children }: LayoutProps) {
         component='main'
         sx={{
           flexGrow: 1,
-          p: { xs: 2, md: 3 },
+          p: 0,
           width: { xs: '100%', md: `calc(100% - ${currentDrawerWidth}px)` },
           mt: { xs: 8, md: 0 },
-          minHeight: '100vh',
+          height: { xs: 'calc(100vh - 64px)', md: '100vh' },
           backgroundColor: 'background.default',
           transition: 'width 0.3s ease, margin 0.3s ease',
+          overflow: 'auto',
         }}
       >
         <FramerMotion.AnimatePresence initial={false} mode='sync'>

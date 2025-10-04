@@ -117,7 +117,7 @@ export const renumberOrdersAfterDeletion = async (
         'id, created_at, is_salon_consumption, consumption_purpose, type, client_name'
       )
       .eq('id', deletedOrderId)
-      .single();
+      .maybeSingle(); // Changed from .single() to .maybeSingle() to handle deleted orders gracefully
 
     if (fetchError) {
       console.error('Error fetching deleted order:', fetchError);
@@ -125,7 +125,7 @@ export const renumberOrdersAfterDeletion = async (
     }
 
     if (!deletedOrder) {
-      console.log('Deleted order not found, skipping renumbering');
+      console.log('Deleted order not found (already deleted), skipping renumbering');
       return;
     }
 

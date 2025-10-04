@@ -61,9 +61,19 @@
   user-drag: none;
 }
 
-body {
+html, body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
   background-color: var(--background-color);
   color: var(--text-color);
+  overflow: hidden;
+}
+
+#root {
+  width: 100%;
+  height: 100%;
 }
 
 .app {
@@ -98,10 +108,10 @@ nav a:hover {
 
 main {
   flex: 1;
-  padding: 2rem;
-  max-width: 1200px;
-  margin: 0 auto;
+  padding: 0;
   width: 100%;
+  height: 100%;
+  overflow: hidden;
 }
 
 .page {
@@ -203,9 +213,23 @@ textarea {
   user-select: text;
 }
 
-/* Hide scrollbars but keep functionality */
+/* Modern scrollbars - don't hide them completely */
 ::-webkit-scrollbar {
-  display: none;
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #888;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #555;
 }
 
 /* Prevent outline on focus */

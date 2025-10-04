@@ -13,7 +13,7 @@ import {
   BalanceStock,
   Consumption,
   ProcessingStats,
-} from '../models/inventoryTypes';
+} from '../../models/inventoryTypes';
 
 // Query keys for consistent cache management
 export const QUERY_KEYS = {

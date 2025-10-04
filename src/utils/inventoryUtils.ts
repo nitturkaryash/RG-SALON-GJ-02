@@ -1495,3 +1495,108 @@ export const calculatePurchaseValues = (purchaseData: PurchaseFormData) => {
       : 0,
   };
 };
+
+/**
+ * Fetches and enriches sales data with historical stock from pos_orders.stock_snapshot
+ * @param orderIds - Array of order IDs to fetch stock snapshots for
+ * @param salesItems - Array of sales items to enrich with stock data
+ * @param updateCallback - Callback function to update each sale item with stock data
+ * @returns Promise<void>
+ */
+export async function enrichSalesWithHistoricalStock<T extends { order_id: string; product_name: string }>(
+  orderIds: string[],
+  salesItems: T[],
+  updateCallback: (item: T, stockAtTimeOfSale: number, productId: string) => void
+): Promise<void> {
+  if (orderIds.length === 0) return;
+
+  try {
+    const { data: orderStockData, error: stockError } = await supabase
+      .from('pos_orders')
+      .select('id, stock_snapshot, services')
+      .in('id', orderIds);
+
+    if (stockError) {
+      console.warn('Failed to fetch order stock snapshots:', stockError);
+      return;
+    }
+
+    if (!orderStockData) return;
+
+    // Create a map of order_id to stock snapshot and product info
+    const orderDataMap = new Map<
+      string,
+      {
+        stockSnapshot: Record<string, number>;
+        productInfoMap: Map<string, string>;
+      }
+    >();
+
+    orderStockData.forEach((order: any) => {
+      let stockSnapshot: Record<string, number> = {};
+      let productInfoMap = new Map<string, string>(); // Map product_name to product_id
+
+      // Parse stock snapshot
+      if (order.stock_snapshot) {
+        try {
+          stockSnapshot =
+            typeof order.stock_snapshot === 'string'
+              ? JSON.parse(order.stock_snapshot)
+              : order.stock_snapshot;
+        } catch (e) {
+          console.warn(
+            `Failed to parse stock snapshot for order ${order.id}:`,
+            e
+          );
+        }
+      }
+
+      // Parse services to get product_id to product_name mapping
+      if (order.services) {
+        try {
+          const services = Array.isArray(order.services)
+            ? order.services
+            : JSON.parse(order.services);
+
+          services.forEach((service: any) => {
+            if (
+              service.type === 'product' ||
+              service.category === 'product'
+            ) {
+              const productId = service.product_id || service.service_id;
+              const productName =
+                service.product_name || service.service_name;
+              if (productId && productName) {
+                productInfoMap.set(productName, productId);
+              }
+            }
+          });
+        } catch (e) {
+          console.warn(`Failed to parse services for order ${order.id}:`, e);
+        }
+      }
+
+      orderDataMap.set(order.id, { stockSnapshot, productInfoMap });
+    });
+
+    // Update sales items with historical stock from snapshots
+    salesItems.forEach(sale => {
+      if (orderDataMap.has(sale.order_id)) {
+        const { stockSnapshot, productInfoMap } = orderDataMap.get(
+          sale.order_id
+        )!;
+
+        // Get product_id from product name mapping
+        const productId = productInfoMap.get(sale.product_name);
+
+        // Get stock for this specific product at time of sale
+        if (productId && stockSnapshot[productId] !== undefined) {
+          const stockAtTimeOfSale = stockSnapshot[productId];
+          updateCallback(sale, stockAtTimeOfSale, productId);
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Error enriching sales with historical stock:', error);
+  }
+}

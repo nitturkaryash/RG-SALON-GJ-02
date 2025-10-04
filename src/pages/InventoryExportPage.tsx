@@ -12,7 +12,7 @@ import {
   Inventory as InventoryIcon,
   FileDownload as FileDownloadIcon,
 } from '@mui/icons-material';
-import PageHeader from '../components/PageHeader';
+import PageHeader from '../components/common/PageHeader';
 
 const InventoryExportPage: React.FC = () => {
   return (

@@ -2,10 +2,10 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-toastify';
 import { v4 as uuidv4 } from 'uuid';
-import { offlineStorage } from '../utils/offlineStorage';
-import { useNetworkStatus } from '../utils/networkService';
-import { syncService } from '../utils/syncService';
-import { supabase } from '../supabaseClient';
+import { offlineStorage } from '../../utils/storage/offlineStorage';
+import { useNetworkStatus } from '../../utils/network/networkService';
+import { syncService } from '../../utils/network/syncService';
+import { supabase } from '../../lib/supabase';
 import { useState, useEffect } from 'react';
 
 interface InventoryItem {

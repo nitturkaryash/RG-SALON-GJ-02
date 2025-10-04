@@ -728,16 +728,7 @@ export async function createWalkInOrder(
         orderInsertData.current_stock =
           currentStock > 0 ? String(currentStock) : undefined;
 
-        // Note: Stock reduction is handled automatically by database trigger 'trg_reduce_stock_on_insert'
-        // when the order is inserted. No need to manually reduce stock here.
-
-        const stockUpdates = products.map(product => ({
-          productId: product.id,
-          quantity: product.quantity,
-        }));
-
-        // REMOVED: await updateProductStockQuantities(stockUpdates);
-        // Database trigger will handle stock reduction automatically
+        // Stock reduction will be handled by decrement_product_stock RPC if needed
       } catch (stockError) {
         console.warn(
           'Warning: Failed to update some product stock quantities:',
@@ -1554,11 +1545,6 @@ export function usePOS() {
             let currentStock = 0; // Store the first product's quantity as integer
 
             if (productItems.length > 0) {
-              console.log(
-                '🔍 usePOS - Updating product stock for items:',
-                productItems
-              );
-
               // Get current stock quantities before updating
               for (const item of productItems) {
                 try {
@@ -1584,20 +1570,7 @@ export function usePOS() {
                 }
               }
 
-              // Note: Stock reduction is handled automatically by database trigger 'trg_reduce_stock_on_insert'
-              // when the order is inserted. No need to manually reduce stock here.
-
-              const stockUpdates = productItems.map(item => ({
-                productId: item.service_id,
-                quantity: item.quantity || 1,
-              }));
-
-              // REMOVED: Manual stock update to prevent double reduction
-              // const updateResult = await updateProductStockQuantities(stockUpdates);
-              // Database trigger will handle stock reduction automatically
-              console.log(
-                '🔍 usePOS - Stock reduction will be handled by database trigger'
-              );
+              // Stock reduction will be handled by decrement_product_stock RPC if needed
             }
 
             // Add stock snapshot as JSON
@@ -1929,11 +1902,7 @@ export function usePOS() {
                     quantity: update.quantity,
                   })
                 );
-              // REMOVED: await updateProductStockQuantities(validUpdates);
-              // Database trigger will handle stock reduction automatically
-              console.log(
-                '🔍 usePOS - Stock reduction for appointment order will be handled by database trigger'
-              );
+              // Stock reduction will be handled by decrement_product_stock RPC if needed
             }
           } catch (error) {
             console.error('Error updating product stock quantities:', error);

@@ -497,21 +497,22 @@ export default function Dashboard() {
   };
 
   return (
-    <Container maxWidth='xl' sx={{ mt: 4, mb: 4 }}>
-      <Grid container spacing={3}>
-        <Box
-          display='flex'
-          justifyContent='space-between'
-          alignItems='center'
-          width='100%'
-          mb={3}
-          px={2}
-        >
+    <Box sx={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'auto', bgcolor: '#f5f7fa' }}>
+      <Box sx={{ flex: 1, overflow: 'auto', p: 2 }}>
+        <Grid container spacing={2}>
+          <Box
+            display='flex'
+            justifyContent='space-between'
+            alignItems='center'
+            width='100%'
+            mb={1.5}
+            flexShrink={0}
+          >
           <Box>
-            <Typography variant='h1' gutterBottom sx={{ mb: 0.5 }}>
+            <Typography variant='h5' sx={{ mb: 0.3, fontWeight: 700, fontSize: '1.5rem', color: '#2d3748' }}>
               Dashboard
             </Typography>
-            <Typography variant='subtitle1' color='text.secondary'>
+            <Typography variant='body2' color='text.secondary' sx={{ fontSize: '0.85rem' }}>
               Real-time insights for your salon business
             </Typography>
             {isLoading && (
@@ -1986,6 +1987,7 @@ export default function Dashboard() {
           {notification.message}
         </Alert>
       </Snackbar>
-    </Container>
+      </Box>
+    </Box>
   );
 }

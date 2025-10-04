@@ -1,0 +1,9 @@
+#!/bin/sh
+. "$(dirname "$0")/_/husky.sh"
+
+echo "Running format check..."
+npm run format:check
+
+echo "Running lint checks..."
+npm run lint
+

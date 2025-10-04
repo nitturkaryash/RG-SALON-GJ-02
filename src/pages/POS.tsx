@@ -228,17 +228,16 @@ const TabPanel = (props: TabPanelProps) => {
       id={`pos-tabpanel-${index}`}
       aria-labelledby={`pos-tab-${index}`}
       {...other}
-      style={{ blockSize: '100%', inlineSize: '100%' }}
+      style={{ width: '100%', height: 'auto', minHeight: '100%' }}
     >
       {value === index && (
         <Box
           sx={{
-            blockSize: '100%',
-            pt: 2,
-            px: 1,
-            inlineSize: '100%',
+            pt: 1,
+            px: 2,
+            pb: 2,
+            width: '100%',
             borderRadius: '8px',
-            overflow: 'hidden',
           }}
         >
           {children}
@@ -3964,9 +3963,9 @@ export default function POS() {
       setLastCreatedOrder(orderForPrinting);
       setPrintDialogOpen(true);
 
-      // Reset form and navigate to orders page instead of inventory page
+      // Reset form but stay on POS page for salon consumption
       resetFormState();
-      navigate('/orders');
+      // Don't navigate away - stay on POS page for next salon consumption entry
     } catch (error: any) {
       console.error('Error creating salon consumption:', error);
       toast.error(`Error: ${error.message || 'Unknown error occurred'}`);
@@ -5785,17 +5784,20 @@ export default function POS() {
   // 6. RENDER OUTPUT (JSX)
   // ====================================================
   return (
-    <Box sx={{ flexGrow: 1, width: '100%', maxWidth: 1400, mx: 'auto', py: 2 }}>
-      {/* Date Selection at the top */}
+    <Box sx={{ flexGrow: 1, width: '100%', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'auto' }}>
+      {/* Compact Header */}
       <Box
         sx={{
-          mb: 3,
+          mb: 1,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
+          px: 2,
+          pt: 1,
+          flexShrink: 0,
         }}
       >
-        <Typography variant='h5' component='h1' sx={{ fontWeight: 'bold' }}>
+        <Typography variant='h5' component='h1' sx={{ fontWeight: 700, fontSize: '1.5rem', color: '#2d3748' }}>
           Point of Sale
         </Typography>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -5804,44 +5806,65 @@ export default function POS() {
               label='Order Date'
               value={orderDate}
               onChange={newDate => setOrderDate(newDate)}
-              slotProps={{ textField: { size: 'small' } }}
+              slotProps={{ 
+                textField: { 
+                  size: 'small',
+                  sx: {
+                    '& .MuiOutlinedInput-root': {
+                      borderRadius: '8px',
+                    },
+                  },
+                } 
+              }}
             />
           </LocalizationProvider>
-          <IconButton
-            color='primary'
-            onClick={() => setHistoryDrawerOpen(true)}
-            size='small'
-            title='View Client History'
-          >
-            <HistoryIcon />
-          </IconButton>
+          <Tooltip title="View client history" arrow>
+            <IconButton
+              color='primary'
+              onClick={() => setHistoryDrawerOpen(true)}
+              size='small'
+              aria-label="View client history"
+            >
+              <HistoryIcon />
+            </IconButton>
+          </Tooltip>
         </Box>
       </Box>
 
       {/* Tabs for Walk-in Order and Salon Purchase */}
-      <Box sx={{ mb: 2 }}>
+      <Box sx={{ mb: 1, px: 2, flexShrink: 0 }}>
         <Tabs
           value={tabValue}
           onChange={(_, newValue) => setTabValue(newValue)}
           variant='fullWidth'
           indicatorColor='primary'
           textColor='primary'
+          sx={{
+            '& .MuiTab-root': {
+              textTransform: 'none',
+              fontWeight: 600,
+              fontSize: '0.9rem',
+              minHeight: '48px',
+            },
+          }}
         >
           <Tab
             label={
               <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                <ShoppingBasketIcon sx={{ mr: 1 }} />
+                <ShoppingBasketIcon sx={{ mr: 1, fontSize: '1.2rem' }} />
                 Walk-in Order
               </Box>
             }
+            aria-label="Walk-in order tab"
           />
           <Tab
             label={
               <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                <Inventory sx={{ mr: 1 }} />
-                Salon Purchase
+                <Inventory sx={{ mr: 1, fontSize: '1.2rem' }} />
+                Salon Consumption
               </Box>
             }
+            aria-label="Salon consumption tab"
           />
         </Tabs>
       </Box>

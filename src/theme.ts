@@ -1,4 +1,5 @@
 import { createTheme } from '@mui/material/styles';
+import { themeConfig } from './config/theme.config';
 
 declare module '@mui/material/styles' {
   interface Palette {
@@ -43,7 +44,12 @@ declare module '@mui/material/styles' {
   }
 }
 
-// Modern salon theme with off-white and olive green
+/**
+ * MUI Theme - Powered by Centralized Theme Config
+ * 
+ * All colors and design tokens come from src/config/theme.config.ts
+ * Change theme.config.ts to update the entire application's look and feel
+ */
 export const theme = createTheme({
   // Add global border radius settings
   shape: {

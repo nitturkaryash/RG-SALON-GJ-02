@@ -67,3 +67,10 @@ logs/
 temp/
 tmp/
 .vercel
+
+# Vite cache files
+*.timestamp-*.mjs
+.next/
+
+# Build info
+*.tsbuildinfo

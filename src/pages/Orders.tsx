@@ -1129,31 +1129,52 @@ export default function Orders() {
         }
       );
 
-      // Delete orders one by one since we have specific IDs
-      let successCount = 0;
-      for (const orderId of selectedOrders) {
-        const success = await deleteOrderById(orderId);
-        if (success) {
-          successCount++;
-        }
+      // Delete all orders at once using batch delete
+      console.log('🗑️ Bulk deleting orders:', selectedOrders);
+      
+      // First, delete all order items for selected orders in one query
+      const { error: itemsError } = await supabase
+        .from('pos_order_items')
+        .delete()
+        .in('pos_order_id', selectedOrders);
+
+      if (itemsError) {
+        console.error('❌ Error deleting order items:', itemsError);
+        toast.dismiss(loadingToast);
+        toast.error(`Failed to delete order items: ${itemsError.message}`);
+        return;
       }
+      console.log('✅ Order items deleted successfully');
+
+      // Then delete all orders in one query
+      const { error: ordersError } = await supabase
+        .from('pos_orders')
+        .delete()
+        .in('id', selectedOrders);
+
+      if (ordersError) {
+        console.error('❌ Error deleting orders:', ordersError);
+        toast.dismiss(loadingToast);
+        toast.error(`Failed to delete orders: ${ordersError.message}`);
+        return;
+      }
+      console.log('✅ Orders deleted successfully');
 
       // Close the loading toast
       toast.dismiss(loadingToast);
 
-      if (successCount > 0) {
-        toast.success(`Successfully deleted ${successCount} orders`);
-        // Clear selection and close dialog
-        setSelectedOrders([]);
-        setBulkDeleteConfirmOpen(false);
-        setIsBulkDeleteMode(false);
-        // Reset to first page
-        setPage(0);
-        // Refresh orders to show updated list
-        refreshOrders();
-      } else {
-        toast.error('Failed to delete orders. Please try again.');
-      }
+      toast.success(`Successfully deleted ${selectedOrders.length} orders`);
+      
+      // Clear selection and close dialog
+      setSelectedOrders([]);
+      setBulkDeleteConfirmOpen(false);
+      setIsBulkDeleteMode(false);
+      
+      // Reset to first page
+      setPage(0);
+      
+      // Refresh orders to show updated list
+      refreshOrders();
     } catch (error) {
       console.error('Error in confirmBulkDelete:', error);
       toast.error(
@@ -2451,19 +2472,29 @@ export default function Orders() {
   }
 
   return (
-    <Container maxWidth='lg'>
-      <Box sx={{ mb: 4 }}>
+    <Box sx={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', bgcolor: '#f5f7fa', overflow: 'hidden' }}>
+      <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'auto', p: 1 }}>
         <Box
           sx={{
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center',
-            mb: 3,
+            mb: 1,
+            flexShrink: 0,
           }}
         >
           <Box>
-            <Typography variant='h1'>Orders</Typography>
-            <Typography variant='body2' color='text.secondary' sx={{ mt: 0.5 }}>
+            <Typography 
+              variant='h5' 
+              sx={{ 
+                fontWeight: 700, 
+                fontSize: '1.5rem',
+                color: '#2d3748'
+              }}
+            >
+              Orders
+            </Typography>
+            <Typography variant='body2' color='text.secondary' sx={{ mt: 0.2, fontSize: '0.8rem' }}>
               {(() => {
                 if (!startDate) {
                   return `All time • ${filteredOrders.length} orders`;
@@ -2523,100 +2554,79 @@ export default function Orders() {
           </Box>
         </Box>
 
-        {/* Order Analytics */}
-        <Box sx={{ mb: 2 }}>
-          <Typography variant='h6' gutterBottom>
-            {(() => {
-              if (!startDate) {
-                return 'Analytics - All Time';
-              }
-              const thirtyDaysAgo = new Date(
-                new Date().setDate(new Date().getDate() - 30)
-              );
-              const today = new Date();
-              const isLast30Days =
-                startDate &&
-                endDate &&
-                startDate.toDateString() === thirtyDaysAgo.toDateString() &&
-                endDate.toDateString() === today.toDateString();
-
-              if (isLast30Days) {
-                return 'Analytics - Last 30 Days';
-              } else {
-                return `Analytics - ${startDate.toLocaleDateString()} to ${endDate ? endDate.toLocaleDateString() : 'Now'}`;
-              }
-            })()}
-          </Typography>
-        </Box>
-        <Grid container spacing={2} sx={{ mb: 3 }}>
+        <Grid container spacing={1.5} sx={{ mb: 1.5, flexShrink: 0 }}>
           {/* Total Orders */}
           <Grid item xs={12} sm={6} md={3}>
-            <Card raised={false} variant='outlined' sx={{ p: 2 }}>
+            <Card 
+              raised={false} 
+              variant='outlined' 
+              sx={{ 
+                p: 1.5,
+                transition: 'all 0.2s ease',
+                '&:hover': {
+                  boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)',
+                  transform: 'translateY(-1px)',
+                },
+              }}
+            >
               <CardContent sx={{ p: 0 }}>
                 <Typography
                   color='text.secondary'
-                  variant='subtitle2'
-                  gutterBottom
+                  variant='caption'
+                  sx={{ fontWeight: 600, fontSize: '0.75rem', display: 'block', mb: 0.5 }}
                 >
                   Total Orders
                 </Typography>
-                <Typography variant='h4' sx={{ mt: 1, mb: 2 }}>
+                <Typography 
+                  variant='h5' 
+                  sx={{ 
+                    mb: 1, 
+                    fontWeight: 700,
+                    color: '#2d3748',
+                    fontSize: '1.5rem'
+                  }}
+                >
                   {orderStats.total}
                 </Typography>
                 <LinearProgress
                   variant='determinate'
                   value={100}
-                  sx={{ height: 6, borderRadius: 3 }}
+                  sx={{ 
+                    height: 4, 
+                    borderRadius: 2,
+                    bgcolor: '#e0e0e0',
+                    '& .MuiLinearProgress-bar': {
+                      bgcolor: '#8baf3f',
+                    },
+                  }}
+                  aria-label="Total orders progress"
                 />
               </CardContent>
             </Card>
           </Grid>
 
-          {/* Salon Consumption Orders - Highlighted specialty stat */}
+          {/* Salon Consumption Orders */}
           <Grid item xs={12} sm={6} md={3}>
-            <Card
-              raised={false}
-              variant='outlined'
-              sx={{
-                p: 2,
-              }}
-            >
+            <Card raised={false} variant='outlined' sx={{ p: 1.5 }}>
               <CardContent sx={{ p: 0 }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                  <InventoryIcon sx={{ mr: 1 }} />
-                  <Typography color='text.secondary' variant='subtitle2'>
+                <Box sx={{ display: 'flex', alignItems: 'center', mb: 0.5 }}>
+                  <InventoryIcon sx={{ mr: 0.5, fontSize: '1rem' }} />
+                  <Typography color='text.secondary' variant='caption' sx={{ fontWeight: 600, fontSize: '0.75rem' }}>
                     Salon Consumption
                   </Typography>
                 </Box>
-                <Typography variant='h4' sx={{ mt: 1, mb: 2 }}>
+                <Typography variant='h5' sx={{ mb: 1, fontWeight: 700, fontSize: '1.5rem' }}>
                   {orderStats.salonPurchases}
                 </Typography>
                 <Box sx={{ display: 'flex', alignItems: 'center' }}>
                   <LinearProgress
                     variant='determinate'
-                    value={
-                      orderStats.total
-                        ? (orderStats.salonPurchases / orderStats.total) * 100
-                        : 0
-                    }
+                    value={orderStats.total ? (orderStats.salonPurchases / orderStats.total) * 100 : 0}
                     color='info'
-                    sx={{
-                      height: 6,
-                      borderRadius: 3,
-                      flexGrow: 1,
-                    }}
+                    sx={{ height: 4, borderRadius: 2, flexGrow: 1 }}
                   />
-                  <Typography
-                    variant='caption'
-                    sx={{ ml: 1 }}
-                    color='text.secondary'
-                  >
-                    {orderStats.total
-                      ? Math.round(
-                          (orderStats.salonPurchases / orderStats.total) * 100
-                        )
-                      : 0}
-                    %
+                  <Typography variant='caption' sx={{ ml: 0.5, fontSize: '0.7rem' }} color='text.secondary'>
+                    {orderStats.total ? Math.round((orderStats.salonPurchases / orderStats.total) * 100) : 0}%
                   </Typography>
                 </Box>
               </CardContent>
@@ -2625,40 +2635,23 @@ export default function Orders() {
 
           {/* Completed Orders */}
           <Grid item xs={12} sm={6} md={3}>
-            <Card raised={false} variant='outlined' sx={{ p: 2 }}>
+            <Card raised={false} variant='outlined' sx={{ p: 1.5 }}>
               <CardContent sx={{ p: 0 }}>
-                <Typography
-                  color='text.secondary'
-                  variant='subtitle2'
-                  gutterBottom
-                >
+                <Typography color='text.secondary' variant='caption' sx={{ fontWeight: 600, fontSize: '0.75rem', display: 'block', mb: 0.5 }}>
                   Completed
                 </Typography>
-                <Typography variant='h4' sx={{ mt: 1, mb: 2 }}>
+                <Typography variant='h5' sx={{ mb: 1, fontWeight: 700, fontSize: '1.5rem' }}>
                   {orderStats.completed}
                 </Typography>
                 <Box sx={{ display: 'flex', alignItems: 'center' }}>
                   <LinearProgress
                     variant='determinate'
-                    value={
-                      orderStats.total
-                        ? (orderStats.completed / orderStats.total) * 100
-                        : 0
-                    }
+                    value={orderStats.total ? (orderStats.completed / orderStats.total) * 100 : 0}
                     color='success'
-                    sx={{ height: 6, borderRadius: 3, flexGrow: 1 }}
+                    sx={{ height: 4, borderRadius: 2, flexGrow: 1 }}
                   />
-                  <Typography
-                    variant='caption'
-                    sx={{ ml: 1 }}
-                    color='text.secondary'
-                  >
-                    {orderStats.total
-                      ? Math.round(
-                          (orderStats.completed / orderStats.total) * 100
-                        )
-                      : 0}
-                    %
+                  <Typography variant='caption' sx={{ ml: 0.5, fontSize: '0.7rem' }} color='text.secondary'>
+                    {orderStats.total ? Math.round((orderStats.completed / orderStats.total) * 100) : 0}%
                   </Typography>
                 </Box>
               </CardContent>
@@ -2667,31 +2660,22 @@ export default function Orders() {
 
           {/* Revenue */}
           <Grid item xs={12} sm={6} md={3}>
-            <Card raised={false} variant='outlined' sx={{ p: 2 }}>
+            <Card raised={false} variant='outlined' sx={{ p: 1.5 }}>
               <CardContent sx={{ p: 0 }}>
-                <Typography
-                  color='text.secondary'
-                  variant='subtitle2'
-                  gutterBottom
-                >
+                <Typography color='text.secondary' variant='caption' sx={{ fontWeight: 600, fontSize: '0.75rem', display: 'block', mb: 0.5 }}>
                   Total Revenue
                 </Typography>
-                <Typography variant='h4' sx={{ mt: 1, mb: 2 }}>
+                <Typography variant='h5' sx={{ mb: 1, fontWeight: 700, fontSize: '1.5rem' }}>
                   {formatAmount(orderStats.totalRevenue)}
                 </Typography>
-                <LinearProgress
-                  variant='determinate'
-                  value={100}
-                  color='primary'
-                  sx={{ height: 6, borderRadius: 3 }}
-                />
+                <LinearProgress variant='determinate' value={100} color='primary' sx={{ height: 4, borderRadius: 2 }} />
               </CardContent>
             </Card>
           </Grid>
         </Grid>
 
         {/* Order Tabs */}
-        <Paper sx={{ borderBottom: 1, borderColor: 'divider', mb: 3 }}>
+        <Paper sx={{ borderBottom: 1, borderColor: 'divider', mb: 1, flexShrink: 0 }}>
           <Tabs
             value={activeTab}
             onChange={handleTabChange}
@@ -2753,11 +2737,11 @@ export default function Orders() {
 
         {/* Search and filter controls */}
         {orders && orders.length > 0 && (
-          <Box mb={3}>
+          <Box mb={1} sx={{ flexShrink: 0 }}>
             <Grid container spacing={2}>
               <Grid item xs={12} md={4}>
                 <TextField
-                  placeholder='Search orders...'
+                  placeholder='Search by Order ID, Customer, Invoice...'
                   value={searchQuery}
                   onChange={e => setSearchQuery(e.target.value)}
                   variant='outlined'
@@ -2770,13 +2754,29 @@ export default function Orders() {
                       </InputAdornment>
                     ),
                   }}
+                  sx={{
+                    '& .MuiOutlinedInput-root': {
+                      borderRadius: '8px',
+                      bgcolor: 'white',
+                    },
+                  }}
+                  aria-label="Search orders"
                 />
               </Grid>
 
               <Grid item xs={12} md={8}>
                 <Grid container spacing={2}>
                   <Grid item xs={12} sm={6} md={4}>
-                    <FormControl fullWidth size='small'>
+                    <FormControl 
+                      fullWidth 
+                      size='small'
+                      sx={{
+                        '& .MuiOutlinedInput-root': {
+                          borderRadius: '8px',
+                          bgcolor: 'white',
+                        },
+                      }}
+                    >
                       <InputLabel id='payment-filter-label'>
                         Payment Method
                       </InputLabel>
@@ -2785,6 +2785,7 @@ export default function Orders() {
                         value={paymentFilter}
                         onChange={e => setPaymentFilter(e.target.value)}
                         label='Payment Method'
+                        aria-label="Filter by payment method"
                       >
                         <MenuItem value='all'>All Payment Methods</MenuItem>
                         {PAYMENT_METHODS.map(method => (
@@ -2797,7 +2798,16 @@ export default function Orders() {
                   </Grid>
 
                   <Grid item xs={12} sm={6} md={4}>
-                    <FormControl fullWidth size='small'>
+                    <FormControl 
+                      fullWidth 
+                      size='small'
+                      sx={{
+                        '& .MuiOutlinedInput-root': {
+                          borderRadius: '8px',
+                          bgcolor: 'white',
+                        },
+                      }}
+                    >
                       <InputLabel id='purchase-type-filter-label'>
                         Purchase Type
                       </InputLabel>
@@ -2806,6 +2816,7 @@ export default function Orders() {
                         value={purchaseTypeFilter}
                         onChange={e => setPurchaseTypeFilter(e.target.value)}
                         label='Purchase Type'
+                        aria-label="Filter by purchase type"
                       >
                         <MenuItem value='all'>All Types</MenuItem>
                         <MenuItem value='service'>Services Only</MenuItem>
@@ -2873,114 +2884,171 @@ export default function Orders() {
                 </Grid>
               </Grid>
 
-              {/* Date Range Filter with DateRangePicker */}
+              {/* Date Range, Bulk Selection, and Info - All in One Compact Row */}
               <Grid item xs={12}>
-                <Grid container spacing={2} alignItems='center'>
-                  <Grid item xs={12} sm={6} md={4}>
-                    <Typography
-                      variant='body2'
-                      color='text.secondary'
-                      sx={{ mb: 1 }}
-                    >
-                      Select Date Range:
-                    </Typography>
-                    <DateRangePicker
-                      startDate={startDate}
-                      endDate={endDate}
-                      onDateRangeChange={(newStartDate, newEndDate) => {
-                        setStartDate(newStartDate);
-                        setEndDate(newEndDate);
-                        // Reset pagination when date range changes
-                        setPage(0);
-                      }}
-                    />
-                  </Grid>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap', py: 0.5 }}>
+                  <Typography variant='caption' color='text.secondary' sx={{ fontWeight: 600, minWidth: 'fit-content' }}>
+                    Select Date Range:
+                  </Typography>
+                  <DateRangePicker
+                    startDate={startDate}
+                    endDate={endDate}
+                    onDateRangeChange={(newStartDate, newEndDate) => {
+                      setStartDate(newStartDate);
+                      setEndDate(newEndDate);
+                      setPage(0);
+                    }}
+                  />
 
-                  <Grid item xs={12} md={8} display='flex' alignItems='center'>
+                  <Button
+                    variant='outlined'
+                    size='small'
+                    onClick={() => {
+                      const newStartDate = new Date(
+                        new Date().setDate(new Date().getDate() - 30)
+                      );
+                      const newEndDate = new Date();
+                      setStartDate(newStartDate);
+                      setEndDate(newEndDate);
+                      setPage(0);
+                    }}
+                    sx={{ 
+                      textTransform: 'none', 
+                      fontSize: '0.7rem',
+                      py: 0.4,
+                      px: 1.2,
+                      borderRadius: '6px',
+                      minWidth: 'fit-content',
+                    }}
+                  >
+                    Reset to Last 30 Days
+                  </Button>
+
+                  <Button
+                    variant={isBulkDeleteMode ? 'contained' : 'outlined'}
+                    color={isBulkDeleteMode ? 'secondary' : 'primary'}
+                    size='small'
+                    onClick={() => {
+                      if (isBulkDeleteMode) {
+                        setIsBulkDeleteMode(false);
+                        setSelectedOrders([]);
+                      } else {
+                        setIsBulkDeleteMode(true);
+                      }
+                    }}
+                    startIcon={<DeleteOutlineIcon fontSize="small" />}
+                    sx={{ 
+                      textTransform: 'none', 
+                      fontSize: '0.7rem',
+                      py: 0.4,
+                      px: 1.2,
+                      borderRadius: '6px',
+                      minWidth: 'fit-content',
+                    }}
+                  >
+                    {isBulkDeleteMode ? 'Cancel Bulk Mode' : 'Enable Bulk Selection'}
+                  </Button>
+
+                  {isBulkDeleteMode && selectedOrders.length > 0 && (
                     <Button
-                      variant='outlined'
+                      variant='contained'
+                      color='error'
                       size='small'
-                      onClick={() => {
-                        const newStartDate = new Date(
-                          new Date().setDate(new Date().getDate() - 30)
-                        );
-                        const newEndDate = new Date();
-                        setStartDate(newStartDate);
-                        setEndDate(newEndDate);
-                        setPage(0);
+                      onClick={handleBulkDelete}
+                      startIcon={<DeleteIcon fontSize="small" />}
+                      sx={{ 
+                        textTransform: 'none', 
+                        fontSize: '0.7rem',
+                        py: 0.4,
+                        px: 1.2,
+                        borderRadius: '6px',
                       }}
                     >
-                      Reset to Last 30 Days
+                      Delete Selected ({selectedOrders.length})
                     </Button>
+                  )}
 
-                    {orders && orders.length > 0 && (
-                      <Typography
-                        variant='body2'
-                        color='text.secondary'
-                        sx={{ ml: 2 }}
-                      >
-                        Loaded {orders.length} total orders | Showing{' '}
-                        {filteredOrders.length} orders from{' '}
-                        {startDate
-                          ? startDate.toLocaleDateString()
-                          : 'the beginning'}{' '}
-                        to {endDate ? endDate.toLocaleDateString() : 'today'}
-                      </Typography>
-                    )}
-                  </Grid>
-                </Grid>
+                  {orders && orders.length > 0 && (
+                    <Typography
+                      variant='caption'
+                      color='text.secondary'
+                      sx={{ fontWeight: 500, fontSize: '0.75rem', ml: 'auto' }}
+                    >
+                      Loaded {orders.length} total | Showing {filteredOrders.length} orders
+                    </Typography>
+                  )}
+
+                  {/* Render active filter chips inline */}
+                  {(() => {
+                    const filters = [];
+                    if (purchaseTypeFilter !== 'all') {
+                      let label = '';
+                      if (purchaseTypeFilter === 'service') label = 'Services Only';
+                      else if (purchaseTypeFilter === 'product') label = 'Products Only';
+                      else if (purchaseTypeFilter === 'both') label = 'Services & Products';
+                      else if (purchaseTypeFilter.startsWith('product:')) {
+                        const category = purchaseTypeFilter.split(':')[1];
+                        label = `${category.charAt(0).toUpperCase() + category.slice(1)}`;
+                      } else if (purchaseTypeFilter.startsWith('service:')) {
+                        const category = purchaseTypeFilter.split(':')[1];
+                        label = `${category.charAt(0).toUpperCase() + category.slice(1)}`;
+                      }
+                      filters.push(
+                        <Chip
+                          key='purchaseType'
+                          label={label}
+                          size='small'
+                          color='primary'
+                          onDelete={() => setPurchaseTypeFilter('all')}
+                          sx={{ height: '22px', fontSize: '0.7rem' }}
+                        />
+                      );
+                    }
+                    if (statusFilter !== 'all') {
+                      filters.push(
+                        <Chip
+                          key='status'
+                          label={`Status: ${statusFilter}`}
+                          size='small'
+                          color='primary'
+                          onDelete={() => setStatusFilter('all')}
+                          sx={{ height: '22px', fontSize: '0.7rem' }}
+                        />
+                      );
+                    }
+                    return filters.length > 0 ? (
+                      <>
+                        <Typography variant='caption' color='text.secondary' sx={{ fontSize: '0.7rem', fontWeight: 600 }}>
+                          Filters:
+                        </Typography>
+                        {filters}
+                      </>
+                    ) : null;
+                  })()}
+                </Box>
               </Grid>
             </Grid>
           </Box>
         )}
 
-        {/* Render active filters */}
-        {renderActiveFilters()}
-
         {filteredOrders.length > 0 ? (
           <>
-            {/* Bulk Actions Bar */}
-            <Box sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 2 }}>
-              <Button
-                variant='outlined'
-                color='primary'
-                onClick={() => {
-                  if (isBulkDeleteMode) {
-                    setIsBulkDeleteMode(false);
-                    setSelectedOrders([]);
-                  } else {
-                    setIsBulkDeleteMode(true);
-                  }
+            <Paper 
+              sx={{
+                flex: 1,
+                display: 'flex',
+                flexDirection: 'column',
+                overflow: 'hidden',
+                mt: 1,
+              }}
+            >
+              <TableContainer 
+                sx={{
+                  flex: 1,
+                  overflow: 'auto',
                 }}
-                startIcon={<DeleteOutlineIcon />}
               >
-                {isBulkDeleteMode
-                  ? 'Cancel Bulk Mode'
-                  : 'Enable Bulk Selection'}
-              </Button>
-
-              {isBulkDeleteMode && (
-                <>
-                  <Typography variant='body2' color='text.secondary'>
-                    {selectedOrders.length} of {paginatedOrders.length} order(s)
-                    selected
-                  </Typography>
-                  {selectedOrders.length > 0 && (
-                    <Button
-                      variant='contained'
-                      color='error'
-                      onClick={handleBulkDelete}
-                      startIcon={<DeleteIcon />}
-                    >
-                      Delete Selected ({selectedOrders.length})
-                    </Button>
-                  )}
-                </>
-              )}
-            </Box>
-
-            <TableContainer component={Paper}>
-              <Table>
+                <Table stickyHeader size="small">
                 <TableHead>
                   <TableRow>
                     {isBulkDeleteMode && (
@@ -3051,11 +3119,11 @@ export default function Orders() {
                             <input
                               type='checkbox'
                               checked={selectedOrders.includes(
-                                order.order_id || order.id
+                                order.id
                               )}
                               onChange={e =>
                                 handleSelectOrder(
-                                  order.order_id || order.id,
+                                  order.id,
                                   e.target.checked
                                 )
                               }
@@ -3281,10 +3349,34 @@ export default function Orders() {
                           })()}
                         </TableCell>
                         <TableCell>
-                          {renderPurchaseTypeChip(
-                            getPurchaseType(order),
-                            order
-                          )}
+                          <Tooltip
+                            title={
+                              <Box sx={{ p: 1 }}>
+                                <Typography variant="caption" sx={{ fontWeight: 600, display: 'block', mb: 0.5 }}>
+                                  Order Details:
+                                </Typography>
+                                {order.services && order.services.length > 0 ? (
+                                  order.services.map((service: any, idx: number) => (
+                                    <Typography key={idx} variant="caption" sx={{ display: 'block', mb: 0.3 }}>
+                                      • {service.name || service.service_name || service.product_name || 'Unknown'} 
+                                      {service.quantity > 1 && ` (×${service.quantity})`}
+                                    </Typography>
+                                  ))
+                                ) : (
+                                  <Typography variant="caption">No items</Typography>
+                                )}
+                              </Box>
+                            }
+                            arrow
+                            placement="left"
+                          >
+                            <Box sx={{ cursor: 'pointer' }}>
+                              {renderPurchaseTypeChip(
+                                getPurchaseType(order),
+                                order
+                              )}
+                            </Box>
+                          </Tooltip>
                         </TableCell>
                         <TableCell>{renderPaymentMethods(order)}</TableCell>
                         <TableCell>
@@ -3383,12 +3475,26 @@ export default function Orders() {
                           })()}
                         </TableCell>
                         <TableCell align='right'>
-                          <ButtonGroup size='small' variant='outlined'>
-                            <Tooltip title='View Details'>
+                          <ButtonGroup 
+                            size='small' 
+                            variant='outlined'
+                            sx={{
+                              '& .MuiButton-root': {
+                                borderRadius: '6px',
+                                textTransform: 'none',
+                                fontWeight: 600,
+                                fontSize: '0.8rem',
+                                px: 1.5,
+                                py: 0.5,
+                              },
+                            }}
+                          >
+                            <Tooltip title='View order details' arrow>
                               <Button
                                 color='primary'
                                 onClick={() => handleViewDetails(order)}
-                                startIcon={<VisibilityIcon />}
+                                startIcon={<VisibilityIcon fontSize="small" />}
+                                aria-label="View order details"
                               >
                                 View
                               </Button>
@@ -3427,17 +3533,19 @@ export default function Orders() {
                   })}
                 </TableBody>
               </Table>
-            </TableContainer>
+              </TableContainer>
 
-            {/* Pagination */}
-            <Box
-              sx={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                mt: 2,
-              }}
-            >
+              {/* Pagination */}
+              <Box
+                sx={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  p: 2,
+                  borderTop: '1px solid #e0e0e0',
+                  flexShrink: 0,
+                }}
+              >
               <TablePagination
                 component='div'
                 count={filteredOrders.length}
@@ -3457,7 +3565,8 @@ export default function Orders() {
                   { label: 'All', value: -1 },
                 ]}
               />
-            </Box>
+              </Box>
+            </Paper>
           </>
         ) : (
           <Paper sx={{ p: 3 }}>
@@ -4706,6 +4815,6 @@ export default function Orders() {
           </DialogActions>
         </Dialog>
       </Box>
-    </Container>
+    </Box>
   );
 }

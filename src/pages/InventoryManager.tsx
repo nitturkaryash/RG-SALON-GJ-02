@@ -107,7 +107,6 @@ import DateRangeCalendar from '../components/dashboard/DateRangeCalendar';
 import {
   formatCurrency,
   formatDateKolkata,
-  formatAsiaKolkataTime,
 } from '../utils/formatting/formatters';
 
 const StyledTableCell = styled(TableCell)(({ theme }) => ({
@@ -244,7 +243,6 @@ const extendedInitialFormData: ExtendedProductFormData = {
   unit_type: '',
   purchase_invoice_number: '',
   purchase_qty: 0,
-  purchase_incl_gst: 0,
   mrp_incl_gst: 0,
   mrp_excl_gst: 0,
   discount_on_purchase_percentage: 0,
@@ -260,6 +258,11 @@ const extendedInitialFormData: ExtendedProductFormData = {
   mrp_per_unit_excl_gst: 0,
   purchase_cost_per_unit_ex_gst: 0,
   purchase_excl_gst: 0,
+  purchase_price: 0,
+  total_amount: 0,
+  supplier_name: '',
+  purchase_date: new Date().toISOString().split('T')[0],
+  notes: '',
 };
 
 export default function InventoryManager() {
@@ -1542,7 +1545,7 @@ export default function InventoryManager() {
       const safeDate = (value: any): string => {
         if (!value) return '-';
         try {
-          return formatDateKolkata(value, false); // Use Kolkata timezone without time
+          return formatDateKolkata(value); // Use Kolkata timezone
         } catch (e) {
           return value.toString();
         }
@@ -2099,7 +2102,11 @@ export default function InventoryManager() {
       purchase_cost_per_unit_ex_gst:
         purchase.purchase_cost_per_unit_ex_gst || 0,
       purchase_excl_gst: purchase.purchase_cost_per_unit_ex_gst || 0,
-      purchase_incl_gst: 0, // Will be calculated
+      purchase_price: purchase.purchase_cost_per_unit_ex_gst || 0,
+      total_amount: purchase.purchase_invoice_value_rs || 0,
+      supplier_name: purchase.supplier || '',
+      purchase_date: purchase.date ? new Date(purchase.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+      notes: '',
     };
 
     console.log('Form data for editing:', formData);
@@ -3475,42 +3482,6 @@ export default function InventoryManager() {
             onClose={handleCloseDateRangeCalendar}
             anchorEl={dateRangeAnchorEl}
           />
-        </Box>
-      </Paper>
-
-      {/* Horizontal Scroll Help Info */}
-      <Paper
-        elevation={1}
-        sx={{
-          p: 1,
-          mb: 1.5,
-          background: 'linear-gradient(45deg, #f0f8ff 30%, #e6f3ff 90%)',
-          border: '1px solid #2196f3',
-          borderRadius: '8px',
-        }}
-      >
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          <InfoIcon sx={{ color: '#1976d2', fontSize: '20px' }} />
-          <Typography
-            variant='body2'
-            sx={{ color: '#1976d2', fontWeight: 500 }}
-          >
-            💡 <strong>Horizontal Scroll Tip:</strong> Hold{' '}
-            <kbd
-              style={{
-                background: '#e3f2fd',
-                padding: '2px 6px',
-                borderRadius: '4px',
-                border: '1px solid #bbdefb',
-                fontFamily: 'monospace',
-                fontSize: '11px',
-              }}
-            >
-              Shift
-            </kbd>{' '}
-            + Mouse Wheel to scroll horizontally, or use the scroll bar below
-            the table
-          </Typography>
         </Box>
       </Paper>
 

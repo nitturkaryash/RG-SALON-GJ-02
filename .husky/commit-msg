@@ -1,0 +1,26 @@
+#!/bin/sh
+. "$(dirname "$0")/_/husky.sh"
+
+# Get the commit message
+commit_msg=$(cat "$1")
+
+# Check if commit message follows conventional commits format
+if ! echo "$commit_msg" | grep -qE "^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\(.+\))?: .{1,}$"; then
+  echo "❌ ERROR: Commit message must follow conventional commits format!"
+  echo ""
+  echo "Examples:"
+  echo "  feat: add new feature"
+  echo "  fix: resolve bug in component"
+  echo "  docs: update README"
+  echo "  style: format code"
+  echo "  refactor: restructure module"
+  echo "  perf: improve performance"
+  echo "  test: add unit tests"
+  echo "  build: update dependencies"
+  echo "  ci: modify CI configuration"
+  echo "  chore: update tooling"
+  echo ""
+  echo "Your commit message: $commit_msg"
+  exit 1
+fi
+

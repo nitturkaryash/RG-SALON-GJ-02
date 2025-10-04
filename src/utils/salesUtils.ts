@@ -1,4 +1,4 @@
-import { supabase } from './supabase/supabaseClient';
+import { supabase } from '../lib/supabase';
 import { v4 as uuidv4 } from 'uuid';
 
 export interface SaleData {
@@ -397,3 +397,4 @@ export const updateProductStock = async (
     };
   }
 };
+

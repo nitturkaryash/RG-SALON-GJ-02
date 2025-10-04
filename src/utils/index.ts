@@ -13,7 +13,6 @@ export * from './emailService';
 export * from './gstCalculations';
 export * from './inventoryHelpers';
 export * from './inventoryUtils';
-export * from './migrateServices';
 export * from './notifications';
 export * from './printUtils';
 export * from './professionalWhatsApp';
