@@ -23,6 +23,7 @@ import {
   recordSaleTransaction,
   syncToSalesHistory,
 } from '../../utils/salesUtils';
+import { restoreInventoryAfterOrderDeletion } from '../../utils/stockRecalculation';
 // calculateTotal is defined locally in this file
 import { useAuthContext } from '../../contexts/AuthContext';
 
@@ -436,6 +437,140 @@ export async function deleteOrder(orderId: string): Promise<{
     // Import supabase client
     const { supabase } = await import('../../lib/supabase');
 
+    type ProductAdjustment = {
+      productName: string;
+      productId?: string;
+      quantity: number;
+    };
+
+    let inventoryAdjustmentPayload: {
+      orderReference?: string | null;
+      orderDate?: string | null;
+      adjustments: ProductAdjustment[];
+    } | null = null;
+
+    try {
+      const { data: orderRecord, error: orderFetchError } = await supabase
+        .from(TABLES.POS_ORDERS)
+        .select('id, order_id, invoice_number, created_at, date')
+        .eq('id', orderId)
+        .single();
+
+      if (orderFetchError && orderFetchError.code !== 'PGRST116') {
+        console.warn(
+          '⚠️ deleteOrder - Unable to load order context before deletion:',
+          orderFetchError
+        );
+      }
+
+      const { data: orderItems, error: orderItemsError } = await supabase
+        .from(TABLES.POS_ORDER_ITEMS)
+        .select(
+          'id, service_name, product_id, service_id, quantity, type, service_type'
+        )
+        .eq('pos_order_id', orderId);
+
+      if (orderItemsError) {
+        console.warn(
+          '⚠️ deleteOrder - Unable to load order items before deletion:',
+          orderItemsError
+        );
+      }
+
+      const productItems = (orderItems || []).filter(item => {
+        const itemType = (item.type || item.service_type || '').toLowerCase();
+        return itemType === 'product';
+      });
+
+      if (productItems.length > 0) {
+        const missingNameIds = Array.from(
+          new Set(
+            productItems
+              .filter(
+                item =>
+                  !item.service_name && (item.product_id || item.service_id)
+              )
+              .map(item => item.product_id || item.service_id)
+              .filter(Boolean) as string[]
+          )
+        );
+
+        const productNameLookup = new Map<string, string>();
+
+        if (missingNameIds.length > 0) {
+          const { data: productsData, error: productLookupError } =
+            await supabase
+              .from('products')
+              .select('id, name')
+              .in('id', missingNameIds);
+
+          if (productLookupError) {
+            console.warn(
+              '⚠️ deleteOrder - Failed to resolve product names for adjustments:',
+              productLookupError
+            );
+          } else {
+            (productsData || []).forEach(product => {
+              if (product?.id && product?.name) {
+                productNameLookup.set(product.id, product.name);
+              }
+            });
+          }
+        }
+
+        const aggregated = new Map<string, ProductAdjustment>();
+
+        productItems.forEach(item => {
+          const quantity = Number(item.quantity) || 1;
+          const productId = item.product_id || item.service_id || undefined;
+          let productName = item.service_name?.trim();
+
+          if (!productName && productId) {
+            productName = productNameLookup.get(productId) || productId;
+          }
+
+          if (!productName) {
+            productName = `Unknown Product (${productId || item.id})`;
+          }
+
+          const key = `${productId || ''}::${productName}`;
+          const existing = aggregated.get(key);
+
+          if (existing) {
+            existing.quantity += quantity;
+          } else {
+            aggregated.set(key, {
+              productName,
+              productId,
+              quantity,
+            });
+          }
+        });
+
+        const adjustments = Array.from(aggregated.values());
+
+        inventoryAdjustmentPayload = {
+          orderReference:
+            orderRecord?.order_id || orderRecord?.invoice_number || null,
+          orderDate: orderRecord?.date || orderRecord?.created_at || null,
+          adjustments,
+        };
+      } else if (orderRecord?.order_id || orderRecord?.invoice_number) {
+        // Keep reference to clean up any derived sales data even without product items
+        inventoryAdjustmentPayload = {
+          orderReference:
+            orderRecord?.order_id || orderRecord?.invoice_number || null,
+          orderDate: orderRecord?.date || orderRecord?.created_at || null,
+          adjustments: [],
+        };
+      }
+    } catch (contextError) {
+      console.warn(
+        '⚠️ deleteOrder - Failed to prepare inventory adjustment context:',
+        contextError
+      );
+    }
+
     // First, delete order items
     console.log('🗑️ Deleting order items...');
     const { error: itemsError } = await supabase
@@ -461,6 +596,63 @@ export async function deleteOrder(orderId: string): Promise<{
       throw new Error(`Failed to delete order: ${orderError.message}`);
     }
     console.log('✅ Order deleted successfully');
+
+    if (inventoryAdjustmentPayload?.orderReference) {
+      const identifiers = Array.from(
+        new Set(
+          [
+            inventoryAdjustmentPayload.orderReference,
+            inventoryAdjustmentPayload.orderReference?.split('/')[0],
+          ].filter(Boolean) as string[]
+        )
+      );
+
+      const salesColumns = ['order_id', 'invoice_number', 'invoice_no'];
+      const inventoryColumns = ['order_id', 'invoice_number'];
+      const salesBaseTable = TABLES.SALES_BASE || 'inventory_sales_new';
+
+      for (const identifier of identifiers) {
+        for (const column of salesColumns) {
+          try {
+            await supabase.from('sales').delete().eq(column, identifier);
+          } catch (salesDeleteError) {
+            console.warn(
+              `⚠️ deleteOrder - Failed to remove sales records (${column}) for order ${identifier}:`,
+              salesDeleteError
+            );
+          }
+        }
+
+        for (const column of inventoryColumns) {
+          try {
+            await supabase
+              .from(salesBaseTable)
+              .delete()
+              .eq(column, identifier);
+          } catch (inventoryDeleteError) {
+            console.warn(
+              `⚠️ deleteOrder - Failed to remove inventory sales records (${column}) for order ${identifier}:`,
+              inventoryDeleteError
+            );
+          }
+        }
+      }
+    }
+
+    if (inventoryAdjustmentPayload?.adjustments?.length) {
+      try {
+        await restoreInventoryAfterOrderDeletion({
+          orderReference: inventoryAdjustmentPayload.orderReference,
+          orderDate: inventoryAdjustmentPayload.orderDate,
+          adjustments: inventoryAdjustmentPayload.adjustments,
+        });
+      } catch (inventoryError) {
+        console.error(
+          '❌ deleteOrder - Failed to restore inventory after deletion:',
+          inventoryError
+        );
+      }
+    }
 
     // Show success message
     showToast.success('Order deleted successfully');

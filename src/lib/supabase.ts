@@ -174,6 +174,7 @@ export const TABLES = {
   PURCHASES: 'purchase_history_with_stock',
   PURCHASE_HISTORY_WITH_STOCK: 'purchase_history_with_stock',
   SALES: 'sales_history_final',
+  SALES_BASE: 'inventory_sales_new',
   CONSUMPTION: 'salon_consumption_new',
   BALANCE_STOCK: 'balance_stock',
   POS_ORDERS: 'pos_orders',

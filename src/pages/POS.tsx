@@ -2678,8 +2678,13 @@ export default function POS() {
           }
         : null;
 
-      // Generate invoice number if needed
-      const invoiceNumber = `INV-${Date.now().toString().slice(-6)}`;
+      // Generate invoice number if user hasn't provided one
+      const generatedInvoiceNumber = `INV-${Date.now().toString().slice(-6)}`;
+      const trimmedInvoiceNumber = invoiceNumber.trim();
+      const invoiceNumberForOrder =
+        trimmedInvoiceNumber.length > 0
+          ? trimmedInvoiceNumber
+          : generatedInvoiceNumber;
 
       console.log(`📦 Calling standalone createWalkInOrder with:`, {
         customerName: clientNameToUse,
@@ -2893,12 +2898,17 @@ export default function POS() {
         }
 
         // Create or update order based on edit mode
-        console.log('🔍 DEBUG: Invoice number being passed:', invoiceNumber, 'Trimmed:', invoiceNumber.trim());
+        console.log(
+          '🔍 DEBUG: Invoice number being passed:',
+          invoiceNumberForOrder,
+          'Trimmed input:',
+          trimmedInvoiceNumber
+        );
         const orderData: CreateOrderData = {
           order_id: isEditMode ? editingOrderId! : uuidv4(),
           client_id: clientIdToUse || '',
           client_name: clientNameToUse,
-          invoice_number: invoiceNumber.trim() || undefined,
+          invoice_number: invoiceNumberForOrder,
           stylist_id: expertsToProcess[0]?.id || '', // Primary expert
           stylist_name: expertsToProcess
             .map(e => e?.name)
@@ -3059,7 +3069,7 @@ export default function POS() {
           order_id: isEditMode ? editingOrderId! : uuidv4(),
           client_id: clientIdToUse || '',
           client_name: clientNameToUse,
-          invoice_number: invoiceNumber.trim() || undefined,
+          invoice_number: invoiceNumberForOrder,
           stylist_id: expert?.id || '',
           stylist_name:
             expert?.name ||

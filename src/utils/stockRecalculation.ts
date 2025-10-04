@@ -19,6 +19,18 @@ interface StockBalance {
   total_consumption: number;
 }
 
+export interface InventoryAdjustment {
+  productName: string;
+  productId?: string;
+  quantity: number;
+}
+
+export interface OrderInventoryAdjustmentPayload {
+  orderReference?: string | null;
+  orderDate?: string | null;
+  adjustments: InventoryAdjustment[];
+}
+
 // Function to recalculate stock for a specific product after a transaction is deleted
 export const recalculateProductStockAfterDeletion = async (
   productName: string,
@@ -176,8 +188,9 @@ const updateTransactionStockLevels = async (
   transactions: any[]
 ): Promise<void> => {
   try {
+    const salesBaseTable = TABLES.SALES_BASE || 'inventory_sales_new';
+
     for (const transaction of transactions) {
-      // Update purchase transactions with stock_after_purchase field
       if (transaction.transaction_type === 'purchase') {
         const { error } = await supabase
           .from(TABLES.PURCHASE_HISTORY_WITH_STOCK)
@@ -190,9 +203,25 @@ const updateTransactionStockLevels = async (
             error
           );
         }
+      } else if (transaction.transaction_type === 'sale') {
+        const updatePayload: Record<string, number> = {
+          current_stock: transaction.stock_after_transaction,
+          remaining_stock: transaction.stock_after_transaction,
+        };
+
+        const { error } = await supabase
+          .from(salesBaseTable)
+          .update(updatePayload)
+          .eq('sale_id', transaction.id);
+
+        if (error) {
+          console.error(
+            `Error updating sales transaction ${transaction.id}:`,
+            error
+          );
+        }
       }
-      // Note: Sales and consumption tables don't have stock_after fields
-      // The stock calculation is primarily for purchase transactions
+      // Consumption table currently has no stock fields to update
     }
   } catch (error) {
     console.error('Error updating transaction stock levels:', error);
@@ -403,6 +432,52 @@ export const handleConsumptionDeletion = async (
   } catch (error) {
     console.error('Error handling consumption deletion:', error);
     throw error;
+  }
+};
+
+export const restoreInventoryAfterOrderDeletion = async (
+  payload: OrderInventoryAdjustmentPayload
+): Promise<void> => {
+  if (!payload || !Array.isArray(payload.adjustments)) {
+    console.log('restoreInventoryAfterOrderDeletion: No adjustments provided');
+    return;
+  }
+
+  const productNames = new Set<string>();
+
+  payload.adjustments.forEach(adjustment => {
+    if (!adjustment?.productName) {
+      return;
+    }
+
+    const quantity = Number(adjustment?.quantity || 0);
+    if (Number.isNaN(quantity) || quantity <= 0) {
+      return;
+    }
+
+    productNames.add(adjustment.productName);
+  });
+
+  if (productNames.size === 0) {
+    console.log(
+      'restoreInventoryAfterOrderDeletion: No valid product adjustments needed'
+    );
+    return;
+  }
+
+  for (const productName of productNames.values()) {
+    try {
+      await recalculateProductStockAfterDeletion(productName, {
+        quantity: 0,
+        transaction_type: 'sale',
+        date: payload.orderDate || new Date().toISOString(),
+      });
+    } catch (recalcError) {
+      console.warn(
+        `restoreInventoryAfterOrderDeletion: Failed to recalculate stock for ${productName}:`,
+        recalcError
+      );
+    }
   }
 };
 
